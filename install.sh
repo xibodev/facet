@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Facet Video Kit - macOS / Linux Installer
 # Usage: ./install.sh
-# or one-liner: curl -fsSL https://raw.githubusercontent.com/xibodev/video-kit/main/install.sh | bash
+# or one-liner: curl -fsSL https://raw.githubusercontent.com/xibodev/facet/main/install.sh | bash
 
 set -e
 

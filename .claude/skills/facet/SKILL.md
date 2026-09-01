@@ -1,11 +1,11 @@
 ---
-name: video-kit
-description: Create, produce, edit, assemble, animate, or render videos in Video Kit. Use whenever asked to make a video, edit footage, generate an explainer, create shorts/clips, add captions, mix audio, or do any video production task.
+name: facet
+description: Create, produce, edit, assemble, animate, or render videos in Facet. Use whenever asked to make a video, edit footage, generate an explainer, create shorts/clips, add captions, mix audio, or do any video production task.
 ---
 
-# Video Kit Producer
+# Facet Video Producer
 
-Use this skill when producing, editing, generating, or refining videos in the Video Kit workspace. Claude Code operates as the sole creative producer and orchestrator. Personas are creative reasoning postures, and the Go toolbox (`videokit`) provides stateless execution mechanics.
+Use this skill when producing, editing, generating, or refining videos in the Facet workspace. Claude Code operates as the sole creative producer and orchestrator. Personas are creative reasoning postures, and the Go toolbox (`facet`) provides stateless execution mechanics.
 
 ---
 
