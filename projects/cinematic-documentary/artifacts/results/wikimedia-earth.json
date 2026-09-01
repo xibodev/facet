@@ -1,0 +1,24 @@
+{
+  "ok": true,
+  "tool": "wikimedia",
+  "operation": "run",
+  "result": {
+    "download_url": "https://upload.wikimedia.org/wikipedia/commons/6/61/Blue_Marble_Western_Hemisphere.jpg?utm_source=commons.wikimedia.org\u0026utm_campaign=imageinfo\u0026utm_content=original",
+    "duration_seconds": 0,
+    "height": 3718,
+    "license": "Wikimedia Commons",
+    "output": "projects/cinematic-documentary/assets/raw/earth_blue_marble.jpg",
+    "provider": "wikimedia",
+    "query": "The Blue Marble Earth",
+    "source_id": "24990771",
+    "width": 3718
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "wikimedia",
+    "network": true,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

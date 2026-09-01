@@ -1,0 +1,27 @@
+{
+  "video": "projects/cinematic-documentary/renders/montage_vo.mp4",
+  "source": {
+    "gain_db": 0.0,
+    "fade_in": 0.1,
+    "fade_out": 0.2
+  },
+  "music": {
+    "input": "projects/cinematic-documentary/assets/audio/ambient_music.wav",
+    "gain_db": -14.0,
+    "fade_in": 1.0,
+    "fade_out": 2.0,
+    "ducking": {
+      "enabled": true,
+      "threshold": 0.15,
+      "ratio": 4.0
+    }
+  },
+  "loudness": {
+    "enabled": true,
+    "integrated_lufs": -16.0,
+    "true_peak_db": -1.5
+  },
+  "duration": "video",
+  "output": "projects/cinematic-documentary/renders/final.mp4",
+  "overwrite": true
+}

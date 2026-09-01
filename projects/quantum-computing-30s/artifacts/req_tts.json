@@ -1,0 +1,9 @@
+{
+  "text": "Your laptop is brilliant. But some problems would take it longer than the age of the universe. That's because a normal computer thinks in bits. Every bit is either a zero or a one. One definite answer, checked one at a time. A quantum computer uses qubits. A qubit can hold zero and one at the same time, and link with others, so possibilities are explored together. The right algorithm cancels wrong answers and amplifies right ones. That could crack chemistry, new materials, and impossible logistics. Not a faster laptop. A different kind of machine.",
+  "voice": "en-US-ChristopherNeural",
+  "rate": "+6%",
+  "pitch": "+0Hz",
+  "volume": "+0%",
+  "output_path": "projects/quantum-computing-30s/assets/narration.mp3",
+  "timeout_seconds": 120
+}

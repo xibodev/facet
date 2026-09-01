@@ -1,0 +1,32 @@
+{
+  "project": "algae-explainer",
+  "target": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "aspect_ratio": "16:9",
+    "duration_target_seconds": 30
+  },
+  "audience": "General curious adult. No science background assumed.",
+  "core_message": "Algae are microscopic, easy to overlook, and responsible for about half the oxygen you breathe.",
+  "tone": "Wonder, grounded in fact. Calm authority, not hype.",
+  "route": {
+    "narration": "edge_tts (keyless Microsoft neural TTS) — $0.00",
+    "visuals": "Remotion Explainer composition, component-driven scenes — no AI image generation",
+    "music": "none — narration-led at 30s; music would crowd a dense VO",
+    "theme": "custom themeConfig override (deep-ocean teal / bioluminescent green)"
+  },
+  "cost_estimate_usd": 0.0,
+  "theme_rationale": "The four built-in themes are all wrong for this subject: flat-motion-graphics is purple fintech, clean-professional is corporate blue, minimalist-diagram is red/white editorial, anime-ghibli is warm amber. resolveTheme() accepts a full themeConfig object override, so the video gets an ocean palette that matches the content instead of borrowing an unrelated brand identity.",
+  "scene_types_used": [
+    "hero_title",
+    "text_card",
+    "stat_card",
+    "kpi_grid"
+  ],
+  "verified_contract": {
+    "composition_id": "Explainer",
+    "props_interface": "ExplainerProps { cuts: Cut[], overlays?, captions?, audio? }",
+    "note": "All scene type strings and component props verified by reading Explainer.tsx and components/ directly, not assumed."
+  }
+}

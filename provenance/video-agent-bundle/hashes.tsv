@@ -1,0 +1,13 @@
+path	sha256	source_state	review_classification
+videokit/cmd/videokit/main.go	1bda0a1abbaa8d94394297646935a74269dbeda9a2fd213f7c5a3ed2accb7f86	tracked modification	behavioral reference; no salvage decision yet
+videokit/cmd/videokit/main_test.go	3e771a616e70347ae8a5168661b68a4a95d34aa28c6c8c5ac86d5509085a3d93	tracked modification	test reference; no salvage decision yet
+videokit/internal/environment/check.go	8aba504e6f05d692fb304429d94fed84c14b46b3522bb525352337daa069ddd2	tracked modification	behavioral reference; no salvage decision yet
+videokit/internal/environment/check_test.go	67065213bf1478911c82f51a1d71217bd07975eee1cbdfbe54b1648e272f155f	tracked modification	test reference; no salvage decision yet
+videokit/internal/media/composer.go	4ea1e612a4b7b5d0041589bbe6b32b0fc339c2cbc02e41426060e0e7db3d0691	tracked modification	behavioral reference; no salvage decision yet
+videokit/internal/media/composer_test.go	3d3f20bd2453ba0d20fd235fd664827b178b48a6687c06f826b464e3b7605649	tracked modification	test reference; no salvage decision yet
+videokit/internal/media/source.go	91367ee2269676ac4d3220814d6e77ea9c50cf2d755331cf8506022f4983565f	untracked	behavioral reference; no salvage decision yet
+videokit/internal/media/source_test.go	485861796da9a18b800f10e65e1eaf63d436687710c41fb18ec981042617b137	untracked	test reference; no salvage decision yet
+videokit/internal/media/derivatives.go	266a055cd6ebbc7aab6876ff9b0672c5a65bcad93ed5146a64305fd1bb0ca666	untracked	behavioral reference; no salvage decision yet
+videokit/internal/media/derivatives_test.go	b3d4c2ee63ec75f9a398f12589e50019b975f08d6175d660b7ca8184634de299	untracked	test reference; no salvage decision yet
+third_party/remotion-composer/src/Explainer.tsx	061bbf91b89dc994cbd9b7e29972f0e419f96b18f6634fbc2a09f8b82a695e4d	tracked modification	behavioral reference; no salvage decision yet
+third_party/remotion-composer/scripts/contract-tests.mjs	22a1f37abd19395665e645b027c465c6b12050e5a53d9d6b8071fb85b231172a	tracked modification	test reference; no salvage decision yet

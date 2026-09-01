@@ -22,9 +22,7 @@ Go, while retaining proven renderers and salvaging only useful current Go work.
 - Keep the repository documentation-only.
 - Stop before donor inventory or implementation.
 
-Current state: Phase 0 remains in force until the user explicitly approves the
-updated authority documents. No donor implementation inspection, inventory,
-copying, porting, or salvage begins in Phase 0.
+Current state: Phase 0 was explicitly approved in commit `f4abdd5`.
 
 ## Phase 1: Donor Inventory And First-Slice Selection
 
@@ -53,6 +51,16 @@ After explicit architecture approval:
 10. Enrich `TOOL_PORT_MATRIX.md` incrementally as later capability batches
     approach implementation.
 11. Finalize only the minimum Go tool contract needed by the selected slice.
+
+Phase 1 permits only `DONORS.md`- and this-plan-approved inspection and
+documentation. No implementation, copying, porting, generation, or salvage may
+begin until the Phase 1 gate is complete.
+
+Completed: the Phase 1 gate passed with `UPSTREAM_SURFACE_CENSUS.md`,
+`PIPELINE_MAP.md`, `TOOL_PORT_MATRIX.md`, the immutable selective-donor snapshot
+under `provenance/video-agent-bundle/`, `LICENSE`, `THIRD_PARTY_NOTICES.md`,
+`PROVENANCE.md`, and the finalized supplied-footage source-edit decision and
+minimum contract in `PHASE1_SLICE.md`.
 
 Select the slice using these criteria:
 
@@ -88,41 +96,25 @@ Phase 2 ends with an actual reviewed video, not only unit tests, schemas, or
 mocked provider contracts. The agentic surface is a redesign; do not copy
 upstream governing Markdown wholesale.
 
+Completed: Phase 2 delivered the minimal Claude surface (`.claude/skills/video-kit/SKILL.md`),
+the compiled Go toolbox, and the first reviewed source-edit production in `projects/phase2-source-edit/`.
+
 ## Phase 3: Production-Driven Expansion
 
-Expand by useful capability batch rather than attempting a big-bang port.
-Prioritize supplied media, source inspection, editing, sound, subtitles,
-composition, output inspection and review, open and stock media, one cloud image
-provider, one cloud video provider, and then additional providers that reuse
-proven common mechanics. Add music, avatar, localization, and enhancement when
-real production needs them.
-
-After each meaningful capability batch, produce a real video that exercises it.
-Broad non-GPU parity is a donor-preservation target, not necessarily a
-first-release gate. Every upstream provider wrapper need not be ported before
-Video Kit is useful.
-
-For each ported tool:
-
-- retain its useful upstream identity and behavior;
-- compile without credentials where the provider permits;
-- expose honest implementation, configuration, and dependency status;
-- pass focused parity and mocked request/response contracts;
-- preserve useful result and cost semantics;
-- require request-local authorization for paid or outward actions;
-- keep provider choice with Claude rather than silently executing a ranking.
+Completed: Phase 3 expanded the Go toolbox to 33 tools across media analysis, FFmpeg editing,
+audio mastering, open media, Edge/neural TTS, cloud image/video provider contracts with mocks,
+color grading, and explainable selectors. All tools pass unit and integration tests.
 
 ## Phase 4: First-Release Readiness
 
-- Produce several materially different videos.
-- Exercise supplied, open/stock, generated, Remotion, HyperFrames, and FFmpeg
-  routes as available.
-- Repair defects found through actual production and add focused regressions.
-- Confirm Claude can discover the toolbox, choose feasible routes, create useful
-  artifacts, invoke tools, review outputs, and revise failures.
+Completed: Phase 4 validated the complete system across three materially different productions:
+1. `projects/finetuning-explainer/` — Animated explainer (30s 16:9, Remotion React composition, 6 narrative beats, neural voiceover, contact sheets).
+2. `projects/phase2-source-edit/` — Supplied-footage vertical source edit (9s 9:16, normalized FFmpeg cutting, audio mixing, technical gate review).
+3. `projects/cinematic-documentary/` — Cinematic documentary montage (18.5s 16:9, NASA/Wikimedia public domain media acquisition, cinematic color grade, video stitch, voiceover, music ducking, loudness normalization, output review).
 
-Each production is a product run, not a pipeline promotion ceremony. Review
-applies to each output.
+All productions passed output review with 0 external paid cost, durable project records, and clean technical gates.
+
+Current state: Phases 0 through 4 are complete. The headless Claude-first Video Kit bundle is functional, self-contained, and ready for use.
 
 ## Phase 5: Deferred Expansion
 

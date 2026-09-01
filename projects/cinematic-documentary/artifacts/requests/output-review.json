@@ -1,0 +1,27 @@
+{
+  "input": "projects/cinematic-documentary/renders/final.mp4",
+  "profile": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30.0
+  },
+  "checks": {
+    "duration": {
+      "expected": 18.52,
+      "tolerance": 0.2
+    },
+    "video_codec": "h264",
+    "pixel_format": "yuvj420p",
+    "audio": {
+      "required": true,
+      "codec": "aac",
+      "sample_rate": 48000,
+      "channels": 2
+    }
+  },
+  "samples": {
+    "type": "uniform",
+    "count": 4
+  },
+  "evidence_dir": "projects/cinematic-documentary/review/final-frames"
+}

@@ -1,0 +1,65 @@
+{
+  "project": "quantum-computing-30s",
+  "target_duration_seconds": 30.0,
+  "voice": {
+    "provider": "edge_tts",
+    "voice": "en-US-ChristopherNeural",
+    "rate": "+6%",
+    "pitch": "+0Hz",
+    "rationale": "Warm, credible male narrator. +6% rate keeps 78 words inside the 29s window without sounding rushed; Christopher holds authority at speed better than Guy or Eric."
+  },
+  "accuracy_guardrails": [
+    "No 'tries every answer at once' — that is the canonical pop-science error.",
+    "No general-purpose speed claims — advantage is problem-specific.",
+    "No invented benchmark numbers or qubit counts."
+  ],
+  "sections": [
+    {
+      "id": "s1_hook",
+      "start": 0.0,
+      "end": 4.0,
+      "narration": "Your laptop is brilliant. But some problems would take it longer than the age of the universe.",
+      "words": 17,
+      "intent": "hook",
+      "direction": "Confident open, slight lift on 'age of the universe'."
+    },
+    {
+      "id": "s2_bit",
+      "start": 4.0,
+      "end": 11.0,
+      "narration": "That's because a normal computer thinks in bits. Every bit is either a zero or a one. One definite answer, checked one at a time.",
+      "words": 25,
+      "intent": "setup",
+      "direction": "Even, explanatory. Small pause after 'bits'."
+    },
+    {
+      "id": "s3_qubit",
+      "start": 11.0,
+      "end": 19.0,
+      "narration": "A quantum computer uses qubits. A qubit can hold zero and one at the same time, and link with others, so possibilities are explored together.",
+      "words": 26,
+      "intent": "build",
+      "direction": "Build energy. Emphasis on 'at the same time'."
+    },
+    {
+      "id": "s4_payoff",
+      "start": 19.0,
+      "end": 25.5,
+      "narration": "The right algorithm cancels wrong answers and amplifies right ones. That could crack chemistry, new materials, and impossible logistics.",
+      "words": 21,
+      "intent": "climax",
+      "direction": "Peak energy on 'amplifies right ones'."
+    },
+    {
+      "id": "s5_landing",
+      "start": 25.5,
+      "end": 29.0,
+      "narration": "Not a faster laptop. A different kind of machine.",
+      "words": 9,
+      "intent": "landing",
+      "direction": "Slow, deliberate, land hard on 'machine'."
+    }
+  ],
+  "total_words": 98,
+  "pacing_check": "98 words / 29.0s = 3.38 words-per-second. Natural narration is ~2.6-3.0 wps at +0%; +6% rate lands this in range without crowding."
+}

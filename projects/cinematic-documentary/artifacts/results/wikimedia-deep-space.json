@@ -1,0 +1,24 @@
+{
+  "ok": true,
+  "tool": "wikimedia",
+  "operation": "run",
+  "result": {
+    "download_url": "https://upload.wikimedia.org/wikipedia/commons/6/6f/ALMA_probes_the_Hubble_Ultra_Deep_Field.jpg?utm_source=commons.wikimedia.org\u0026utm_campaign=imageinfo\u0026utm_content=original",
+    "duration_seconds": 0,
+    "height": 2561,
+    "license": "Wikimedia Commons",
+    "output": "projects/cinematic-documentary/assets/raw/deep_space.jpg",
+    "provider": "wikimedia",
+    "query": "Hubble Ultra Deep Field",
+    "source_id": "51698987",
+    "width": 2801
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "wikimedia",
+    "network": true,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

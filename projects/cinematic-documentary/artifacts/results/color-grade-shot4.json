@@ -1,0 +1,60 @@
+{
+  "ok": true,
+  "tool": "color_grade",
+  "operation": "run",
+  "result": {
+    "duration": 4.5,
+    "filter_graph": "split[orig][grade];[grade]colorbalance=rs=0.06:gs=0.02:bs=-0.04:rh=0.05:gh=0.01:bh=-0.03,eq=contrast=1.05:saturation=1.08:brightness=0.01[graded];[orig][graded]blend=all_mode=normal:all_opacity=0.85",
+    "input": "projects/cinematic-documentary/assets/video/shot4_raw.mp4",
+    "intensity": 0.85,
+    "lut_path": "",
+    "output": "projects/cinematic-documentary/assets/video/shot4_graded.mp4",
+    "output_facts": {
+      "audio": null,
+      "audio_streams": null,
+      "format": {
+        "bit_rate": 1866677,
+        "duration": 4.5,
+        "format_long_name": "QuickTime / MOV",
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "size": 1050006
+      },
+      "input": "projects\\cinematic-documentary\\assets\\video\\.videokit-3477840486.mp4",
+      "sha256": "2f9b3ccff9c8ed4018d79756a7f3ee6c70150bee89922afc11cddd987a04d2ec",
+      "video": {
+        "codec": "h264",
+        "fps": 30,
+        "height": 1080,
+        "index": 0,
+        "pixel_format": "yuvj420p",
+        "reported_frame_rate": 30,
+        "rotation": 0,
+        "width": 1920
+      },
+      "video_streams": [
+        {
+          "codec": "h264",
+          "fps": 30,
+          "height": 1080,
+          "index": 0,
+          "pixel_format": "yuvj420p",
+          "reported_frame_rate": 30,
+          "rotation": 0,
+          "width": 1920
+        }
+      ],
+      "warnings": [
+        "no audio stream found"
+      ]
+    },
+    "profile": "cinematic_warm"
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "ffmpeg",
+    "network": false,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

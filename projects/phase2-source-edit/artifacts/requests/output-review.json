@@ -1,0 +1,28 @@
+{
+  "input": "projects/phase2-source-edit/renders/final.mp4",
+  "profile": {
+    "width": 720,
+    "height": 1280,
+    "fps": 30
+  },
+  "checks": {
+    "duration": {
+      "expected": 9,
+      "tolerance": 0.15
+    },
+    "video_codec": "h264",
+    "pixel_format": "yuv420p",
+    "audio": {
+      "required": true,
+      "codec": "aac",
+      "sample_rate": 48000,
+      "channels": 2
+    }
+  },
+  "samples": {
+    "type": "uniform",
+    "count": 4
+  },
+  "evidence_dir": "projects/phase2-source-edit/review/final-frames",
+  "timeout_seconds": 90
+}

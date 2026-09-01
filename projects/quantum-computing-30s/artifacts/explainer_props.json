@@ -1,0 +1,115 @@
+{
+  "theme": "flat-motion-graphics",
+  "cuts": [
+    {
+      "id": "sc1",
+      "source": "",
+      "type": "hero_title",
+      "in_seconds": 0.0,
+      "out_seconds": 4.0,
+      "text": "Why Quantum?",
+      "heroSubtitle": "Some problems break every computer we have",
+      "transition_in": "fade",
+      "transition_out": "fade",
+      "transition_duration": 0.4
+    },
+    {
+      "id": "sc2",
+      "source": "",
+      "type": "text_card",
+      "in_seconds": 4.0,
+      "out_seconds": 7.5,
+      "text": "Everything your laptop does\nis built from bits.",
+      "fontSize": 76,
+      "transition_in": "fade",
+      "transition_out": "fade",
+      "transition_duration": 0.35
+    },
+    {
+      "id": "sc3",
+      "source": "",
+      "type": "comparison",
+      "in_seconds": 7.5,
+      "out_seconds": 11.0,
+      "title": "A bit is one or the other — never both",
+      "leftLabel": "OFF",
+      "leftValue": "0",
+      "rightLabel": "ON",
+      "rightValue": "1",
+      "transition_in": "fade",
+      "transition_out": "fade",
+      "transition_duration": 0.35
+    },
+    {
+      "id": "sc4",
+      "source": "",
+      "type": "stat_card",
+      "in_seconds": 11.0,
+      "out_seconds": 15.0,
+      "stat": "0 AND 1",
+      "subtitle": "A qubit holds both at once — this is superposition",
+      "transition_in": "fade",
+      "transition_out": "fade",
+      "transition_duration": 0.4
+    },
+    {
+      "id": "sc5",
+      "source": "",
+      "type": "text_card",
+      "in_seconds": 15.0,
+      "out_seconds": 19.0,
+      "text": "Entangle the qubits, and\npossibilities are explored together.",
+      "fontSize": 68,
+      "transition_in": "fade",
+      "transition_out": "fade",
+      "transition_duration": 0.35
+    },
+    {
+      "id": "sc6",
+      "source": "",
+      "type": "callout",
+      "in_seconds": 19.0,
+      "out_seconds": 25.5,
+      "title": "Where it genuinely changes things",
+      "text": "Simulating molecules  \u00b7  Designing materials  \u00b7  Optimising the impossible",
+      "callout_type": "tip",
+      "transition_in": "fade",
+      "transition_out": "fade",
+      "transition_duration": 0.4
+    },
+    {
+      "id": "sc7",
+      "source": "",
+      "type": "hero_title",
+      "in_seconds": 25.5,
+      "out_seconds": 29.0,
+      "text": "Not a faster laptop.",
+      "heroSubtitle": "A different kind of machine.",
+      "transition_in": "fade",
+      "transition_out": "fade",
+      "transition_duration": 0.5
+    }
+  ],
+  "overlays": [
+    {
+      "type": "section_title",
+      "in_seconds": 4.0,
+      "out_seconds": 11.0,
+      "text": "CLASSICAL",
+      "position": "top-left"
+    },
+    {
+      "type": "section_title",
+      "in_seconds": 11.0,
+      "out_seconds": 19.0,
+      "text": "QUANTUM",
+      "position": "top-left"
+    }
+  ],
+  "audio": {
+    "narration": {
+      "src": "E:/open-source-projects/video-kit/projects/quantum-computing-30s/assets/narration.mp3",
+      "volume": 1.0
+    }
+  }
+}

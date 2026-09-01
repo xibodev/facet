@@ -1,0 +1,24 @@
+{
+  "ok": true,
+  "tool": "wikimedia",
+  "operation": "run",
+  "result": {
+    "download_url": "https://upload.wikimedia.org/wikipedia/commons/5/56/The_Sounds_of_Earth_Record_Cover_-_GPN-2000-001978.jpg?utm_source=commons.wikimedia.org\u0026utm_campaign=imageinfo\u0026utm_content=original",
+    "duration_seconds": 0,
+    "height": 2215,
+    "license": "Wikimedia Commons",
+    "output": "projects/cinematic-documentary/assets/raw/golden_record.jpg",
+    "provider": "wikimedia",
+    "query": "Voyager Golden Record",
+    "source_id": "137443",
+    "width": 2215
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "wikimedia",
+    "network": true,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

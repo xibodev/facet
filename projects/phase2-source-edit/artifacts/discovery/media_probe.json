@@ -1,0 +1,35 @@
+{
+  "ok": true,
+  "tool": "media_probe",
+  "operation": "describe",
+  "result": {
+    "capability": "media inspection",
+    "configured": true,
+    "cost": {
+      "amount": 0,
+      "currency": "USD"
+    },
+    "dependencies": [
+      {
+        "available": true,
+        "name": "ffprobe",
+        "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe"
+      }
+    ],
+    "external_write": false,
+    "implemented": true,
+    "name": "media_probe",
+    "network": false,
+    "provider": "local",
+    "request_schema": "{\"input\":\"path\",\"timeout_seconds\":30}",
+    "result_schema": "structured tool-specific JSON facts"
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "local",
+    "network": false,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

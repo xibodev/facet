@@ -1,0 +1,7 @@
+{
+  "input_path": "projects/cinematic-documentary/assets/video/shot4_raw.mp4",
+  "output_path": "projects/cinematic-documentary/assets/video/shot4_graded.mp4",
+  "profile": "cinematic_warm",
+  "intensity": 0.85,
+  "overwrite": true
+}

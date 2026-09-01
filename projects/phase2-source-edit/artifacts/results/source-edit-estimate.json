@@ -1,0 +1,24 @@
+{
+  "ok": true,
+  "tool": "source_edit",
+  "operation": "estimate",
+  "result": {
+    "duration": 9,
+    "estimated_cost": 0,
+    "external_write": false,
+    "network": false,
+    "operations": [
+      "trim",
+      "normalize",
+      "concat"
+    ]
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "local",
+    "network": false,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

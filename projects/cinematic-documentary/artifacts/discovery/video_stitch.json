@@ -1,0 +1,106 @@
+{
+  "ok": true,
+  "tool": "video_stitch",
+  "operation": "describe",
+  "result": {
+    "capability": "multi-clip assembly and transitions",
+    "configured": true,
+    "cost": {
+      "amount": 0,
+      "currency": "USD"
+    },
+    "dependencies": [
+      {
+        "available": true,
+        "name": "ffmpeg",
+        "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe",
+        "type": "binary"
+      },
+      {
+        "available": true,
+        "name": "ffprobe",
+        "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe",
+        "type": "binary"
+      }
+    ],
+    "external_write": false,
+    "implemented": true,
+    "name": "video_stitch",
+    "network": false,
+    "provider": "local",
+    "request_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "auto_normalize": {
+          "default": false,
+          "type": "boolean"
+        },
+        "clips": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "layout": {
+          "enum": [
+            "side_by_side",
+            "vertical_stack",
+            "picture_in_picture"
+          ]
+        },
+        "operation": {
+          "enum": [
+            "validate",
+            "stitch",
+            "preview_stitch",
+            "spatial"
+          ]
+        },
+        "output_path": {
+          "type": "string"
+        },
+        "transition": {
+          "default": "cut",
+          "enum": [
+            "cut",
+            "crossfade",
+            "fade"
+          ]
+        },
+        "transition_duration": {
+          "default": 0.5,
+          "type": "number"
+        }
+      },
+      "required": [
+        "operation",
+        "clips"
+      ],
+      "type": "object"
+    },
+    "result_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "type": "object"
+    }
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "local",
+    "network": false,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

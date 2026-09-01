@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Kit Studio — Visual Mockup</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            bg: '#090d16',
+            surface: '#111827',
+            card: '#182234',
+            border: '#24324a',
+            accent: '#38bdf8',
+            brand: '#6366f1',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background-color: #090d16; color: #e2e8f0; font-family: 'Inter', sans-serif; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #090d16; }
+    ::-webkit-scrollbar-thumb { background: #24324a; border-radius: 3px; }
+  </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col antialiased select-none">
+
+  <!-- ================= TOP HEADER BAR ================= -->
+  <header class="h-12 border-b border-border/80 bg-surface/90 px-4 flex items-center justify-between shrink-0">
+    <!-- Left branding & CLI switch -->
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2 font-semibold text-sm tracking-tight text-white">
+        <span class="w-6 h-6 rounded bg-gradient-to-br from-indigo-500 to-sky-400 flex items-center justify-center text-xs text-white font-bold shadow-md shadow-indigo-500/20">VK</span>
+        <span>Video Kit <span class="text-xs text-accent font-mono font-normal ml-1 px-1.5 py-0.5 rounded bg-accent/10 border border-accent/20">Studio</span></span>
+      </div>
+
+      <div class="h-4 w-px bg-border/80 mx-1"></div>
+
+      <!-- Engine Selector (Pluggable CLI) -->
+      <div class="flex items-center gap-1.5 px-2 py-1 rounded bg-card border border-border text-xs text-slate-300">
+        <span class="text-slate-400 font-mono text-[10px]">ENGINE:</span>
+        <span class="font-medium text-indigo-300 flex items-center gap-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          Claude Code CLI (v2.1)
+        </span>
+        <svg class="w-3 h-3 text-slate-400 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+      </div>
+
+      <!-- Directory path -->
+      <div class="flex items-center gap-1.5 px-2 py-1 rounded bg-card/60 border border-border/60 text-xs text-slate-400 font-mono">
+        <span class="text-slate-500">dir</span>
+        <span class="text-slate-300">E:\open-source-projects\video-kit</span>
+      </div>
+    </div>
+
+    <!-- Center active project -->
+    <div class="flex items-center gap-2 text-xs font-mono">
+      <span class="text-slate-500">project:</span>
+      <span class="px-2 py-0.5 rounded bg-brand/10 border border-brand/30 text-indigo-300 font-semibold">projects/finetuning-explainer</span>
+      <span class="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px]">read + write</span>
+    </div>
+
+    <!-- Right stats & tokens -->
+    <div class="flex items-center gap-4 text-xs font-mono text-slate-400">
+      <div>session <span class="text-slate-200">#963900</span></div>
+      <div>turns <span class="text-slate-200">4</span></div>
+      <div>cost <span class="text-emerald-400">$0.042</span></div>
+      <div class="h-4 w-px bg-border/80"></div>
+      <button class="p-1 rounded hover:bg-card text-slate-400 hover:text-slate-200">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ================= MAIN TWO-PANE LAYOUT ================= -->
+  <main class="flex-1 flex overflow-hidden">
+
+    <!-- ================= LEFT PANE: AGENT CHAT & STREAM ================= -->
+    <section class="w-[480px] lg:w-[520px] border-r border-border/80 flex flex-col bg-surface/50 shrink-0">
+      
+      <!-- Chat Pane Header -->
+      <div class="h-9 px-4 border-b border-border/60 bg-surface/80 flex items-center justify-between text-xs font-mono text-slate-400">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <span class="font-semibold text-slate-200">Agent Stream</span>
+          <span class="text-slate-500">(bidirectional PTY)</span>
+        </div>
+        <div class="text-[11px] text-slate-500">Claude 3.7 Sonnet</div>
+      </div>
+
+      <!-- Messages Stream -->
+      <div class="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
+        
+        <!-- User Turn -->
+        <div class="flex gap-3 items-start">
+          <div class="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center font-bold text-[11px] text-slate-200 shrink-0">U</div>
+          <div class="bg-card border border-border/80 rounded-lg p-3 text-slate-100 flex-1 leading-relaxed">
+            Create a 30 second explainer video about fine-tuning LLMs for ML-curious developers.
+          </div>
+        </div>
+
+        <!-- Assistant Turn -->
+        <div class="flex gap-3 items-start">
+          <div class="w-6 h-6 rounded-full bg-brand flex items-center justify-center font-bold text-[10px] text-white shrink-0 shadow-sm">AI</div>
+          <div class="flex-1 space-y-3">
+            
+            <p class="text-slate-300 leading-relaxed">
+              I'll produce this using the <strong class="text-white">animated-explainer</strong> pipeline with Remotion composition and Microsoft Edge neural narration.
+            </p>
+
+            <!-- Tool Pill 1: Read SKILL -->
+            <div class="rounded border border-border bg-card/70 px-2.5 py-1.5 flex items-center justify-between font-mono text-[11px] text-slate-300">
+              <div class="flex items-center gap-2">
+                <span class="text-indigo-400">◫</span>
+                <span class="text-slate-400">Read</span>
+                <span class="text-slate-200">.claude/skills/video-kit/SKILL.md</span>
+              </div>
+              <span class="text-emerald-400 text-[10px]">✓ 191 lines</span>
+            </div>
+
+            <!-- Tool Pill 2: Tool Discovery -->
+            <div class="rounded border border-border bg-card/70 px-2.5 py-1.5 flex items-center justify-between font-mono text-[11px] text-slate-300">
+              <div class="flex items-center gap-2">
+                <span class="text-sky-400">⚡</span>
+                <span class="text-slate-400">videokit</span>
+                <span class="text-slate-200">tools list</span>
+              </div>
+              <span class="text-emerald-400 text-[10px]">✓ 33 tools ready</span>
+            </div>
+
+            <!-- Fenced Structured Question Card (cchat style) -->
+            <div class="rounded-lg border border-indigo-500/40 bg-indigo-950/20 p-3 space-y-2.5">
+              <div class="flex items-center justify-between text-[11px] text-indigo-300 font-semibold uppercase tracking-wider">
+                <span>Production Parameters</span>
+                <span class="text-[10px] font-mono text-indigo-400/80">3 questions</span>
+              </div>
+              <div class="space-y-1.5 text-[11px]">
+                <div class="flex items-center justify-between p-2 rounded bg-card/80 border border-border">
+                  <span class="text-slate-300">1. Deliverable</span>
+                  <span class="font-medium text-emerald-400">16:9 Landscape MP4 (30s)</span>
+                </div>
+                <div class="flex items-center justify-between p-2 rounded bg-card/80 border border-border">
+                  <span class="text-slate-300">2. Target Audience</span>
+                  <span class="font-medium text-indigo-300">Developers / ML-curious</span>
+                </div>
+                <div class="flex items-center justify-between p-2 rounded bg-card/80 border border-border">
+                  <span class="text-slate-300">3. Narrator Voice</span>
+                  <span class="font-medium text-sky-300">en-US-AndrewMultilingualNeural</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tool Pill 3: Edge TTS Generation -->
+            <div class="rounded border border-border bg-card/70 px-2.5 py-1.5 flex items-center justify-between font-mono text-[11px] text-slate-300">
+              <div class="flex items-center gap-2">
+                <span class="text-amber-400">🎙️</span>
+                <span class="text-slate-400">videokit</span>
+                <span class="text-slate-200">tools run edge_tts</span>
+              </div>
+              <span class="text-emerald-400 text-[10px]">✓ 6 beat clips</span>
+            </div>
+
+            <!-- Tool Pill 4: Remotion Render -->
+            <div class="rounded border border-border bg-card/70 px-2.5 py-1.5 flex items-center justify-between font-mono text-[11px] text-slate-300">
+              <div class="flex items-center gap-2">
+                <span class="text-brand">🎬</span>
+                <span class="text-slate-400">videokit</span>
+                <span class="text-slate-200">tools run video_compose</span>
+              </div>
+              <span class="text-emerald-400 text-[10px]">✓ final.mp4 (30.0s)</span>
+            </div>
+
+            <!-- Tool Pill 5: QA Review -->
+            <div class="rounded border border-border bg-card/70 px-2.5 py-1.5 flex items-center justify-between font-mono text-[11px] text-slate-300">
+              <div class="flex items-center gap-2">
+                <span class="text-emerald-400">🔍</span>
+                <span class="text-slate-400">videokit</span>
+                <span class="text-slate-200">tools run output_review</span>
+              </div>
+              <span class="text-emerald-400 text-[10px]">✓ 5/5 gates pass</span>
+            </div>
+
+            <!-- Completion prose -->
+            <div class="p-3 rounded-lg bg-emerald-950/20 border border-emerald-500/30 text-emerald-200 space-y-1">
+              <p class="font-semibold text-xs flex items-center gap-1.5">
+                <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                Video Production Complete & Verified
+              </p>
+              <p class="text-[11px] text-emerald-300/80 leading-relaxed font-mono">
+                Rendered to: projects/finetuning-explainer/renders/final.mp4 (1920x1080 @ 30fps)
+              </p>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Chat Input Area -->
+      <div class="p-3 border-t border-border/80 bg-surface">
+        <div class="flex gap-2">
+          <input type="text" placeholder="Ask Claude to revise script, re-voice beat, or adjust pacing..." class="flex-1 bg-card border border-border rounded px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-sans">
+          <button class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded transition-colors shadow-sm">Send</button>
+        </div>
+        <div class="flex items-center gap-2 mt-2 text-[10px] text-slate-500 font-mono">
+          <span>Quick actions:</span>
+          <span class="hover:text-slate-300 cursor-pointer px-1.5 py-0.5 rounded bg-card border border-border/60">Re-voice with Jenny</span>
+          <span class="hover:text-slate-300 cursor-pointer px-1.5 py-0.5 rounded bg-card border border-border/60">Export vertical 9:16</span>
+          <span class="hover:text-slate-300 cursor-pointer px-1.5 py-0.5 rounded bg-card border border-border/60">Add subtitle burn</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= RIGHT PANE: STUDIO & PIPELINE VIEWER ================= -->
+    <section class="flex-1 flex flex-col overflow-hidden bg-bg">
+      
+      <!-- Pipeline Stage Stepper (Reactive file-based stepper) -->
+      <div class="h-12 border-b border-border/80 bg-surface/40 px-6 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-2 text-xs font-medium">
+          
+          <!-- Stage 1: Brief -->
+          <div class="flex items-center gap-1.5 text-emerald-400">
+            <span class="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500 flex items-center justify-center text-[10px]">✓</span>
+            <span>Brief</span>
+          </div>
+          <span class="text-slate-600">➔</span>
+
+          <!-- Stage 2: Script -->
+          <div class="flex items-center gap-1.5 text-emerald-400">
+            <span class="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500 flex items-center justify-center text-[10px]">✓</span>
+            <span>Script</span>
+          </div>
+          <span class="text-slate-600">➔</span>
+
+          <!-- Stage 3: Voiceover -->
+          <div class="flex items-center gap-1.5 text-emerald-400">
+            <span class="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500 flex items-center justify-center text-[10px]">✓</span>
+            <span>Voiceover</span>
+          </div>
+          <span class="text-slate-600">➔</span>
+
+          <!-- Stage 4: Composition -->
+          <div class="flex items-center gap-1.5 text-emerald-400">
+            <span class="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500 flex items-center justify-center text-[10px]">✓</span>
+            <span>Remotion</span>
+          </div>
+          <span class="text-slate-600">➔</span>
+
+          <!-- Stage 5: QA & Review -->
+          <div class="flex items-center gap-1.5 text-emerald-400">
+            <span class="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500 flex items-center justify-center text-[10px]">✓</span>
+            <span>QA Review</span>
+          </div>
+          <span class="text-slate-600">➔</span>
+
+          <!-- Stage 6: Final Master -->
+          <div class="flex items-center gap-1.5 text-indigo-300 font-semibold">
+            <span class="w-4 h-4 rounded-full bg-indigo-500/30 border border-indigo-400 flex items-center justify-center text-[10px] text-white animate-pulse">★</span>
+            <span>Master Video</span>
+          </div>
+
+        </div>
+
+        <!-- Studio View Mode Selector -->
+        <div class="flex items-center gap-1 bg-card border border-border rounded p-0.5 text-xs">
+          <button class="px-2.5 py-1 rounded bg-indigo-600 text-white font-medium shadow-sm text-[11px]">Player</button>
+          <button class="px-2.5 py-1 rounded hover:bg-surface text-slate-400 hover:text-slate-200 text-[11px]">Script & Beats</button>
+          <button class="px-2.5 py-1 rounded hover:bg-surface text-slate-400 hover:text-slate-200 text-[11px]">Voice Studio</button>
+          <button class="px-2.5 py-1 rounded hover:bg-surface text-slate-400 hover:text-slate-200 text-[11px]">QA Frames</button>
+          <button class="px-2.5 py-1 rounded hover:bg-surface text-slate-400 hover:text-slate-200 text-[11px]">Artifacts</button>
+        </div>
+      </div>
+
+      <!-- Studio Content Body -->
+      <div class="flex-1 overflow-y-auto p-6 space-y-6">
+        
+        <!-- ================= TOP HERO: MASTER VIDEO PLAYER ================= -->
+        <div class="grid grid-cols-12 gap-6">
+          
+          <!-- Video Screen (7 Cols) -->
+          <div class="col-span-7 bg-card rounded-xl border border-border p-3 shadow-xl flex flex-col">
+            <div class="relative aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center border border-border/40 group">
+              <!-- Visual Mock of Video Frame (LoRA / Fine-tuning visual) -->
+              <div class="absolute inset-0 bg-gradient-to-br from-slate-900 via-indigo-950/60 to-slate-950 flex flex-col items-center justify-center p-6 text-center">
+                <div class="px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 text-xs font-mono font-medium mb-3">
+                  BEAT 4 / 6 · LORA ADAPTATION
+                </div>
+                <div class="text-xl font-bold text-white tracking-tight mb-1">
+                  Freeze 99% of Weights. Train 1% on 1 GPU.
+                </div>
+                <div class="text-xs text-slate-400 font-mono mt-2 flex items-center gap-3">
+                  <span class="px-2 py-0.5 rounded bg-slate-800 border border-slate-700">Rank r=16</span>
+                  <span class="px-2 py-0.5 rounded bg-slate-800 border border-slate-700">Alpha=32</span>
+                  <span class="px-2 py-0.5 rounded bg-emerald-950 border border-emerald-700 text-emerald-300">Loss: 0.142</span>
+                </div>
+              </div>
+
+              <!-- Center Play Badge -->
+              <div class="absolute w-12 h-12 rounded-full bg-indigo-600/90 hover:bg-indigo-500 text-white flex items-center justify-center cursor-pointer shadow-lg shadow-indigo-600/30 transition-transform group-hover:scale-105">
+                <svg class="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+              </div>
+
+              <!-- Timecode & Resolution Overlays -->
+              <div class="absolute bottom-3 left-3 px-2 py-0.5 rounded bg-black/70 backdrop-blur text-white font-mono text-xs">
+                00:18.4 / 00:30.0
+              </div>
+              <div class="absolute top-3 right-3 px-2 py-0.5 rounded bg-black/70 backdrop-blur text-emerald-400 font-mono text-[10px] border border-emerald-500/30">
+                1080p · 30 FPS · H.264
+              </div>
+            </div>
+
+            <!-- Scrubber & Playback bar -->
+            <div class="mt-3 space-y-2">
+              <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden cursor-pointer">
+                <div class="bg-indigo-500 h-full w-[61%] rounded-full"></div>
+              </div>
+              <div class="flex items-center justify-between text-xs text-slate-400">
+                <div class="flex items-center gap-3">
+                  <button class="text-slate-300 hover:text-white font-mono text-xs">▶ Play</button>
+                  <button class="text-slate-400 hover:text-white text-xs">Mute</button>
+                  <span class="text-slate-600">|</span>
+                  <span class="font-mono text-[11px] text-slate-300">projects/finetuning-explainer/renders/final.mp4</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button class="px-2.5 py-1 rounded bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 font-medium text-[11px]">Open in Player</button>
+                  <button class="px-2.5 py-1 rounded bg-card border border-border text-slate-300 hover:text-white font-medium text-[11px]">Export MP4</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Video Specs & Technical Health (5 Cols) -->
+          <div class="col-span-5 flex flex-col justify-between space-y-4">
+            
+            <!-- Technical Gate Checklist Card -->
+            <div class="bg-card rounded-xl border border-border p-4 space-y-3">
+              <div class="flex items-center justify-between border-b border-border/60 pb-2">
+                <div class="font-semibold text-xs text-white flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  Technical QA Verification (5/5 Gates)
+                </div>
+                <span class="text-[10px] font-mono text-emerald-400 font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30">PASSED</span>
+              </div>
+
+              <div class="space-y-2 text-xs font-mono">
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-400">Target Resolution:</span>
+                  <span class="text-slate-200">1920x1080 (16:9) <span class="text-emerald-400">✓</span></span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-400">Frame Rate & Codec:</span>
+                  <span class="text-slate-200">30.0 fps · H.264 (yuv420p) <span class="text-emerald-400">✓</span></span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-400">Target Duration:</span>
+                  <span class="text-slate-200">30.00s (exact) <span class="text-emerald-400">✓</span></span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-400">Integrated Loudness:</span>
+                  <span class="text-slate-200">-16.1 LUFS (target -16) <span class="text-emerald-400">✓</span></span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-slate-400">Audio True Peak:</span>
+                  <span class="text-slate-200">-1.50 dBTP <span class="text-emerald-400">✓</span></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Pipeline & Runtime Card -->
+            <div class="bg-card rounded-xl border border-border p-4 space-y-2 text-xs">
+              <div class="font-semibold text-white text-xs border-b border-border/60 pb-2 flex items-center justify-between">
+                <span>Pipeline Composition</span>
+                <span class="font-mono text-indigo-400 text-[11px]">animated-explainer</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2 pt-1 text-[11px]">
+                <div class="p-2 rounded bg-bg border border-border/60">
+                  <div class="text-slate-500 text-[10px]">RENDERER</div>
+                  <div class="font-mono text-slate-200">Remotion (React)</div>
+                </div>
+                <div class="p-2 rounded bg-bg border border-border/60">
+                  <div class="text-slate-500 text-[10px]">VOICE PROVIDER</div>
+                  <div class="font-mono text-slate-200">Edge Neural TTS</div>
+                </div>
+                <div class="p-2 rounded bg-bg border border-border/60">
+                  <div class="text-slate-500 text-[10px]">AUDIO MIX</div>
+                  <div class="font-mono text-slate-200">FFmpeg Ducking</div>
+                </div>
+                <div class="p-2 rounded bg-bg border border-border/60">
+                  <div class="text-slate-500 text-[10px]">TOTAL COST</div>
+                  <div class="font-mono text-emerald-400">$0.00 (Zero Paid)</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- ================= LOWER SPLIT: SCRIPT BEATS + QA CONTACT SHEET ================= -->
+        <div class="grid grid-cols-12 gap-6">
+          
+          <!-- Script & Storyboard Table (7 Cols) -->
+          <div class="col-span-7 bg-card rounded-xl border border-border p-4 space-y-3">
+            <div class="flex items-center justify-between border-b border-border/60 pb-2">
+              <div class="font-semibold text-xs text-white flex items-center gap-2">
+                <span>Script & Beat Timeline (6 Narrative Beats)</span>
+              </div>
+              <span class="text-[11px] font-mono text-slate-400">78 words · ~12.2 wps</span>
+            </div>
+
+            <div class="space-y-2">
+              
+              <!-- Beat 1 -->
+              <div class="p-2.5 rounded-lg bg-surface/70 border border-border/60 flex items-start justify-between gap-3 text-xs">
+                <div class="flex items-center gap-2 font-mono text-[11px] text-indigo-400 shrink-0">
+                  <span class="w-5 h-5 rounded bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center font-bold">1</span>
+                  <span>0.0-5.0s</span>
+                </div>
+                <div class="flex-1">
+                  <div class="font-semibold text-slate-200 text-xs mb-0.5">The Generalist</div>
+                  <p class="text-slate-400 text-[11px] italic">"A base model knows a little about everything, and nothing about your problem."</p>
+                </div>
+                <button class="p-1 rounded hover:bg-card text-slate-400 hover:text-white shrink-0 font-mono text-[10px] border border-border">🔊 s1.mp3</button>
+              </div>
+
+              <!-- Beat 2 -->
+              <div class="p-2.5 rounded-lg bg-surface/70 border border-border/60 flex items-start justify-between gap-3 text-xs">
+                <div class="flex items-center gap-2 font-mono text-[11px] text-indigo-400 shrink-0">
+                  <span class="w-5 h-5 rounded bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center font-bold">2</span>
+                  <span>5.0-10.5s</span>
+                </div>
+                <div class="flex-1">
+                  <div class="font-semibold text-slate-200 text-xs mb-0.5">Your Domain Data</div>
+                  <p class="text-slate-400 text-[11px] italic">"Fine-tuning keeps the model, and shows it a few thousand of your own examples."</p>
+                </div>
+                <button class="p-1 rounded hover:bg-card text-slate-400 hover:text-white shrink-0 font-mono text-[10px] border border-border">🔊 s2.mp3</button>
+              </div>
+
+              <!-- Beat 3 -->
+              <div class="p-2.5 rounded-lg bg-surface/70 border border-border/60 flex items-start justify-between gap-3 text-xs">
+                <div class="flex items-center gap-2 font-mono text-[11px] text-indigo-400 shrink-0">
+                  <span class="w-5 h-5 rounded bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center font-bold">3</span>
+                  <span>10.5-17.0s</span>
+                </div>
+                <div class="flex-1">
+                  <div class="font-semibold text-slate-200 text-xs mb-0.5">The Training Loop</div>
+                  <p class="text-slate-400 text-[11px] italic">"Each pass, it predicts, measures the error, and nudges the weights. Loss drops."</p>
+                </div>
+                <button class="p-1 rounded hover:bg-card text-slate-400 hover:text-white shrink-0 font-mono text-[10px] border border-border">🔊 s3.mp3</button>
+              </div>
+
+              <!-- Beat 4 (Active in player) -->
+              <div class="p-2.5 rounded-lg bg-indigo-950/30 border border-indigo-500/50 flex items-start justify-between gap-3 text-xs shadow-sm">
+                <div class="flex items-center gap-2 font-mono text-[11px] text-indigo-300 shrink-0">
+                  <span class="w-5 h-5 rounded bg-indigo-600 text-white flex items-center justify-center font-bold">4</span>
+                  <span>17.0-22.0s</span>
+                </div>
+                <div class="flex-1">
+                  <div class="font-semibold text-white text-xs mb-0.5 flex items-center gap-2">
+                    LoRA Efficiency
+                    <span class="px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 text-[9px] font-mono">PLAYING</span>
+                  </div>
+                  <p class="text-indigo-200 text-[11px] italic">"With LoRA you train under one percent of the weights, on a single GPU."</p>
+                </div>
+                <button class="p-1 rounded bg-indigo-600 text-white shrink-0 font-mono text-[10px]">🔊 s4.mp3</button>
+              </div>
+
+              <!-- Beat 5 -->
+              <div class="p-2.5 rounded-lg bg-surface/70 border border-border/60 flex items-start justify-between gap-3 text-xs">
+                <div class="flex items-center gap-2 font-mono text-[11px] text-indigo-400 shrink-0">
+                  <span class="w-5 h-5 rounded bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center font-bold">5</span>
+                  <span>22.0-26.0s</span>
+                </div>
+                <div class="flex-1">
+                  <div class="font-semibold text-slate-200 text-xs mb-0.5">The Overfit Risk</div>
+                  <p class="text-slate-400 text-[11px] italic">"Train too long and it memorises instead of generalising."</p>
+                </div>
+                <button class="p-1 rounded hover:bg-card text-slate-400 hover:text-white shrink-0 font-mono text-[10px] border border-border">🔊 s5.mp3</button>
+              </div>
+
+              <!-- Beat 6 -->
+              <div class="p-2.5 rounded-lg bg-surface/70 border border-border/60 flex items-start justify-between gap-3 text-xs">
+                <div class="flex items-center gap-2 font-mono text-[11px] text-indigo-400 shrink-0">
+                  <span class="w-5 h-5 rounded bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center font-bold">6</span>
+                  <span>26.0-30.0s</span>
+                </div>
+                <div class="flex-1">
+                  <div class="font-semibold text-slate-200 text-xs mb-0.5">Core Thesis</div>
+                  <p class="text-slate-400 text-[11px] italic">"Fine-tuning teaches behaviour, not facts. For facts, use retrieval."</p>
+                </div>
+                <button class="p-1 rounded hover:bg-card text-slate-400 hover:text-white shrink-0 font-mono text-[10px] border border-border">🔊 s6.mp3</button>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- QA Frames & Visual Evidence (5 Cols) -->
+          <div class="col-span-5 bg-card rounded-xl border border-border p-4 space-y-3">
+            <div class="flex items-center justify-between border-b border-border/60 pb-2">
+              <div class="font-semibold text-xs text-white flex items-center gap-2">
+                <span>Visual QA Contact Sheet (6 Keyframes)</span>
+              </div>
+              <span class="text-[11px] font-mono text-emerald-400">output_review ✓</span>
+            </div>
+
+            <!-- Frame Grid (2x3) -->
+            <div class="grid grid-cols-2 gap-2.5">
+              
+              <!-- Frame 1 -->
+              <div class="bg-black rounded border border-border/80 overflow-hidden group relative">
+                <div class="aspect-video bg-slate-900 flex flex-col items-center justify-center p-2 text-center text-[10px] text-slate-300">
+                  <span class="font-bold text-white text-xs">BASE MODEL</span>
+                  <span class="text-[9px] text-slate-500">Generalist Brain</span>
+                </div>
+                <div class="px-2 py-1 bg-surface/90 flex items-center justify-between text-[10px] font-mono">
+                  <span class="text-slate-400">t=2.0s</span>
+                  <span class="text-emerald-400">PASS</span>
+                </div>
+              </div>
+
+              <!-- Frame 2 -->
+              <div class="bg-black rounded border border-border/80 overflow-hidden group relative">
+                <div class="aspect-video bg-slate-900 flex flex-col items-center justify-center p-2 text-center text-[10px] text-slate-300">
+                  <span class="font-bold text-indigo-300 text-xs">DATASET</span>
+                  <span class="text-[9px] text-slate-500">Domain Examples</span>
+                </div>
+                <div class="px-2 py-1 bg-surface/90 flex items-center justify-between text-[10px] font-mono">
+                  <span class="text-slate-400">t=7.0s</span>
+                  <span class="text-emerald-400">PASS</span>
+                </div>
+              </div>
+
+              <!-- Frame 3 -->
+              <div class="bg-black rounded border border-border/80 overflow-hidden group relative">
+                <div class="aspect-video bg-slate-900 flex flex-col items-center justify-center p-2 text-center text-[10px] text-slate-300">
+                  <span class="font-bold text-sky-300 text-xs">LOSS CURVE</span>
+                  <span class="text-[9px] text-emerald-400">Loss: 0.18</span>
+                </div>
+                <div class="px-2 py-1 bg-surface/90 flex items-center justify-between text-[10px] font-mono">
+                  <span class="text-slate-400">t=12.0s</span>
+                  <span class="text-emerald-400">PASS</span>
+                </div>
+              </div>
+
+              <!-- Frame 4 -->
+              <div class="bg-black rounded border border-indigo-500/60 overflow-hidden group relative shadow-md shadow-indigo-500/10">
+                <div class="aspect-video bg-indigo-950/40 flex flex-col items-center justify-center p-2 text-center text-[10px] text-slate-300">
+                  <span class="font-bold text-white text-xs">LoRA ADAPTER</span>
+                  <span class="text-[9px] text-indigo-300">&lt;1% Parameters</span>
+                </div>
+                <div class="px-2 py-1 bg-indigo-950/80 flex items-center justify-between text-[10px] font-mono">
+                  <span class="text-indigo-300">t=17.0s</span>
+                  <span class="text-emerald-400">PASS</span>
+                </div>
+              </div>
+
+              <!-- Frame 5 -->
+              <div class="bg-black rounded border border-border/80 overflow-hidden group relative">
+                <div class="aspect-video bg-slate-900 flex flex-col items-center justify-center p-2 text-center text-[10px] text-slate-300">
+                  <span class="font-bold text-amber-300 text-xs">OVERFITTING</span>
+                  <span class="text-[9px] text-amber-500/90">Generalization Gap</span>
+                </div>
+                <div class="px-2 py-1 bg-surface/90 flex items-center justify-between text-[10px] font-mono">
+                  <span class="text-slate-400">t=21.0s</span>
+                  <span class="text-emerald-400">PASS</span>
+                </div>
+              </div>
+
+              <!-- Frame 6 -->
+              <div class="bg-black rounded border border-border/80 overflow-hidden group relative">
+                <div class="aspect-video bg-slate-900 flex flex-col items-center justify-center p-2 text-center text-[10px] text-slate-300">
+                  <span class="font-bold text-emerald-300 text-xs">THESIS / RAG</span>
+                  <span class="text-[9px] text-slate-400">Behaviour vs Facts</span>
+                </div>
+                <div class="px-2 py-1 bg-surface/90 flex items-center justify-between text-[10px] font-mono">
+                  <span class="text-slate-400">t=27.0s</span>
+                  <span class="text-emerald-400">PASS</span>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Open contact sheet button -->
+            <button class="w-full py-1.5 rounded bg-card border border-border text-slate-300 hover:text-white font-mono text-[11px] text-center block">
+              View Full High-Res Contact Sheet (qa/contact_sheet.png)
+            </button>
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+</body>
+</html>

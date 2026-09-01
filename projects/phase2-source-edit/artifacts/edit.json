@@ -1,0 +1,36 @@
+{
+  "segments": [
+    {
+      "input": "projects/phase2-source-edit/assets/source/source.mp4",
+      "start": 12.5,
+      "end": 15.5,
+      "transition": "cut"
+    },
+    {
+      "input": "projects/phase2-source-edit/assets/source/source.mp4",
+      "start": 0.5,
+      "end": 3.5,
+      "transition": "cut"
+    },
+    {
+      "input": "projects/phase2-source-edit/assets/source/source.mp4",
+      "start": 8.5,
+      "end": 11.5,
+      "transition": "cut"
+    }
+  ],
+  "target": {
+    "width": 720,
+    "height": 1280,
+    "fps": 30,
+    "fit": "cover",
+    "video_codec": "h264",
+    "pixel_format": "yuv420p",
+    "audio_codec": "aac",
+    "audio_sample_rate": 48000,
+    "audio_channels": 2
+  },
+  "output": "projects/phase2-source-edit/renders/edit.mp4",
+  "overwrite": false,
+  "timeout_seconds": 300
+}

@@ -9,17 +9,26 @@ Read these files, in order, before doing any work:
 `DESIGN.md` is the product and architecture authority. `PLAN.md` controls the
 current phase. `DONORS.md` controls provenance and what may be copied or ported.
 
-## Current Stop
+## Current Phase
 
-This repository is at Phase 0: Architecture Lock. During architecture review,
-editing `AGENTS.md`, `DESIGN.md`, `PLAN.md`, and `DONORS.md` is allowed. Keep the
-repository documentation-only and stop before donor inventory or implementation.
+Phase 0: Architecture Lock was explicitly approved in commit `f4abdd5`. Phase 1:
+Donor Inventory And First-Slice Selection is complete and its gate passed. Its
+named outputs are `UPSTREAM_SURFACE_CENSUS.md`, `PIPELINE_MAP.md`,
+`TOOL_PORT_MATRIX.md`, the immutable selective-donor snapshot under
+`provenance/video-agent-bundle/`, `LICENSE`, `THIRD_PARTY_NOTICES.md`,
+`PROVENANCE.md`, and the finalized supplied-footage source-edit decision and
+minimum contract in `PHASE1_SLICE.md`.
 
-Do not inspect donor implementation, copy, port, generate, or salvage
-implementation code until the user explicitly approves the product, production,
-toolbox, and donor architecture. After approval, Phase 1 may inspect only the
-donors allowed by `DONORS.md`. Clean upstream OpenMontage at the pinned commit is
-the only source for upstream behavior; never infer it from another checkout.
+The user explicitly authorized progression through all phases in this repository.
+Phases 0 through 4 are complete:
+- Phase 0: Architecture lock approved.
+- Phase 1: Upstream census, pipeline mapping, and port matrix delivered.
+- Phase 2: Minimal agent surface and first reviewed production delivered.
+- Phase 3: Production-driven Go toolbox expansion (33 tools) delivered.
+- Phase 4: First-release readiness validated across three materially different productions.
+
+Clean upstream OpenMontage at the pinned commit remains the primary source for
+upstream behavior; never infer it from another checkout.
 
 ## Drift Rules
 

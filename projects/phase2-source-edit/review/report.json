@@ -1,0 +1,125 @@
+{
+  "ok": true,
+  "tool": "output_review",
+  "operation": "run",
+  "result": {
+    "execution_status": "succeeded",
+    "gates": [
+      {
+        "message": "dimensions or fps differ",
+        "name": "profile",
+        "status": "pass"
+      },
+      {
+        "message": "duration outside tolerance",
+        "name": "duration",
+        "status": "pass"
+      },
+      {
+        "message": "video codec differs",
+        "name": "video_codec",
+        "status": "pass"
+      },
+      {
+        "message": "pixel format differs",
+        "name": "pixel_format",
+        "status": "pass"
+      },
+      {
+        "message": "audio expectation differs",
+        "name": "audio",
+        "status": "pass"
+      }
+    ],
+    "output_facts": {
+      "audio": [
+        {
+          "channel_layout": "stereo",
+          "channels": 2,
+          "codec": "aac",
+          "index": 1,
+          "sample_rate": 48000
+        }
+      ],
+      "audio_streams": [
+        {
+          "channel_layout": "stereo",
+          "channels": 2,
+          "codec": "aac",
+          "index": 1,
+          "sample_rate": 48000
+        }
+      ],
+      "format": {
+        "bit_rate": 597032,
+        "duration": 9,
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "size": 671662
+      },
+      "input": "projects/phase2-source-edit/renders/final.mp4",
+      "sha256": "177cd28fe6d98766fb2103ad25de15a029e855ca0fc317c72d7ebef51886c037",
+      "video": {
+        "codec": "h264",
+        "fps": 30,
+        "height": 1280,
+        "index": 0,
+        "pixel_format": "yuv420p",
+        "reported_frame_rate": 30,
+        "rotation": 0,
+        "width": 720
+      },
+      "video_streams": [
+        {
+          "codec": "h264",
+          "fps": 30,
+          "height": 1280,
+          "index": 0,
+          "pixel_format": "yuv420p",
+          "reported_frame_rate": 30,
+          "rotation": 0,
+          "width": 720
+        }
+      ],
+      "warnings": []
+    },
+    "review_status": "pass",
+    "samples": [
+      {
+        "height": 1280,
+        "path": "projects\\phase2-source-edit\\review\\final-frames\\frame-0001.jpg",
+        "timestamp": 1.125,
+        "width": 720
+      },
+      {
+        "height": 1280,
+        "path": "projects\\phase2-source-edit\\review\\final-frames\\frame-0002.jpg",
+        "timestamp": 3.375,
+        "width": 720
+      },
+      {
+        "height": 1280,
+        "path": "projects\\phase2-source-edit\\review\\final-frames\\frame-0003.jpg",
+        "timestamp": 5.625,
+        "width": 720
+      },
+      {
+        "height": 1280,
+        "path": "projects\\phase2-source-edit\\review\\final-frames\\frame-0004.jpg",
+        "timestamp": 7.875,
+        "width": 720
+      }
+    ],
+    "volume": {
+      "max_volume_db": "-15.1",
+      "mean_volume_db": "-18.7"
+    }
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "local",
+    "network": false,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

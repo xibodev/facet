@@ -1,0 +1,91 @@
+{
+  "ok": true,
+  "tool": "edge_tts",
+  "operation": "describe",
+  "result": {
+    "capability": "free keyless Microsoft Edge neural text-to-speech synthesis",
+    "configured": true,
+    "cost": {
+      "amount": 0,
+      "currency": "USD"
+    },
+    "dependencies": [],
+    "external_write": false,
+    "implemented": true,
+    "name": "edge_tts",
+    "network": true,
+    "provider": "microsoft_edge",
+    "request_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "output_path": {
+          "type": "string"
+        },
+        "pitch": {
+          "default": "+0Hz",
+          "type": "string"
+        },
+        "rate": {
+          "default": "+0%",
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "type": "integer"
+        },
+        "voice": {
+          "default": "en-US-ChristopherNeural",
+          "type": "string"
+        },
+        "volume": {
+          "default": "+0%",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "result_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_seconds": {
+          "type": "number"
+        },
+        "format": {
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "size_bytes": {
+          "type": "integer"
+        },
+        "voice": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "output",
+        "voice",
+        "format",
+        "provider"
+      ],
+      "type": "object"
+    }
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "microsoft_edge",
+    "network": true,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

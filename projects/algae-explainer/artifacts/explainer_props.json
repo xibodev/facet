@@ -1,0 +1,112 @@
+{
+  "theme": "custom-ocean",
+  "themeConfig": {
+    "primaryColor": "#14B8A6",
+    "accentColor": "#4ADE80",
+    "backgroundColor": "#04141B",
+    "surfaceColor": "#0A2430",
+    "textColor": "#ECFEFF",
+    "mutedTextColor": "#7DA6B0",
+    "headingFont": "Space Grotesk",
+    "bodyFont": "Space Grotesk",
+    "monoFont": "Fira Code",
+    "chartColors": ["#4ADE80", "#14B8A6", "#22D3EE", "#0EA5E9", "#A3E635", "#2DD4BF"],
+    "springConfig": { "damping": 18, "stiffness": 90, "mass": 1 },
+    "transitionDuration": 0.4,
+    "captionHighlightColor": "#4ADE80",
+    "captionBackgroundColor": "rgba(4, 20, 27, 0.78)"
+  },
+  "cuts": [
+    {
+      "id": "s1-hook",
+      "source": "",
+      "type": "hero_title",
+      "text": "ALGAE",
+      "heroSubtitle": "Take a breath. Now take another.",
+      "in_seconds": 0,
+      "out_seconds": 4.6,
+      "accentColor": "#4ADE80"
+    },
+    {
+      "id": "s2-reframe",
+      "source": "",
+      "type": "text_card",
+      "text": "One of those came from algae.",
+      "fontSize": 84,
+      "in_seconds": 4.6,
+      "out_seconds": 8.2
+    },
+    {
+      "id": "s3-not-forest",
+      "source": "",
+      "type": "text_card",
+      "text": "Not from a forest — from something you can barely see.",
+      "fontSize": 62,
+      "in_seconds": 8.2,
+      "out_seconds": 12.0
+    },
+    {
+      "id": "s4-oxygen",
+      "source": "",
+      "type": "pie_chart",
+      "title": "Earth's oxygen supply",
+      "chartData": [
+        { "label": "Algae", "value": 50 },
+        { "label": "Everything else", "value": 50 }
+      ],
+      "chartColors": ["#4ADE80", "#123A47"],
+      "chartAnimation": "expand",
+      "donut": true,
+      "centerLabel": "from algae",
+      "centerValue": "~50%",
+      "showLegend": true,
+      "in_seconds": 12.0,
+      "out_seconds": 17.0
+    },
+    {
+      "id": "s5-mechanism",
+      "source": "",
+      "type": "callout",
+      "text": "Just sunlight, water, and carbon dioxide.",
+      "callout_type": "tip",
+      "title": "No roots. No leaves.",
+      "in_seconds": 17.0,
+      "out_seconds": 20.8
+    },
+    {
+      "id": "s6-speed",
+      "source": "",
+      "type": "stat_card",
+      "stat": "2×",
+      "subtitle": "Some algae double their mass in a single day",
+      "in_seconds": 20.8,
+      "out_seconds": 24.6,
+      "accentColor": "#4ADE80"
+    },
+    {
+      "id": "s7-sowhat",
+      "source": "",
+      "type": "text_card",
+      "text": "Fuel. Food. A way to pull carbon out of the sky.",
+      "fontSize": 68,
+      "in_seconds": 24.6,
+      "out_seconds": 28.0
+    },
+    {
+      "id": "s8-landing",
+      "source": "",
+      "type": "text_card",
+      "text": "The smallest thing in the ocean, doing the biggest job.",
+      "fontSize": 66,
+      "in_seconds": 28.0,
+      "out_seconds": 32.0
+    }
+  ],
+  "overlays": [],
+  "audio": {
+    "narration": {
+      "src": "E:/open-source-projects/video-kit/projects/algae-explainer/assets/narration.mp3",
+      "volume": 1
+    }
+  }
+}

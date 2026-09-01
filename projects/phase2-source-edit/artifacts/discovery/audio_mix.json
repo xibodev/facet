@@ -1,0 +1,40 @@
+{
+  "ok": true,
+  "tool": "audio_mix",
+  "operation": "describe",
+  "result": {
+    "capability": "audio mixing",
+    "configured": true,
+    "cost": {
+      "amount": 0,
+      "currency": "USD"
+    },
+    "dependencies": [
+      {
+        "available": true,
+        "name": "ffmpeg",
+        "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe"
+      },
+      {
+        "available": true,
+        "name": "ffprobe",
+        "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe"
+      }
+    ],
+    "external_write": false,
+    "implemented": true,
+    "name": "audio_mix",
+    "network": false,
+    "provider": "local",
+    "request_schema": "{\"video\":\"path\",\"source\":{},\"music\":{},\"loudness\":{},\"duration\":\"video\",\"output\":\"path\"}",
+    "result_schema": "structured tool-specific JSON facts"
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "local",
+    "network": false,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "ok": true,
+  "tool": "source_edit",
+  "operation": "describe",
+  "result": {
+    "capability": "supplied-footage editing",
+    "configured": true,
+    "cost": {
+      "amount": 0,
+      "currency": "USD"
+    },
+    "dependencies": [
+      {
+        "available": true,
+        "name": "ffmpeg",
+        "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe"
+      },
+      {
+        "available": true,
+        "name": "ffprobe",
+        "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe"
+      }
+    ],
+    "external_write": false,
+    "implemented": true,
+    "name": "source_edit",
+    "network": false,
+    "provider": "local",
+    "request_schema": "{\"segments\":[{\"input\":\"path\",\"start\":0,\"end\":1}],\"target\":{\"width\":1920,\"height\":1080,\"fps\":30,\"fit\":\"contain|cover\",\"video_codec\":\"h264\",\"pixel_format\":\"yuv420p\",\"audio_codec\":\"aac\",\"audio_sample_rate\":48000,\"audio_channels\":2},\"replacement_audio\":\"optional path\",\"output\":\"path\"}",
+    "result_schema": "structured tool-specific JSON facts"
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "local",
+    "network": false,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

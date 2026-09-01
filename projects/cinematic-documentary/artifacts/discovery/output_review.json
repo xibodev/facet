@@ -1,0 +1,213 @@
+{
+  "ok": true,
+  "tool": "output_review",
+  "operation": "describe",
+  "result": {
+    "capability": "technical output review",
+    "configured": true,
+    "cost": {
+      "amount": 0,
+      "currency": "USD"
+    },
+    "dependencies": [
+      {
+        "available": true,
+        "name": "ffmpeg",
+        "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe",
+        "type": "binary"
+      },
+      {
+        "available": true,
+        "name": "ffprobe",
+        "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe",
+        "type": "binary"
+      }
+    ],
+    "external_write": false,
+    "implemented": true,
+    "name": "output_review",
+    "network": false,
+    "provider": "local",
+    "request_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "additionalProperties": false,
+          "properties": {
+            "audio": {
+              "additionalProperties": false,
+              "properties": {
+                "channels": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "codec": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "sample_rate": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "required",
+                "codec",
+                "sample_rate",
+                "channels"
+              ],
+              "type": "object"
+            },
+            "duration": {
+              "additionalProperties": false,
+              "properties": {
+                "expected": {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                "tolerance": {
+                  "minimum": 0,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "expected",
+                "tolerance"
+              ],
+              "type": "object"
+            },
+            "pixel_format": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "video_codec": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "duration",
+            "video_codec",
+            "pixel_format",
+            "audio"
+          ],
+          "type": "object"
+        },
+        "evidence_dir": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "input": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "profile": {
+          "additionalProperties": false,
+          "properties": {
+            "fps": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            "height": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "width": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "width",
+            "height",
+            "fps"
+          ],
+          "type": "object"
+        },
+        "samples": {
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "const": 4
+            },
+            "type": {
+              "const": "uniform"
+            }
+          },
+          "required": [
+            "type",
+            "count"
+          ],
+          "type": "object"
+        },
+        "timeout_seconds": {
+          "default": 90,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input",
+        "profile",
+        "checks",
+        "samples",
+        "evidence_dir"
+      ],
+      "type": "object"
+    },
+    "result_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "execution_status": {
+          "const": "succeeded"
+        },
+        "gates": {
+          "items": {
+            "required": [
+              "name",
+              "status"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "output_facts": {
+          "type": "object"
+        },
+        "review_status": {
+          "enum": [
+            "pass",
+            "warn",
+            "fail"
+          ]
+        },
+        "samples": {
+          "type": "array"
+        },
+        "volume": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "execution_status",
+        "review_status",
+        "gates",
+        "samples",
+        "volume",
+        "output_facts"
+      ],
+      "type": "object"
+    }
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "local",
+    "network": false,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

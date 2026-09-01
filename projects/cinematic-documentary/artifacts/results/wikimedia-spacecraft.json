@@ -1,0 +1,24 @@
+{
+  "ok": true,
+  "tool": "wikimedia",
+  "operation": "run",
+  "result": {
+    "download_url": "https://upload.wikimedia.org/wikipedia/commons/0/04/Voyager_Instruments.jpg?utm_source=commons.wikimedia.org\u0026utm_campaign=imageinfo\u0026utm_content=original",
+    "duration_seconds": 0,
+    "height": 482,
+    "license": "Wikimedia Commons",
+    "output": "projects/cinematic-documentary/assets/raw/voyager_spacecraft.jpg",
+    "provider": "wikimedia",
+    "query": "Voyager spacecraft",
+    "source_id": "136223050",
+    "width": 640
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "wikimedia",
+    "network": true,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

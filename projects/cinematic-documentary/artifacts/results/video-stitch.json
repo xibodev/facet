@@ -1,0 +1,21 @@
+{
+  "ok": true,
+  "tool": "video_stitch",
+  "operation": "run",
+  "result": {
+    "clip_count": 4,
+    "duration": 18.521333,
+    "operation": "stitch",
+    "output": "projects/cinematic-documentary/renders/montage.mp4",
+    "transition": "cut",
+    "transition_duration": 0.5
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "local",
+    "network": false,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

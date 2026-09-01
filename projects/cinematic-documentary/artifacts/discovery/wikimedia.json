@@ -1,0 +1,78 @@
+{
+  "ok": true,
+  "tool": "wikimedia",
+  "operation": "describe",
+  "result": {
+    "capability": "Wikimedia Commons stock search and download",
+    "configured": true,
+    "cost": {
+      "amount": 0,
+      "currency": "USD"
+    },
+    "dependencies": [],
+    "external_write": false,
+    "implemented": true,
+    "name": "wikimedia",
+    "network": true,
+    "provider": "wikimedia",
+    "request_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "default": "video",
+          "enum": [
+            "video",
+            "image",
+            "any"
+          ]
+        },
+        "output_path": {
+          "type": "string"
+        },
+        "per_page": {
+          "default": 5,
+          "type": "integer"
+        },
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "result_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "output": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "source_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "source_id",
+        "query",
+        "output"
+      ],
+      "type": "object"
+    }
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "wikimedia",
+    "network": true,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

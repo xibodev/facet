@@ -1,0 +1,88 @@
+{
+  "ok": true,
+  "tool": "audio_mix",
+  "operation": "run",
+  "result": {
+    "duration": 18.521029,
+    "loudnorm": {},
+    "output": "projects/cinematic-documentary/renders/final.mp4",
+    "output_facts": {
+      "audio": [
+        {
+          "bit_rate": 125712,
+          "channel_layout": "stereo",
+          "channels": 2,
+          "codec": "aac",
+          "index": 1,
+          "sample_rate": 48000
+        }
+      ],
+      "audio_streams": [
+        {
+          "bit_rate": 125712,
+          "channel_layout": "stereo",
+          "channels": 2,
+          "codec": "aac",
+          "index": 1,
+          "sample_rate": 48000
+        }
+      ],
+      "format": {
+        "bit_rate": 2564165,
+        "duration": 18.521029,
+        "format_long_name": "QuickTime / MOV",
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "size": 5936374
+      },
+      "input": "projects\\cinematic-documentary\\renders\\.videokit-2318359641.mp4",
+      "sha256": "3c3ef38281db2cc9cb46328bbd39715dfd95357bbbc4882aa650208f0e743d7e",
+      "video": {
+        "codec": "h264",
+        "fps": 30,
+        "height": 1080,
+        "index": 0,
+        "pixel_format": "yuvj420p",
+        "reported_frame_rate": 30,
+        "rotation": 0,
+        "width": 1920
+      },
+      "video_streams": [
+        {
+          "codec": "h264",
+          "fps": 30,
+          "height": 1080,
+          "index": 0,
+          "pixel_format": "yuvj420p",
+          "reported_frame_rate": 30,
+          "rotation": 0,
+          "width": 1920
+        }
+      ],
+      "warnings": []
+    },
+    "realized_operations": [
+      "source_fades",
+      "music_mix",
+      "music_gain",
+      "music_fades",
+      "duck",
+      "loudnorm"
+    ],
+    "requested_operations": [
+      "source_fades",
+      "music_mix",
+      "music_gain",
+      "music_fades",
+      "duck",
+      "loudnorm"
+    ]
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "local",
+    "network": false,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

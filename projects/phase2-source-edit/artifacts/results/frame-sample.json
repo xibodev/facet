@@ -1,0 +1,49 @@
+{
+  "ok": true,
+  "tool": "frame_sample",
+  "operation": "run",
+  "result": {
+    "input": "projects/phase2-source-edit/assets/source/source.mp4",
+    "resolved_timestamps": [
+      2,
+      6,
+      10,
+      14
+    ],
+    "samples": [
+      {
+        "height": 720,
+        "path": "projects\\phase2-source-edit\\review\\source-frames\\frame-0001.jpg",
+        "timestamp": 2,
+        "width": 1280
+      },
+      {
+        "height": 720,
+        "path": "projects\\phase2-source-edit\\review\\source-frames\\frame-0002.jpg",
+        "timestamp": 6,
+        "width": 1280
+      },
+      {
+        "height": 720,
+        "path": "projects\\phase2-source-edit\\review\\source-frames\\frame-0003.jpg",
+        "timestamp": 10,
+        "width": 1280
+      },
+      {
+        "height": 720,
+        "path": "projects\\phase2-source-edit\\review\\source-frames\\frame-0004.jpg",
+        "timestamp": 14,
+        "width": 1280
+      }
+    ],
+    "strategy": "timestamps"
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "local",
+    "network": false,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

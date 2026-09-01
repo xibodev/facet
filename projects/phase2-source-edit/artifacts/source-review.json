@@ -1,0 +1,64 @@
+{
+  "ok": true,
+  "tool": "media_probe",
+  "operation": "run",
+  "result": {
+    "audio": [
+      {
+        "channel_layout": "stereo",
+        "channels": 2,
+        "codec": "aac",
+        "index": 1,
+        "sample_rate": 48000
+      }
+    ],
+    "audio_streams": [
+      {
+        "channel_layout": "stereo",
+        "channels": 2,
+        "codec": "aac",
+        "index": 1,
+        "sample_rate": 48000
+      }
+    ],
+    "format": {
+      "bit_rate": 937524,
+      "duration": 16,
+      "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+      "size": 1875049
+    },
+    "input": "projects/phase2-source-edit/assets/source/source.mp4",
+    "sha256": "45f266f7ffb80607d906110082858104e04dd4d9e020ab5fcc97851456e12b51",
+    "video": {
+      "codec": "h264",
+      "fps": 30,
+      "height": 720,
+      "index": 0,
+      "pixel_format": "yuv420p",
+      "reported_frame_rate": 30,
+      "rotation": 0,
+      "width": 1280
+    },
+    "video_streams": [
+      {
+        "codec": "h264",
+        "fps": 30,
+        "height": 720,
+        "index": 0,
+        "pixel_format": "yuv420p",
+        "reported_frame_rate": 30,
+        "rotation": 0,
+        "width": 1280
+      }
+    ],
+    "warnings": []
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "local",
+    "network": false,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

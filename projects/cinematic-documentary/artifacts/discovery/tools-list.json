@@ -1,0 +1,521 @@
+{
+  "ok": true,
+  "operation": "list",
+  "result": {
+    "tools": [
+      {
+        "capability": "audio mixing",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe",
+            "type": "binary"
+          },
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "audio_mix"
+      },
+      {
+        "capability": "audio mixing",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe",
+            "type": "binary"
+          },
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "audio_mixer"
+      },
+      {
+        "capability": "audio metadata inspection",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "audio_probe"
+      },
+      {
+        "capability": "FFmpeg LUT and color grading tool",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "color_grade"
+      },
+      {
+        "capability": "stock clip search and download",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe",
+            "type": "binary"
+          },
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "direct_clip_search"
+      },
+      {
+        "capability": "free keyless Microsoft Edge neural text-to-speech synthesis",
+        "configured": true,
+        "dependencies": [],
+        "implemented": true,
+        "name": "edge_tts"
+      },
+      {
+        "capability": "cloud text-to-speech synthesis",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ELEVENLABS_API_KEY",
+            "path": "",
+            "type": "env"
+          }
+        ],
+        "implemented": true,
+        "name": "elevenlabs_tts"
+      },
+      {
+        "capability": "cloud AI image generation via FLUX",
+        "configured": false,
+        "dependencies": [
+          {
+            "available": false,
+            "name": "FAL_KEY",
+            "path": "",
+            "type": "env"
+          }
+        ],
+        "implemented": true,
+        "name": "flux_image"
+      },
+      {
+        "capability": "review frame extraction",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe",
+            "type": "binary"
+          },
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "frame_sample"
+      },
+      {
+        "capability": "frame extraction and sampling",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe",
+            "type": "binary"
+          },
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "frame_sampler"
+      },
+      {
+        "capability": "HTML/CSS/GSAP video composition",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "npx",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\fnm_multishells\\47576_1788099355928\\npx.cmd",
+            "type": "binary"
+          },
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "hyperframes_compose"
+      },
+      {
+        "capability": "image provider discovery, facts, and explainable ranking",
+        "configured": true,
+        "dependencies": [],
+        "implemented": true,
+        "name": "image_selector"
+      },
+      {
+        "capability": "cloud AI video generation via Kling",
+        "configured": false,
+        "dependencies": [
+          {
+            "available": false,
+            "name": "FAL_KEY",
+            "path": "",
+            "type": "env"
+          }
+        ],
+        "implemented": true,
+        "name": "kling_video"
+      },
+      {
+        "capability": "media inspection",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "media_probe"
+      },
+      {
+        "capability": "local music discovery and indexing",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "music_library"
+      },
+      {
+        "capability": "cloud AI image generation via OpenAI DALL-E / GPT Image",
+        "configured": false,
+        "dependencies": [
+          {
+            "available": false,
+            "name": "OPENAI_API_KEY",
+            "path": "",
+            "type": "env"
+          }
+        ],
+        "implemented": true,
+        "name": "openai_image"
+      },
+      {
+        "capability": "cloud text-to-speech synthesis",
+        "configured": false,
+        "dependencies": [
+          {
+            "available": false,
+            "name": "OPENAI_API_KEY",
+            "path": "",
+            "type": "env"
+          }
+        ],
+        "implemented": true,
+        "name": "openai_tts"
+      },
+      {
+        "capability": "technical output review",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe",
+            "type": "binary"
+          },
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "output_review"
+      },
+      {
+        "capability": "stock video search and download",
+        "configured": false,
+        "dependencies": [
+          {
+            "available": false,
+            "name": "PEXELS_API_KEY",
+            "path": "",
+            "type": "env"
+          }
+        ],
+        "implemented": true,
+        "name": "pexels_video"
+      },
+      {
+        "capability": "local text-to-speech synthesis",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "piper",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\piper.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "piper_tts"
+      },
+      {
+        "capability": "stock video search and download",
+        "configured": false,
+        "dependencies": [
+          {
+            "available": false,
+            "name": "PIXABAY_API_KEY",
+            "path": "",
+            "type": "env"
+          }
+        ],
+        "implemented": true,
+        "name": "pixabay_video"
+      },
+      {
+        "capability": "animated caption burning",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "remotion_caption_burn"
+      },
+      {
+        "capability": "scene cut and shot boundary detection",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe",
+            "type": "binary"
+          },
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "scene_detect"
+      },
+      {
+        "capability": "silence detection and jump cut editing",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe",
+            "type": "binary"
+          },
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "silence_cutter"
+      },
+      {
+        "capability": "cloud AI video generation via Sora",
+        "configured": false,
+        "dependencies": [
+          {
+            "available": false,
+            "name": "OPENAI_API_KEY",
+            "path": "",
+            "type": "env"
+          }
+        ],
+        "implemented": true,
+        "name": "sora_video"
+      },
+      {
+        "capability": "supplied-footage editing",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe",
+            "type": "binary"
+          },
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "source_edit"
+      },
+      {
+        "capability": "subtitle generation (SRT/VTT/JSON)",
+        "configured": true,
+        "dependencies": [],
+        "implemented": true,
+        "name": "subtitle_gen"
+      },
+      {
+        "capability": "video composition orchestration",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "video_compose"
+      },
+      {
+        "capability": "video provider discovery, facts, duration limits, and explainable ranking",
+        "configured": true,
+        "dependencies": [],
+        "implemented": true,
+        "name": "video_selector"
+      },
+      {
+        "capability": "multi-clip assembly and transitions",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe",
+            "type": "binary"
+          },
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "video_stitch"
+      },
+      {
+        "capability": "video trimming, speed, and concatenation",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe",
+            "type": "binary"
+          },
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "video_trimmer"
+      },
+      {
+        "capability": "visual quality assurance and inspection",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe",
+            "type": "binary"
+          },
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe",
+            "type": "binary"
+          }
+        ],
+        "implemented": true,
+        "name": "visual_qa"
+      },
+      {
+        "capability": "Wikimedia Commons stock search and download",
+        "configured": true,
+        "dependencies": [],
+        "implemented": true,
+        "name": "wikimedia"
+      }
+    ]
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "local",
+    "network": false,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

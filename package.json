@@ -1,0 +1,44 @@
+{
+  "name": "@xibodev/facet",
+  "version": "1.0.1",
+  "description": "Autonomous Video Production Engine & Studio for Agentic CLIs",
+  "main": "bin/facet-cli.js",
+  "bin": {
+    "facet": "bin/facet-cli.js",
+    "facet-ui": "bin/facet-ui-cli.js"
+  },
+  "files": [
+    "bin",
+    "skills",
+    "pipeline_defs",
+    "schemas",
+    "styles",
+    "web",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "doctor": "node bin/facet-cli.js doctor",
+    "ui": "node bin/facet-ui-cli.js"
+  },
+  "keywords": [
+    "video",
+    "video-production",
+    "agentic",
+    "ai",
+    "claude-code",
+    "opencode",
+    "copilot",
+    "ffmpeg",
+    "remotion",
+    "edge-tts"
+  ],
+  "author": "Facet Contributors",
+  "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": ">=18"
+  }
+}

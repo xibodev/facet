@@ -1,0 +1,138 @@
+{
+  "ok": true,
+  "tool": "color_grade",
+  "operation": "describe",
+  "result": {
+    "capability": "FFmpeg LUT and color grading tool",
+    "configured": true,
+    "cost": {
+      "amount": 0,
+      "currency": "USD"
+    },
+    "dependencies": [
+      {
+        "available": true,
+        "name": "ffmpeg",
+        "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe",
+        "type": "binary"
+      }
+    ],
+    "external_write": false,
+    "implemented": true,
+    "name": "color_grade",
+    "network": false,
+    "provider": "ffmpeg",
+    "request_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "brightness": {
+          "type": "number"
+        },
+        "contrast": {
+          "type": "number"
+        },
+        "custom_vf": {
+          "type": "string"
+        },
+        "gamma": {
+          "type": "number"
+        },
+        "input_path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "intensity": {
+          "default": 0.8,
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "lut_path": {
+          "type": "string"
+        },
+        "output_path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "overwrite": {
+          "default": false,
+          "type": "boolean"
+        },
+        "profile": {
+          "default": "cinematic_warm",
+          "enum": [
+            "cinematic_warm",
+            "cinematic_cool",
+            "moody_dark",
+            "bright_clean",
+            "vintage_film",
+            "high_contrast",
+            "neutral",
+            "custom"
+          ]
+        },
+        "saturation": {
+          "type": "number"
+        },
+        "temperature": {
+          "type": "number"
+        },
+        "timeout_seconds": {
+          "default": 300,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input_path",
+        "output_path"
+      ],
+      "type": "object"
+    },
+    "result_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "duration": {
+          "type": "number"
+        },
+        "filter_graph": {
+          "type": "string"
+        },
+        "input": {
+          "type": "string"
+        },
+        "intensity": {
+          "type": "number"
+        },
+        "lut_path": {
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        },
+        "output_facts": {
+          "type": "object"
+        },
+        "profile": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "input",
+        "output",
+        "profile",
+        "intensity",
+        "filter_graph"
+      ],
+      "type": "object"
+    }
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "ffmpeg",
+    "network": false,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

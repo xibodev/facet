@@ -1,0 +1,25 @@
+{
+  "ok": true,
+  "tool": "audio_mix",
+  "operation": "estimate",
+  "result": {
+    "estimated_cost": 0,
+    "external_write": false,
+    "network": false,
+    "operations": [
+      "validate",
+      "ffprobe",
+      "mix",
+      "loudnorm"
+    ],
+    "side_effect_free": true
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "local",
+    "network": false,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

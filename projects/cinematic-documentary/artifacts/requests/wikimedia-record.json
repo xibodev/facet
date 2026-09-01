@@ -1,0 +1,6 @@
+{
+  "query": "Voyager Golden Record",
+  "kind": "image",
+  "per_page": 5,
+  "output_path": "projects/cinematic-documentary/assets/raw/golden_record.jpg"
+}

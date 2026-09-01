@@ -1,0 +1,6 @@
+{
+  "query": "Hubble Ultra Deep Field",
+  "kind": "image",
+  "per_page": 5,
+  "output_path": "projects/cinematic-documentary/assets/raw/deep_space.jpg"
+}

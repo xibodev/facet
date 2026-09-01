@@ -1,0 +1,8 @@
+{
+  "text": "In 1977, Voyager set sail into the cosmic dark, carrying a golden phonograph record. Etched into its surface are greetings in fifty-five languages, sounds of Earth, and music of our civilization. A timeless message in a bottle, drifting across the stars.",
+  "voice": "en-US-ChristopherNeural",
+  "rate": "+0%",
+  "pitch": "+0Hz",
+  "volume": "+0%",
+  "output_path": "projects/cinematic-documentary/assets/audio/voiceover.mp3"
+}

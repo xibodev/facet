@@ -1,0 +1,149 @@
+{
+  "themeConfig": {
+    "primaryColor": "#5B8DEF",
+    "accentColor": "#FF6B35",
+    "backgroundColor": "#12131A",
+    "surfaceColor": "#1C1E29",
+    "textColor": "#EDEEF2",
+    "mutedTextColor": "#8B90A3",
+    "headingFont": "Space Grotesk",
+    "bodyFont": "Inter",
+    "monoFont": "JetBrains Mono",
+    "chartColors": [
+      "#FF6B35",
+      "#5B8DEF",
+      "#F5A05A",
+      "#7BA4F0",
+      "#C4552B",
+      "#3D6BC4"
+    ],
+    "springConfig": {
+      "damping": 16,
+      "stiffness": 95,
+      "mass": 1
+    },
+    "transitionDuration": 0.35,
+    "captionHighlightColor": "#FF6B35",
+    "captionBackgroundColor": "rgba(18,19,26,0.82)"
+  },
+  "cuts": [
+    {
+      "type": "text_card",
+      "in_seconds": 0.0,
+      "out_seconds": 4.27,
+      "text": "Knows everything.\nKnows nothing about you.",
+      "fontSize": 86
+    },
+    {
+      "type": "comparison",
+      "in_seconds": 4.57,
+      "out_seconds": 9.87,
+      "title": "Same weights, new behaviour",
+      "leftLabel": "BASE",
+      "leftValue": "Generic",
+      "rightLabel": "FINE-TUNED",
+      "rightValue": "Yours"
+    },
+    {
+      "type": "line_chart",
+      "in_seconds": 10.18,
+      "out_seconds": 14.74,
+      "chartSeries": [
+        {
+          "label": "training loss",
+          "data": [
+            {
+              "x": 0,
+              "y": 2.9
+            },
+            {
+              "x": 1,
+              "y": 2.1
+            },
+            {
+              "x": 2,
+              "y": 1.55
+            },
+            {
+              "x": 3,
+              "y": 1.15
+            },
+            {
+              "x": 4,
+              "y": 0.87
+            },
+            {
+              "x": 5,
+              "y": 0.68
+            },
+            {
+              "x": 6,
+              "y": 0.55
+            },
+            {
+              "x": 7,
+              "y": 0.47
+            }
+          ],
+          "color": "#FF6B35"
+        }
+      ],
+      "xLabel": "steps",
+      "yLabel": "loss",
+      "chartAnimation": "draw",
+      "showMarkers": true,
+      "animationStyle": "draw",
+      "showLegend": false,
+      "title": "Loss drops each pass"
+    },
+    {
+      "type": "stat_card",
+      "in_seconds": 15.04,
+      "out_seconds": 19.58,
+      "stat": "<1%",
+      "subtitle": "of weights trained with LoRA \u2014 one GPU",
+      "accentColor": "#FF6B35"
+    },
+    {
+      "type": "callout",
+      "in_seconds": 19.87,
+      "out_seconds": 23.95,
+      "callout_type": "warning",
+      "title": "Overfitting",
+      "text": "Train too long and it memorises instead of generalising."
+    },
+    {
+      "type": "hero_title",
+      "in_seconds": 24.25,
+      "out_seconds": 30.2,
+      "text": "Behaviour, not facts.",
+      "heroSubtitle": "For facts, use retrieval."
+    }
+  ],
+  "audioTracks": [
+    {
+      "source": "projects/finetuning-explainer/narration/s1.mp3",
+      "in_seconds": 0.0
+    },
+    {
+      "source": "projects/finetuning-explainer/narration/s2.mp3",
+      "in_seconds": 4.57
+    },
+    {
+      "source": "projects/finetuning-explainer/narration/s3.mp3",
+      "in_seconds": 10.18
+    },
+    {
+      "source": "projects/finetuning-explainer/narration/s4.mp3",
+      "in_seconds": 15.04
+    },
+    {
+      "source": "projects/finetuning-explainer/narration/s5.mp3",
+      "in_seconds": 19.87
+    },
+    {
+      "source": "projects/finetuning-explainer/narration/s6.mp3",
+      "in_seconds": 24.25
+    }
+  ]
+}

@@ -1,0 +1,101 @@
+{
+  "ok": true,
+  "operation": "list",
+  "result": {
+    "tools": [
+      {
+        "capability": "media inspection",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe"
+          }
+        ],
+        "implemented": true,
+        "name": "media_probe"
+      },
+      {
+        "capability": "review frame extraction",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe"
+          },
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe"
+          }
+        ],
+        "implemented": true,
+        "name": "frame_sample"
+      },
+      {
+        "capability": "supplied-footage editing",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe"
+          },
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe"
+          }
+        ],
+        "implemented": true,
+        "name": "source_edit"
+      },
+      {
+        "capability": "audio mixing",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe"
+          },
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe"
+          }
+        ],
+        "implemented": true,
+        "name": "audio_mix"
+      },
+      {
+        "capability": "technical output review",
+        "configured": true,
+        "dependencies": [
+          {
+            "available": true,
+            "name": "ffmpeg",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffmpeg.exe"
+          },
+          {
+            "available": true,
+            "name": "ffprobe",
+            "path": "C:\\Users\\gafar\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin\\ffprobe.exe"
+          }
+        ],
+        "implemented": true,
+        "name": "output_review"
+      }
+    ]
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "local",
+    "network": false,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

@@ -1,0 +1,1394 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Video Kit Studio</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Inter', 'sans-serif'],
+          mono: ['JetBrains Mono', 'monospace'],
+        },
+        colors: {
+          bg: '#090d16',
+          surface: '#111827',
+          card: '#182234',
+          border: '#24324a',
+          accent: '#38bdf8',
+          brand: '#6366f1',
+        }
+      }
+    }
+  }
+</script>
+<style>
+  :root {
+    --bg:#090d16; --panel:#111827; --card:#182234; --line:#24324a; --soft:#1e293b;
+    --ink:#e2e8f0; --dim:#94a3b8; --faint:#64748b;
+    --accent:#38bdf8; --brand:#6366f1; --ok:#34d399; --warn:#fbbf24; --err:#f87171;
+    --run:#38bdf8; --think:#a855f7; --search:#2dd4bf; --write:#fb923c; --agent:#c084fc;
+    --mono:'JetBrains Mono', monospace;
+  }
+  * { box-sizing: border-box; }
+  body { background-color: var(--bg); color: var(--ink); font-family: 'Inter', sans-serif; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+
+  /* Message styling */
+  .you { align-self: flex-end; max-width: 82%; background: #1e293b; border: 1px solid var(--line); border-radius: 12px 12px 2px 12px; padding: 8px 12px; font-size: 13px; color: #f8fafc; white-space: pre-wrap; animation: rise .2s ease both; }
+  .turn { display: flex; flex-direction: column; gap: 8px; max-width: 100%; }
+  .seg { white-space: pre-wrap; animation: fade .2s ease both; font-size: 13px; line-height: 1.6; color: #cbd5e1; }
+  .seg code { font-size: .88em; font-family: var(--mono); background: #1e293b; padding: .1em .35em; border-radius: 4px; color: #7dd3fc; }
+  .seg pre { background: #0f172a; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow: auto; font: 12px/1.5 var(--mono); color: #cbd5e1; margin: 6px 0; }
+  .seg strong { font-weight: 650; color: #fff; }
+  .seg .li { display: flex; gap: 8px; margin-top: 2px; }
+  .seg .li .mk { color: var(--accent); flex: none; }
+
+  /* Pill container & animation */
+  .pill { border-radius: 8px; background: var(--card); border: 1px solid var(--line); overflow: hidden; animation: rise .2s ease both; }
+  .pill.live { border-color: #3b82f6; }
+  .pill .top { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; font: 11px/1.35 var(--mono); color: var(--dim); user-select: none; }
+  .pill .top:hover { background: #1e293b; }
+  .pill .glyph { flex: none; width: 14px; text-align: center; }
+  .pill .name { color: var(--ink); font-weight: 600; flex: none; }
+  .pill .sig { color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+  .pill .tail { flex: none; color: var(--faint); display: flex; gap: 8px; align-items: center; }
+  .pill .chev { flex: none; opacity: .5; transition: transform .18s ease; }
+  .pill.open .chev { transform: rotate(90deg); }
+  .pill .wrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .25s cubic-bezier(.4,0,.2,1); }
+  .pill.open .wrap { grid-template-rows: 1fr; }
+  .pill .inner { overflow: hidden; min-height: 0; }
+  .pill .body { border-top: 1px solid var(--line); max-height: 320px; overflow: auto; }
+
+  /* Per-tool visual identity */
+  .k-think .glyph { color: var(--think); }
+  .k-run .glyph { color: var(--run); }
+  .k-search .glyph { color: var(--search); }
+  .k-write .glyph { color: var(--write); }
+  .k-agent .glyph { color: var(--agent); }
+  .pill.err { border-color: #7f1d1d; background: #201315; }
+  .pill.err .glyph, .pill.err .name { color: #f87171; }
+  .ok { color: var(--ok); } .bad { color: #f87171; }
+
+  /* Expanded tool sections */
+  .sect { padding: 8px 10px; font-size: 11.5px; }
+  .sect + .sect { border-top: 1px solid var(--soft); }
+  .lbl { font: 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); margin-bottom: 4px; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font: 11px var(--mono); }
+  .kv .k { color: var(--faint); }
+  .kv .v { color: var(--dim); word-break: break-word; white-space: pre-wrap; }
+  .cmd { font: 11.5px var(--mono); color: #bae6fd; background: #0f172a; border-left: 2px solid var(--run); padding: 6px 8px; border-radius: 0 4px 4px 0; white-space: pre-wrap; word-break: break-word; }
+  .out { font: 11px/1.5 var(--mono); color: var(--dim); white-space: pre; overflow-x: auto; }
+  .lines { display: grid; grid-template-columns: auto 1fr; gap: 0 10px; font: 11px/1.5 var(--mono); }
+  .lines .n { color: #475569; text-align: right; user-select: none; }
+  .lines .t { color: var(--dim); white-space: pre-wrap; word-break: break-word; }
+  .lines .t mark { background: #3a3018; color: #fde047; border-radius: 2px; }
+  .thinktext { font: 12px/1.6 inherit; font-style: italic; color: #c084fc; white-space: pre-wrap; padding: 8px 10px; }
+  .more { font: 11px var(--mono); color: var(--accent); cursor: pointer; padding: 4px 10px; }
+  .more:hover { text-decoration: underline; }
+  .raw { font: 11px/1.5 var(--mono); color: #94a3b8; white-space: pre-wrap; word-break: break-word; }
+
+  /* Animated running effect */
+  .fx { height: 2px; overflow: hidden; position: relative; }
+  .fx.run::after, .fx.search::after, .fx.write::after, .fx.think::after, .fx.agent::after { content: ""; position: absolute; inset: 0; }
+  .fx.run::after { background: linear-gradient(90deg,transparent,var(--run),transparent); background-size: 38% 100%; animation: sweep 1.1s linear infinite; }
+  .fx.search::after { background: linear-gradient(90deg,transparent,var(--search),transparent); background-size: 25% 100%; animation: sweep .7s ease-in-out infinite; }
+  .fx.write::after { background: var(--write); transform-origin: left; animation: grow 1.4s ease-in-out infinite; }
+  .fx.think::after { background: linear-gradient(90deg,transparent,var(--think),transparent); background-size: 50% 100%; animation: sweep 2s ease-in-out infinite; }
+  .fx.agent::after { background: repeating-linear-gradient(90deg,var(--agent) 0 8px,transparent 8px 16px); animation: march .7s linear infinite; }
+  @keyframes sweep { 0% { background-position: -45% 0; } 100% { background-position: 145% 0; } }
+  @keyframes grow { 0%,100% { transform: scaleX(.05); opacity: .5; } 50% { transform: scaleX(1); opacity: 1; } }
+  @keyframes march { to { transform: translateX(16px); } }
+
+  /* Status indicator */
+  .status { display: flex; align-items: center; gap: 8px; font: 11px var(--mono); color: var(--faint); animation: fade .2s both; }
+  .orb { width: 7px; height: 7px; border-radius: 50%; flex: none; animation: pulse 1.15s ease-in-out infinite; }
+  .dots span { animation: blink 1.4s infinite both; }
+  .dots span:nth-child(2) { animation-delay: .2s; } .dots span:nth-child(3) { animation-delay: .4s; }
+  .cursor::after { content: "▍"; color: var(--accent); animation: blink 1s steps(2) infinite; margin-left: 1px; }
+  @keyframes pulse { 0%,100% { transform: scale(.7); opacity: .45; } 50% { transform: scale(1.15); opacity: 1; } }
+  @keyframes blink { 0%,100% { opacity: .2; } 50% { opacity: 1; } }
+  @keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+  /* Question Card & Approvals */
+  .ask { border: 1px solid #3b82f640; border-left: 3px solid var(--run); border-radius: 8px; background: #0f172a; animation: rise .25s ease both; overflow: hidden; margin: 4px 0; }
+  .ask.q { border-left-color: var(--accent); }
+  .ask .qhd { padding: 10px 12px 4px; font: 12.5px/1.4 inherit; color: var(--ink); }
+  .ask .qsub { padding: 0 12px 8px; font: 11px var(--mono); color: var(--faint); }
+  .ask .tabs { display: flex; gap: 6px; padding: 0 12px 8px; flex-wrap: wrap; }
+  .ask .tab { font: 10.5px var(--mono); color: var(--faint); border: 1px solid var(--soft); border-radius: 999px; padding: 2px 8px; cursor: pointer; }
+  .ask .tab.on { color: var(--accent); border-color: #38bdf880; }
+  .ask .tab.done { color: var(--ok); border-color: #34d39980; }
+  .opts { display: flex; flex-direction: column; border-top: 1px solid var(--soft); }
+  .opt { display: flex; gap: 10px; padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #1e293b40; align-items: flex-start; transition: background .12s; }
+  .opt:hover { background: #1e293b; }
+  .opt.sel { background: #1e293b; }
+  .opt.sel .num { color: var(--accent); }
+  .opt .num { font: 11px var(--mono); color: var(--faint); flex: none; width: 14px; padding-top: 2px; }
+  .opt .lab { font: 12.5px inherit; color: var(--ink); font-weight: 500; }
+  .opt .desc { font: 11px/1.4 inherit; color: var(--dim); margin-top: 1px; }
+  .askfoot { display: flex; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--soft); align-items: center; }
+  .askfoot .keys { font: 10.5px var(--mono); color: var(--faint); margin-left: auto; }
+  .askbtn { border: 0; border-radius: 6px; padding: 5px 12px; font: 11.5px/1 var(--mono); cursor: pointer; font-weight: 600; }
+  .askbtn.yes { background: var(--ok); color: #022c22; }
+  .askbtn.no { background: #334155; color: var(--dim); }
+  .askbtn.go { background: var(--accent); color: #082f49; }
+  .askbtn:disabled { opacity: .4; cursor: default; }
+  .freein { flex: 1; background: var(--bg); border: 1px solid var(--line); color: var(--ink); border-radius: 6px; padding: 5px 8px; font: 11.5px inherit; }
+  .freein:focus { outline: none; border-color: var(--accent); }
+  .answered { padding: 8px 12px; font: 11.5px var(--mono); color: var(--ok); border-top: 1px solid var(--soft); }
+
+  /* Right pane accordion cards */
+  .accordion-card { border-radius: 8px; background: var(--card); border: 1px solid var(--line); overflow: hidden; transition: border-color .15s; }
+  .accordion-card:hover { border-color: #334155; }
+  .accordion-head { display: flex; items-center; justify-content: space-between; padding: 10px 14px; cursor: pointer; user-select: none; }
+  .accordion-body { border-top: 1px solid var(--line); padding: 12px 14px; }
+</style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col antialiased select-none">
+
+  <!-- ================= TOP HEADER BAR ================= -->
+  <header class="h-12 border-b border-border bg-surface px-4 flex items-center justify-between shrink-0">
+    <!-- Left branding & CLI engine -->
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2 font-semibold text-sm tracking-tight text-white">
+        <span class="w-6 h-6 rounded bg-gradient-to-br from-indigo-500 to-sky-400 flex items-center justify-center text-xs text-white font-bold shadow-md shadow-indigo-500/20">F</span>
+        <span>Video Kit <span class="text-xs text-accent font-mono font-normal ml-1 px-1.5 py-0.5 rounded bg-accent/10 border border-accent/20">Studio</span></span>
+      </div>
+
+      <div class="h-4 w-px bg-border mx-1"></div>
+
+      <!-- Locked Engine Indicator & Switch -->
+      <div id="lockedEngineBadge" class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-indigo-500/10 border border-indigo-500/30 text-xs text-indigo-300 font-mono">
+        <span class="text-amber-400" title="Engine locked for current session">🔒</span>
+        <span class="text-slate-400 text-[10px]">ENGINE:</span>
+        <span id="lockedEngineName" class="font-semibold text-white">Claude Code</span>
+        <button id="switchEngineBtn" title="Switch Engine or Workspace" class="ml-1 text-[10px] text-slate-400 hover:text-white underline">switch</button>
+      </div>
+
+      <!-- Hidden Engine Selector for programmatic sync -->
+      <select id="engineSelect" class="hidden">
+        <option value="claude">Claude Code</option>
+        <option value="opencode">OpenCode</option>
+        <option value="copilot">GitHub Copilot</option>
+      </select>
+
+      <!-- Working Directory -->
+      <div class="flex items-center gap-1.5 px-2 py-1 rounded bg-card/60 border border-border/60 text-xs text-slate-400 font-mono">
+        <span class="text-slate-500">dir</span>
+        <input id="dir" placeholder="(blank = temp sandbox)" spellcheck="false" class="bg-transparent text-slate-200 w-44 focus:outline-none">
+      </div>
+
+      <!-- Permission Mode -->
+      <select id="mode" class="bg-card border border-border text-slate-300 text-xs rounded px-2 py-1 font-mono focus:outline-none cursor-pointer">
+        <option value="rw" selected>read + write</option>
+        <option value="ask">ask permission</option>
+        <option value="ro">read-only</option>
+      </select>
+      <span id="lock" class="text-[11px] font-mono text-slate-500"></span>
+    </div>
+
+    <!-- Center active project dropdown -->
+    <div class="flex items-center gap-2 text-xs font-mono">
+      <span class="text-slate-500">project:</span>
+      <select id="projectSelect" class="px-2.5 py-1 rounded bg-brand/10 border border-brand/30 text-indigo-300 font-semibold focus:outline-none cursor-pointer">
+        <option value="" disabled selected>Loading projects...</option>
+      </select>
+      <button id="refreshProjectBtn" title="Refresh project" class="p-1 rounded bg-card border border-border text-slate-400 hover:text-white">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+      </button>
+    </div>
+
+    <!-- Right stats & controls -->
+    <div class="flex items-center gap-4 text-xs font-mono text-slate-400">
+      <div>session <b id="sid" class="text-slate-200 font-normal">—</b></div>
+      <div>claude <b id="cid" class="text-slate-200 font-normal">—</b></div>
+      <div>turns <b id="turns" class="text-slate-200 font-normal">0</b></div>
+      <div>cost <b id="cost" class="text-emerald-400 font-normal">$0.0000</b></div>
+      <div class="h-4 w-px bg-border"></div>
+      <label class="flex items-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-200 text-[11px]">
+        <input type="checkbox" id="keepopen" class="accent-indigo-500"> keep expanded
+      </label>
+      <button id="settingsBtn" title="Environment & API Keys" class="px-2 py-1 rounded bg-card border border-border text-slate-300 hover:text-white font-sans text-xs flex items-center gap-1">
+        ⚙ Settings
+      </button>
+    </div>
+  </header>
+
+  <!-- ================= MAIN TWO-PANE LAYOUT ================= -->
+  <main class="flex-1 flex overflow-hidden">
+
+    <!-- ================= LEFT PANE: AGENT STREAM (cchat engine) ================= -->
+    <section class="w-[480px] lg:w-[520px] border-r border-border flex flex-col bg-surface/50 shrink-0">
+      
+      <!-- Stream Header -->
+      <div class="h-9 px-4 border-b border-border bg-surface/80 flex items-center justify-between text-xs font-mono text-slate-400">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="font-semibold text-slate-200">Agent Stream</span>
+          <span class="text-slate-500">(bidirectional stream-json)</span>
+        </div>
+        <div class="text-[11px] text-slate-500">Claude Code</div>
+      </div>
+
+      <!-- Messages Log -->
+      <div id="log" class="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
+        <div class="p-3 rounded-lg bg-card/60 border border-border text-slate-300 space-y-1.5 leading-relaxed">
+          <div class="font-semibold text-white flex items-center gap-2 text-xs">
+            <span class="w-2 h-2 rounded-full bg-indigo-400"></span>
+            Video Kit Agent Ready
+          </div>
+          <p class="text-[11px] text-slate-400 font-mono">
+            Type a prompt below to produce or edit a video. The persistent agent CLI streams live with tool execution, question choices, and real-time project file updates.
+          </p>
+        </div>
+      </div>
+
+      <!-- Chat Input Area -->
+      <footer class="p-3 border-t border-border bg-surface">
+        <div class="flex gap-2">
+          <textarea id="q" placeholder="Ask Claude to create or revise a video… (Enter to send · Shift+Enter for newline)" class="flex-1 bg-card border border-border rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-sans resize-none min-h-[42px] max-h-[160px]"></textarea>
+          <button id="go" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded-lg transition-colors shadow-sm shrink-0 self-end">Send</button>
+        </div>
+        <div class="flex items-center gap-2 mt-2 text-[10px] text-slate-500 font-mono overflow-x-auto">
+          <span>Quick:</span>
+          <span class="quick-chip hover:text-slate-300 cursor-pointer px-1.5 py-0.5 rounded bg-card border border-border/60">30s Explainer</span>
+          <span class="quick-chip hover:text-slate-300 cursor-pointer px-1.5 py-0.5 rounded bg-card border border-border/60">Source Footage Edit</span>
+          <span class="quick-chip hover:text-slate-300 cursor-pointer px-1.5 py-0.5 rounded bg-card border border-border/60">Voyager Documentary</span>
+        </div>
+      </footer>
+    </section>
+
+    <!-- ================= RIGHT PANE: PROGRESSIVE ARTIFACT CANVAS ================= -->
+    <section class="flex-1 flex flex-col overflow-hidden bg-bg">
+      
+      <!-- Stage Stepper Bar (Auto-inferred from files) -->
+      <div class="h-12 border-b border-border bg-surface/40 px-6 flex items-center justify-between shrink-0">
+        <div id="stageStepper" class="flex items-center gap-2 text-xs font-medium font-sans">
+          <!-- Step 1: Brief -->
+          <div data-stage="brief" class="stage-item flex items-center gap-1.5 text-slate-500">
+            <span class="badge w-4 h-4 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px]">1</span>
+            <span>Brief</span>
+          </div>
+          <span class="text-slate-700">➔</span>
+
+          <!-- Step 2: Script -->
+          <div data-stage="script" class="stage-item flex items-center gap-1.5 text-slate-500">
+            <span class="badge w-4 h-4 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px]">2</span>
+            <span>Script</span>
+          </div>
+          <span class="text-slate-700">➔</span>
+
+          <!-- Step 3: Voiceover -->
+          <div data-stage="voiceover" class="stage-item flex items-center gap-1.5 text-slate-500">
+            <span class="badge w-4 h-4 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px]">3</span>
+            <span>Voiceover</span>
+          </div>
+          <span class="text-slate-700">➔</span>
+
+          <!-- Step 4: Composition -->
+          <div data-stage="composition" class="stage-item flex items-center gap-1.5 text-slate-500">
+            <span class="badge w-4 h-4 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px]">4</span>
+            <span>Composition</span>
+          </div>
+          <span class="text-slate-700">➔</span>
+
+          <!-- Step 5: Review -->
+          <div data-stage="review" class="stage-item flex items-center gap-1.5 text-slate-500">
+            <span class="badge w-4 h-4 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px]">5</span>
+            <span>QA Review</span>
+          </div>
+          <span class="text-slate-700">➔</span>
+
+          <!-- Step 6: Master -->
+          <div data-stage="master" class="stage-item flex items-center gap-1.5 text-slate-500">
+            <span class="badge w-4 h-4 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px]">6</span>
+            <span>Master Video</span>
+          </div>
+        </div>
+
+        <div class="text-xs font-mono text-slate-400 flex items-center gap-2">
+          <span>Reactivity:</span>
+          <span class="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px]">File-Inferred</span>
+        </div>
+      </div>
+
+      <!-- Progressive Artifact Cards (Vertical Canvas) -->
+      <div id="artifactCanvas" class="flex-1 overflow-y-auto p-6 space-y-4">
+        
+        <!-- CARD 1: Production Brief -->
+        <div id="card-brief" class="accordion-card">
+          <div class="accordion-head flex items-center justify-between" onclick="toggleCard('card-brief')">
+            <div class="flex items-center gap-2 text-xs font-semibold text-white">
+              <span class="text-indigo-400">📋</span>
+              <span>1. Production Brief & Specifications</span>
+              <span id="briefBadge" class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">brief.md</span>
+            </div>
+            <span class="text-slate-500 text-xs font-mono">▼</span>
+          </div>
+          <div class="accordion-body text-xs font-mono text-slate-300 space-y-2">
+            <pre id="briefContent" class="whitespace-pre-wrap text-[11px] text-slate-300 bg-bg p-3 rounded border border-border max-h-48 overflow-auto">No brief.md found.</pre>
+          </div>
+        </div>
+
+        <!-- CARD 2: Script & Narrative Storyboard -->
+        <div id="card-script" class="accordion-card">
+          <div class="accordion-head flex items-center justify-between" onclick="toggleCard('card-script')">
+            <div class="flex items-center gap-2 text-xs font-semibold text-white">
+              <span class="text-sky-400">📝</span>
+              <span>2. Script & Narrative Storyboard</span>
+              <span id="scriptBadge" class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">script.md</span>
+            </div>
+            <span class="text-slate-500 text-xs font-mono">▼</span>
+          </div>
+          <div class="accordion-body space-y-3">
+            <div id="beatsContainer" class="space-y-2">
+              <p class="text-xs text-slate-500 font-mono">No script beats loaded.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- CARD 3: Voiceover & Audio Tracks -->
+        <div id="card-audio" class="accordion-card">
+          <div class="accordion-head flex items-center justify-between" onclick="toggleCard('card-audio')">
+            <div class="flex items-center gap-2 text-xs font-semibold text-white">
+              <span class="text-amber-400">🎙️</span>
+              <span>3. Voiceover & Audio Tracks</span>
+              <span id="audioBadge" class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">narration/</span>
+            </div>
+            <span class="text-slate-500 text-xs font-mono">▼</span>
+          </div>
+          <div class="accordion-body space-y-2">
+            <div id="audioList" class="space-y-2">
+              <p class="text-xs text-slate-500 font-mono">No audio clips found.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- CARD 4: Visual QA & Keyframes -->
+        <div id="card-qa" class="accordion-card">
+          <div class="accordion-head flex items-center justify-between" onclick="toggleCard('card-qa')">
+            <div class="flex items-center gap-2 text-xs font-semibold text-white">
+              <span class="text-emerald-400">🔍</span>
+              <span>4. Visual QA & Extracted Keyframes</span>
+              <span id="qaBadge" class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">qa/</span>
+            </div>
+            <span class="text-slate-500 text-xs font-mono">▼</span>
+          </div>
+          <div class="accordion-body space-y-3">
+            <div id="framesGrid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              <p class="text-xs text-slate-500 font-mono col-span-full">No QA frames available.</p>
+            </div>
+            <!-- Technical QA Gates Checklist -->
+            <div id="qaGatesCard" class="bg-surface rounded p-3 border border-border space-y-2 text-xs font-mono">
+              <div class="flex items-center justify-between font-semibold text-slate-200">
+                <span>Technical Gate Verification</span>
+                <span id="qaReportStatus" class="text-[10px] text-emerald-400">PASSED</span>
+              </div>
+              <div id="qaGatesList" class="space-y-1 text-[11px] text-slate-300"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CARD 5: Master Video Theater (Visible when final.mp4 exists) -->
+        <div id="card-master" class="accordion-card border-indigo-500/40">
+          <div class="accordion-head flex items-center justify-between bg-indigo-950/20" onclick="toggleCard('card-master')">
+            <div class="flex items-center gap-2 text-xs font-semibold text-white">
+              <span class="text-indigo-300">🎬</span>
+              <span>5. Master Video Theater</span>
+              <span class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">renders/final.mp4</span>
+            </div>
+            <span class="text-indigo-400 text-xs font-mono font-bold">★ RENDERED</span>
+          </div>
+          <div class="accordion-body p-4 space-y-3 bg-black/40">
+            <div class="aspect-video bg-black rounded-lg overflow-hidden border border-border">
+              <video id="masterVideo" controls class="w-full h-full object-contain bg-black">
+                <p class="text-xs text-slate-500 font-mono text-center p-6">Rendered video preview.</p>
+              </video>
+            </div>
+            <div class="flex items-center justify-between text-xs font-mono text-slate-400">
+              <span id="videoPathLabel">projects/&lt;slug&gt;/renders/final.mp4</span>
+              <a id="videoDownloadLink" href="#" download class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs transition-colors">Download Master MP4</a>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ================= STARTUP GATE MODAL ================= -->
+  <div id="startupModal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+    <div class="bg-surface border border-border rounded-2xl w-full max-w-xl p-6 space-y-5 shadow-2xl animate-[rise_0.25s_ease_both]">
+      <!-- Title & Branding -->
+      <div class="flex items-center gap-3 border-b border-border pb-4">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-sky-400 flex items-center justify-center text-base text-white font-bold shadow-lg shadow-indigo-500/25">F</div>
+        <div>
+          <h2 class="text-base font-bold text-white tracking-tight">Facet Video Kit Studio</h2>
+          <p class="text-xs text-slate-400">Select your autonomous agent engine and project workspace to enter Studio.</p>
+        </div>
+      </div>
+
+      <!-- Engine Selector Cards -->
+      <div class="space-y-2">
+        <label class="text-xs font-mono text-slate-300 font-semibold uppercase tracking-wider block">1. Select Agent Engine</label>
+        <div class="grid grid-cols-3 gap-3" id="engineCardGroup">
+          <!-- Card 1: Claude Code -->
+          <div data-engine="claude" class="engine-card active p-3 rounded-xl bg-card border-2 border-indigo-500 cursor-pointer transition-all hover:bg-card/80">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-bold text-xs text-white">Claude Code</span>
+              <span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">Default</span>
+            </div>
+            <p class="text-[11px] text-slate-400 leading-tight">Anthropic Claude Code CLI with stream-json architecture</p>
+          </div>
+
+          <!-- Card 2: OpenCode -->
+          <div data-engine="opencode" class="engine-card p-3 rounded-xl bg-card border border-border cursor-pointer transition-all hover:border-slate-600 hover:bg-card/80">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-bold text-xs text-white">OpenCode</span>
+            </div>
+            <p class="text-[11px] text-slate-400 leading-tight">OpenCode multi-model autonomous coding agent CLI</p>
+          </div>
+
+          <!-- Card 3: GitHub Copilot -->
+          <div data-engine="copilot" class="engine-card p-3 rounded-xl bg-card border border-border cursor-pointer transition-all hover:border-slate-600 hover:bg-card/80">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-bold text-xs text-white">Copilot</span>
+            </div>
+            <p class="text-[11px] text-slate-400 leading-tight">GitHub Copilot CLI with tool calling and agent mode</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Workspace / Project Target -->
+      <div class="space-y-2">
+        <label class="text-xs font-mono text-slate-300 font-semibold uppercase tracking-wider block">2. Project Workspace</label>
+        <div class="space-y-2 text-xs font-mono">
+          <div>
+            <select id="startupProjectSelect" class="w-full bg-bg border border-border rounded-lg p-2 text-slate-200 focus:outline-none focus:border-indigo-500 cursor-pointer">
+              <option value="">(Loading projects...)</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-slate-400 shrink-0 text-[11px]">Directory:</span>
+            <input id="startupDirInput" placeholder="." class="flex-1 bg-bg border border-border rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-indigo-500">
+          </div>
+        </div>
+      </div>
+
+      <!-- Permission Mode -->
+      <div class="flex items-center justify-between pt-1 text-xs">
+        <div class="text-slate-400">
+          <span class="font-mono text-[11px]">Permission:</span>
+          <select id="startupModeSelect" class="ml-1 bg-card border border-border rounded px-2 py-1 text-slate-200 text-xs font-mono focus:outline-none cursor-pointer">
+            <option value="rw" selected>read + write (standard)</option>
+            <option value="ask">ask permission before changes</option>
+            <option value="ro">read-only (inspect mode)</option>
+          </select>
+        </div>
+        <button id="enterStudioBtn" class="px-5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-500 hover:to-sky-500 text-white font-semibold text-xs transition-all shadow-lg shadow-indigo-600/30 flex items-center gap-2">
+          <span>Enter Studio</span>
+          <span>➔</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= SETTINGS DRAWER ================= -->
+  <div id="settingsModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-surface border border-border rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+      <!-- Header -->
+      <div class="flex items-center justify-between border-b border-border p-4 bg-surface shrink-0">
+        <div class="flex items-center gap-2">
+          <span class="text-base">⚙</span>
+          <h3 class="text-sm font-semibold text-white">Facet Environment & API Keys</h3>
+        </div>
+        <button id="closeSettingsBtn" class="text-slate-400 hover:text-white text-base leading-none">✕</button>
+      </div>
+
+      <!-- Tabs -->
+      <div class="flex border-b border-border bg-card/50 text-xs font-mono shrink-0">
+        <button id="tabBtnEnv" class="settings-tab active px-4 py-2.5 text-indigo-300 font-semibold border-b-2 border-indigo-500">Probed Keys</button>
+        <button id="tabBtnCmds" class="settings-tab px-4 py-2.5 text-slate-400 hover:text-slate-200 border-b-2 border-transparent">Shell Export Commands</button>
+      </div>
+
+      <!-- Modal Body (Scrollable) -->
+      <div class="flex-1 overflow-y-auto p-5 space-y-4">
+        
+        <!-- Tab Pane 1: Probed Keys & Dynamic Set -->
+        <div id="paneEnv" class="space-y-4">
+          <p class="text-xs text-slate-400 leading-relaxed">
+            API keys are securely held as environment variables for the current session. Keyless tools (<span class="text-slate-300 font-mono">Edge-TTS</span>, <span class="text-slate-300 font-mono">FFmpeg</span>, <span class="text-slate-300 font-mono">Wikimedia</span>) work with zero configuration.
+          </p>
+
+          <div id="probedKeysList" class="space-y-2 text-xs font-mono">
+            <!-- Probed entries dynamically injected / rendered here -->
+          </div>
+
+          <form id="settingsForm" class="space-y-3 pt-3 border-t border-border">
+            <h4 class="text-xs font-semibold text-white uppercase tracking-wider font-mono">Session Key Override</h4>
+            <div class="grid grid-cols-2 gap-3 text-xs font-mono">
+              <div>
+                <label class="text-slate-400 block mb-1">OPENAI_API_KEY</label>
+                <input type="password" id="env_openai" placeholder="sk-..." class="w-full bg-bg border border-border rounded p-2 text-slate-200 focus:outline-none focus:border-indigo-500">
+              </div>
+              <div>
+                <label class="text-slate-400 block mb-1">ELEVENLABS_API_KEY</label>
+                <input type="password" id="env_elevenlabs" placeholder="..." class="w-full bg-bg border border-border rounded p-2 text-slate-200 focus:outline-none focus:border-indigo-500">
+              </div>
+              <div>
+                <label class="text-slate-400 block mb-1">FAL_KEY</label>
+                <input type="password" id="env_fal" placeholder="..." class="w-full bg-bg border border-border rounded p-2 text-slate-200 focus:outline-none focus:border-indigo-500">
+              </div>
+              <div>
+                <label class="text-slate-400 block mb-1">PEXELS_API_KEY</label>
+                <input type="password" id="env_pexels" placeholder="..." class="w-full bg-bg border border-border rounded p-2 text-slate-200 focus:outline-none focus:border-indigo-500">
+              </div>
+              <div>
+                <label class="text-slate-400 block mb-1">PIXABAY_API_KEY</label>
+                <input type="password" id="env_pixabay" placeholder="..." class="w-full bg-bg border border-border rounded p-2 text-slate-200 focus:outline-none focus:border-indigo-500">
+              </div>
+              <div>
+                <label class="text-slate-400 block mb-1">ANTHROPIC_API_KEY</label>
+                <input type="password" id="env_anthropic" placeholder="sk-ant-..." class="w-full bg-bg border border-border rounded p-2 text-slate-200 focus:outline-none focus:border-indigo-500">
+              </div>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-3 border-t border-border">
+              <button type="button" id="cancelSettingsBtn" class="px-3 py-1.5 rounded-lg bg-card border border-border text-slate-300 hover:text-white text-xs">Cancel</button>
+              <button type="submit" class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs">Save Keys for Session</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Tab Pane 2: Shell Export Instructions -->
+        <div id="paneCmds" class="hidden space-y-4 text-xs">
+          <p class="text-slate-400 leading-relaxed">
+            To persist environment variables across terminal restarts or headless agent CLI runs, copy and run the shell commands below in your environment:
+          </p>
+
+          <!-- Shell 1: PowerShell (Windows) -->
+          <div class="rounded-xl bg-card border border-border p-3 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="font-mono font-semibold text-sky-400 text-xs">PowerShell (Windows)</span>
+              <button class="copy-cmd-btn px-2.5 py-1 rounded bg-surface border border-border text-slate-300 hover:text-white font-mono text-[11px]" data-target="cmd-ps">📋 Copy</button>
+            </div>
+            <pre id="cmd-ps" class="font-mono text-[11px] text-slate-300 bg-bg p-2.5 rounded border border-border/80 overflow-x-auto whitespace-pre">$env:OPENAI_API_KEY="your-openai-key"
+$env:ELEVENLABS_API_KEY="your-elevenlabs-key"
+$env:FAL_KEY="your-fal-key"
+$env:PEXELS_API_KEY="your-pexels-key"
+$env:PIXABAY_API_KEY="your-pixabay-key"
+$env:ANTHROPIC_API_KEY="your-anthropic-key"</pre>
+          </div>
+
+          <!-- Shell 2: Bash / Zsh (macOS / Linux) -->
+          <div class="rounded-xl bg-card border border-border p-3 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="font-mono font-semibold text-emerald-400 text-xs">Bash / Zsh (macOS & Linux)</span>
+              <button class="copy-cmd-btn px-2.5 py-1 rounded bg-surface border border-border text-slate-300 hover:text-white font-mono text-[11px]" data-target="cmd-bash">📋 Copy</button>
+            </div>
+            <pre id="cmd-bash" class="font-mono text-[11px] text-slate-300 bg-bg p-2.5 rounded border border-border/80 overflow-x-auto whitespace-pre">export OPENAI_API_KEY="your-openai-key"
+export ELEVENLABS_API_KEY="your-elevenlabs-key"
+export FAL_KEY="your-fal-key"
+export PEXELS_API_KEY="your-pexels-key"
+export PIXABAY_API_KEY="your-pixabay-key"
+export ANTHROPIC_API_KEY="your-anthropic-key"</pre>
+          </div>
+
+          <!-- Shell 3: Windows CMD -->
+          <div class="rounded-xl bg-card border border-border p-3 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="font-mono font-semibold text-amber-400 text-xs">Windows CMD (Persistent via setx)</span>
+              <button class="copy-cmd-btn px-2.5 py-1 rounded bg-surface border border-border text-slate-300 hover:text-white font-mono text-[11px]" data-target="cmd-cmd">📋 Copy</button>
+            </div>
+            <pre id="cmd-cmd" class="font-mono text-[11px] text-slate-300 bg-bg p-2.5 rounded border border-border/80 overflow-x-auto whitespace-pre">setx OPENAI_API_KEY "your-openai-key"
+setx ELEVENLABS_API_KEY "your-elevenlabs-key"
+setx FAL_KEY "your-fal-key"
+setx PEXELS_API_KEY "your-pexels-key"
+setx PIXABAY_API_KEY "your-pixabay-key"
+setx ANTHROPIC_API_KEY "your-anthropic-key"</pre>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= JAVASCRIPT ================= -->
+  <script>
+    const $ = s => document.querySelector(s);
+    const log = $('#log');
+    let sessionId = null, turns = 0, busy = false, total = 0;
+    const HOLD = 700; // time finished pill stays open
+
+    let currentProject = null;
+    let sendTurn = null;
+
+    const el = (c, h) => { const d = document.createElement('div'); if (c) d.className = c; if (h != null) d.innerHTML = h; return d; };
+    const esc = s => (s ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const near = () => log.scrollHeight - log.scrollTop - log.clientHeight < 130;
+    const bot = () => log.scrollTop = log.scrollHeight;
+
+    function toggleCard(cardId) {
+      const card = document.getElementById(cardId);
+      if (card) {
+        const body = card.querySelector('.accordion-body');
+        if (body) body.classList.toggle('hidden');
+      }
+    }
+
+    function md(t) {
+      const f = [];
+      t = t.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, l, c) => ` \u0000${f.push(`<pre>${esc(c.replace(/\n$/, ''))}</pre>`)-1}\u0000 `);
+      return esc(t).replace(/`([^`\n]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+        .split('\n').map(l => {
+          let m;
+          if ((m = l.match(/^\s*[-*]\s+(.*)$/))) return `<div class="li"><span class="mk">•</span><span>${m[1]}</span></div>`;
+          if ((m = l.match(/^\s*(\d+)[.)]\s+(.*)$/))) return `<div class="li"><span class="mk">${m[1]}.</span><span>${m[2]}</span></div>`;
+          return l;
+        }).join('\n')
+        .replace(/\u0000(\d+)\u0000/g, (_, i) => f[+i]);
+    }
+
+    const KIND = {
+      Bash: { k: 'run', g: '▸', fx: 'run', sig: 'command' },
+      Read: { k: 'search', g: '◫', fx: 'search', sig: 'file_path' },
+      Glob: { k: 'search', g: '⌕', fx: 'search', sig: 'pattern' },
+      Grep: { k: 'search', g: '⌕', fx: 'search', sig: 'pattern' },
+      Write: { k: 'write', g: '✎', fx: 'write', sig: 'file_path' },
+      Edit: { k: 'write', g: '✎', fx: 'write', sig: 'file_path' },
+      Task: { k: 'agent', g: '⬡', fx: 'agent', sig: 'description' },
+      Agent: { k: 'agent', g: '⬡', fx: 'agent', sig: 'description' },
+      Skill: { k: 'search', g: '◈', fx: 'search', sig: 'skill' },
+    };
+    const kindOf = n => KIND[n] || { k: 'run', g: '⚡', fx: 'run', sig: null };
+
+    function signature(name, input) {
+      if (!input || typeof input !== 'object') return '';
+      const pref = kindOf(name).sig;
+      const order = [pref, 'command', 'description', 'pattern', 'file_path', 'path', 'skill', 'query', 'url', 'subagent_type', 'prompt'].filter(Boolean);
+      let v = null;
+      for (const k of order) { if (typeof input[k] === 'string' && input[k].trim()) { v = input[k]; break; } }
+      if (!v) v = Object.values(input).find(x => typeof x === 'string') || '';
+      v = String(v).replace(/\s+/g, ' ').trim();
+      return v.length > 72 ? v.slice(0, 72) + '…' : v;
+    }
+
+    const sect = (label, node) => { const s = el('sect'); s.appendChild(el('lbl', esc(label))); s.appendChild(node); return s; };
+    const shortPath = p => String(p).replace(/^[A-Za-z]:[\\/]/, '').split(/[\\/]/).slice(-3).join('/');
+
+    function permissionCard(turn, ev) {
+      const c = el('ask');
+      c.appendChild(el('qhd', `<strong>Permission needed</strong> — ${esc(ev.tool_name || 'tool')}`));
+      c.appendChild(el('qsub', esc(ev.message || ev.decision_reason || '')));
+      const foot = el('askfoot');
+      const yes = el(''), no = el('');
+      yes.innerHTML = `<button class="askbtn yes">Allow once</button>`;
+      no.innerHTML = `<button class="askbtn no">Deny</button>`;
+      foot.append(yes.firstChild, no.firstChild);
+      foot.appendChild(el('keys', esc(ev.decision_reason_type || '')));
+      c.appendChild(foot);
+      turn.appendChild(c);
+
+      const done = (txt, label) => {
+        foot.remove();
+        c.appendChild(el('answered', label));
+        if (sendTurn) sendTurn(txt);
+      };
+      foot.querySelector('.yes').onclick = () => done(`Approved: retry the ${ev.tool_name} call. I grant permission.`, '✓ allowed');
+      foot.querySelector('.no').onclick = () => done(`Denied: do not retry ${ev.tool_name}. Continue without it.`, '✗ denied');
+      return c;
+    }
+
+    function questionCard(turn, spec) {
+      const qs = spec.questions || [];
+      if (!qs.length) return null;
+      const answers = new Array(qs.length).fill(null);
+      let step = 0;
+
+      const c = el('ask q');
+      const tabs = el('tabs'), hd = el('qhd'), sub = el('qsub');
+      const opts = el('opts'), foot = el('askfoot');
+      c.append(hd, sub, tabs, opts, foot);
+      turn.appendChild(c);
+
+      function draw() {
+        const q = qs[step];
+        hd.innerHTML = `<strong>${esc(q.question || '')}</strong>`;
+        sub.textContent = q.multiSelect ? 'select one or more' : 'select one';
+        tabs.textContent = '';
+        qs.forEach((qq, i) => {
+          const t = el('tab' + (i === step ? ' on' : (answers[i] != null ? ' done' : '')),
+            (answers[i] != null ? '☒ ' : '□ ') + esc(qq.header || ('Q' + (i + 1))));
+          t.onclick = () => { step = i; draw(); };
+          tabs.appendChild(t);
+        });
+        opts.textContent = '';
+        (q.options || []).forEach((o, i) => {
+          const row = el('opt' + (answers[step] === o.label ? ' sel' : ''));
+          row.appendChild(el('num', String(i + 1) + '.'));
+          const body = el('');
+          body.appendChild(el('lab', esc(o.label || '')));
+          if (o.description) body.appendChild(el('desc', esc(o.description)));
+          row.appendChild(body);
+          row.onclick = () => {
+            answers[step] = o.label;
+            if (step < qs.length - 1) { step++; }
+            draw();
+          };
+          opts.appendChild(row);
+        });
+
+        foot.textContent = '';
+        const inp = el(''); inp.innerHTML = `<input class="freein" placeholder="or type custom answer…">`;
+        const free = inp.firstChild;
+        free.onkeydown = e => { if (e.key === 'Enter' && free.value.trim()) { answers[step] = free.value.trim(); draw(); } };
+        foot.appendChild(free);
+        const ready = answers.every(a => a != null);
+        const btn = el(''); btn.innerHTML = `<button class="askbtn go" ${ready ? '' : 'disabled'}>Submit</button>`;
+        btn.firstChild.onclick = () => {
+          const txt = qs.map((qq, i) => `${qq.header || ('Q' + (i + 1))}: ${answers[i]}`).join('\n');
+          c.querySelectorAll('.opts,.askfoot,.tabs').forEach(n => n.remove());
+          c.appendChild(el('answered', esc(txt.replace(/\n/g, '  ·  '))));
+          if (sendTurn) sendTurn(txt);
+        };
+        foot.appendChild(btn.firstChild);
+        foot.appendChild(el('keys', 'click to choose · Enter to accept'));
+      }
+      draw();
+      return c;
+    }
+
+    function extractQuestion(raw) {
+      const m = raw.match(/```question\s*\n([\s\S]*?)```/);
+      if (!m) return null;
+      try { return JSON.parse(m[1]); } catch { return null; }
+    }
+
+    function numbered(text, hl) {
+      const g = el('lines');
+      text.split('\n').forEach(line => {
+        const m = line.match(/^\s*(\d+)[\t:](.*)$/);
+        const n = m ? m[1] : '', t = m ? m[2] : line;
+        g.appendChild(el('n', esc(n)));
+        const cell = el('t');
+        cell.innerHTML = hl ? esc(t).replace(new RegExp(`(${hl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'), '<mark>$1</mark>') : esc(t);
+        g.appendChild(cell);
+      });
+      return g;
+    }
+
+    function clamped(text, limit = 14, cls = 'out') {
+      const lines = text.split('\n'), box = el('sect');
+      const pre = el(cls); pre.textContent = lines.slice(0, limit).join('\n');
+      box.appendChild(pre);
+      if (lines.length > limit) {
+        const more = el('more', `▾ show ${lines.length - limit} more lines`);
+        more.onclick = e => { e.stopPropagation(); pre.textContent = text; more.remove(); };
+        box.appendChild(more);
+      }
+      return box;
+    }
+
+    function renderDetail(body, name, input, result, isErr) {
+      body.textContent = '';
+      if (input && Object.keys(input).length) {
+        if (name === 'Bash') {
+          const c = el('cmd'); c.textContent = input.command || '';
+          body.appendChild(sect(input.description ? `command · ${input.description}` : 'command', c));
+        } else if (name === 'Write' || name === 'Edit') {
+          const kv = el('kv');
+          kv.append(el('k', 'file'), Object.assign(el('v'), { textContent: input.file_path || input.path || '' }));
+          body.appendChild(sect('target', kv));
+          const content = input.content ?? input.new_string;
+          if (content) body.appendChild(sect('content', clamped(String(content), 14)));
+        } else {
+          const kv = el('kv');
+          for (const [k, v] of Object.entries(input)) {
+            if (k === 'content' || k === 'prompt') continue;
+            kv.append(el('k', esc(k)), Object.assign(el('v'), { textContent: typeof v === 'string' ? v : JSON.stringify(v) }));
+          }
+          if (kv.children.length) body.appendChild(sect('input', kv));
+        }
+      }
+
+      if (result != null) {
+        const r = String(result);
+        const label = isErr ? 'error' : 'output';
+        if (isErr) {
+          const p = el('raw'); p.textContent = r; p.style.color = '#f87171';
+          body.appendChild(sect(label, p));
+        } else if (name === 'Read' || name === 'Grep') {
+          const s = el('sect'); s.appendChild(el('lbl', label));
+          s.appendChild(numbered(r, name === 'Grep' ? input?.pattern : null));
+          body.appendChild(s);
+        } else if (name === 'Glob') {
+          const g = el('lines');
+          r.split('\n').filter(Boolean).forEach(p => {
+            g.appendChild(el('n', '·'));
+            g.appendChild(Object.assign(el('t'), { textContent: shortPath(p) }));
+          });
+          const s = el('sect'); s.appendChild(el('lbl', `${label} · ${r.split('\n').filter(Boolean).length} paths`));
+          s.appendChild(g); body.appendChild(s);
+        } else {
+          const s = el('sect'); s.appendChild(el('lbl', label));
+          const c = clamped(r, 14);
+          while (c.firstChild) s.appendChild(c.firstChild);
+          body.appendChild(s);
+        }
+      }
+    }
+
+    function makePill(turn, name, glyphKind) {
+      const K = glyphKind || kindOf(name);
+      const p = el(`pill k-${K.k} live open`);
+      const top = el('top');
+      top.innerHTML = `<span class="glyph">${K.g}</span><span class="name">${esc(name)}</span>` +
+        `<span class="sig"></span><span class="tail"></span><span class="chev">›</span>`;
+      const wrap = el('wrap'), inner = el('inner'), body = el('body');
+      inner.appendChild(body); wrap.appendChild(inner);
+      const fx = el('fx ' + K.fx);
+      p.append(top, wrap, fx);
+      top.onclick = () => p.classList.toggle('open');
+      turn.appendChild(p);
+      return {
+        root: p, body, K,
+        sig: top.querySelector('.sig'), tail: top.querySelector('.tail'),
+        stopFx() { fx.remove(); p.classList.remove('live'); },
+        fold(tailHTML, keepOpen) {
+          this.stopFx();
+          if (tailHTML) this.tail.innerHTML = tailHTML;
+          if (keepOpen || $('#keepopen').checked) return;
+          setTimeout(() => p.classList.remove('open'), HOLD);
+        }
+      };
+    }
+
+    function send(text0) {
+      const text = (text0 != null ? text0 : $('#q').value).trim();
+      if (!text || busy) return;
+      busy = true; $('#go').disabled = true;
+      if (text0 == null) { $('#q').value = ''; $('#q').style.height = 'auto'; }
+      log.appendChild(el('you', esc(text)));
+      const turn = el('turn'); log.appendChild(turn); bot();
+
+      sendTurn = t => { busy = false; $('#go').disabled = false; send(t); };
+
+      const live = {}, byId = {}, t0 = Date.now();
+      let status = null, tick = null;
+
+      function setStatus(label, cls) {
+        clearStatus();
+        status = el('status');
+        status.innerHTML = `<span class="orb" style="background:var(--${cls || 'accent'})"></span><span>${esc(label)}</span>` +
+          `<span class="dots"><span>.</span><span>.</span><span>.</span></span><span class="el"></span>`;
+        turn.appendChild(status);
+        const t = Date.now(), sp = status.querySelector('.el');
+        tick = setInterval(() => sp.textContent = ((Date.now() - t) / 1000).toFixed(1) + 's', 100);
+        if (near()) bot();
+      }
+      const clearStatus = () => { if (tick) { clearInterval(tick); tick = null; } if (status) { status.remove(); status = null; } };
+
+      setStatus('connecting', 'accent');
+      const url = '/api/chat?prompt=' + encodeURIComponent(text) +
+        (sessionId ? '&session=' + encodeURIComponent(sessionId)
+          : '&dir=' + encodeURIComponent($('#dir').value.trim()) +
+          '&mode=' + encodeURIComponent($('#mode').value) +
+          '&engine=' + encodeURIComponent($('#engineSelect').value));
+      const es = new EventSource(url);
+
+      es.addEventListener('session', e => {
+        const d = JSON.parse(e.data); sessionId = d.id;
+        $('#sid').textContent = d.id.slice(-6);
+        if (d.claude_id) $('#cid').textContent = d.claude_id.slice(0, 8);
+        const L = $('#lock');
+        L.textContent = ({ rw: '⚠ rw', ro: '🔒 ro', ask: '⊙ ask' }[d.mode] || '') + ' · ' + (d.dir || '');
+        if (status) setStatus('thinking', 'think');
+      });
+
+      es.addEventListener('cc', e => {
+        const stick = near(), d = JSON.parse(e.data);
+
+        if (d.type === 'stream_event') {
+          const ev = d.event, i = ev.index;
+
+          if (ev.type === 'content_block_start') {
+            const cb = ev.content_block; clearStatus();
+            if (cb.type === 'text') {
+              const seg = el('seg cursor'); turn.appendChild(seg);
+              live[i] = { kind: 'text', node: seg, raw: '' };
+            }
+            if (cb.type === 'thinking') {
+              const p = makePill(turn, 'thinking', { k: 'think', g: '✻', fx: 'think' });
+              const t = el('thinktext'); p.body.appendChild(t);
+              live[i] = { kind: 'think', p, node: t, t: Date.now() };
+            }
+            if (cb.type === 'tool_use') {
+              const p = makePill(turn, cb.name);
+              p.body.appendChild(Object.assign(el('raw'), { style: 'padding:8px 10px' }));
+              if (cb.id) byId[cb.id] = { p, name: cb.name, input: null };
+              live[i] = { kind: 'tool', p, raw: '', name: cb.name, id: cb.id, t: Date.now() };
+            }
+          }
+
+          if (ev.type === 'content_block_delta' && live[i]) {
+            const b = live[i], dl = ev.delta;
+            const ch = dl.text ?? dl.thinking ?? dl.partial_json ?? '';
+            if (b.kind === 'text') { b.raw += ch; b.node.innerHTML = md(b.raw); }
+            if (b.kind === 'think') { b.node.append(ch); }
+            if (b.kind === 'tool') {
+              b.raw += ch;
+              b.p.body.firstChild.textContent = b.raw;
+              try { b.p.sig.textContent = signature(b.name, JSON.parse(b.raw)); } catch { }
+            }
+          }
+
+          if (ev.type === 'content_block_stop' && live[i]) {
+            const b = live[i], secs = ((Date.now() - (b.t || Date.now())) / 1000).toFixed(1);
+            if (b.kind === 'text') {
+              b.node.classList.remove('cursor');
+              const spec = extractQuestion(b.raw);
+              if (spec) {
+                b.node.innerHTML = md(b.raw.replace(/```question[\s\S]*?```/, '').trim());
+                questionCard(turn, spec);
+              }
+            }
+            if (b.kind === 'think') b.p.fold(`thought for ${secs}s`, false);
+            if (b.kind === 'tool') {
+              let input = {}; try { input = JSON.parse(b.raw) || {}; } catch { }
+              b.p.sig.textContent = signature(b.name, input);
+              if (byId[b.id]) byId[b.id].input = input;
+              renderDetail(b.p.body, b.name, input, null, false);
+              b.p.tail.innerHTML = '<span style="opacity:.7">running</span>';
+              setStatus(b.name.toLowerCase(), b.p.K.k);
+            }
+          }
+        }
+
+        if (d.type === 'user' && Array.isArray(d.message?.content)) {
+          for (const c of d.message.content) {
+            if (c.type !== 'tool_result') continue;
+            clearStatus();
+            let body = c.content;
+            if (Array.isArray(body)) body = body.map(x => x.text ?? '').join('');
+            if (typeof body !== 'string') body = JSON.stringify(body, null, 2);
+            const err = c.is_error === true, n = body ? body.split('\n').length : 0;
+            const rec = byId[c.tool_use_id];
+            if (rec) {
+              renderDetail(rec.p.body, rec.name, rec.input, body, err);
+              if (err) rec.p.root.classList.add('err');
+              rec.p.fold(err ? '<span class="bad">✗ failed</span>' : `<span class="ok">✓</span> ${n} line${n === 1 ? '' : 's'}`, err);
+            }
+            setStatus('thinking', 'think');
+            // Check for file updates on disk
+            loadProjectDetails(currentProject);
+          }
+        }
+
+        if (d.type === 'system' && d.subtype === 'permission_denied') {
+          clearStatus();
+          permissionCard(turn, d);
+        }
+
+        if (d.type === 'result') {
+          clearStatus(); turns++; $('#turns').textContent = turns;
+          total += d.total_cost_usd ?? 0; $('#cost').textContent = '$' + total.toFixed(4);
+          const secs = ((d.duration_ms ?? (Date.now() - t0)) / 1000).toFixed(1);
+          turn.appendChild(el('text-[11px] font-mono text-slate-500 opacity-75',
+            `${secs}s · ${d.usage?.output_tokens ?? 0} tok · $${(d.total_cost_usd ?? 0).toFixed(4)}` +
+            (d.is_error ? ' · <span class="bad">error</span>' : '')));
+          loadProjects();
+        }
+        if (stick) bot();
+      });
+
+      es.addEventListener('error', e => {
+        try {
+          const d = JSON.parse(e.data); clearStatus();
+          const p = makePill(turn, 'stream error', { k: 'run', g: '✗', fx: 'run' });
+          p.root.classList.add('err'); renderDetail(p.body, 'error', null, d.message, true); p.fold('', true);
+        } catch { }
+      });
+
+      const finish = () => { clearStatus(); es.close(); busy = false; $('#go').disabled = false; $('#q').focus(); loadProjects(); };
+      es.addEventListener('end', finish);
+      es.onerror = () => { if (es.readyState === 2) finish(); };
+    }
+
+    $('#go').onclick = () => send();
+    $('#q').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
+    $('#q').addEventListener('input', function () { this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, 160) + 'px'; });
+
+    document.querySelectorAll('.quick-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        $('#q').value = "Create a " + chip.textContent + " about ";
+        $('#q').focus();
+      });
+    });
+
+    // ================= STARTUP GATE & ENGINE LOCK =================
+    let selectedEngine = 'claude';
+    const engineDisplayNames = {
+      claude: 'Claude Code',
+      opencode: 'OpenCode',
+      copilot: 'GitHub Copilot',
+    };
+
+    function updateEngineUI(engine) {
+      selectedEngine = engine;
+      $('#engineSelect').value = engine;
+      $('#lockedEngineName').textContent = engineDisplayNames[engine] || engine;
+      document.querySelectorAll('.engine-card').forEach(card => {
+        if (card.dataset.engine === engine) {
+          card.className = 'engine-card active p-3 rounded-xl bg-card border-2 border-indigo-500 cursor-pointer transition-all hover:bg-card/80';
+        } else {
+          card.className = 'engine-card p-3 rounded-xl bg-card border border-border cursor-pointer transition-all hover:border-slate-600 hover:bg-card/80';
+        }
+      });
+    }
+
+    document.querySelectorAll('.engine-card').forEach(card => {
+      card.addEventListener('click', () => {
+        updateEngineUI(card.dataset.engine);
+      });
+    });
+
+    $('#startupProjectSelect').addEventListener('change', e => {
+      const val = e.target.value;
+      if (val) {
+        $('#startupDirInput').value = 'projects/' + val;
+      } else {
+        $('#startupDirInput').value = '.';
+      }
+    });
+
+    $('#enterStudioBtn').addEventListener('click', () => {
+      const chosenProject = $('#startupProjectSelect').value;
+      const chosenDir = $('#startupDirInput').value.trim();
+      const chosenMode = $('#startupModeSelect').value;
+
+      $('#dir').value = chosenDir;
+      $('#mode').value = chosenMode;
+      updateEngineUI(selectedEngine);
+
+      if (chosenProject) {
+        currentProject = chosenProject;
+        $('#projectSelect').value = chosenProject;
+        loadProjectDetails(chosenProject);
+      }
+
+      $('#startupModal').classList.add('hidden');
+      $('#q').focus();
+    });
+
+    $('#switchEngineBtn').addEventListener('click', () => {
+      $('#startupModal').classList.remove('hidden');
+    });
+
+    // ================= RIGHT PANE: PROGRESSIVE ARTIFACT CANVAS =================
+    async function loadProjects() {
+      try {
+        const res = await fetch('/api/projects');
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : (data.projects || []);
+        
+        // Populate header project selector
+        const sel = $('#projectSelect');
+        sel.innerHTML = '';
+
+        // Populate startup modal project selector
+        const startSel = $('#startupProjectSelect');
+        startSel.innerHTML = '<option value="">(Root Workspace / Custom Directory)</option>';
+
+        if (list.length > 0) {
+          list.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.slug;
+            opt.textContent = p.slug + (p.has_video ? ' (rendered)' : '');
+            opt.className = 'bg-surface text-slate-200';
+            sel.appendChild(opt);
+
+            const startOpt = document.createElement('option');
+            startOpt.value = p.slug;
+            startOpt.textContent = p.slug + ' (' + (p.name || p.slug) + ')';
+            startOpt.className = 'bg-surface text-slate-200';
+            startSel.appendChild(startOpt);
+          });
+          if (!currentProject || !list.some(p => p.slug === currentProject)) {
+            currentProject = list[0].slug;
+          }
+          sel.value = currentProject;
+          startSel.value = currentProject;
+          $('#startupDirInput').value = 'projects/' + currentProject;
+          loadProjectDetails(currentProject);
+        } else {
+          sel.innerHTML = '<option value="">No projects</option>';
+        }
+      } catch (err) {
+        console.error("Failed to load projects:", err);
+      }
+    }
+
+    $('#projectSelect').addEventListener('change', e => {
+      currentProject = e.target.value;
+      loadProjectDetails(currentProject);
+    });
+
+    $('#refreshProjectBtn').addEventListener('click', () => {
+      if (currentProject) loadProjectDetails(currentProject);
+    });
+
+    async function loadProjectDetails(slug) {
+      if (!slug) return;
+      try {
+        const res = await fetch('/api/projects/' + slug);
+        const p = await res.json();
+
+        // 1. Update Stepper
+        updateStages(p.stages);
+
+        // 2. Card 1: Brief
+        if (p.brief) {
+          $('#briefContent').textContent = p.brief;
+          $('#card-brief').classList.remove('hidden');
+        }
+
+        // 3. Card 2: Script & Beats
+        const bc = $('#beatsContainer');
+        if (p.beats && p.beats.length > 0) {
+          bc.innerHTML = p.beats.map((b, idx) => {
+            const timeStr = b.time_range || b.time || '';
+            const audioObj = (p.narration && p.narration[idx]) ? p.narration[idx] : null;
+            return `
+              <div class="p-2.5 rounded-lg bg-surface/70 border border-border/60 flex items-start justify-between gap-3 text-xs font-sans">
+                <div class="flex items-center gap-1.5 font-mono text-[11px] text-indigo-400 shrink-0">
+                  <span class="w-4 h-4 rounded bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center font-bold text-[10px]">${b.index || (idx + 1)}</span>
+                  <span>${timeStr}</span>
+                </div>
+                <div class="flex-1">
+                  <div class="font-semibold text-slate-200 text-xs mb-0.5">${b.title || b.beat || 'Beat ' + (idx + 1)}</div>
+                  <p class="text-slate-400 text-[11px] italic">"${b.narration}"</p>
+                </div>
+                ${audioObj ? `
+                  <audio controls src="${audioObj.url}" class="h-6 w-28"></audio>
+                ` : ''}
+              </div>
+            `;
+          }).join('');
+          $('#card-script').classList.remove('hidden');
+        }
+
+        // 4. Card 3: Audio Clips
+        const al = $('#audioList');
+        if (p.narration && p.narration.length > 0) {
+          al.innerHTML = p.narration.map(a => `
+            <div class="p-2 rounded bg-surface border border-border flex items-center justify-between text-xs font-mono">
+              <span class="text-slate-300">${a.name}</span>
+              <audio controls src="${a.url}" class="h-6"></audio>
+            </div>
+          `).join('');
+          $('#card-audio').classList.remove('hidden');
+        }
+
+        // 5. Card 4: QA Frames
+        const fg = $('#framesGrid');
+        const frames = (p.qa_frames && p.qa_frames.length > 0) ? p.qa_frames : p.review_frames;
+        if (frames && frames.length > 0) {
+          fg.innerHTML = frames.map(f => `
+            <div class="bg-black rounded border border-border overflow-hidden">
+              <img src="${f.url}" alt="${f.name}" class="aspect-video w-full object-cover">
+              <div class="px-2 py-1 bg-surface flex items-center justify-between text-[10px] font-mono text-slate-400">
+                <span>${f.name}</span>
+                <span class="text-emerald-400">PASS</span>
+              </div>
+            </div>
+          `).join('');
+          $('#card-qa').classList.remove('hidden');
+        }
+
+        // QA Report Checklist
+        const rep = p.review_report;
+        if (rep && rep.gates) {
+          $('#qaReportStatus').textContent = (rep.status || 'PASS').toUpperCase();
+          $('#qaGatesList').innerHTML = rep.gates.map(g => `
+            <div class="flex items-center justify-between">
+              <span class="text-slate-400">${g.name}:</span>
+              <span class="text-slate-200">${g.measured || '—'} <span class="${g.status === 'pass' ? 'text-emerald-400' : 'text-amber-400'}">✓</span></span>
+            </div>
+          `).join('');
+        }
+
+        // 6. Card 5: Master Video
+        if (p.video_url) {
+          $('#masterVideo').src = p.video_url;
+          $('#videoDownloadLink').href = p.video_url;
+          $('#videoPathLabel').textContent = p.video_path || p.video_url;
+          $('#card-master').classList.remove('hidden');
+        } else {
+          $('#card-master').classList.add('hidden');
+        }
+
+      } catch (err) {
+        console.error("Failed to load project details:", err);
+      }
+    }
+
+    function updateStages(stages) {
+      if (!stages) return;
+      document.querySelectorAll('.stage-item').forEach(el => {
+        const stage = el.dataset.stage;
+        const done = stages[stage];
+        const badge = el.querySelector('.badge');
+        if (done) {
+          el.className = 'stage-item flex items-center gap-1.5 text-emerald-400';
+          badge.className = 'badge w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500 flex items-center justify-center text-[10px] text-emerald-400';
+          badge.textContent = '✓';
+        } else {
+          el.className = 'stage-item flex items-center gap-1.5 text-slate-500';
+          badge.className = 'badge w-4 h-4 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] text-slate-500';
+          badge.textContent = ({ brief: '1', script: '2', voiceover: '3', composition: '4', review: '5', master: '6' }[stage] || '·');
+        }
+      });
+    }
+
+    // ================= SETTINGS DRAWER & PROBES =================
+    const keyDescriptions = {
+      OPENAI_API_KEY: 'OpenAI TTS & DALL-E image generation',
+      ELEVENLABS_API_KEY: 'ElevenLabs ultra-realistic neural voice',
+      FAL_KEY: 'Kling & Flux fast video/image generation',
+      PEXELS_API_KEY: 'Pexels HD stock footage search & download',
+      PIXABAY_API_KEY: 'Pixabay royalty-free footage & audio',
+      ANTHROPIC_API_KEY: 'Anthropic Claude model inference',
+    };
+
+    async function probeConfig() {
+      try {
+        const res = await fetch('/api/config');
+        const data = await res.json();
+        const container = $('#probedKeysList');
+        container.innerHTML = '';
+
+        const keys = ['OPENAI_API_KEY', 'ELEVENLABS_API_KEY', 'FAL_KEY', 'PEXELS_API_KEY', 'PIXABAY_API_KEY', 'ANTHROPIC_API_KEY'];
+        keys.forEach(k => {
+          const val = data[k];
+          const isSet = Boolean(val && val.trim() !== '');
+          const desc = keyDescriptions[k] || 'Media provider key';
+
+          const row = document.createElement('div');
+          row.className = 'p-2.5 rounded-lg bg-surface border border-border flex items-center justify-between gap-2';
+          row.innerHTML = `
+            <div class="flex items-center gap-2 font-mono overflow-hidden">
+              <span class="${isSet ? 'text-white font-semibold' : 'text-slate-400'} text-xs">${k}</span>
+              <span class="text-[10px] text-slate-500 truncate hidden sm:inline">(${desc})</span>
+            </div>
+            <div>
+              ${isSet 
+                ? `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold flex items-center gap-1.5 shrink-0"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>SET <span class="text-slate-400 font-normal">(${val})</span></span>`
+                : `<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800/80 border border-slate-700 text-slate-400 font-bold shrink-0">NOT SET</span>`
+              }
+            </div>
+          `;
+          container.appendChild(row);
+        });
+      } catch (err) {
+        console.error("Failed to probe config:", err);
+      }
+    }
+
+    $('#settingsBtn').onclick = () => {
+      $('#settingsModal').classList.remove('hidden');
+      probeConfig();
+    };
+    $('#closeSettingsBtn').onclick = () => $('#settingsModal').classList.add('hidden');
+    $('#cancelSettingsBtn').onclick = () => $('#settingsModal').classList.add('hidden');
+
+    // Tab switcher
+    $('#tabBtnEnv').onclick = () => {
+      $('#tabBtnEnv').className = 'settings-tab active px-4 py-2.5 text-indigo-300 font-semibold border-b-2 border-indigo-500';
+      $('#tabBtnCmds').className = 'settings-tab px-4 py-2.5 text-slate-400 hover:text-slate-200 border-b-2 border-transparent';
+      $('#paneEnv').classList.remove('hidden');
+      $('#paneCmds').classList.add('hidden');
+    };
+    $('#tabBtnCmds').onclick = () => {
+      $('#tabBtnCmds').className = 'settings-tab active px-4 py-2.5 text-indigo-300 font-semibold border-b-2 border-indigo-500';
+      $('#tabBtnEnv').className = 'settings-tab px-4 py-2.5 text-slate-400 hover:text-slate-200 border-b-2 border-transparent';
+      $('#paneCmds').classList.remove('hidden');
+      $('#paneEnv').classList.add('hidden');
+    };
+
+    // Copy command buttons
+    document.querySelectorAll('.copy-cmd-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const targetId = btn.dataset.target;
+        const targetEl = document.getElementById(targetId);
+        if (targetEl) {
+          const text = targetEl.textContent;
+          try {
+            await navigator.clipboard.writeText(text);
+            const orig = btn.textContent;
+            btn.textContent = '✓ Copied!';
+            btn.classList.add('text-emerald-400', 'border-emerald-500/40');
+            setTimeout(() => {
+              btn.textContent = orig;
+              btn.classList.remove('text-emerald-400', 'border-emerald-500/40');
+            }, 2000);
+          } catch (e) {
+            console.error('Clipboard copy failed:', e);
+          }
+        }
+      });
+    });
+
+    $('#settingsForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const payload = {};
+      const fields = [
+        ['OPENAI_API_KEY', '#env_openai'],
+        ['ELEVENLABS_API_KEY', '#env_elevenlabs'],
+        ['FAL_KEY', '#env_fal'],
+        ['PEXELS_API_KEY', '#env_pexels'],
+        ['PIXABAY_API_KEY', '#env_pixabay'],
+        ['ANTHROPIC_API_KEY', '#env_anthropic'],
+      ];
+      for (const [key, selector] of fields) {
+        const input = $(selector);
+        if (input && input.value.trim() !== '') {
+          payload[key] = input.value.trim();
+          input.value = '';
+        }
+      }
+      try {
+        if (Object.keys(payload).length > 0) {
+          await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        }
+        $('#settingsModal').classList.add('hidden');
+        probeConfig();
+      } catch (err) {
+        console.error("Failed to save config:", err);
+      }
+    };
+
+    // Auto-poll project changes every 3s
+    setInterval(() => {
+      if (currentProject) loadProjectDetails(currentProject);
+    }, 3000);
+
+    // Initial load
+    loadProjects();
+    probeConfig();
+  </script>
+</body>
+</html>

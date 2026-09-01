@@ -1,0 +1,74 @@
+{
+  "project": "quantum-computing-30s",
+  "theme": "flat-motion-graphics",
+  "renderer_family": "explainer-data",
+  "render_runtime": "remotion",
+  "composition_id": "Explainer",
+  "duration_note": "Final cut ends at 29.0s. Remotion calculateMetadata computes ceil((29+1)*30) = 900 frames = exactly 30.0s at 30fps.",
+  "scene_type_variety": [
+    "hero_title",
+    "comparison",
+    "text_card",
+    "stat_card",
+    "kpi_grid"
+  ],
+  "scenes": [
+    {
+      "id": "sc1",
+      "in_seconds": 0.0,
+      "out_seconds": 4.0,
+      "type": "hero_title",
+      "purpose": "Hook — open on the limit of classical computing",
+      "visual": "Full-frame title with subtitle. High contrast, immediate."
+    },
+    {
+      "id": "sc2",
+      "in_seconds": 4.0,
+      "out_seconds": 7.5,
+      "type": "text_card",
+      "purpose": "Introduce the bit as the atom of classical computing",
+      "visual": "Large typographic beat — 'Everything is bits.'"
+    },
+    {
+      "id": "sc3",
+      "in_seconds": 7.5,
+      "out_seconds": 11.0,
+      "type": "comparison",
+      "purpose": "Bit is binary — 0 XOR 1, never both",
+      "visual": "Side-by-side 0 vs 1, showing mutual exclusivity."
+    },
+    {
+      "id": "sc4",
+      "in_seconds": 11.0,
+      "out_seconds": 15.0,
+      "type": "stat_card",
+      "purpose": "The qubit reveal — the conceptual turn",
+      "visual": "Huge '0 AND 1' glyph with subtitle. The visual punchline."
+    },
+    {
+      "id": "sc5",
+      "in_seconds": 15.0,
+      "out_seconds": 19.0,
+      "type": "text_card",
+      "purpose": "Superposition + entanglement explained plainly",
+      "visual": "Typographic beat on linked possibilities."
+    },
+    {
+      "id": "sc6",
+      "in_seconds": 19.0,
+      "out_seconds": 25.5,
+      "type": "kpi_grid",
+      "purpose": "Concrete, bounded application domains",
+      "visual": "3-column grid: Chemistry / Materials / Logistics. Grounded, not hypey."
+    },
+    {
+      "id": "sc7",
+      "in_seconds": 25.5,
+      "out_seconds": 29.0,
+      "type": "hero_title",
+      "purpose": "Landing — reframe expectations",
+      "visual": "Closing card mirroring the open. Bookend structure."
+    }
+  ],
+  "variety_check": "5 distinct scene types across 7 scenes. No 3+ consecutive scenes share a type (hero_title, text_card, comparison, stat_card, text_card, kpi_grid, hero_title)."
+}

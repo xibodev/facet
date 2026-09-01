@@ -1,0 +1,76 @@
+{
+  "ok": true,
+  "tool": "source_edit",
+  "operation": "run",
+  "result": {
+    "duration": 9,
+    "operations": [
+      "trim",
+      "scale_cover",
+      "normalize",
+      "concat"
+    ],
+    "output": "projects/phase2-source-edit/renders/edit.mp4",
+    "output_facts": {
+      "audio": [
+        {
+          "channel_layout": "stereo",
+          "channels": 2,
+          "codec": "aac",
+          "index": 1,
+          "sample_rate": 48000
+        }
+      ],
+      "audio_streams": [
+        {
+          "channel_layout": "stereo",
+          "channels": 2,
+          "codec": "aac",
+          "index": 1,
+          "sample_rate": 48000
+        }
+      ],
+      "format": {
+        "bit_rate": 598611,
+        "duration": 9,
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "size": 673438
+      },
+      "input": "projects/phase2-source-edit/renders/edit.mp4",
+      "sha256": "276cea44571a2e9591366a614783b1df0666012473239d6136f8e882b13617f6",
+      "video": {
+        "codec": "h264",
+        "fps": 30,
+        "height": 1280,
+        "index": 0,
+        "pixel_format": "yuv420p",
+        "reported_frame_rate": 30,
+        "rotation": 0,
+        "width": 720
+      },
+      "video_streams": [
+        {
+          "codec": "h264",
+          "fps": 30,
+          "height": 1280,
+          "index": 0,
+          "pixel_format": "yuv420p",
+          "reported_frame_rate": 30,
+          "rotation": 0,
+          "width": 720
+        }
+      ],
+      "warnings": []
+    },
+    "realized_segments": 3,
+    "silent_inputs_filled": 0
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "local",
+    "network": false,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

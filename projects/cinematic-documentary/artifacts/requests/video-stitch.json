@@ -1,0 +1,13 @@
+{
+  "operation": "stitch",
+  "clips": [
+    "projects/cinematic-documentary/assets/video/shot1_graded.mp4",
+    "projects/cinematic-documentary/assets/video/shot2_graded.mp4",
+    "projects/cinematic-documentary/assets/video/shot3_graded.mp4",
+    "projects/cinematic-documentary/assets/video/shot4_graded.mp4"
+  ],
+  "output_path": "projects/cinematic-documentary/renders/montage.mp4",
+  "transition": "cut",
+  "target_resolution": "1920x1080",
+  "target_fps": 30
+}

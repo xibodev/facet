@@ -1,0 +1,19 @@
+ ACCEPTANCE.md                                      | 150 +++++++++++++++++++++
+ BACKLOG.md                                         |  13 ++
+ EVALUATION.md                                      |  16 +++
+ README.md                                          |  30 ++++-
+ SKILL.md                                           |   6 +
+ bin/videokit.exe                                   | Bin 8882688 -> 8926720 bytes
+ bundle.yaml                                        |  38 ++++--
+ third_party/remotion-composer/SCENE_TYPES.md       |  10 +-
+ .../remotion-composer/scripts/contract-tests.mjs   |  19 +++
+ third_party/remotion-composer/src/Explainer.tsx    | 148 +++++++++++++++++++-
+ .../remotion-composer/src/components/index.ts      |   6 +
+ videokit/cmd/videokit/main.go                      |  75 ++++++++++-
+ videokit/cmd/videokit/main_test.go                 |  12 ++
+ videokit/internal/config/config_test.go            |  10 +-
+ videokit/internal/environment/check.go             |  30 +++++
+ videokit/internal/environment/check_test.go        |  16 +++
+ videokit/internal/media/composer.go                |  56 +++++++-
+ videokit/internal/media/composer_test.go           |  48 +++++++
+ 18 files changed, 649 insertions(+), 34 deletions(-)

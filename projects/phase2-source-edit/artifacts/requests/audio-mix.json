@@ -1,0 +1,17 @@
+{
+  "video": "projects/phase2-source-edit/renders/edit.mp4",
+  "source": {
+    "gain_db": -4,
+    "fade_in": 0.2,
+    "fade_out": 0.4
+  },
+  "loudness": {
+    "enabled": true,
+    "integrated_lufs": -16,
+    "true_peak_db": -1.5
+  },
+  "duration": "video",
+  "output": "projects/phase2-source-edit/renders/final.mp4",
+  "overwrite": false,
+  "timeout_seconds": 300
+}

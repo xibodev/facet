@@ -1,2 +1,20 @@
+# Dependencies & local artifacts
+node_modules/
+**/node_modules/
+**/node_modules
+remotion-composer/node_modules/
+.playwright-cli/
 /.brains/
 /.opencode/
+*.temp
+*.log
+*.tgz
+
+# Binaries
+*.exe
+*.test
+bin/facet-*
+bin/facet
+bin/facet-ui
+bin/videokit
+!bin/*.js

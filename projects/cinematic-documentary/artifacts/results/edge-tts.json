@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "tool": "edge_tts",
+  "operation": "run",
+  "result": {
+    "format": "mp3",
+    "output": "projects/cinematic-documentary/assets/audio/voiceover.mp3",
+    "provider": "microsoft_edge",
+    "size_bytes": 110592,
+    "voice": "en-US-ChristopherNeural"
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "microsoft_edge",
+    "network": true,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

@@ -1,0 +1,26 @@
+1 .M N... 100644 100644 100644 7394a5b31904334e67413effa39d25574c6ff8ad 7394a5b31904334e67413effa39d25574c6ff8ad ACCEPTANCE.md
+1 .M N... 100644 100644 100644 761cd5805b97c9106c60118df64bb2e358fdfd0c 761cd5805b97c9106c60118df64bb2e358fdfd0c BACKLOG.md
+1 .M N... 100644 100644 100644 c4faab484611c81b9a191a4b35fee8fa4ba0c54a c4faab484611c81b9a191a4b35fee8fa4ba0c54a EVALUATION.md
+1 .M N... 100644 100644 100644 bfd541d0f9d662777b32abc558225ca61de995c5 bfd541d0f9d662777b32abc558225ca61de995c5 README.md
+1 .M N... 100644 100644 100644 aeee42ef443daa76839911b2f0e54bf2a390393e aeee42ef443daa76839911b2f0e54bf2a390393e SKILL.md
+1 .M N... 100644 100644 100644 dd3eb9856d6e6be7ac02472009b2481fcb71c41d dd3eb9856d6e6be7ac02472009b2481fcb71c41d bin/videokit.exe
+1 .M N... 100644 100644 100644 bddc72c7bb1d6df4e16d1789b63f10adcb292e08 bddc72c7bb1d6df4e16d1789b63f10adcb292e08 bundle.yaml
+1 .M N... 100644 100644 100644 74217a4ea9a5e14c1561458f4df90079b5055718 74217a4ea9a5e14c1561458f4df90079b5055718 third_party/remotion-composer/SCENE_TYPES.md
+1 .M N... 100644 100644 100644 a219571198f8f8c13d921565d6488b8a1fb0d6c3 a219571198f8f8c13d921565d6488b8a1fb0d6c3 third_party/remotion-composer/scripts/contract-tests.mjs
+1 .M N... 100644 100644 100644 b32ee6870ee5e498f8614130e0e674cb9e768206 b32ee6870ee5e498f8614130e0e674cb9e768206 third_party/remotion-composer/src/Explainer.tsx
+1 .M N... 100644 100644 100644 cc4976e88fc953e0968454f2a5c9de4d209e3855 cc4976e88fc953e0968454f2a5c9de4d209e3855 third_party/remotion-composer/src/components/index.ts
+1 .M N... 100644 100644 100644 37d17e75809234185ba8daef7dc28da2d44f33f7 37d17e75809234185ba8daef7dc28da2d44f33f7 videokit/cmd/videokit/main.go
+1 .M N... 100644 100644 100644 43fe248ab52066289ae9b9fbdc47482bd9b8fb84 43fe248ab52066289ae9b9fbdc47482bd9b8fb84 videokit/cmd/videokit/main_test.go
+1 .M N... 100644 100644 100644 8d40ca7cc7f5fb0b969d2d35f00fd36b610a4ec7 8d40ca7cc7f5fb0b969d2d35f00fd36b610a4ec7 videokit/internal/config/config_test.go
+1 .M N... 100644 100644 100644 fe1da8767dc67f0ae9069be4a8f577ce9fcd51a4 fe1da8767dc67f0ae9069be4a8f577ce9fcd51a4 videokit/internal/environment/check.go
+1 .M N... 100644 100644 100644 6728f99925660771903cac8d8f95ef937c029de0 6728f99925660771903cac8d8f95ef937c029de0 videokit/internal/environment/check_test.go
+1 .M N... 100644 100644 100644 b361c0bb04b806a4ab4bc647c407856462d87d4c b361c0bb04b806a4ab4bc647c407856462d87d4c videokit/internal/media/composer.go
+1 .M N... 100644 100644 100644 5219278a8342f2e2e77bbb853250ed989749c163 5219278a8342f2e2e77bbb853250ed989749c163 videokit/internal/media/composer_test.go
+? third_party/remotion-composer/src/components/NumberReveal.tsx
+? third_party/remotion-composer/src/components/RuleCard.tsx
+? third_party/remotion-composer/src/components/YearGrid.tsx
+? third_party/remotion-composer/src/components/YearVerdict.tsx
+? videokit/internal/media/derivatives.go
+? videokit/internal/media/derivatives_test.go
+? videokit/internal/media/source.go
+? videokit/internal/media/source_test.go

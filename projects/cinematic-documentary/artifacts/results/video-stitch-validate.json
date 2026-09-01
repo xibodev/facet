@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "tool": "video_stitch",
+  "operation": "run",
+  "result": {
+    "clip_count": 4,
+    "compatible": true,
+    "mismatches": [],
+    "operation": "validate",
+    "total_duration": 18.5
+  },
+  "warnings": [],
+  "execution": {
+    "provider": "local",
+    "network": false,
+    "external_write": false,
+    "estimated_cost": 0,
+    "actual_cost": 0
+  }
+}

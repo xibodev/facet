@@ -1,0 +1,9 @@
+{
+  "operation": "validate",
+  "clips": [
+    "projects/cinematic-documentary/assets/video/shot1_graded.mp4",
+    "projects/cinematic-documentary/assets/video/shot2_graded.mp4",
+    "projects/cinematic-documentary/assets/video/shot3_graded.mp4",
+    "projects/cinematic-documentary/assets/video/shot4_graded.mp4"
+  ]
+}
