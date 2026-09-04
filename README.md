@@ -109,20 +109,19 @@ Facet ships with 33 stateless media tools implemented in pure Go:
 
 ---
 
-## 🚀 Production Pipelines
+## 🚀 Modular Production Packs
 
-Facet supports 13 curated production pipelines:
+Facet organizes production capabilities into modular content packs under `packs/` that provide focused skills, styles, and pipeline definitions:
 
-1. **`animated-explainer`**: Researched explanatory videos with narration, charts, and Remotion motion graphics.
-2. **`cinematic`**: Montage-heavy, dramatic visuals with rich cinematic soundscapes.
-3. **`source-edit`**: Supplied-footage cutting, reframing, audio balancing, and review.
-4. **`screen-demo`**: Software tours, UI recordings, and animated terminal walkthroughs.
-5. **`talking-head`**: Presenter speech, interview cuts, jump-cut editing, and caption burn.
-6. **`clip-factory`** & **`podcast-repurpose`**: Derivative viral shorts, chaptering, and audiograms.
-7. **`documentary-montage`**: Archive & open-media essayistic documentaries with provenance tracking.
-8. **`animation`** & **`character-animation`**: Motion graphics, SVG rigging, and acting timelines.
-9. **`avatar-spokesperson`**: Digital presenter video generation and lip-sync.
-10. **`localization-dub`**: Multi-language subtitle, dubbing, and timing adaptation.
+| Pack | Package | Pipelines Included | Capabilities |
+| :--- | :--- | :--- | :--- |
+| **Explainer** | `@xibodev/facet-pack-explainer` | `animated-explainer` | 2D motion graphics, charts, text cards, Remotion runtime |
+| **Cinematic** | `@xibodev/facet-pack-cinematic` | `cinematic`, `documentary-montage` | Archival montage, Wikimedia public domain sourcing, color grading |
+| **Screen Demo** | `@xibodev/facet-pack-screendemo` | `screen-demo` | Software walkthroughs, synthetic terminal screen recording |
+| **Talking Head** | `@xibodev/facet-pack-talkinghead` | `talking-head`, `avatar-spokesperson` | AI presenter videos, lip-sync, teleprompter scripts |
+| **Social** | `@xibodev/facet-pack-social` | `clip-factory`, `podcast-repurpose` | 9:16 vertical shorts, viral hooks, animated captions |
+| **Animation** | `@xibodev/facet-pack-animation` | `character-animation`, `animation` | 2D character rigging, pose libraries, action timelines |
+| **Localization** | `@xibodev/facet-pack-localization` | `localization-dub` | Multilingual dubbing, subtitle translation, voice cloning |
 
 ---
 

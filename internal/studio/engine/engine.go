@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -62,13 +63,21 @@ type EngineAdapter interface {
 	Name() string
 	DisplayName() string
 	ExecutableName() string
-	BuildArgs(dir string, mode string, extraArgs []string) ([]string, error)
-	FormatUserMessage(prompt string) ([]byte, error)
+	BuildTurnArgs(dir, mode, prompt, nativeID string, extraArgs []string) ([]string, error)
 	NormalizeEvent(line []byte) (*NormalizedEvent, error)
 }
 
+func validateAutonomousMode(mode string) error {
+	switch mode {
+	case "", "rw":
+		return nil
+	default:
+		return fmt.Errorf("unsupported engine mode %q: only autonomous mode (rw) is verified", mode)
+	}
+}
+
 // GetAdapter returns the EngineAdapter corresponding to the given name.
-// Supported names: "claude", "opencode", "copilot", "generic".
+// Supported names: "claude", "opencode", "codex", and "copilot".
 // Defaults to "claude" if name is empty or unrecognized.
 func GetAdapter(name string) EngineAdapter {
 	switch strings.ToLower(strings.TrimSpace(name)) {
@@ -79,9 +88,7 @@ func GetAdapter(name string) EngineAdapter {
 	case "copilot", "gh-copilot", "github-copilot":
 		return NewCopilotAdapter()
 	case "codex", "openai-codex":
-		return &CodexAdapter{}
-	case "generic":
-		return NewGenericAdapter()
+		return NewCodexAdapter()
 	case "":
 		return NewClaudeAdapter()
 	default:
@@ -95,8 +102,7 @@ func ListAdapters() []EngineAdapter {
 		NewClaudeAdapter(),
 		NewOpenCodeAdapter(),
 		NewCopilotAdapter(),
-		&CodexAdapter{},
-		NewGenericAdapter(),
+		NewCodexAdapter(),
 	}
 }
 
@@ -179,4 +185,209 @@ func getInt64(v any) (int64, bool) {
 		return i, err == nil
 	}
 	return 0, false
+}
+
+func getBoolLike(v any) (bool, bool) {
+	switch value := v.(type) {
+	case bool:
+		return value, true
+	case string:
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "true", "1", "yes", "on":
+			return true, true
+		case "false", "0", "no", "off":
+			return false, true
+		}
+	case int:
+		if value == 0 || value == 1 {
+			return value == 1, true
+		}
+	case int64:
+		if value == 0 || value == 1 {
+			return value == 1, true
+		}
+	case float64:
+		if value == 0 || value == 1 {
+			return value == 1, true
+		}
+	case json.Number:
+		if value.String() == "0" || value.String() == "1" {
+			return value.String() == "1", true
+		}
+	}
+	return false, false
+}
+
+func mapValue(value any) map[string]any {
+	m, _ := value.(map[string]any)
+	return m
+}
+
+func firstString(maps []map[string]any, keys ...string) string {
+	for _, m := range maps {
+		for _, key := range keys {
+			if value, ok := m[key].(string); ok && value != "" {
+				return value
+			}
+		}
+	}
+	return ""
+}
+
+func firstBoolLike(maps []map[string]any, keys ...string) bool {
+	value, _ := firstBoolLikeValue(maps, keys...)
+	return value
+}
+
+func firstBoolLikeValue(maps []map[string]any, keys ...string) (bool, bool) {
+	for _, m := range maps {
+		for _, key := range keys {
+			if value, ok := getBoolLike(m[key]); ok {
+				return value, true
+			}
+		}
+	}
+	return false, false
+}
+
+func contentString(value any) string {
+	switch content := value.(type) {
+	case string:
+		return content
+	case []any:
+		var text strings.Builder
+		for _, item := range content {
+			text.WriteString(contentString(item))
+		}
+		return text.String()
+	case map[string]any:
+		for _, key := range []string{"text", "deltaContent", "content"} {
+			if text := contentString(content[key]); text != "" {
+				return text
+			}
+		}
+	default:
+		if value != nil {
+			if encoded, err := json.Marshal(value); err == nil && string(encoded) != "null" {
+				return string(encoded)
+			}
+		}
+	}
+	return ""
+}
+
+func valueString(value any) string {
+	if text, ok := value.(string); ok {
+		return text
+	}
+	if value == nil {
+		return ""
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil || string(encoded) == "null" {
+		return ""
+	}
+	return string(encoded)
+}
+
+func firstFloatValue(maps []map[string]any, keys ...string) (float64, bool) {
+	for _, m := range maps {
+		for _, key := range keys {
+			if value, ok := getFloat(m[key]); ok {
+				return value, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func firstInt64Value(maps []map[string]any, keys ...string) (int64, bool) {
+	for _, m := range maps {
+		for _, key := range keys {
+			if value, ok := getInt64(m[key]); ok {
+				return value, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func tokenCount(values ...any) (int64, bool) {
+	for _, value := range values {
+		if count, ok := getInt64(value); ok {
+			return count, true
+		}
+		tokens := mapValue(value)
+		if tokens == nil {
+			continue
+		}
+		if total, ok := firstInt64Value([]map[string]any{tokens}, "total", "total_tokens", "totalTokens"); ok {
+			return total, true
+		}
+
+		var total int64
+		found := false
+		groups := [][]string{
+			{"input", "input_tokens", "inputTokens", "prompt_tokens", "promptTokens"},
+			{"output", "output_tokens", "outputTokens", "completion_tokens", "completionTokens"},
+			{"reasoning", "reasoning_tokens", "reasoningTokens"},
+			{"cache_read", "cacheRead", "cache_read_tokens", "cacheReadTokens"},
+			{"cache_write", "cacheWrite", "cache_write_tokens", "cacheWriteTokens"},
+		}
+		for _, keys := range groups {
+			if count, ok := firstInt64Value([]map[string]any{tokens}, keys...); ok {
+				total += count
+				found = true
+			}
+		}
+		if cacheTotal, ok := cacheTokenCount(tokens["cache"]); ok {
+			total += cacheTotal
+			found = true
+		}
+		if found {
+			return total, true
+		}
+	}
+	return 0, false
+}
+
+func cacheTokenCount(value any) (int64, bool) {
+	cache := mapValue(value)
+	if cache == nil {
+		return 0, false
+	}
+	var total int64
+	found := false
+	for _, keys := range [][]string{
+		{"read", "cache_read", "cacheRead", "cache_read_tokens", "cacheReadTokens"},
+		{"write", "cache_write", "cacheWrite", "cache_write_tokens", "cacheWriteTokens"},
+	} {
+		if count, ok := firstInt64Value([]map[string]any{cache}, keys...); ok {
+			total += count
+			found = true
+		}
+	}
+	return total, found
+}
+
+func bestReason(maps ...map[string]any) string {
+	for _, m := range maps {
+		for _, key := range []string{"content", "message", "result", "error", "reason"} {
+			value := m[key]
+			if object, ok := value.(map[string]any); ok {
+				if text := bestReason(object); text != "" {
+					return text
+				}
+			}
+			if text := strings.TrimSpace(contentString(value)); text != "" {
+				return text
+			}
+			if object, ok := value.(map[string]any); ok && len(object) > 0 {
+				if encoded, err := json.Marshal(object); err == nil {
+					return string(encoded)
+				}
+			}
+		}
+	}
+	return ""
 }

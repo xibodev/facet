@@ -3,19 +3,22 @@ package engine
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"strings"
+	"sync"
 )
 
 // CopilotAdapter implements EngineAdapter for GitHub Copilot CLI.
 type CopilotAdapter struct {
-	Executable string
+	Executable       string
+	mu               sync.Mutex
+	streamedMessages map[string]struct{}
 }
 
 // NewCopilotAdapter creates a new CopilotAdapter instance.
 func NewCopilotAdapter() *CopilotAdapter {
 	return &CopilotAdapter{
-		Executable: "copilot",
+		Executable:       "copilot",
+		streamedMessages: make(map[string]struct{}),
 	}
 }
 
@@ -34,45 +37,18 @@ func (a *CopilotAdapter) ExecutableName() string {
 	return "copilot"
 }
 
-// BuildArgs constructs the command-line arguments for running Copilot.
-func (a *CopilotAdapter) BuildArgs(dir string, mode string, extraArgs []string) ([]string, error) {
-	args := []string{"-p"}
-
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "rw":
-		args = append(args, "--allow-all")
-	case "ro":
-		args = append(args, "--read-only")
-	case "ask":
-		args = append(args, "--confirm")
+// BuildTurnArgs constructs one autonomous Copilot invocation.
+func (a *CopilotAdapter) BuildTurnArgs(dir, mode, prompt, nativeID string, extraArgs []string) ([]string, error) {
+	if err := validateAutonomousMode(mode); err != nil {
+		return nil, err
 	}
-
-	if len(extraArgs) > 0 {
-		args = append(args, extraArgs...)
+	args := []string{"--allow-all", "--output-format", "json", "--stream", "on"}
+	args = append(args, extraArgs...)
+	if nativeID != "" {
+		args = append(args, "--resume="+nativeID)
 	}
-
+	args = append(args, "--prompt", prompt)
 	return args, nil
-}
-
-// FormatUserMessage formats a prompt into a user message payload.
-func (a *CopilotAdapter) FormatUserMessage(prompt string) ([]byte, error) {
-	msg := map[string]any{
-		"type": "user",
-		"message": map[string]any{
-			"role": "user",
-			"content": []map[string]any{
-				{
-					"type": "text",
-					"text": prompt,
-				},
-			},
-		},
-	}
-	b, err := json.Marshal(msg)
-	if err != nil {
-		return nil, fmt.Errorf("marshal copilot user message: %w", err)
-	}
-	return append(b, '\n'), nil
 }
 
 // NormalizeEvent parses a GitHub Copilot event line into a NormalizedEvent.
@@ -106,15 +82,17 @@ func (a *CopilotAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
 	}
 
 	evType, _ := raw["type"].(string)
+	data := mapValue(raw["data"])
+	message := mapValue(data["message"])
+	maps := []map[string]any{raw, data, message}
+	sessionID := firstString(maps, "sessionId", "session_id", "conversation_id")
+	messageID := firstString([]map[string]any{data, message}, "messageId", "messageID", "message_id", "id")
 
 	switch evType {
-	case "session", "conversation.create", "init":
-		sessionID, _ := raw["session_id"].(string)
+	case "session.start", "session", "conversation.create", "init":
+		a.clearStreamedMessages()
 		if sessionID == "" {
-			sessionID, _ = raw["conversation_id"].(string)
-		}
-		if sessionID == "" {
-			sessionID, _ = raw["id"].(string)
+			sessionID = firstString(maps, "id")
 		}
 		return &NormalizedEvent{
 			Type:      EventSession,
@@ -122,101 +100,98 @@ func (a *CopilotAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
 			Raw:       raw,
 		}, nil
 
-	case "text_delta", "message.delta", "assistant.message.delta", "text", "message":
+	case "assistant.message_delta":
+		a.markStreamedMessage(messageID)
 		var content string
-		if c, ok := raw["content"].(string); ok {
-			content = c
-		} else if d, ok := raw["delta"].(string); ok {
-			content = d
-		} else if t, ok := raw["text"].(string); ok {
-			content = t
+		for _, value := range []any{data["deltaContent"], data["delta"], message["deltaContent"], message["delta"], data["content"], data["message"], message["content"], raw["content"], raw["delta"], raw["text"]} {
+			if content = contentString(value); content != "" {
+				break
+			}
 		}
 		if spec, cleaned, ok := ExtractQuestion(content); ok {
 			return &NormalizedEvent{
-				Type:     EventQuestion,
-				Content:  cleaned,
-				Question: spec,
-				Raw:      raw,
+				Type:      EventQuestion,
+				SessionID: sessionID,
+				Content:   cleaned,
+				Question:  spec,
+				Raw:       raw,
 			}, nil
 		}
 		return &NormalizedEvent{
-			Type:    EventTextDelta,
-			Content: content,
-			Raw:     raw,
-		}, nil
-
-	case "think_delta", "reasoning.delta", "thinking":
-		var th string
-		if t, ok := raw["thinking"].(string); ok {
-			th = t
-		} else if d, ok := raw["delta"].(string); ok {
-			th = d
-		} else if r, ok := raw["reasoning"].(string); ok {
-			th = r
-		}
-		return &NormalizedEvent{
-			Type:     EventThinkDelta,
-			Thinking: th,
-			Raw:      raw,
-		}, nil
-
-	case "tool_use", "tool_call", "function_call":
-		name, _ := raw["name"].(string)
-		if name == "" {
-			name, _ = raw["tool_name"].(string)
-		}
-		id, _ := raw["id"].(string)
-		if id == "" {
-			id, _ = raw["tool_id"].(string)
-		}
-		if id == "" {
-			id, _ = raw["call_id"].(string)
-		}
-		input := raw["input"]
-		if input == nil {
-			input = raw["arguments"]
-		}
-		if input == nil {
-			input = raw["parameters"]
-		}
-		return &NormalizedEvent{
-			Type:      EventToolUse,
-			ToolName:  name,
-			ToolID:    id,
-			ToolInput: input,
+			Type:      EventTextDelta,
+			SessionID: sessionID,
+			Content:   content,
 			Raw:       raw,
 		}, nil
 
-	case "tool_result", "tool_call_result", "function_call_result":
-		id, _ := raw["id"].(string)
-		if id == "" {
-			id, _ = raw["tool_id"].(string)
+	case "assistant.message":
+		if a.wasStreamedMessage(messageID) {
+			return nil, nil
 		}
-		if id == "" {
-			id, _ = raw["tool_use_id"].(string)
-		}
-		if id == "" {
-			id, _ = raw["call_id"].(string)
-		}
-		var outStr string
-		if out, ok := raw["output"].(string); ok {
-			outStr = out
-		} else if c, ok := raw["content"].(string); ok {
-			outStr = c
-		} else if res := raw["result"]; res != nil {
-			if s, ok := res.(string); ok {
-				outStr = s
-			} else {
-				b, _ := json.Marshal(res)
-				outStr = string(b)
+		var content string
+		for _, value := range []any{data["content"], data["message"], message["content"], data["deltaContent"], raw["content"], raw["text"]} {
+			if content = contentString(value); content != "" {
+				break
 			}
 		}
-		isErr, _ := raw["is_error"].(bool)
+		if spec, cleaned, ok := ExtractQuestion(content); ok {
+			return &NormalizedEvent{
+				Type:      EventQuestion,
+				SessionID: sessionID,
+				Content:   cleaned,
+				Question:  spec,
+				Raw:       raw,
+			}, nil
+		}
+		return &NormalizedEvent{
+			Type:      EventTextDelta,
+			SessionID: sessionID,
+			Content:   content,
+			Raw:       raw,
+		}, nil
+
+	case "assistant.reasoning", "assistant.reasoning_delta":
+		var thinking string
+		for _, value := range []any{data["deltaContent"], data["delta"], data["content"], data["reasoning"], message["content"], raw["reasoning"], raw["thinking"], raw["delta"]} {
+			if thinking = contentString(value); thinking != "" {
+				break
+			}
+		}
+		return &NormalizedEvent{
+			Type:      EventThinkDelta,
+			SessionID: sessionID,
+			Thinking:  thinking,
+			Raw:       raw,
+		}, nil
+
+	case "tool.execution_start":
+		return &NormalizedEvent{
+			Type:      EventToolUse,
+			SessionID: sessionID,
+			ToolName:  firstString([]map[string]any{data}, "toolName"),
+			ToolID:    firstString([]map[string]any{data}, "toolCallId", "toolCallID"),
+			ToolInput: data["arguments"],
+			Raw:       raw,
+		}, nil
+
+	case "tool.execution_complete":
+		isError := false
+		if success, ok := firstBoolLikeValue([]map[string]any{data}, "success"); ok {
+			isError = !success
+		} else if status := strings.ToLower(firstString([]map[string]any{data}, "status")); status == "failed" || status == "error" || status == "cancelled" || status == "canceled" {
+			isError = true
+		}
+		result := data["result"]
+		if result == nil && data["error"] != nil {
+			result = data["error"]
+		}
 		return &NormalizedEvent{
 			Type:       EventToolResult,
-			ToolID:     id,
-			ToolOutput: outStr,
-			IsError:    isErr,
+			SessionID:  sessionID,
+			ToolName:   firstString([]map[string]any{data}, "toolName"),
+			ToolID:     firstString([]map[string]any{data}, "toolCallId", "toolCallID"),
+			ToolOutput: valueString(result),
+			IsError:    isError,
 			Raw:        raw,
 		}, nil
 
@@ -226,55 +201,112 @@ func (a *CopilotAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
 			q = raw["data"]
 		}
 		return &NormalizedEvent{
-			Type:     EventQuestion,
-			Question: q,
-			Raw:      raw,
+			Type:      EventQuestion,
+			SessionID: sessionID,
+			Question:  q,
+			Raw:       raw,
 		}, nil
 
 	case "permission", "approval_request":
 		msg, _ := raw["message"].(string)
 		return &NormalizedEvent{
-			Type:    EventPermission,
-			Content: msg,
-			Raw:     raw,
+			Type:      EventPermission,
+			SessionID: sessionID,
+			Content:   msg,
+			Raw:       raw,
 		}, nil
 
-	case "done", "turn.finish", "conversation.end", "result":
-		cost, _ := getFloat(raw["cost_usd"])
-		if cost == 0 {
-			cost, _ = getFloat(raw["total_cost_usd"])
-		}
-		dur, _ := getInt64(raw["duration_ms"])
-		tokens, _ := getInt64(raw["tokens"])
-		if tokens == 0 {
-			if usage, ok := raw["usage"].(map[string]any); ok {
-				outTok, _ := getInt64(usage["output_tokens"])
-				inTok, _ := getInt64(usage["input_tokens"])
-				tokens = outTok + inTok
-			}
-		}
-		isErr, _ := raw["is_error"].(bool)
-		return &NormalizedEvent{
-			Type:       EventDone,
-			CostUSD:    cost,
-			DurationMs: dur,
-			Tokens:     tokens,
-			IsError:    isErr,
-			Raw:        raw,
-		}, nil
+	case "assistant.turn_end":
+		return &NormalizedEvent{SessionID: sessionID, Raw: raw}, nil
 
-	case "error":
-		msg, _ := raw["message"].(string)
-		if msg == "" {
-			msg, _ = raw["error"].(string)
-		}
+	case "session.shutdown":
+		a.clearStreamedMessages()
+		return copilotDoneEvent(raw, data, message, sessionID), nil
+
+	case "result":
+		a.clearStreamedMessages()
+		return copilotDoneEvent(raw, data, message, sessionID), nil
+
+	case "session.error", "error":
 		return &NormalizedEvent{
-			Type:    EventError,
-			Content: msg,
-			IsError: true,
-			Raw:     raw,
+			Type:      EventError,
+			SessionID: sessionID,
+			Content:   bestReason(raw, data, message),
+			IsError:   true,
+			Raw:       raw,
 		}, nil
+	}
+	if bestReason(raw, data, message) != "" && (raw["error"] != nil || data["error"] != nil || firstBoolLike(maps, "is_error", "isError")) {
+		return &NormalizedEvent{Type: EventError, SessionID: sessionID, Content: bestReason(raw, data, message), IsError: true, Raw: raw}, nil
+	}
+	if sessionID != "" {
+		return &NormalizedEvent{SessionID: sessionID, Raw: raw}, nil
 	}
 
 	return nil, nil
+}
+
+func (a *CopilotAdapter) markStreamedMessage(messageID string) {
+	if messageID == "" {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.streamedMessages == nil {
+		a.streamedMessages = make(map[string]struct{})
+	}
+	a.streamedMessages[messageID] = struct{}{}
+}
+
+func (a *CopilotAdapter) wasStreamedMessage(messageID string) bool {
+	if messageID == "" {
+		return false
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	_, found := a.streamedMessages[messageID]
+	return found
+}
+
+func (a *CopilotAdapter) clearStreamedMessages() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.streamedMessages = make(map[string]struct{})
+}
+
+func copilotDoneEvent(raw, data, message map[string]any, sessionID string) *NormalizedEvent {
+	maps := []map[string]any{data, raw}
+	cost, _ := firstFloatValue(maps, "cost", "cost_usd", "costUSD", "total_cost_usd", "totalCostUSD")
+	duration, _ := firstInt64Value(maps, "duration_ms", "durationMs")
+	tokens, _ := tokenCount(data["tokens"], raw["tokens"], data["usage"], raw["usage"])
+	isError := firstBoolLike(maps, "is_error", "isError")
+	for _, terminal := range maps {
+		if exitCode, ok := firstInt64Value([]map[string]any{terminal}, "exitCode", "exit_code"); ok && exitCode != 0 {
+			isError = true
+		}
+		for _, key := range []string{"shutdown", "status"} {
+			if status, ok := terminal[key].(string); ok && isCopilotFailureStatus(status) {
+				isError = true
+			}
+		}
+	}
+	return &NormalizedEvent{
+		Type:       EventDone,
+		SessionID:  sessionID,
+		Content:    bestReason(raw, data, message),
+		CostUSD:    cost,
+		DurationMs: duration,
+		Tokens:     tokens,
+		IsError:    isError,
+		Raw:        raw,
+	}
+}
+
+func isCopilotFailureStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "failed", "failure", "error", "canceled", "cancelled":
+		return true
+	default:
+		return false
+	}
 }

@@ -10,6 +10,7 @@
   "files": [
     "bin",
     "skills",
+    "packs",
     "pipeline_defs",
     "schemas",
     "styles",

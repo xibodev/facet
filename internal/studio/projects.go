@@ -1,12 +1,15 @@
 package studio
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -23,13 +26,22 @@ type StageStatuses struct {
 
 // ProjectSummary provides lightweight metadata for list views.
 type ProjectSummary struct {
-	Slug         string        `json:"slug"`
-	Name         string        `json:"name"`
-	Path         string        `json:"path"`
-	LastModified time.Time     `json:"last_modified"`
-	Stages       StageStatuses `json:"stages"`
-	ThumbnailURL string        `json:"thumbnail_url,omitempty"`
-	VideoURL     string        `json:"video_url,omitempty"`
+	Slug             string        `json:"slug"`
+	Name             string        `json:"name"`
+	Path             string        `json:"path"`
+	LastModified     time.Time     `json:"last_modified"`
+	Stages           StageStatuses `json:"stages"`
+	BriefPath        string        `json:"brief_path,omitempty"`
+	BriefURL         string        `json:"brief_url,omitempty"`
+	ScriptPath       string        `json:"script_path,omitempty"`
+	ScriptURL        string        `json:"script_url,omitempty"`
+	CompositionPath  string        `json:"composition_path,omitempty"`
+	CompositionURL   string        `json:"composition_url,omitempty"`
+	ThumbnailURL     string        `json:"thumbnail_url,omitempty"`
+	VideoURL         string        `json:"video_url,omitempty"`
+	PreviewVideoPath string        `json:"preview_video_path,omitempty"`
+	PreviewVideoURL  string        `json:"preview_video_url,omitempty"`
+	VideoVersion     string        `json:"video_version,omitempty"`
 }
 
 // BeatItem represents a single editorial or visual beat from script or composition.
@@ -55,46 +67,300 @@ type MediaFile struct {
 
 // ProjectDetails provides deep inspection data for a project.
 type ProjectDetails struct {
-	Slug          string         `json:"slug"`
-	Name          string         `json:"name"`
-	Path          string         `json:"path"`
-	LastModified  time.Time      `json:"last_modified"`
-	Stages        StageStatuses  `json:"stages"`
-	Brief         string         `json:"brief,omitempty"`
-	Script        string         `json:"script,omitempty"`
-	Beats         []BeatItem     `json:"beats,omitempty"`
-	Narration     []MediaFile    `json:"narration,omitempty"`
-	ReviewFrames  []MediaFile    `json:"review_frames,omitempty"`
-	QAFrames      []MediaFile    `json:"qa_frames,omitempty"`
-	ReviewReport  any            `json:"review_report,omitempty"`
-	RemotionProps any            `json:"remotion_props,omitempty"`
-	VideoPath     string         `json:"video_path,omitempty"`
-	VideoURL      string         `json:"video_url,omitempty"`
-	ThumbnailPath string         `json:"thumbnail_path,omitempty"`
-	ThumbnailURL  string         `json:"thumbnail_url,omitempty"`
+	Slug             string        `json:"slug"`
+	Name             string        `json:"name"`
+	Path             string        `json:"path"`
+	LastModified     time.Time     `json:"last_modified"`
+	Stages           StageStatuses `json:"stages"`
+	Brief            string        `json:"brief,omitempty"`
+	BriefPath        string        `json:"brief_path,omitempty"`
+	BriefURL         string        `json:"brief_url,omitempty"`
+	Script           string        `json:"script,omitempty"`
+	ScriptPath       string        `json:"script_path,omitempty"`
+	ScriptURL        string        `json:"script_url,omitempty"`
+	Beats            []BeatItem    `json:"beats,omitempty"`
+	Narration        []MediaFile   `json:"narration,omitempty"`
+	ReviewFrames     []MediaFile   `json:"review_frames,omitempty"`
+	QAFrames         []MediaFile   `json:"qa_frames,omitempty"`
+	ReviewReport     any           `json:"review_report,omitempty"`
+	RemotionProps    any           `json:"remotion_props,omitempty"`
+	CompositionPath  string        `json:"composition_path,omitempty"`
+	CompositionURL   string        `json:"composition_url,omitempty"`
+	VideoPath        string        `json:"video_path,omitempty"`
+	VideoURL         string        `json:"video_url,omitempty"`
+	PreviewVideoPath string        `json:"preview_video_path,omitempty"`
+	PreviewVideoURL  string        `json:"preview_video_url,omitempty"`
+	VideoVersion     string        `json:"video_version,omitempty"`
+	ThumbnailPath    string        `json:"thumbnail_path,omitempty"`
+	ThumbnailURL     string        `json:"thumbnail_url,omitempty"`
+}
+
+type artifactEvidence struct {
+	FullPath string
+	Path     string
+	URL      string
+	Text     string
+	Title    string
+	Value    any
+}
+
+type videoEvidence struct {
+	Path    string
+	URL     string
+	Version string
+}
+
+type projectEvidence struct {
+	Brief              artifactEvidence
+	Script             artifactEvidence
+	ScriptBeats        []BeatItem
+	Narration          []MediaFile
+	Composition        artifactEvidence
+	CompositionIsProps bool
+	QAFrames           []MediaFile
+	ReviewFrames       []MediaFile
+	ReviewReport       any
+	HasReviewReport    bool
+	Master             videoEvidence
+	Preview            videoEvidence
+	Thumbnail          videoEvidence
+}
+
+type projectsScope struct {
+	rootPath          string
+	projectsPath      string
+	canonicalProjects string
+}
+
+type projectScope struct {
+	projectsScope
+	slug             string
+	projectPath      string
+	canonicalProject string
+}
+
+type projectFile struct {
+	canonicalPath string
+	relativePath  string
+	url           string
+	info          os.FileInfo
+}
+
+func (e projectEvidence) stages() StageStatuses {
+	return StageStatuses{
+		Brief:       e.Brief.Path != "",
+		Script:      e.Script.Path != "",
+		Voiceover:   len(e.Narration) > 0,
+		Composition: e.Composition.Path != "" || e.Master.Path != "" || e.Preview.Path != "",
+		Review:      e.HasReviewReport || len(e.QAFrames) > 0 || len(e.ReviewFrames) > 0,
+		Master:      e.Master.Path != "",
+	}
+}
+
+func resolveProjectsScope(rootDir string) (projectsScope, error) {
+	rootPath := filepath.Clean(rootDir)
+	canonicalRoot, err := canonicalExistingPath(rootPath)
+	if err != nil {
+		return projectsScope{}, fmt.Errorf("resolve Studio root: %w", err)
+	}
+
+	projectsPath := filepath.Join(rootPath, "projects")
+	canonicalProjects, err := canonicalExistingPath(projectsPath)
+	if err != nil {
+		return projectsScope{}, fmt.Errorf("resolve projects directory: %w", err)
+	}
+	if !pathStrictlyWithin(canonicalRoot, canonicalProjects) {
+		return projectsScope{}, fmt.Errorf("projects directory resolves outside the Studio root")
+	}
+	info, err := os.Stat(canonicalProjects)
+	if err != nil {
+		return projectsScope{}, fmt.Errorf("stat projects directory: %w", err)
+	}
+	if !info.IsDir() {
+		return projectsScope{}, fmt.Errorf("projects path is not a directory")
+	}
+
+	return projectsScope{
+		rootPath:          rootPath,
+		projectsPath:      projectsPath,
+		canonicalProjects: canonicalProjects,
+	}, nil
+}
+
+func validateProjectSlug(slug string) error {
+	if slug == "" {
+		return fmt.Errorf("project slug is empty")
+	}
+	for candidate := slug; ; {
+		if candidate == "" || candidate == "." || candidate == ".." || strings.ContainsAny(candidate, `/\`) || filepath.IsAbs(candidate) || filepath.VolumeName(candidate) != "" {
+			return fmt.Errorf("invalid project slug %q", slug)
+		}
+		decoded, err := url.PathUnescape(candidate)
+		if err != nil {
+			return fmt.Errorf("invalid project slug %q", slug)
+		}
+		if decoded == candidate {
+			return nil
+		}
+		candidate = decoded
+	}
+}
+
+func (scope projectsScope) selectProject(slug string) (projectScope, os.FileInfo, error) {
+	if err := validateProjectSlug(slug); err != nil {
+		return projectScope{}, nil, err
+	}
+	entries, err := os.ReadDir(scope.canonicalProjects)
+	if err != nil {
+		return projectScope{}, nil, fmt.Errorf("project %q not found: %w", slug, err)
+	}
+	for _, entry := range entries {
+		if entry.Name() == slug {
+			return scope.projectEntry(slug)
+		}
+	}
+	// Fallback to catalog lookup
+	if cat, err := LoadCatalog(scope.rootPath); err == nil {
+		for _, cp := range cat.Projects {
+			if strings.EqualFold(cp.ID, slug) || strings.EqualFold(filepath.Base(cp.Path), slug) {
+				return makeCustomProjectScope(slug, cp.Path)
+			}
+		}
+	}
+	return projectScope{}, nil, fmt.Errorf("project %q is not an actual direct child directory of %q", slug, scope.projectsPath)
+}
+
+func makeCustomProjectScope(slug, dirPath string) (projectScope, os.FileInfo, error) {
+	canonicalProject, err := canonicalExistingPath(dirPath)
+	if err != nil {
+		return projectScope{}, nil, fmt.Errorf("resolve project %q: %w", slug, err)
+	}
+	info, err := os.Stat(canonicalProject)
+	if err != nil {
+		return projectScope{}, nil, fmt.Errorf("stat project %q: %w", slug, err)
+	}
+	if !info.IsDir() {
+		return projectScope{}, nil, fmt.Errorf("project %q is not a directory", slug)
+	}
+	return projectScope{
+		projectsScope: projectsScope{
+			rootPath:          dirPath,
+			projectsPath:      filepath.Dir(dirPath),
+			canonicalProjects: filepath.Dir(canonicalProject),
+		},
+		slug:             slug,
+		projectPath:      dirPath,
+		canonicalProject: canonicalProject,
+	}, info, nil
+}
+
+func (scope projectsScope) projectEntry(slug string) (projectScope, os.FileInfo, error) {
+	projectCandidate := filepath.Join(scope.canonicalProjects, slug)
+	canonicalProject, err := canonicalExistingPath(projectCandidate)
+	if err != nil {
+		return projectScope{}, nil, fmt.Errorf("resolve project %q: %w", slug, err)
+	}
+	if !pathStrictlyWithin(scope.canonicalProjects, canonicalProject) || !samePath(projectCandidate, canonicalProject) {
+		return projectScope{}, nil, fmt.Errorf("project %q is not an actual direct child directory of %q", slug, scope.projectsPath)
+	}
+	info, err := os.Stat(canonicalProject)
+	if err != nil {
+		return projectScope{}, nil, fmt.Errorf("stat project %q: %w", slug, err)
+	}
+	if !info.IsDir() {
+		return projectScope{}, nil, fmt.Errorf("project %q is not a directory", slug)
+	}
+
+	return projectScope{
+		projectsScope:    scope,
+		slug:             slug,
+		projectPath:      filepath.Join(scope.projectsPath, slug),
+		canonicalProject: canonicalProject,
+	}, info, nil
+}
+
+func (scope projectScope) resolveEntry(path string) (string, os.FileInfo, bool) {
+	if strings.TrimSpace(path) == "" {
+		return "", nil, false
+	}
+	projectPath, err := filepath.Abs(scope.projectPath)
+	if err != nil {
+		return "", nil, false
+	}
+	candidatePath, err := filepath.Abs(path)
+	if err != nil {
+		return "", nil, false
+	}
+	if !pathStrictlyWithin(projectPath, candidatePath) {
+		return "", nil, false
+	}
+
+	canonicalPath, err := canonicalExistingPath(candidatePath)
+	if err != nil {
+		return "", nil, false
+	}
+	if !pathStrictlyWithin(scope.canonicalProject, canonicalPath) {
+		return "", nil, false
+	}
+
+	info, err := os.Stat(canonicalPath)
+	if err != nil {
+		return "", nil, false
+	}
+	return canonicalPath, info, true
+}
+
+func (scope projectScope) resolveFile(path string) (projectFile, bool) {
+	canonicalPath, info, ok := scope.resolveEntry(path)
+	if !ok || !info.Mode().IsRegular() {
+		return projectFile{}, false
+	}
+	relativePath, mediaURL := formatEvidenceLocation(scope.rootPath, path)
+	if relativePath == "" || mediaURL == "" {
+		return projectFile{}, false
+	}
+	return projectFile{
+		canonicalPath: canonicalPath,
+		relativePath:  relativePath,
+		url:           mediaURL,
+		info:          info,
+	}, true
+}
+
+func (scope projectScope) readDir(path string) ([]os.DirEntry, bool) {
+	canonicalPath, info, ok := scope.resolveEntry(path)
+	if !ok || !info.IsDir() {
+		return nil, false
+	}
+	entries, err := os.ReadDir(canonicalPath)
+	if err != nil {
+		return nil, false
+	}
+	return entries, true
 }
 
 // ListProjects scans projects/ under rootDir and returns summaries.
 func ListProjects(rootDir string) ([]ProjectSummary, error) {
-	projectsDir := filepath.Join(rootDir, "projects")
-	entries, err := os.ReadDir(projectsDir)
+	projects, err := resolveProjectsScope(rootDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			// If projects/ directory doesn't exist yet, return empty list
+		if os.IsNotExist(err) || errorsIsNotExist(err) {
 			return []ProjectSummary{}, nil
 		}
 		return nil, fmt.Errorf("failed to read projects directory: %w", err)
 	}
+	entries, err := os.ReadDir(projects.canonicalProjects)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read projects directory: %w", err)
+	}
 
-	var list []ProjectSummary
+	list := make([]ProjectSummary, 0, len(entries))
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		slug := entry.Name()
+		project, info, err := projects.projectEntry(slug)
+		if err != nil {
 			continue
 		}
-		slug := entry.Name()
-		projPath := filepath.Join(projectsDir, slug)
-
-		summary, err := scanProjectSummary(rootDir, slug, projPath)
+		summary, err := scanProjectSummary(project, info)
 		if err != nil {
 			continue
 		}
@@ -109,287 +375,596 @@ func ListProjects(rootDir string) ([]ProjectSummary, error) {
 	return list, nil
 }
 
+func errorsIsNotExist(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "cannot find") || strings.Contains(err.Error(), "no such file") || strings.Contains(err.Error(), "does not exist")
+}
+
+// ListProjectsWithCatalog scans rootDir projects and merges catalog projects.
+func ListProjectsWithCatalog(rootDir string) ([]ProjectSummary, error) {
+	list, err := ListProjects(rootDir)
+	if err != nil {
+		list = make([]ProjectSummary, 0)
+	}
+	seen := make(map[string]bool)
+	for _, item := range list {
+		seen[strings.ToLower(item.Slug)] = true
+	}
+
+	// Merge registered projects from catalog
+	if cat, err := LoadCatalog(rootDir); err == nil {
+		for _, cp := range cat.Projects {
+			slug := cp.ID
+			if slug == "" {
+				slug = filepath.Base(cp.Path)
+			}
+			if seen[strings.ToLower(slug)] {
+				continue
+			}
+			if !cp.Exists {
+				continue
+			}
+			customScope, info, err := makeCustomProjectScope(slug, cp.Path)
+			if err != nil {
+				continue
+			}
+			summary, err := scanProjectSummary(customScope, info)
+			if err != nil {
+				continue
+			}
+			if cp.Name != "" {
+				summary.Name = cp.Name
+			}
+			list = append(list, summary)
+			seen[strings.ToLower(slug)] = true
+		}
+	}
+
+	// Sort by LastModified descending
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].LastModified.After(list[j].LastModified)
+	})
+
+	return list, nil
+}
+
 // GetProjectDetails reads deep project artifacts and metadata.
 func GetProjectDetails(rootDir, slug string) (*ProjectDetails, error) {
-	projPath := filepath.Join(rootDir, "projects", slug)
-	info, err := os.Stat(projPath)
+	projects, err := resolveProjectsScope(rootDir)
 	if err != nil {
-		return nil, fmt.Errorf("project %q not found: %w", slug, err)
+		return nil, err
 	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("project %q is not a directory", slug)
+	project, info, err := projects.selectProject(slug)
+	if err != nil {
+		return nil, err
 	}
+	evidence := scanProjectEvidence(project)
 
 	details := &ProjectDetails{
-		Slug:         slug,
-		Name:         slugToTitle(slug),
-		Path:         projPath,
-		LastModified: info.ModTime(),
+		Slug:             slug,
+		Name:             slugToTitle(slug),
+		Path:             project.projectPath,
+		LastModified:     info.ModTime(),
+		Stages:           evidence.stages(),
+		Brief:            evidence.Brief.Text,
+		BriefPath:        evidence.Brief.Path,
+		BriefURL:         evidence.Brief.URL,
+		Script:           evidence.Script.Text,
+		ScriptPath:       evidence.Script.Path,
+		ScriptURL:        evidence.Script.URL,
+		Beats:            evidence.ScriptBeats,
+		Narration:        evidence.Narration,
+		ReviewFrames:     evidence.ReviewFrames,
+		QAFrames:         evidence.QAFrames,
+		ReviewReport:     evidence.ReviewReport,
+		CompositionPath:  evidence.Composition.Path,
+		CompositionURL:   evidence.Composition.URL,
+		VideoPath:        evidence.Master.Path,
+		VideoURL:         evidence.Master.URL,
+		PreviewVideoPath: evidence.Preview.Path,
+		PreviewVideoURL:  evidence.Preview.URL,
+		ThumbnailPath:    evidence.Thumbnail.Path,
+		ThumbnailURL:     evidence.Thumbnail.URL,
 	}
-
-	// 1. Read Brief
-	briefPath := filepath.Join(projPath, "brief.md")
-	if briefBytes, err := os.ReadFile(briefPath); err == nil {
-		details.Brief = string(briefBytes)
-		details.Stages.Brief = true
-		if title := extractMarkdownTitle(details.Brief); title != "" {
-			details.Name = title
+	if evidence.Master.Version != "" {
+		details.VideoVersion = evidence.Master.Version
+	} else {
+		details.VideoVersion = evidence.Preview.Version
+	}
+	if evidence.Brief.Title != "" {
+		details.Name = evidence.Brief.Title
+	} else if evidence.Script.Title != "" {
+		details.Name = evidence.Script.Title
+	}
+	if evidence.CompositionIsProps {
+		details.RemotionProps = evidence.Composition.Value
+		if len(details.Beats) == 0 {
+			details.Beats = extractBeatsFromRemotionProps(evidence.Composition.Value)
 		}
 	}
-
-	// 2. Read Script & Parse Beats
-	scriptPath := filepath.Join(projPath, "script.md")
-	if scriptBytes, err := os.ReadFile(scriptPath); err == nil {
-		details.Script = string(scriptBytes)
-		details.Stages.Script = true
-		if details.Name == slugToTitle(slug) {
-			if title := extractMarkdownTitle(details.Script); title != "" {
-				details.Name = title
-			}
-		}
-		details.Beats = parseMarkdownTableBeats(details.Script)
-	}
-
-	// 3. Scan Narration & Voice Audio
-	narrationFiles := scanMediaDir(rootDir, projPath, "narration", []string{".mp3", ".wav", ".aac", ".m4a", ".ogg"})
-	voiceSamples := scanMediaDir(rootDir, projPath, "voice-samples", []string{".mp3", ".wav", ".aac", ".m4a", ".ogg"})
-	assetsAudio := scanMediaDir(rootDir, projPath, filepath.Join("assets", "audio"), []string{".mp3", ".wav", ".aac", ".m4a", ".ogg"})
-
-	allAudio := append([]MediaFile(nil), narrationFiles...)
-	allAudio = append(allAudio, voiceSamples...)
-	allAudio = append(allAudio, assetsAudio...)
-	details.Narration = allAudio
-	if len(allAudio) > 0 {
-		details.Stages.Voiceover = true
-	}
-
-	// 4. Read Remotion Props
-	remotionPath := filepath.Join(projPath, "remotion_props.json")
-	if remotionBytes, err := os.ReadFile(remotionPath); err == nil {
-		var props any
-		if err := json.Unmarshal(remotionBytes, &props); err == nil {
-			details.RemotionProps = props
-			details.Stages.Composition = true
-			if len(details.Beats) == 0 {
-				details.Beats = extractBeatsFromRemotionProps(props)
-			}
-		}
-	}
-
-	// 5. Scan QA and Review Frames
-	details.QAFrames = scanMediaDir(rootDir, projPath, "qa", []string{".png", ".jpg", ".jpeg", ".webp"})
-	reviewFinal := scanMediaDir(rootDir, projPath, filepath.Join("review", "final-frames"), []string{".png", ".jpg", ".jpeg", ".webp"})
-	reviewSource := scanMediaDir(rootDir, projPath, filepath.Join("review", "source-frames"), []string{".png", ".jpg", ".jpeg", ".webp"})
-	details.ReviewFrames = append(reviewFinal, reviewSource...)
-
-	// 6. Read Review Report
-	reportPath := filepath.Join(projPath, "review", "report.json")
-	if reportBytes, err := os.ReadFile(reportPath); err == nil {
-		var report any
-		if err := json.Unmarshal(reportBytes, &report); err == nil {
-			details.ReviewReport = report
-			details.Stages.Review = true
-		}
-	}
-	if len(details.ReviewFrames) > 0 || len(details.QAFrames) > 0 {
-		details.Stages.Review = true
-	}
-
-	// 7. Locate Master Video & Thumbnail
-	details.VideoPath, details.VideoURL = findMasterVideo(rootDir, projPath, slug)
-	if details.VideoPath != "" {
-		if strings.HasSuffix(details.VideoPath, "final.mp4") || strings.HasSuffix(details.VideoPath, "video.mp4") {
-			details.Stages.Master = true
-		}
-		details.Stages.Composition = true
-	}
-
-	details.ThumbnailPath, details.ThumbnailURL = findThumbnail(rootDir, projPath, slug)
 
 	// Update LastModified from latest file
-	if latest := findLatestModTime(projPath); !latest.IsZero() && latest.After(details.LastModified) {
+	if latest := findLatestModTime(project); !latest.IsZero() && latest.After(details.LastModified) {
 		details.LastModified = latest
 	}
 
 	return details, nil
 }
 
-func scanProjectSummary(rootDir, slug, projPath string) (ProjectSummary, error) {
-	info, err := os.Stat(projPath)
-	if err != nil {
-		return ProjectSummary{}, err
-	}
+func scanProjectSummary(project projectScope, info os.FileInfo) (ProjectSummary, error) {
+	evidence := scanProjectEvidence(project)
 
 	summary := ProjectSummary{
-		Slug:         slug,
-		Name:         slugToTitle(slug),
-		Path:         projPath,
-		LastModified: info.ModTime(),
+		Slug:             project.slug,
+		Name:             slugToTitle(project.slug),
+		Path:             project.projectPath,
+		LastModified:     info.ModTime(),
+		Stages:           evidence.stages(),
+		BriefPath:        evidence.Brief.Path,
+		BriefURL:         evidence.Brief.URL,
+		ScriptPath:       evidence.Script.Path,
+		ScriptURL:        evidence.Script.URL,
+		CompositionPath:  evidence.Composition.Path,
+		CompositionURL:   evidence.Composition.URL,
+		ThumbnailURL:     evidence.Thumbnail.URL,
+		VideoURL:         evidence.Master.URL,
+		PreviewVideoPath: evidence.Preview.Path,
+		PreviewVideoURL:  evidence.Preview.URL,
+	}
+	if evidence.Master.Version != "" {
+		summary.VideoVersion = evidence.Master.Version
+	} else {
+		summary.VideoVersion = evidence.Preview.Version
+	}
+	if evidence.Brief.Title != "" {
+		summary.Name = evidence.Brief.Title
+	} else if evidence.Script.Title != "" {
+		summary.Name = evidence.Script.Title
 	}
 
-	// Check Brief
-	briefPath := filepath.Join(projPath, "brief.md")
-	if b, err := os.ReadFile(briefPath); err == nil {
-		summary.Stages.Brief = true
-		if title := extractMarkdownTitle(string(b)); title != "" {
-			summary.Name = title
-		}
-	}
-
-	// Check Script
-	scriptPath := filepath.Join(projPath, "script.md")
-	if s, err := os.ReadFile(scriptPath); err == nil {
-		summary.Stages.Script = true
-		if summary.Name == slugToTitle(slug) {
-			if title := extractMarkdownTitle(string(s)); title != "" {
-				summary.Name = title
-			}
-		}
-	}
-
-	// Check Voiceover Audio
-	if hasFilesWithExt(filepath.Join(projPath, "narration"), []string{".mp3", ".wav", ".aac", ".m4a"}) ||
-		hasFilesWithExt(filepath.Join(projPath, "voice-samples"), []string{".mp3", ".wav", ".aac", ".m4a"}) ||
-		hasFilesWithExt(filepath.Join(projPath, "assets", "audio"), []string{".mp3", ".wav", ".aac", ".m4a"}) {
-		summary.Stages.Voiceover = true
-	}
-
-	// Check Composition
-	if fileExists(filepath.Join(projPath, "remotion_props.json")) ||
-		fileExists(filepath.Join(projPath, "artifacts", "edit.json")) ||
-		hasFilesWithExt(filepath.Join(projPath, "renders"), []string{".mp4"}) {
-		summary.Stages.Composition = true
-	}
-
-	// Check Review
-	if fileExists(filepath.Join(projPath, "review", "report.json")) ||
-		hasFilesWithExt(filepath.Join(projPath, "qa"), []string{".png", ".jpg", ".jpeg", ".webp"}) ||
-		hasFilesWithExt(filepath.Join(projPath, "review", "final-frames"), []string{".png", ".jpg", ".jpeg", ".webp"}) ||
-		hasFilesWithExt(filepath.Join(projPath, "review", "source-frames"), []string{".png", ".jpg", ".jpeg", ".webp"}) {
-		summary.Stages.Review = true
-	}
-
-	// Check Master Render
-	finalVideo, videoURL := findMasterVideo(rootDir, projPath, slug)
-	if finalVideo != "" {
-		summary.VideoURL = videoURL
-		if strings.HasSuffix(finalVideo, "final.mp4") || strings.HasSuffix(finalVideo, "video.mp4") {
-			summary.Stages.Master = true
-		}
-		summary.Stages.Composition = true
-	}
-
-	_, thumbURL := findThumbnail(rootDir, projPath, slug)
-	summary.ThumbnailURL = thumbURL
-
-	if latest := findLatestModTime(projPath); !latest.IsZero() && latest.After(summary.LastModified) {
+	if latest := findLatestModTime(project); !latest.IsZero() && latest.After(summary.LastModified) {
 		summary.LastModified = latest
 	}
 
 	return summary, nil
 }
 
-func scanMediaDir(rootDir, projPath, subDir string, exts []string) []MediaFile {
-	dirPath := filepath.Join(projPath, subDir)
-	entries, err := os.ReadDir(dirPath)
+func scanProjectEvidence(project projectScope) projectEvidence {
+	brief := resolveTextArtifact(project, "brief")
+	script := resolveTextArtifact(project, "script")
+	evidence := projectEvidence{
+		Brief:       brief,
+		Script:      script,
+		ScriptBeats: extractJSONBeats(script.Value),
+	}
+	if len(evidence.ScriptBeats) == 0 && strings.EqualFold(filepath.Ext(script.FullPath), ".md") {
+		evidence.ScriptBeats = parseMarkdownTableBeats(script.Text)
+	}
+
+	audioExts := []string{".mp3", ".wav", ".aac", ".m4a", ".ogg"}
+	evidence.Narration = append(evidence.Narration, scanMediaDir(project, "narration", audioExts)...)
+	evidence.Narration = append(evidence.Narration, scanMediaDir(project, "voice-samples", audioExts)...)
+	evidence.Narration = append(evidence.Narration, scanMediaDir(project, filepath.Join("assets", "audio"), audioExts)...)
+
+	evidence.Composition, evidence.CompositionIsProps = resolveCompositionArtifact(project)
+	imageExts := []string{".png", ".jpg", ".jpeg", ".webp"}
+	evidence.QAFrames = scanMediaDir(project, "qa", imageExts)
+	evidence.ReviewFrames = append(evidence.ReviewFrames, scanMediaDir(project, filepath.Join("review", "final-frames"), imageExts)...)
+	evidence.ReviewFrames = append(evidence.ReviewFrames, scanMediaDir(project, filepath.Join("review", "source-frames"), imageExts)...)
+
+	if report, ok := readJSONArtifact(project, filepath.Join(project.projectPath, "review", "report.json")); ok {
+		evidence.ReviewReport = normalizeReviewReport(report.Value)
+		evidence.HasReviewReport = true
+	}
+	evidence.Master = findNamedVideo(project, []string{"final.mp4", "video.mp4"}, false)
+	if evidence.Master.Path == "" {
+		evidence.Preview = findNamedVideo(project, []string{"edit.mp4", "montage_vo.mp4", "montage.mp4"}, true)
+	}
+	evidence.Thumbnail = findThumbnailEvidence(project)
+	return evidence
+}
+
+func resolveTextArtifact(project projectScope, base string) artifactEvidence {
+	for _, candidate := range []string{
+		filepath.Join(project.projectPath, base+".md"),
+		filepath.Join(project.projectPath, base+".json"),
+		filepath.Join(project.projectPath, "artifacts", base+".md"),
+		filepath.Join(project.projectPath, "artifacts", base+".json"),
+	} {
+		file, ok := project.resolveFile(candidate)
+		if !ok {
+			continue
+		}
+		contents, err := os.ReadFile(file.canonicalPath)
+		if err != nil {
+			continue
+		}
+		artifact := artifactEvidence{FullPath: candidate, Path: file.relativePath, URL: file.url}
+		if strings.EqualFold(filepath.Ext(candidate), ".json") {
+			pretty, value, ok := decodePrettyJSON(contents)
+			if !ok {
+				continue
+			}
+			artifact.Text = pretty
+			artifact.Value = value
+			artifact.Title = extractJSONTitle(value)
+			return artifact
+		}
+		artifact.Text = string(contents)
+		artifact.Title = extractMarkdownTitle(artifact.Text)
+		return artifact
+	}
+	return artifactEvidence{}
+}
+
+func resolveCompositionArtifact(project projectScope) (artifactEvidence, bool) {
+	propsCandidates := []string{filepath.Join(project.projectPath, "remotion_props.json")}
+	artifactsDir := filepath.Join(project.projectPath, "artifacts")
+	if entries, ok := project.readDir(artifactsDir); ok {
+		for _, entry := range entries {
+			name := strings.ToLower(entry.Name())
+			if strings.HasSuffix(name, "props.json") {
+				propsCandidates = append(propsCandidates, filepath.Join(artifactsDir, entry.Name()))
+			}
+		}
+	}
+	for _, candidate := range propsCandidates {
+		if artifact, ok := readJSONArtifact(project, candidate); ok {
+			return artifact, true
+		}
+	}
+	if artifact, ok := readJSONArtifact(project, filepath.Join(artifactsDir, "edit.json")); ok {
+		return artifact, false
+	}
+	return artifactEvidence{}, false
+}
+
+func readJSONArtifact(project projectScope, path string) (artifactEvidence, bool) {
+	file, ok := project.resolveFile(path)
+	if !ok {
+		return artifactEvidence{}, false
+	}
+	contents, err := os.ReadFile(file.canonicalPath)
 	if err != nil {
+		return artifactEvidence{}, false
+	}
+	pretty, value, ok := decodePrettyJSON(contents)
+	if !ok {
+		return artifactEvidence{}, false
+	}
+	return artifactEvidence{FullPath: path, Path: file.relativePath, URL: file.url, Text: pretty, Value: value}, true
+}
+
+func decodePrettyJSON(contents []byte) (string, any, bool) {
+	trimmed := bytes.TrimSpace(contents)
+	if !json.Valid(trimmed) {
+		return "", nil, false
+	}
+	var value any
+	if err := json.Unmarshal(trimmed, &value); err != nil {
+		return "", nil, false
+	}
+	var pretty bytes.Buffer
+	if err := json.Indent(&pretty, trimmed, "", "  "); err != nil {
+		return "", nil, false
+	}
+	pretty.WriteByte('\n')
+	return pretty.String(), value, true
+}
+
+func extractJSONTitle(value any) string {
+	root, ok := value.(map[string]any)
+	if !ok {
+		return ""
+	}
+	for _, key := range []string{"title", "name", "project_title", "project_name", "video_title"} {
+		if title, ok := root[key].(string); ok && strings.TrimSpace(title) != "" {
+			return strings.TrimSpace(title)
+		}
+	}
+	for _, key := range []string{"project", "metadata"} {
+		if nested, ok := root[key].(map[string]any); ok {
+			for _, titleKey := range []string{"title", "name"} {
+				if title, ok := nested[titleKey].(string); ok && strings.TrimSpace(title) != "" {
+					return strings.TrimSpace(title)
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func extractJSONBeats(value any) []BeatItem {
+	root, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	containers := []map[string]any{root}
+	if nested, ok := root["script"].(map[string]any); ok {
+		containers = append(containers, nested)
+	}
+	for _, container := range containers {
+		for _, key := range []string{"beats", "scenes", "sections"} {
+			items, ok := container[key].([]any)
+			if !ok {
+				continue
+			}
+			beats := make([]BeatItem, 0, len(items))
+			for i, item := range items {
+				beatMap, ok := item.(map[string]any)
+				if !ok {
+					continue
+				}
+				beat := BeatItem{
+					Index:     firstJSONText(beatMap, "index", "id", "number", "no"),
+					TimeRange: firstJSONText(beatMap, "time_range", "time"),
+					Title:     firstJSONText(beatMap, "title", "name", "label", "beat", "scene"),
+					Visual:    firstJSONText(beatMap, "visual", "visual_description", "action", "shot"),
+					Narration: firstJSONText(beatMap, "narration", "script", "dialogue", "text", "voiceover"),
+					Type:      firstJSONText(beatMap, "type", "intent"),
+				}
+				if beat.Index == "" {
+					beat.Index = strconv.Itoa(i + 1)
+				}
+				if beat.TimeRange == "" {
+					start := firstJSONTime(beatMap, "start", "start_seconds", "in_seconds")
+					end := firstJSONTime(beatMap, "end", "end_seconds", "out_seconds")
+					if start != "" && end != "" {
+						beat.TimeRange = start + " - " + end
+					}
+				}
+				for field, raw := range beatMap {
+					if text := jsonText(raw); text != "" {
+						if beat.Raw == nil {
+							beat.Raw = make(map[string]string)
+						}
+						beat.Raw[field] = text
+					}
+				}
+				beats = append(beats, beat)
+			}
+			return beats
+		}
+	}
+	return nil
+}
+
+func firstJSONText(values map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if text := jsonText(values[key]); text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+func firstJSONTime(values map[string]any, keys ...string) string {
+	for _, key := range keys {
+		switch value := values[key].(type) {
+		case string:
+			if value = strings.TrimSpace(value); value != "" {
+				return value
+			}
+		case float64:
+			return strconv.FormatFloat(value, 'f', -1, 64) + "s"
+		}
+	}
+	return ""
+}
+
+func jsonText(value any) string {
+	switch value := value.(type) {
+	case string:
+		return strings.TrimSpace(value)
+	case float64:
+		return strconv.FormatFloat(value, 'f', -1, 64)
+	case bool:
+		return strconv.FormatBool(value)
+	default:
+		return ""
+	}
+}
+
+func scanMediaDir(project projectScope, subDir string, exts []string) []MediaFile {
+	dirPath := filepath.Join(project.projectPath, subDir)
+	entries, ok := project.readDir(dirPath)
+	if !ok {
 		return nil
 	}
 
 	var results []MediaFile
 	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
 		ext := strings.ToLower(filepath.Ext(e.Name()))
 		if !containsExt(exts, ext) {
 			continue
 		}
 		fullPath := filepath.Join(dirPath, e.Name())
-		info, err := e.Info()
-		if err != nil {
+		file, ok := project.resolveFile(fullPath)
+		if !ok || file.info.Size() == 0 {
 			continue
 		}
-
-		relPath, _ := filepath.Rel(rootDir, fullPath)
-		urlPath := "/api/media/" + filepath.ToSlash(relPath)
 
 		results = append(results, MediaFile{
 			Name:         e.Name(),
 			Path:         fullPath,
-			RelativePath: filepath.ToSlash(relPath),
-			URL:          urlPath,
-			Size:         info.Size(),
-			LastModified: info.ModTime(),
+			RelativePath: filepath.ToSlash(file.relativePath),
+			URL:          file.url,
+			Size:         file.info.Size(),
+			LastModified: file.info.ModTime(),
 		})
 	}
 	return results
 }
 
-func findMasterVideo(rootDir, projPath, slug string) (string, string) {
-	candidates := []string{
-		filepath.Join(projPath, "renders", "final.mp4"),
-		filepath.Join(projPath, "renders", "video.mp4"),
-		filepath.Join(projPath, "renders", "montage_vo.mp4"),
-		filepath.Join(projPath, "renders", "montage.mp4"),
-		filepath.Join(projPath, "renders", "edit.mp4"),
-	}
-
-	for _, c := range candidates {
-		if fileExists(c) {
-			rel, _ := filepath.Rel(rootDir, c)
-			return c, "/api/media/" + filepath.ToSlash(rel)
+func findNamedVideo(project projectScope, names []string, fallback bool) videoEvidence {
+	rendersDir := filepath.Join(project.projectPath, "renders")
+	for _, name := range names {
+		if video := videoFileEvidence(project, filepath.Join(rendersDir, name)); video.Path != "" {
+			return video
 		}
 	}
-
-	// Fallback to any .mp4 in renders/
-	rendersDir := filepath.Join(projPath, "renders")
-	if entries, err := os.ReadDir(rendersDir); err == nil {
-		for _, e := range entries {
-			if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".mp4") {
-				p := filepath.Join(rendersDir, e.Name())
-				rel, _ := filepath.Rel(rootDir, p)
-				return p, "/api/media/" + filepath.ToSlash(rel)
-			}
+	if !fallback {
+		return videoEvidence{}
+	}
+	reserved := map[string]bool{
+		"final.mp4":      true,
+		"video.mp4":      true,
+		"edit.mp4":       true,
+		"montage_vo.mp4": true,
+		"montage.mp4":    true,
+	}
+	entries, ok := project.readDir(rendersDir)
+	if !ok {
+		return videoEvidence{}
+	}
+	for _, entry := range entries {
+		name := strings.ToLower(entry.Name())
+		if reserved[name] || filepath.Ext(name) != ".mp4" {
+			continue
+		}
+		if video := videoFileEvidence(project, filepath.Join(rendersDir, entry.Name())); video.Path != "" {
+			return video
 		}
 	}
-
-	return "", ""
+	return videoEvidence{}
 }
 
-func findThumbnail(rootDir, projPath, slug string) (string, string) {
+func videoFileEvidence(project projectScope, path string) videoEvidence {
+	file, ok := project.resolveFile(path)
+	if !ok || file.info.Size() == 0 {
+		return videoEvidence{}
+	}
+	return videoEvidence{
+		Path:    file.relativePath,
+		URL:     file.url,
+		Version: strconv.FormatInt(file.info.Size(), 10) + "-" + strconv.FormatInt(file.info.ModTime().UnixNano(), 10),
+	}
+}
+
+func normalizeReviewReport(report any) any {
+	reportMap, ok := report.(map[string]any)
+	if !ok {
+		return map[string]any{"status": "unknown", "report": report}
+	}
+	if result, ok := reportMap["result"].(map[string]any); ok {
+		reportMap = result
+	}
+
+	status, _ := reportMap["review_status"].(string)
+	if status == "" {
+		status, _ = reportMap["status"].(string)
+	}
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "" {
+		status = "unknown"
+	}
+	reportMap["status"] = status
+	return reportMap
+}
+
+func findThumbnailEvidence(project projectScope) videoEvidence {
 	searchDirs := []string{
-		filepath.Join(projPath, "review", "final-frames"),
-		filepath.Join(projPath, "qa"),
-		filepath.Join(projPath, "review", "source-frames"),
-		filepath.Join(projPath, "assets", "raw"),
+		filepath.Join(project.projectPath, "review", "final-frames"),
+		filepath.Join(project.projectPath, "qa"),
+		filepath.Join(project.projectPath, "review", "source-frames"),
+		filepath.Join(project.projectPath, "assets", "raw"),
 	}
 
 	imgExts := []string{".jpg", ".jpeg", ".png", ".webp"}
 
 	for _, dir := range searchDirs {
-		if entries, err := os.ReadDir(dir); err == nil {
+		if entries, ok := project.readDir(dir); ok {
 			for _, e := range entries {
-				if !e.IsDir() && containsExt(imgExts, strings.ToLower(filepath.Ext(e.Name()))) {
+				if containsExt(imgExts, strings.ToLower(filepath.Ext(e.Name()))) {
 					p := filepath.Join(dir, e.Name())
-					rel, _ := filepath.Rel(rootDir, p)
-					return p, "/api/media/" + filepath.ToSlash(rel)
+					if thumbnail := videoFileEvidence(project, p); thumbnail.Path != "" {
+						thumbnail.Version = ""
+						return thumbnail
+					}
 				}
 			}
 		}
 	}
 
-	return "", ""
+	return videoEvidence{}
 }
 
-func findLatestModTime(dir string) time.Time {
+func evidenceLocation(rootDir, path string) (string, string) {
+	if strings.TrimSpace(path) == "" {
+		return "", ""
+	}
+	projects, err := resolveProjectsScope(rootDir)
+	if err != nil {
+		return "", ""
+	}
+	projectsPath, err := filepath.Abs(projects.projectsPath)
+	if err != nil {
+		return "", ""
+	}
+	candidatePath, err := filepath.Abs(path)
+	if err != nil {
+		return "", ""
+	}
+	relativeToProjects, err := filepath.Rel(projectsPath, candidatePath)
+	if err != nil || relativeToProjects == "." || relativeToProjects == ".." || strings.HasPrefix(relativeToProjects, ".."+string(filepath.Separator)) {
+		return "", ""
+	}
+	parts := strings.Split(relativeToProjects, string(filepath.Separator))
+	if len(parts) < 2 {
+		return "", ""
+	}
+	project, _, err := projects.selectProject(parts[0])
+	if err != nil {
+		return "", ""
+	}
+	file, ok := project.resolveFile(candidatePath)
+	if !ok {
+		return "", ""
+	}
+	return file.relativePath, file.url
+}
+
+func formatEvidenceLocation(rootDir, path string) (string, string) {
+	rel, err := filepath.Rel(rootDir, path)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", ""
+	}
+	rel = filepath.ToSlash(rel)
+	parts := strings.Split(rel, "/")
+	for i := range parts {
+		parts[i] = url.PathEscape(parts[i])
+	}
+	return rel, "/api/media/" + strings.Join(parts, "/")
+}
+
+func findLatestModTime(project projectScope) time.Time {
 	var latest time.Time
-	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-		if err == nil && d != nil {
-			if info, err := d.Info(); err == nil {
-				if info.ModTime().After(latest) {
-					latest = info.ModTime()
-				}
+	_ = filepath.WalkDir(project.canonicalProject, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry == nil {
+			return nil
+		}
+		canonicalPath, err := canonicalExistingPath(path)
+		if err != nil || !pathWithin(project.canonicalProject, canonicalPath) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !samePath(path, canonicalPath) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		info, err := os.Stat(canonicalPath)
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() || info.Mode().IsRegular() {
+			if info.ModTime().After(latest) {
+				latest = info.ModTime()
 			}
 		}
 		return nil
@@ -576,24 +1151,6 @@ func slugToTitle(slug string) string {
 		}
 	}
 	return strings.Join(parts, " ")
-}
-
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
-}
-
-func hasFilesWithExt(dir string, exts []string) bool {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false
-	}
-	for _, e := range entries {
-		if !e.IsDir() && containsExt(exts, strings.ToLower(filepath.Ext(e.Name()))) {
-			return true
-		}
-	}
-	return false
 }
 
 func containsExt(exts []string, ext string) bool {

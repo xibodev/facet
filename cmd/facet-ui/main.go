@@ -8,7 +8,7 @@ import (
 	"github.com/xibodev/facet/internal/studio"
 )
 
-const Version = "1.0.0"
+const Version = "1.0.1"
 
 func main() {
 	fs := flag.NewFlagSet("facet-ui", flag.ExitOnError)

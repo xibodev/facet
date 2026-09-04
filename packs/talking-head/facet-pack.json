@@ -1,0 +1,33 @@
+{
+  "name": "@xibodev/facet-pack-talkinghead",
+  "version": "1.0.0",
+  "description": "AI presenter videos, lip-sync, teleprompter scripts, and Edge/Azure neural narration.",
+  "kind": "content",
+  "requirements": {
+    "probes": ["facet.probe.ffmpeg.v1"]
+  },
+  "declarations": {
+    "suggestedTools": ["edgetts", "media_probe", "edit", "audio_mix", "output_review"],
+    "networkIntent": "provider-apis",
+    "filesystemIntent": "project-local"
+  },
+  "exports": {
+    "skills": [
+      {
+        "id": "talking-head",
+        "path": "SKILL.md",
+        "description": "Entry skill for producing presenter-driven talking head and avatar videos"
+      }
+    ],
+    "pipelines": [
+      {
+        "id": "talking-head",
+        "path": "pipelines/talking-head.yaml"
+      },
+      {
+        "id": "avatar-spokesperson",
+        "path": "pipelines/avatar-spokesperson.yaml"
+      }
+    ]
+  }
+}

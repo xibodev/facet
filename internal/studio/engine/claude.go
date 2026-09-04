@@ -3,16 +3,8 @@ package engine
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"strings"
 )
-
-// ClaudeDeniedTools contains tools disallowed in read-only mode.
-var ClaudeDeniedTools = []string{
-	"Write", "Edit", "NotebookEdit", "Bash", "PowerShell",
-	"Task", "Agent", "Workflow", "SendMessage", "CronCreate", "CronDelete",
-	"EnterWorktree", "ExitWorktree", "DesignSync", "Artifact",
-}
 
 // ClaudeAdapter implements EngineAdapter for Claude Code CLI.
 type ClaudeAdapter struct {
@@ -41,64 +33,29 @@ func (a *ClaudeAdapter) ExecutableName() string {
 	return "claude"
 }
 
-// BuildArgs constructs the command-line arguments for running Claude in stream-json mode.
-func (a *ClaudeAdapter) BuildArgs(dir string, mode string, extraArgs []string) ([]string, error) {
+// BuildTurnArgs constructs one autonomous Claude invocation.
+func (a *ClaudeAdapter) BuildTurnArgs(dir, mode, prompt, nativeID string, extraArgs []string) ([]string, error) {
+	if err := validateAutonomousMode(mode); err != nil {
+		return nil, err
+	}
 	args := []string{
-		"-p",
-		"--input-format", "stream-json",
+		"--print",
 		"--output-format", "stream-json",
-		"--verbose",
 		"--include-partial-messages",
+		"--verbose",
 		"--forward-subagent-text",
+		"--dangerously-skip-permissions",
 	}
-
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "rw":
-		args = append(args, "--allow-dangerously-skip-permissions")
-	case "ro":
-		args = append(args, "--disallowedTools")
-		args = append(args, ClaudeDeniedTools...)
-		args = append(args, "--allow-dangerously-skip-permissions")
-	case "ask":
-		args = append(args, "--permission-mode", "manual")
-	default:
-		if mode == "" || mode == "rw" {
-			args = append(args, "--allow-dangerously-skip-permissions")
-		} else {
-			args = append(args, "--permission-mode", "manual")
-		}
+	args = append(args, extraArgs...)
+	if nativeID != "" {
+		args = append(args, "--resume", nativeID)
 	}
-
-	if len(extraArgs) > 0 {
-		args = append(args, extraArgs...)
-	}
-
+	args = append(args, prompt)
 	return args, nil
 }
 
-// FormatUserMessage formats a prompt into a Claude stream-json user message payload.
-func (a *ClaudeAdapter) FormatUserMessage(prompt string) ([]byte, error) {
-	msg := map[string]any{
-		"type": "user",
-		"message": map[string]any{
-			"role": "user",
-			"content": []map[string]any{
-				{
-					"type": "text",
-					"text": prompt,
-				},
-			},
-		},
-	}
-	b, err := json.Marshal(msg)
-	if err != nil {
-		return nil, fmt.Errorf("marshal claude user message: %w", err)
-	}
-	return append(b, '\n'), nil
-}
-
 // NormalizeEvent normalizes a raw Claude stream-json line into a NormalizedEvent.
-func (a *ClaudeAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
+func (a *ClaudeAdapter) NormalizeEvent(line []byte) (normalized *NormalizedEvent, err error) {
 	trimmed := bytes.TrimSpace(line)
 	if len(trimmed) == 0 {
 		return nil, nil
@@ -127,6 +84,12 @@ func (a *ClaudeAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
 			Content: s,
 		}, nil
 	}
+	sessionID, _ := raw["session_id"].(string)
+	defer func() {
+		if normalized != nil && normalized.SessionID == "" {
+			normalized.SessionID = sessionID
+		}
+	}()
 
 	evType, _ := raw["type"].(string)
 
@@ -134,7 +97,6 @@ func (a *ClaudeAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
 	case "system":
 		subtype, _ := raw["subtype"].(string)
 		if subtype == "init" {
-			sessionID, _ := raw["session_id"].(string)
 			return &NormalizedEvent{
 				Type:      EventSession,
 				SessionID: sessionID,
@@ -155,7 +117,6 @@ func (a *ClaudeAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
 		}
 		// Fallback for general system events
 		msg, _ := raw["message"].(string)
-		sessionID, _ := raw["session_id"].(string)
 		return &NormalizedEvent{
 			Type:      EventSession,
 			SessionID: sessionID,
@@ -254,7 +215,7 @@ func (a *ClaudeAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
 			}
 
 		case "content_block_stop":
-			return nil, nil
+			return &NormalizedEvent{Raw: raw}, nil
 		}
 
 	case "assistant":
@@ -370,7 +331,7 @@ func (a *ClaudeAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
 	case "result":
 		cost, _ := getFloat(raw["total_cost_usd"])
 		dur, _ := getInt64(raw["duration_ms"])
-		isErr, _ := raw["is_error"].(bool)
+		isErr, _ := getBoolLike(raw["is_error"])
 		var tokens int64
 		if usage, ok := raw["usage"].(map[string]any); ok {
 			outTok, _ := getInt64(usage["output_tokens"])
@@ -382,6 +343,8 @@ func (a *ClaudeAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
 		}
 		return &NormalizedEvent{
 			Type:       EventDone,
+			SessionID:  firstString([]map[string]any{raw}, "session_id"),
+			Content:    bestReason(raw),
 			CostUSD:    cost,
 			DurationMs: dur,
 			Tokens:     tokens,
@@ -390,17 +353,21 @@ func (a *ClaudeAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
 		}, nil
 
 	case "error":
-		msg, _ := raw["message"].(string)
-		if msg == "" {
-			msg, _ = raw["error"].(string)
-		}
 		return &NormalizedEvent{
 			Type:    EventError,
-			Content: msg,
+			Content: bestReason(raw),
+			IsError: true,
+			Raw:     raw,
+		}, nil
+	}
+	if bestReason(raw) != "" && (raw["error"] != nil || raw["is_error"] != nil) {
+		return &NormalizedEvent{
+			Type:    EventError,
+			Content: bestReason(raw),
 			IsError: true,
 			Raw:     raw,
 		}, nil
 	}
 
-	return nil, nil
+	return &NormalizedEvent{Raw: raw}, nil
 }

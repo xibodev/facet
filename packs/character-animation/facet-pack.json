@@ -1,0 +1,33 @@
+{
+  "name": "@xibodev/facet-pack-animation",
+  "version": "1.0.0",
+  "description": "2D character animation, SVG rigging, pose libraries, and action cycle pipelines.",
+  "kind": "content",
+  "requirements": {
+    "probes": ["facet.probe.ffmpeg.v1"]
+  },
+  "declarations": {
+    "suggestedTools": ["media_probe", "frame_sample", "edit", "audio_mix", "output_review"],
+    "networkIntent": "none",
+    "filesystemIntent": "project-local"
+  },
+  "exports": {
+    "skills": [
+      {
+        "id": "animation",
+        "path": "SKILL.md",
+        "description": "Entry skill for 2D character rigging and animated scene production"
+      }
+    ],
+    "pipelines": [
+      {
+        "id": "character-animation",
+        "path": "pipelines/character-animation.yaml"
+      },
+      {
+        "id": "animation",
+        "path": "pipelines/animation.yaml"
+      }
+    ]
+  }
+}

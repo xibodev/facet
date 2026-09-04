@@ -114,15 +114,20 @@ Completed: Phase 4 validated the complete system across three materially differe
 
 All productions passed output review with 0 external paid cost, durable project records, and clean technical gates.
 
-Current state: Phases 0 through 4 are complete. The headless Claude-first Video Kit bundle is functional, self-contained, and ready for use.
+Current state: Phases 0 through 5 are complete.
 
-## Phase 5: Deferred Expansion
+## Phase 5: Modular Capability Packs, Studio Launcher & Production Catalog
 
-Only after the Claude headless product works, consider other agentic CLIs;
-compatibility beyond Markdown only where testing proves necessary; packaging and
-installers; additional operating systems; web or desktop UI; Facet integration;
-local GPU model execution; and any daemon, database, MCP bridge, workflow host,
-or other host architecture.
+Completed: Phase 5 delivered:
+1. Seven modular production capability packs under `packs/` (`explainer`, `cinematic`, `screen-demo`, `talking-head`, `social`, `character-animation`, `localization`).
+2. Project-scoped skill projections and ownership protection (`.facet/ownership.json`) preventing clobbering user files.
+3. Portable project locks (`facet.lock.json`) pinning active packs and engine.
+4. Central production catalog manager (`%LOCALAPPDATA%\Facet\catalog.json`) supporting managed productions and arbitrary external folders.
+5. Apple HIG-inspired Studio Launcher and Projects view with dynamic pack discovery, recent project cards, and New/Open sheets.
+
+## Phase 6: Post-Release Hardening
+
+Future hardening, multi-user machine isolation, and advanced rendering enhancements as needed.
 
 ## Test Strategy
 

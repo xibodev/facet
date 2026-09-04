@@ -1,0 +1,29 @@
+{
+  "name": "@xibodev/facet-pack-screendemo",
+  "version": "1.0.0",
+  "description": "Software walkthroughs, synthetic screen recordings, cursor highlights, and UI demo video pipeline.",
+  "kind": "content",
+  "requirements": {
+    "probes": ["facet.probe.ffmpeg.v1", "facet.probe.ffprobe.v1"]
+  },
+  "declarations": {
+    "suggestedTools": ["media_probe", "frame_sample", "edit", "audio_mix", "output_review"],
+    "networkIntent": "none",
+    "filesystemIntent": "project-local"
+  },
+  "exports": {
+    "skills": [
+      {
+        "id": "screen-demo",
+        "path": "SKILL.md",
+        "description": "Entry skill for producing software screen demos and UI walkthroughs"
+      }
+    ],
+    "pipelines": [
+      {
+        "id": "screen-demo",
+        "path": "pipelines/screen-demo.yaml"
+      }
+    ]
+  }
+}

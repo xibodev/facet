@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -20,7 +21,6 @@ func TestGetAdapter(t *testing.T) {
 		{"github-copilot", "copilot"},
 		{"codex", "codex"},
 		{"openai-codex", "codex"},
-		{"generic", "generic"},
 		{"unknown-engine", "claude"}, // defaults to claude
 	}
 
@@ -37,8 +37,8 @@ func TestGetAdapter(t *testing.T) {
 
 func TestListAdapters(t *testing.T) {
 	adapters := ListAdapters()
-	if len(adapters) != 5 {
-		t.Fatalf("expected 5 adapters, got %d", len(adapters))
+	if len(adapters) != 4 {
+		t.Fatalf("expected 4 adapters, got %d", len(adapters))
 	}
 	names := make(map[string]bool)
 	for _, a := range adapters {
@@ -50,85 +50,114 @@ func TestListAdapters(t *testing.T) {
 			t.Errorf("adapter %s has empty ExecutableName", a.Name())
 		}
 	}
-	for _, expected := range []string{"claude", "opencode", "copilot", "generic"} {
+	for _, expected := range []string{"claude", "opencode", "codex", "copilot"} {
 		if !names[expected] {
 			t.Errorf("missing adapter %q in ListAdapters()", expected)
 		}
 	}
 }
 
-func TestBuildArgs(t *testing.T) {
-	// 1. Claude adapter
-	claude := NewClaudeAdapter()
-	argsRW, err := claude.BuildArgs(".", "rw", []string{"--custom-flag"})
-	if err != nil {
-		t.Fatalf("Claude BuildArgs rw failed: %v", err)
-	}
-	if !containsString(argsRW, "-p") || !containsString(argsRW, "--input-format") || !containsString(argsRW, "--allow-dangerously-skip-permissions") || !containsString(argsRW, "--custom-flag") {
-		t.Errorf("unexpected Claude argsRW: %v", argsRW)
-	}
-
-	argsRO, err := claude.BuildArgs(".", "ro", nil)
-	if err != nil {
-		t.Fatalf("Claude BuildArgs ro failed: %v", err)
-	}
-	if !containsString(argsRO, "--disallowedTools") || !containsString(argsRO, "Write") {
-		t.Errorf("unexpected Claude argsRO: %v", argsRO)
-	}
-
-	argsAsk, err := claude.BuildArgs(".", "ask", nil)
-	if err != nil {
-		t.Fatalf("Claude BuildArgs ask failed: %v", err)
-	}
-	if !containsString(argsAsk, "--permission-mode") || !containsString(argsAsk, "manual") {
-		t.Errorf("unexpected Claude argsAsk: %v", argsAsk)
-	}
-
-	// 2. OpenCode adapter
-	opencode := NewOpenCodeAdapter()
-	opArgs, err := opencode.BuildArgs(".", "ro", []string{"--verbose"})
-	if err != nil {
-		t.Fatalf("OpenCode BuildArgs failed: %v", err)
-	}
-	if !containsString(opArgs, "-p") || !containsString(opArgs, "--read-only") || !containsString(opArgs, "--verbose") {
-		t.Errorf("unexpected OpenCode args: %v", opArgs)
+func TestBuildTurnArgsExactFirstAndResume(t *testing.T) {
+	prompt := "Make a precise cut -- without parsing this as flags"
+	tests := []struct {
+		name    string
+		adapter EngineAdapter
+		native  string
+		want    []string
+	}{
+		{
+			name:    "claude first",
+			adapter: NewClaudeAdapter(),
+			want: []string{"--print", "--output-format", "stream-json", "--include-partial-messages", "--verbose",
+				"--forward-subagent-text", "--dangerously-skip-permissions", prompt},
+		},
+		{
+			name:    "claude resume",
+			adapter: NewClaudeAdapter(),
+			native:  "claude-native",
+			want: []string{"--print", "--output-format", "stream-json", "--include-partial-messages", "--verbose",
+				"--forward-subagent-text", "--dangerously-skip-permissions", "--resume", "claude-native", prompt},
+		},
+		{name: "opencode first", adapter: NewOpenCodeAdapter(), want: []string{"run", "--format", "json", "--auto", prompt}},
+		{name: "opencode resume", adapter: NewOpenCodeAdapter(), native: "open-native", want: []string{"run", "--format", "json", "--auto", "--session", "open-native", prompt}},
+		{name: "codex first", adapter: NewCodexAdapter(), want: []string{"exec", "--json", "--dangerously-bypass-approvals-and-sandbox", prompt}},
+		{name: "codex resume", adapter: NewCodexAdapter(), native: "thread-native", want: []string{"exec", "resume", "--json", "--dangerously-bypass-approvals-and-sandbox", "thread-native", prompt}},
+		{name: "copilot first", adapter: NewCopilotAdapter(), want: []string{"--allow-all", "--output-format", "json", "--stream", "on", "--prompt", prompt}},
+		{name: "copilot resume", adapter: NewCopilotAdapter(), native: "copilot-native", want: []string{"--allow-all", "--output-format", "json", "--stream", "on", "--resume=copilot-native", "--prompt", prompt}},
 	}
 
-	// 3. Copilot adapter
-	copilot := NewCopilotAdapter()
-	coArgs, err := copilot.BuildArgs(".", "rw", []string{"--log-level", "debug"})
-	if err != nil {
-		t.Fatalf("Copilot BuildArgs failed: %v", err)
-	}
-	if !containsString(coArgs, "-p") || !containsString(coArgs, "--allow-all") || !containsString(coArgs, "--log-level") {
-		t.Errorf("unexpected Copilot args: %v", coArgs)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.adapter.BuildTurnArgs("ignored", "", prompt, tt.native, nil)
+			if err != nil {
+				t.Fatalf("BuildTurnArgs failed: %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("args = %#v, want %#v", got, tt.want)
+			}
+			if containsString(got, "--allow-dangerously-skip-permissions") {
+				t.Fatalf("args contain Claude allow-only flag: %#v", got)
+			}
+		})
 	}
 
-	// 4. Generic adapter
-	generic := NewGenericAdapter()
-	genArgs, err := generic.BuildArgs(".", "rw", []string{"--run", "auto"})
+	got, err := NewOpenCodeAdapter().BuildTurnArgs(".", "rw", prompt, "", []string{"--model", "test"})
 	if err != nil {
-		t.Fatalf("Generic BuildArgs failed: %v", err)
+		t.Fatal(err)
 	}
-	if len(genArgs) != 2 || genArgs[0] != "--run" || genArgs[1] != "auto" {
-		t.Errorf("unexpected Generic args: %v", genArgs)
+	want := []string{"run", "--format", "json", "--auto", "--model", "test", prompt}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("extra args = %#v, want %#v", got, want)
 	}
 }
 
-func TestFormatUserMessage(t *testing.T) {
-	adapters := ListAdapters()
-	for _, adapter := range adapters {
-		msgBytes, err := adapter.FormatUserMessage("Hello agent")
-		if err != nil {
-			t.Fatalf("%s FormatUserMessage failed: %v", adapter.Name(), err)
-		}
-		var parsed map[string]any
-		if err := json.Unmarshal(msgBytes, &parsed); err != nil {
-			t.Fatalf("%s produced invalid JSON: %v, raw: %s", adapter.Name(), err, string(msgBytes))
-		}
-		if parsed["type"] != "user" {
-			t.Errorf("%s message type = %v, want 'user'", adapter.Name(), parsed["type"])
-		}
+func TestBuildTurnArgsRejectsUnverifiedModes(t *testing.T) {
+	for _, adapter := range ListAdapters() {
+		t.Run(adapter.Name(), func(t *testing.T) {
+			for _, mode := range []string{"ro", "ask", "auto", "RW", " rw "} {
+				args, err := adapter.BuildTurnArgs(".", mode, "prompt", "", nil)
+				if err == nil || args != nil {
+					t.Fatalf("BuildTurnArgs mode %q = %#v, %v; want nil args and error", mode, args, err)
+				}
+				if !strings.Contains(err.Error(), "only autonomous mode (rw) is verified") {
+					t.Fatalf("BuildTurnArgs mode %q error = %q", mode, err)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildTurnArgsAcceptsAutonomousModes(t *testing.T) {
+	for _, adapter := range ListAdapters() {
+		t.Run(adapter.Name(), func(t *testing.T) {
+			for _, mode := range []string{"", "rw"} {
+				args, err := adapter.BuildTurnArgs(".", mode, "prompt", "", nil)
+				if err != nil || len(args) == 0 {
+					t.Fatalf("BuildTurnArgs mode %q = %#v, %v", mode, args, err)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildTurnArgsKeepsExtraArgsBeforeResumeAndPrompt(t *testing.T) {
+	prompt := "prompt"
+	tests := []struct {
+		adapter EngineAdapter
+		want    []string
+	}{
+		{NewClaudeAdapter(), []string{"--print", "--output-format", "stream-json", "--include-partial-messages", "--verbose", "--forward-subagent-text", "--dangerously-skip-permissions", "--model", "test", "--resume", "native", prompt}},
+		{NewOpenCodeAdapter(), []string{"run", "--format", "json", "--auto", "--model", "test", "--session", "native", prompt}},
+		{NewCodexAdapter(), []string{"exec", "resume", "--json", "--dangerously-bypass-approvals-and-sandbox", "--model", "test", "native", prompt}},
+		{NewCopilotAdapter(), []string{"--allow-all", "--output-format", "json", "--stream", "on", "--model", "test", "--resume=native", "--prompt", prompt}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.adapter.Name(), func(t *testing.T) {
+			got, err := tt.adapter.BuildTurnArgs(".", "rw", prompt, "native", []string{"--model", "test"})
+			if err != nil || !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("BuildTurnArgs = %#v, %v; want %#v", got, err, tt.want)
+			}
+		})
 	}
 }
 
@@ -321,6 +350,7 @@ func TestClaudeAdapterNormalizeEvent(t *testing.T) {
 	// 9. Result event
 	lineResult := []byte(`{
 		"type": "result",
+		"session_id": "sess-xyz-123",
 		"total_cost_usd": 0.0152,
 		"duration_ms": 3200,
 		"usage": {
@@ -333,8 +363,14 @@ func TestClaudeAdapterNormalizeEvent(t *testing.T) {
 	if err != nil || evRes == nil {
 		t.Fatalf("result failed: %v", err)
 	}
-	if evRes.Type != EventDone || evRes.CostUSD != 0.0152 || evRes.DurationMs != 3200 || evRes.Tokens != 1850 || evRes.IsError {
+	if evRes.Type != EventDone || evRes.SessionID != "sess-xyz-123" || evRes.CostUSD != 0.0152 || evRes.DurationMs != 3200 || evRes.Tokens != 1850 || evRes.IsError {
 		t.Errorf("unexpected result event: %#v", evRes)
+	}
+
+	lineFailedResult := []byte(`{"type":"result","session_id":"sess-xyz-123","is_error":"true","result":"model failed"}`)
+	evFailed, err := claude.NormalizeEvent(lineFailedResult)
+	if err != nil || evFailed == nil || evFailed.Type != EventDone || !evFailed.IsError || evFailed.Content != "model failed" {
+		t.Fatalf("strict bool-like result failed: %#v, err: %v", evFailed, err)
 	}
 
 	// 11. Assistant message with question block
@@ -382,130 +418,373 @@ func TestClaudeAdapterNormalizeEvent(t *testing.T) {
 	}
 }
 
+func TestClaudeAdapterPreservesRawBlockStop(t *testing.T) {
+	event, err := NewClaudeAdapter().NormalizeEvent([]byte(`{"type":"stream_event","session_id":"claude-stream","event":{"type":"content_block_stop","index":2}}`))
+	if err != nil || event == nil || event.Raw == nil || event.Type != "" || event.SessionID != "claude-stream" {
+		t.Fatalf("Claude block stop = %#v, %v", event, err)
+	}
+}
+
+func TestClaudeAdapterPreservesRawLifecycleEvents(t *testing.T) {
+	event, err := NewClaudeAdapter().NormalizeEvent([]byte(`{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"}}`))
+	if err != nil || event == nil || event.Raw == nil || event.Type != "" {
+		t.Fatalf("Claude lifecycle event = %#v, %v", event, err)
+	}
+}
+
 func TestOpenCodeAdapterNormalizeEvent(t *testing.T) {
 	opencode := NewOpenCodeAdapter()
 
-	// 1. Session
-	line := []byte(`{"type": "session", "session_id": "open-sess-1"}`)
+	// Synthetic fixtures shaped like OpenCode's JSON event stream.
+	line := []byte(`{"type":"step_start","sessionID":"open-sess-1","part":{"type":"step-start","sessionID":"open-sess-1"}}`)
 	ev, err := opencode.NormalizeEvent(line)
 	if err != nil || ev == nil || ev.Type != EventSession || ev.SessionID != "open-sess-1" {
-		t.Fatalf("OpenCode session normalize failed: %#v, err: %v", ev, err)
+		t.Fatalf("OpenCode step_start normalize failed: %#v, err: %v", ev, err)
 	}
 
-	// 2. Text delta
-	line = []byte(`{"type": "text_delta", "delta": "Generating storyboard"}`)
+	line = []byte(`{"type":"text","sessionID":"open-sess-1","part":{"type":"text","text":"Generating storyboard"}}`)
 	ev, err = opencode.NormalizeEvent(line)
-	if err != nil || ev == nil || ev.Type != EventTextDelta || ev.Content != "Generating storyboard" {
-		t.Fatalf("OpenCode text_delta normalize failed: %#v, err: %v", ev, err)
+	if err != nil || ev == nil || ev.Type != EventTextDelta || ev.Content != "Generating storyboard" || ev.SessionID != "open-sess-1" {
+		t.Fatalf("OpenCode text normalize failed: %#v, err: %v", ev, err)
 	}
 
-	// 3. Thinking
-	line = []byte(`{"type": "thinking", "content": "Selecting best voiceover model"}`)
+	line = []byte(`{"type":"tool","part":{"type":"tool","sessionID":"open-sess-1","tool":"bash","callID":"call-1","state":{"status":"pending","input":{"command":"ffmpeg -version"}}}}`)
 	ev, err = opencode.NormalizeEvent(line)
-	if err != nil || ev == nil || ev.Type != EventThinkDelta || ev.Thinking != "Selecting best voiceover model" {
-		t.Fatalf("OpenCode thinking normalize failed: %#v, err: %v", ev, err)
+	if err != nil || ev == nil || ev.Type != EventToolUse || ev.SessionID != "open-sess-1" || ev.ToolName != "bash" || ev.ToolID != "call-1" {
+		t.Fatalf("OpenCode pending tool normalize failed: %#v, err: %v", ev, err)
+	}
+	input, ok := ev.ToolInput.(map[string]any)
+	if !ok || input["command"] != "ffmpeg -version" {
+		t.Fatalf("OpenCode pending tool input = %#v", ev.ToolInput)
 	}
 
-	// 4. Tool call
-	line = []byte(`{"type": "tool_call", "id": "tc_1", "name": "compose", "arguments": {"output": "out.mp4"}}`)
+	line = []byte(`{"type":"tool","part":{"type":"tool","sessionID":"open-sess-1","tool":"bash","callID":"call-1","state":{"status":"running","input":{"command":"ffmpeg -version"}}}}`)
 	ev, err = opencode.NormalizeEvent(line)
-	if err != nil || ev == nil || ev.Type != EventToolUse || ev.ToolName != "compose" || ev.ToolID != "tc_1" {
-		t.Fatalf("OpenCode tool_call normalize failed: %#v, err: %v", ev, err)
+	if err != nil || ev == nil || ev.Type != EventToolUse || ev.ToolName != "bash" || ev.ToolID != "call-1" {
+		t.Fatalf("OpenCode running tool normalize failed: %#v, err: %v", ev, err)
 	}
 
-	// 5. Tool result
-	line = []byte(`{"type": "tool_result", "id": "tc_1", "output": "rendered 10s video", "is_error": false}`)
+	line = []byte(`{"type":"tool","part":{"type":"tool","sessionID":"open-sess-1","tool":"bash","callID":"call-1","state":{"status":"completed","input":{"command":"ffmpeg -version"},"output":"ffmpeg version 7"}}}`)
 	ev, err = opencode.NormalizeEvent(line)
-	if err != nil || ev == nil || ev.Type != EventToolResult || ev.ToolID != "tc_1" || ev.ToolOutput != "rendered 10s video" {
-		t.Fatalf("OpenCode tool_result normalize failed: %#v, err: %v", ev, err)
+	if err != nil || ev == nil || ev.Type != EventToolResult || ev.ToolName != "bash" || ev.ToolID != "call-1" || ev.ToolOutput != "ffmpeg version 7" || ev.IsError {
+		t.Fatalf("OpenCode completed tool normalize failed: %#v, err: %v", ev, err)
+	}
+	line = []byte(`{"type":"tool","part":{"type":"tool","sessionID":"open-sess-1","tool":"media_probe","callID":"call-object","state":{"status":"completed","input":{"path":"final.mp4"},"output":{"duration":10,"codec":"h264"},"error":null}}}`)
+	ev, err = opencode.NormalizeEvent(line)
+	if err != nil || ev == nil || ev.Type != EventToolResult || ev.ToolOutput != `{"codec":"h264","duration":10}` || ev.IsError {
+		t.Fatalf("OpenCode object tool output normalize failed: %#v, err: %v", ev, err)
 	}
 
-	// 6. Question
-	line = []byte(`{"type": "question", "question": {"prompt": "Choose style", "options": ["cinematic", "fast-cut"]}}`)
+	line = []byte(`{"type":"tool","data":{"sessionID":"open-sess-data"},"part":{"type":"tool","tool":"write","callID":"call-2","state":{"status":"error","input":{"filePath":"out.mp4"},"error":"disk full"}}}`)
 	ev, err = opencode.NormalizeEvent(line)
-	if err != nil || ev == nil || ev.Type != EventQuestion || ev.Question == nil {
-		t.Fatalf("OpenCode question normalize failed: %#v, err: %v", ev, err)
+	if err != nil || ev == nil || ev.Type != EventToolResult || ev.SessionID != "open-sess-data" || ev.ToolID != "call-2" || ev.ToolOutput != "disk full" || !ev.IsError {
+		t.Fatalf("OpenCode failed tool normalize failed: %#v, err: %v", ev, err)
 	}
 
-	// 7. Permission
-	line = []byte(`{"type": "permission", "message": "Permission needed to run shell command"}`)
-	ev, err = opencode.NormalizeEvent(line)
-	if err != nil || ev == nil || ev.Type != EventPermission || ev.Content != "Permission needed to run shell command" {
-		t.Fatalf("OpenCode permission normalize failed: %#v, err: %v", ev, err)
+	for i, intermediate := range []string{
+		`{"type":"step_finish","sessionID":"open-sess-1","part":{"type":"step-finish","reason":"tool-calls","cost":0.001,"tokens":{"input":10,"output":2}}}`,
+		`{"type":"step_finish","sessionID":"open-sess-1","part":{"type":"step-finish","reason":"tool-calls","cost":0.002,"tokens":{"input":20,"output":3}}}`,
+		`{"type":"step_finish","sessionID":"open-sess-1","part":{"type":"step-finish","reason":"tool_calls","cost":0.002,"tokens":{"input":20,"output":3}}}`,
+	} {
+		ev, err = opencode.NormalizeEvent([]byte(intermediate))
+		if err != nil || ev == nil || ev.Type == EventDone || ev.SessionID != "open-sess-1" || ev.Raw == nil {
+			t.Fatalf("OpenCode intermediate step_finish %d = %#v, err: %v", i, ev, err)
+		}
 	}
 
-	// 8. Error
-	line = []byte(`{"type": "error", "message": "API key expired"}`)
+	line = []byte(`{"type":"step_finish","part":{"type":"step-finish","sessionID":"open-sess-final","reason":"stop","cost":0.004,"tokens":{"input":400,"output":20,"cache":{"read":5,"write":2}}}}`)
 	ev, err = opencode.NormalizeEvent(line)
-	if err != nil || ev == nil || ev.Type != EventError || !ev.IsError || ev.Content != "API key expired" {
-		t.Fatalf("OpenCode error normalize failed: %#v, err: %v", ev, err)
+	if err != nil || ev == nil || ev.Type != EventDone || ev.SessionID != "open-sess-final" || ev.CostUSD != 0.004 || ev.Tokens != 427 || ev.IsError {
+		t.Fatalf("OpenCode final step_finish normalize failed: %#v, err: %v", ev, err)
+	}
+	line = []byte(`{"type":"result","data":{"sessionID":"open-sess-result","result":"complete","cost":0.006,"tokens":{"inputTokens":30,"outputTokens":7,"cache":{"read":4,"write":1}},"durationMs":1100}}`)
+	ev, err = opencode.NormalizeEvent(line)
+	if err != nil || ev == nil || ev.Type != EventDone || ev.SessionID != "open-sess-result" || ev.Content != "complete" || ev.CostUSD != 0.006 || ev.Tokens != 42 || ev.DurationMs != 1100 {
+		t.Fatalf("OpenCode result normalize failed: %#v, err: %v", ev, err)
 	}
 
-	// 9. Finish
-	line = []byte(`{"type": "finish", "cost_usd": 0.004, "tokens": 420, "duration_ms": 1100}`)
+	line = []byte(`{"type":"step_finish","sessionID":"open-sess-1","isError":"1","result":"OpenCode failed"}`)
 	ev, err = opencode.NormalizeEvent(line)
-	if err != nil || ev == nil || ev.Type != EventDone || ev.CostUSD != 0.004 || ev.Tokens != 420 || ev.DurationMs != 1100 {
-		t.Fatalf("OpenCode finish normalize failed: %#v, err: %v", ev, err)
+	if err != nil || ev == nil || ev.Type != EventError || !ev.IsError || ev.Content != "OpenCode failed" {
+		t.Fatalf("OpenCode failed step_finish normalize failed: %#v, err: %v", ev, err)
+	}
+}
+
+func TestOpenCodeStepFinishTerminalReasons(t *testing.T) {
+	opencode := NewOpenCodeAdapter()
+
+	for _, reason := range []string{"stop", "complete", "completed", "completion", "done", "end-turn", "end_turn"} {
+		t.Run("success/"+reason, func(t *testing.T) {
+			line, err := json.Marshal(map[string]any{
+				"type":      "step_finish",
+				"sessionID": "open-success-" + reason,
+				"part": map[string]any{
+					"type":   "step-finish",
+					"reason": reason,
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			event, err := opencode.NormalizeEvent(line)
+			if err != nil || event == nil || event.Type != EventDone || event.IsError || event.Content != reason {
+				t.Fatalf("OpenCode successful step_finish %q = %#v, err: %v", reason, event, err)
+			}
+		})
+	}
+
+	for _, reason := range []string{"length", "content-filter", "content_filter", "cancellation", "failure", "error"} {
+		t.Run("failure/"+reason, func(t *testing.T) {
+			line, err := json.Marshal(map[string]any{
+				"type":      "step_finish",
+				"sessionID": "open-failure-" + reason,
+				"part": map[string]any{
+					"type":   "step-finish",
+					"reason": reason,
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			event, err := opencode.NormalizeEvent(line)
+			if err != nil || event == nil || event.Type != EventError || !event.IsError || event.Content != reason {
+				t.Fatalf("OpenCode unsuccessful step_finish %q = %#v, err: %v", reason, event, err)
+			}
+		})
+	}
+}
+
+func TestCodexAdapterNormalizeJSONLEvents(t *testing.T) {
+	codex := NewCodexAdapter()
+	fixtures := []struct {
+		line        string
+		wantType    string
+		wantSession string
+		wantContent string
+	}{
+		{`{"type":"thread.started","thread_id":"thread-123"}`, EventSession, "thread-123", ""},
+		{`{"type":"turn.started","thread_id":"thread-123"}`, EventSession, "thread-123", ""},
+		{`{"type":"item.completed","thread_id":"thread-123","item":{"id":"item-1","type":"agent_message","text":"Rendered the cut"}}`, EventTextDelta, "thread-123", "Rendered the cut"},
+		{`{"type":"turn.completed","thread_id":"thread-123","usage":{"input_tokens":12,"output_tokens":5}}`, EventDone, "thread-123", ""},
+	}
+	failed, err := codex.NormalizeEvent([]byte(`{"type":"turn.failed","thread_id":"thread-123","error":{"message":"Codex failed"}}`))
+	if err != nil || failed == nil || failed.Type != EventError || !failed.IsError || failed.Content != "Codex failed" {
+		t.Fatalf("Codex turn.failed = %#v, %v", failed, err)
+	}
+	for _, fixture := range fixtures {
+		event, err := codex.NormalizeEvent([]byte(fixture.line))
+		if err != nil || event == nil {
+			t.Fatalf("NormalizeEvent(%s) = %#v, %v", fixture.line, event, err)
+		}
+		if event.Type != fixture.wantType || event.SessionID != fixture.wantSession || event.Content != fixture.wantContent {
+			t.Fatalf("NormalizeEvent(%s) = %#v", fixture.line, event)
+		}
+	}
+
+	started, err := codex.NormalizeEvent([]byte(`{"type":"item.started","thread_id":"thread-123","item":{"id":"cmd-1","type":"command_execution","command":"ffmpeg -version","status":"in_progress"}}`))
+	if err != nil || started == nil || started.Type != EventToolUse || started.ToolName != "command_execution" || started.ToolID != "cmd-1" || started.ToolInput != "ffmpeg -version" {
+		t.Fatalf("Codex command start = %#v, %v", started, err)
+	}
+	completed, err := codex.NormalizeEvent([]byte(`{"type":"item.completed","thread_id":"thread-123","item":{"id":"cmd-1","type":"command_execution","command":"ffmpeg -version","aggregated_output":"ffmpeg version 7","exit_code":0,"status":"completed"}}`))
+	if err != nil || completed == nil || completed.Type != EventToolResult || completed.ToolName != "command_execution" || completed.ToolID != "cmd-1" || completed.ToolOutput != "ffmpeg version 7" || completed.IsError {
+		t.Fatalf("Codex command completion = %#v, %v", completed, err)
+	}
+	failedCommand, err := codex.NormalizeEvent([]byte(`{"type":"item.completed","thread_id":"thread-123","item":{"id":"cmd-2","type":"command_execution","command":"false","aggregated_output":"command failed","exit_code":1,"status":"failed"}}`))
+	if err != nil || failedCommand == nil || failedCommand.Type != EventToolResult || !failedCommand.IsError || failedCommand.ToolOutput != "command failed" {
+		t.Fatalf("Codex failed command = %#v, %v", failedCommand, err)
+	}
+}
+
+func TestNormalizerExtractsNestedNativeSessionIDs(t *testing.T) {
+	tests := []struct {
+		name    string
+		adapter EngineAdapter
+		line    string
+		want    string
+	}{
+		{"opencode nested part", NewOpenCodeAdapter(), `{"type":"metadata","part":{"sessionID":"open-nested"}}`, "open-nested"},
+		{"codex nested data", NewCodexAdapter(), `{"type":"metadata","data":{"thread_id":"codex-nested"}}`, "codex-nested"},
+		{"copilot nested data", NewCopilotAdapter(), `{"type":"metadata","data":{"sessionId":"copilot-nested"}}`, "copilot-nested"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			event, err := tt.adapter.NormalizeEvent([]byte(tt.line))
+			if err != nil || event == nil || event.Type != "" || event.SessionID != tt.want {
+				t.Fatalf("NormalizeEvent = %#v, %v", event, err)
+			}
+		})
+	}
+}
+
+func TestNormalizersTreatTopLevelErrorFieldsAsFailure(t *testing.T) {
+	tests := []struct {
+		name    string
+		adapter EngineAdapter
+		line    string
+	}{
+		{"claude", NewClaudeAdapter(), `{"type":"unexpected","session_id":"c","error":{"message":"failed"}}`},
+		{"opencode", NewOpenCodeAdapter(), `{"type":"unexpected","sessionID":"o","error":{"message":"failed"}}`},
+		{"codex", NewCodexAdapter(), `{"type":"unexpected","thread_id":"x","error":{"message":"failed"}}`},
+		{"copilot", NewCopilotAdapter(), `{"type":"unexpected","data":{"sessionId":"p","error":{"message":"failed"}}}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			event, err := tt.adapter.NormalizeEvent([]byte(tt.line))
+			if err != nil || event == nil || event.Type != EventError || !event.IsError || event.Content != "failed" {
+				t.Fatalf("NormalizeEvent = %#v, %v", event, err)
+			}
+		})
 	}
 }
 
 func TestCopilotAdapterNormalizeEvent(t *testing.T) {
 	copilot := NewCopilotAdapter()
 
-	// 1. Conversation create
-	line := []byte(`{"type": "conversation.create", "conversation_id": "copilot-conv-1"}`)
+	// Synthetic fixtures shaped like captured Copilot JSONL records.
+	line := []byte(`{"type":"session.start","data":{"sessionId":"copilot-conv-1"}}`)
 	ev, err := copilot.NormalizeEvent(line)
 	if err != nil || ev == nil || ev.Type != EventSession || ev.SessionID != "copilot-conv-1" {
-		t.Fatalf("Copilot conversation.create normalize failed: %#v, err: %v", ev, err)
+		t.Fatalf("Copilot session.start normalize failed: %#v, err: %v", ev, err)
 	}
 
-	// 2. Message delta
-	line = []byte(`{"type": "assistant.message.delta", "content": "Applying color grade"}`)
+	line = []byte(`{"type":"assistant.reasoning_delta","data":{"sessionId":"copilot-conv-1","deltaContent":"Checking the edit"}}`)
 	ev, err = copilot.NormalizeEvent(line)
-	if err != nil || ev == nil || ev.Type != EventTextDelta || ev.Content != "Applying color grade" {
-		t.Fatalf("Copilot message.delta normalize failed: %#v, err: %v", ev, err)
+	if err != nil || ev == nil || ev.Type != EventThinkDelta || ev.Thinking != "Checking the edit" {
+		t.Fatalf("Copilot reasoning delta normalize failed: %#v, err: %v", ev, err)
 	}
 
-	// 3. Reasoning delta
-	line = []byte(`{"type": "reasoning.delta", "reasoning": "Computing LUT table"}`)
+	line = []byte(`{"type":"assistant.reasoning","data":{"sessionId":"copilot-conv-1","content":"The edit is valid"}}`)
 	ev, err = copilot.NormalizeEvent(line)
-	if err != nil || ev == nil || ev.Type != EventThinkDelta || ev.Thinking != "Computing LUT table" {
-		t.Fatalf("Copilot reasoning.delta normalize failed: %#v, err: %v", ev, err)
+	if err != nil || ev == nil || ev.Type != EventThinkDelta || ev.Thinking != "The edit is valid" {
+		t.Fatalf("Copilot reasoning normalize failed: %#v, err: %v", ev, err)
 	}
 
-	// 4. Function call
-	line = []byte(`{"type": "function_call", "call_id": "fn_1", "name": "color_grade", "parameters": {"lut": "warm"}}`)
+	line = []byte(`{"type":"tool.execution_start","data":{"sessionId":"copilot-conv-1","toolCallId":"tool-1","toolName":"shell","arguments":{"command":"ffmpeg -version"}}}`)
 	ev, err = copilot.NormalizeEvent(line)
-	if err != nil || ev == nil || ev.Type != EventToolUse || ev.ToolName != "color_grade" || ev.ToolID != "fn_1" {
-		t.Fatalf("Copilot function_call normalize failed: %#v, err: %v", ev, err)
+	if err != nil || ev == nil || ev.Type != EventToolUse || ev.ToolID != "tool-1" || ev.ToolName != "shell" {
+		t.Fatalf("Copilot tool start normalize failed: %#v, err: %v", ev, err)
+	}
+	input, ok := ev.ToolInput.(map[string]any)
+	if !ok || input["command"] != "ffmpeg -version" {
+		t.Fatalf("Copilot tool input = %#v", ev.ToolInput)
 	}
 
-	// 5. Function result
-	line = []byte(`{"type": "function_call_result", "call_id": "fn_1", "output": "color graded successfully", "is_error": false}`)
+	line = []byte(`{"type":"tool.execution_complete","data":{"sessionId":"copilot-conv-1","toolCallId":"tool-1","toolName":"shell","result":{"stdout":"ffmpeg version 7"},"success":true}}`)
 	ev, err = copilot.NormalizeEvent(line)
-	if err != nil || ev == nil || ev.Type != EventToolResult || ev.ToolID != "fn_1" || ev.ToolOutput != "color graded successfully" {
-		t.Fatalf("Copilot function_call_result normalize failed: %#v, err: %v", ev, err)
+	if err != nil || ev == nil || ev.Type != EventToolResult || ev.ToolID != "tool-1" || ev.ToolName != "shell" || ev.ToolOutput != `{"stdout":"ffmpeg version 7"}` || ev.IsError {
+		t.Fatalf("Copilot tool completion normalize failed: %#v, err: %v", ev, err)
 	}
 
-	// 6. Approval request (permission)
-	line = []byte(`{"type": "approval_request", "message": "Approve running remotion render?"}`)
+	line = []byte(`{"type":"tool.execution_complete","data":{"sessionId":"copilot-conv-1","toolCallId":"tool-2","result":"permission denied","success":false}}`)
 	ev, err = copilot.NormalizeEvent(line)
-	if err != nil || ev == nil || ev.Type != EventPermission || ev.Content != "Approve running remotion render?" {
-		t.Fatalf("Copilot approval_request normalize failed: %#v, err: %v", ev, err)
+	if err != nil || ev == nil || ev.Type != EventToolResult || ev.ToolID != "tool-2" || ev.ToolOutput != "permission denied" || !ev.IsError {
+		t.Fatalf("Copilot failed tool normalize failed: %#v, err: %v", ev, err)
 	}
 
-	// 7. Error
-	line = []byte(`{"type": "error", "message": "Network timeout"}`)
+	line = []byte(`{"type":"assistant.message_delta","data":{"sessionId":"copilot-conv-1","messageId":"msg-streamed","message":{"deltaContent":"Applying "}}}`)
 	ev, err = copilot.NormalizeEvent(line)
-	if err != nil || ev == nil || ev.Type != EventError || !ev.IsError || ev.Content != "Network timeout" {
-		t.Fatalf("Copilot error normalize failed: %#v, err: %v", ev, err)
+	if err != nil || ev == nil || ev.Type != EventTextDelta || ev.Content != "Applying " {
+		t.Fatalf("Copilot first message delta normalize failed: %#v, err: %v", ev, err)
+	}
+	line = []byte(`{"type":"assistant.message_delta","data":{"sessionId":"copilot-conv-1","messageId":"msg-streamed","deltaContent":"color grade"}}`)
+	ev, err = copilot.NormalizeEvent(line)
+	if err != nil || ev == nil || ev.Type != EventTextDelta || ev.Content != "color grade" {
+		t.Fatalf("Copilot second message delta normalize failed: %#v, err: %v", ev, err)
+	}
+	line = []byte(`{"type":"assistant.message","data":{"sessionId":"copilot-conv-1","messageId":"msg-streamed","content":"Applying color grade"}}`)
+	ev, err = copilot.NormalizeEvent(line)
+	if err != nil || ev != nil {
+		t.Fatalf("Copilot streamed final message should be deduplicated: %#v, err: %v", ev, err)
+	}
+	line = []byte(`{"type":"assistant.message","data":{"sessionId":"copilot-conv-1","messageId":"msg-final-only","content":"A non-streamed final answer"}}`)
+	ev, err = copilot.NormalizeEvent(line)
+	if err != nil || ev == nil || ev.Type != EventTextDelta || ev.Content != "A non-streamed final answer" {
+		t.Fatalf("Copilot non-streamed final message normalize failed: %#v, err: %v", ev, err)
 	}
 
-	// 8. Turn finish
-	line = []byte(`{"type": "turn.finish", "total_cost_usd": 0.002, "duration_ms": 850}`)
+	for i := 0; i < 2; i++ {
+		line = []byte(`{"type":"assistant.turn_end","data":{"sessionId":"copilot-conv-1"}}`)
+		ev, err = copilot.NormalizeEvent(line)
+		if err != nil || ev == nil || ev.Type == EventDone || ev.SessionID != "copilot-conv-1" || ev.Raw == nil {
+			t.Fatalf("Copilot assistant.turn_end %d = %#v, err: %v", i, ev, err)
+		}
+	}
+
+	line = []byte(`{"type":"session.shutdown","status":"completed","data":{"sessionId":"copilot-conv-1","reason":"complete","shutdown":"completed","exitCode":0,"usage":{"input_tokens":10,"output_tokens":4}}}`)
 	ev, err = copilot.NormalizeEvent(line)
-	if err != nil || ev == nil || ev.Type != EventDone || ev.CostUSD != 0.002 || ev.DurationMs != 850 {
-		t.Fatalf("Copilot turn.finish normalize failed: %#v, err: %v", ev, err)
+	if err != nil || ev == nil || ev.Type != EventDone || ev.SessionID != "copilot-conv-1" || ev.Content != "complete" || ev.Tokens != 14 || ev.IsError {
+		t.Fatalf("Copilot session.shutdown normalize failed: %#v, err: %v", ev, err)
+	}
+
+	line = []byte(`{"type":"assistant.message","data":{"sessionId":"copilot-conv-1","messageId":"msg-streamed","content":"Allowed after state reset"}}`)
+	ev, err = copilot.NormalizeEvent(line)
+	if err != nil || ev == nil || ev.Type != EventTextDelta || ev.Content != "Allowed after state reset" {
+		t.Fatalf("Copilot shutdown did not clear dedup state: %#v, err: %v", ev, err)
+	}
+
+	line = []byte(`{"type":"result","exitCode":0,"data":{"sessionId":"copilot-conv-1","result":"finished","status":"completed","cost":0.002,"durationMs":850,"tokens":{"input":5,"output":2}}}`)
+	ev, err = copilot.NormalizeEvent(line)
+	if err != nil || ev == nil || ev.Type != EventDone || ev.Content != "finished" || ev.CostUSD != 0.002 || ev.DurationMs != 850 || ev.Tokens != 7 || ev.IsError {
+		t.Fatalf("Copilot final result normalize failed: %#v, err: %v", ev, err)
+	}
+	line = []byte(`{"type":"assistant.message","data":{"sessionId":"copilot-conv-1","messageId":"msg-streamed","content":"Allowed after result reset"}}`)
+	ev, err = copilot.NormalizeEvent(line)
+	if err != nil || ev == nil || ev.Type != EventTextDelta || ev.Content != "Allowed after result reset" {
+		t.Fatalf("Copilot result did not clear dedup state: %#v, err: %v", ev, err)
+	}
+	line = []byte(`{"type":"result","data":{"sessionId":"copilot-conv-1","isError":true,"error":{"message":"Final result failed"}}}`)
+	ev, err = copilot.NormalizeEvent(line)
+	if err != nil || ev == nil || ev.Type != EventDone || !ev.IsError || ev.Content != "Final result failed" {
+		t.Fatalf("Copilot failed result normalize failed: %#v, err: %v", ev, err)
+	}
+
+	line = []byte(`{"type":"session.error","data":{"sessionId":"copilot-conv-1","error":{"message":"Copilot failed"}}}`)
+	ev, err = copilot.NormalizeEvent(line)
+	if err != nil || ev == nil || ev.Type != EventError || !ev.IsError || ev.Content != "Copilot failed" {
+		t.Fatalf("Copilot session.error normalize failed: %#v, err: %v", ev, err)
+	}
+
+	line = []byte(`{"type":"assistant.idle","data":{"sessionId":"copilot-conv-1"}}`)
+	ev, err = copilot.NormalizeEvent(line)
+	if err != nil || ev == nil || ev.Type != "" || ev.SessionID != "copilot-conv-1" {
+		t.Fatalf("Copilot invented assistant.idle should not terminate: %#v, err: %v", ev, err)
+	}
+}
+
+func TestCopilotTerminalFailureSignals(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+	}{
+		{
+			name: "shutdown data exit code",
+			line: `{"type":"session.shutdown","data":{"sessionId":"copilot-exit-data","exitCode":17,"reason":"agent process exited"}}`,
+		},
+		{
+			name: "result top-level exit code",
+			line: `{"type":"result","exitCode":2,"data":{"sessionId":"copilot-exit-top","result":"agent process exited"}}`,
+		},
+		{
+			name: "shutdown failed",
+			line: `{"type":"session.shutdown","data":{"sessionId":"copilot-shutdown-failed","shutdown":"failed","reason":"shutdown failed"}}`,
+		},
+		{
+			name: "result error status",
+			line: `{"type":"result","status":"error","data":{"sessionId":"copilot-status-error","result":"request failed"}}`,
+		},
+		{
+			name: "shutdown canceled status",
+			line: `{"type":"session.shutdown","data":{"sessionId":"copilot-status-canceled","status":"canceled","reason":"request canceled"}}`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			event, err := NewCopilotAdapter().NormalizeEvent([]byte(test.line))
+			if err != nil || event == nil || event.Type != EventDone || !event.IsError || event.Content == "" {
+				t.Fatalf("Copilot terminal failure = %#v, err: %v", event, err)
+			}
+		})
 	}
 }
 

@@ -2,12 +2,17 @@ package engine
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 )
 
 // CodexAdapter implements EngineAdapter for the OpenAI Codex CLI.
-type CodexAdapter struct{}
+type CodexAdapter struct {
+	Executable string
+}
+
+func NewCodexAdapter() *CodexAdapter {
+	return &CodexAdapter{Executable: "codex"}
+}
 
 func (a *CodexAdapter) Name() string {
 	return "codex"
@@ -18,49 +23,27 @@ func (a *CodexAdapter) DisplayName() string {
 }
 
 func (a *CodexAdapter) ExecutableName() string {
+	if a.Executable != "" {
+		return a.Executable
+	}
 	return "codex"
 }
 
-func (a *CodexAdapter) BuildArgs(dir string, mode string, extraArgs []string) ([]string, error) {
-	args := []string{
-		"-p",
-		"--input-format", "stream-json",
-		"--output-format", "stream-json",
-		"--verbose",
+func (a *CodexAdapter) BuildTurnArgs(dir, mode, prompt, nativeID string, extraArgs []string) ([]string, error) {
+	if err := validateAutonomousMode(mode); err != nil {
+		return nil, err
 	}
-
-	switch strings.ToLower(mode) {
-	case "rw":
-		args = append(args, "--full-auto")
-	case "ro":
-		args = append(args, "--read-only")
-	case "ask":
-		args = append(args, "--ask-permission")
-	default:
-		args = append(args, "--full-auto")
+	args := []string{"exec"}
+	if nativeID != "" {
+		args = append(args, "resume")
 	}
-
-	if len(extraArgs) > 0 {
-		args = append(args, extraArgs...)
+	args = append(args, "--json", "--dangerously-bypass-approvals-and-sandbox")
+	args = append(args, extraArgs...)
+	if nativeID != "" {
+		args = append(args, nativeID)
 	}
-
+	args = append(args, prompt)
 	return args, nil
-}
-
-func (a *CodexAdapter) FormatUserMessage(prompt string) ([]byte, error) {
-	msg := map[string]any{
-		"type": "user",
-		"message": map[string]any{
-			"role": "user",
-			"content": []map[string]any{
-				{
-					"type": "text",
-					"text": prompt,
-				},
-			},
-		},
-	}
-	return json.Marshal(msg)
 }
 
 func (a *CodexAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
@@ -71,28 +54,112 @@ func (a *CodexAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
 
 	var raw map[string]any
 	if err := json.Unmarshal(line, &raw); err != nil {
+		text := string(line)
+		if strings.HasPrefix(strings.ToLower(text), "error:") {
+			return &NormalizedEvent{Type: EventError, Content: text, IsError: true}, nil
+		}
 		return &NormalizedEvent{
-			Type:    "text_delta",
-			Content: string(line),
+			Type:    EventTextDelta,
+			Content: text,
 			Raw:     raw,
 		}, nil
 	}
 
 	evType, _ := raw["type"].(string)
-	norm := &NormalizedEvent{
-		Raw: raw,
-	}
+	item := mapValue(raw["item"])
+	data := mapValue(raw["data"])
+	maps := []map[string]any{raw, item, data}
+	sessionID := firstString(maps, "thread_id", "session_id")
+	norm := &NormalizedEvent{SessionID: sessionID, Raw: raw}
 
 	switch evType {
+	case "thread.started":
+		norm.Type = EventSession
+		return norm, nil
+
+	case "turn.started":
+		if sessionID == "" {
+			return nil, nil
+		}
+		norm.Type = EventSession
+		return norm, nil
+
+	case "item.started":
+		if firstString([]map[string]any{item}, "type") != "command_execution" {
+			return nil, nil
+		}
+		norm.Type = EventToolUse
+		norm.ToolName = "command_execution"
+		norm.ToolID = firstString([]map[string]any{item}, "id")
+		norm.ToolInput = item["command"]
+		return norm, nil
+
+	case "item.completed":
+		itemType, _ := item["type"].(string)
+		switch itemType {
+		case "agent_message":
+			norm.Type = EventTextDelta
+			norm.Content = contentString(item["text"])
+			if norm.Content == "" {
+				norm.Content = contentString(item["content"])
+			}
+			if q, cleaned, found := ExtractQuestion(norm.Content); found {
+				norm.Type = EventQuestion
+				norm.Question = q
+				norm.Content = cleaned
+			}
+			return norm, nil
+		case "reasoning":
+			norm.Type = EventThinkDelta
+			norm.Thinking = contentString(item["text"])
+			return norm, nil
+		case "command_execution":
+			norm.Type = EventToolResult
+			norm.ToolName = "command_execution"
+			norm.ToolID = firstString([]map[string]any{item}, "id")
+			norm.ToolInput = item["command"]
+			norm.ToolOutput = valueString(item["aggregated_output"])
+			norm.IsError = firstBoolLike([]map[string]any{item}, "is_error", "isError")
+			if status := strings.ToLower(firstString([]map[string]any{item}, "status")); status == "failed" || status == "error" || status == "cancelled" || status == "canceled" {
+				norm.IsError = true
+			}
+			if exitCode, ok := getInt64(item["exit_code"]); ok && exitCode != 0 {
+				norm.IsError = true
+			}
+			return norm, nil
+		}
+		return nil, nil
+
+	case "turn.completed":
+		norm.Type = EventDone
+		turn := mapValue(raw["turn"])
+		norm.Content = bestReason(raw, data, turn)
+		norm.IsError = firstBoolLike(append(maps, turn), "is_error", "isError")
+		if status := strings.ToLower(firstString([]map[string]any{raw, data, turn}, "status")); status == "failed" || status == "error" || status == "cancelled" || status == "canceled" {
+			norm.IsError = true
+		}
+		if usage := mapValue(raw["usage"]); usage != nil {
+			inTok, _ := getInt64(usage["input_tokens"])
+			outTok, _ := getInt64(usage["output_tokens"])
+			norm.Tokens = inTok + outTok
+		}
+		return norm, nil
+
+	case "turn.failed":
+		norm.Type = EventError
+		norm.Content = bestReason(raw, data)
+		norm.IsError = true
+		return norm, nil
+
 	case "system":
 		sub, _ := raw["subtype"].(string)
 		if sub == "init" {
-			norm.Type = "session"
+			norm.Type = EventSession
 			norm.SessionID, _ = raw["session_id"].(string)
 			return norm, nil
 		}
 		if sub == "permission_denied" {
-			norm.Type = "permission"
+			norm.Type = EventPermission
 			norm.ToolName, _ = raw["tool_name"].(string)
 			norm.ToolID, _ = raw["tool_use_id"].(string)
 			norm.Content, _ = raw["message"].(string)
@@ -115,7 +182,7 @@ func (a *CodexAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
 			}
 			cbType, _ := cb["type"].(string)
 			if cbType == "tool_use" {
-				norm.Type = "tool_use"
+				norm.Type = EventToolUse
 				norm.ToolName, _ = cb["name"].(string)
 				norm.ToolID, _ = cb["id"].(string)
 				return norm, nil
@@ -131,15 +198,15 @@ func (a *CodexAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
 
 			switch deltaType {
 			case "text_delta":
-				norm.Type = "text_delta"
+				norm.Type = EventTextDelta
 				norm.Content, _ = delta["text"].(string)
 				return norm, nil
 			case "thinking_delta":
-				norm.Type = "think_delta"
+				norm.Type = EventThinkDelta
 				norm.Thinking, _ = delta["thinking"].(string)
 				return norm, nil
 			case "input_json_delta":
-				norm.Type = "tool_use"
+				norm.Type = EventToolUse
 				norm.Content, _ = delta["partial_json"].(string)
 				return norm, nil
 			}
@@ -147,7 +214,7 @@ func (a *CodexAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
 		}
 
 	case "assistant":
-		norm.Type = "text_delta"
+		norm.Type = EventTextDelta
 		if msg, ok := raw["message"].(map[string]any); ok {
 			if contentList, ok := msg["content"].([]any); ok {
 				var sb strings.Builder
@@ -160,7 +227,7 @@ func (a *CodexAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
 				}
 				norm.Content = sb.String()
 				if q, cleanText, found := ExtractQuestion(norm.Content); found {
-					norm.Type = "question"
+					norm.Type = EventQuestion
 					norm.Question = q
 					norm.Content = cleanText
 				}
@@ -169,7 +236,7 @@ func (a *CodexAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
 		return norm, nil
 
 	case "user":
-		norm.Type = "tool_result"
+		norm.Type = EventToolResult
 		if msg, ok := raw["message"].(map[string]any); ok {
 			if contentList, ok := msg["content"].([]any); ok {
 				for _, item := range contentList {
@@ -179,7 +246,7 @@ func (a *CodexAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
 							if isErr, ok := cm["is_error"].(bool); ok {
 								norm.IsError = isErr
 							}
-							norm.ToolOutput = fmt.Sprintf("%v", cm["content"])
+							norm.ToolOutput = contentString(cm["content"])
 							return norm, nil
 						}
 					}
@@ -189,7 +256,7 @@ func (a *CodexAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
 		return norm, nil
 
 	case "result":
-		norm.Type = "done"
+		norm.Type = EventDone
 		if cost, ok := raw["total_cost_usd"].(float64); ok {
 			norm.CostUSD = cost
 		}
@@ -199,9 +266,18 @@ func (a *CodexAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) {
 		return norm, nil
 
 	case "error":
-		norm.Type = "error"
-		norm.Content = fmt.Sprintf("%v", raw["error"])
+		norm.Type = EventError
+		norm.Content = bestReason(raw, data)
 		norm.IsError = true
+		return norm, nil
+	}
+	if bestReason(raw, data) != "" && (raw["error"] != nil || data["error"] != nil || firstBoolLike(maps, "is_error", "isError")) {
+		norm.Type = EventError
+		norm.Content = bestReason(raw, data)
+		norm.IsError = true
+		return norm, nil
+	}
+	if sessionID != "" {
 		return norm, nil
 	}
 

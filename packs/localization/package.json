@@ -1,0 +1,11 @@
+{
+  "name": "@xibodev/facet-pack-localization",
+  "version": "1.0.0",
+  "description": "Multilingual dubbing, subtitle translation, and voice localization pipeline for Facet.",
+  "keywords": ["facet", "facet-pack", "localization", "dubbing", "subtitles", "translation", "video"],
+  "author": "Facet Authors",
+  "license": "Apache-2.0",
+  "facet": {
+    "manifest": "facet-pack.json"
+  }
+}

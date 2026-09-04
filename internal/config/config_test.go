@@ -245,4 +245,56 @@ func TestRunInit(t *testing.T) {
 			t.Errorf("expected .github/copilot-instructions.md: %v", err)
 		}
 	})
+
+	// 4. Test InitWithOptions with packs and ownership
+	t.Run("PacksAndOwnership", func(t *testing.T) {
+		projectDir := filepath.Join(t.TempDir(), "packs-project")
+		var buf bytes.Buffer
+		opts := InitOptions{
+			ProjectDir: projectDir,
+			Engine:     "claude",
+			Packs:      []string{"explainer", "cinematic"},
+		}
+		res, err := RunInitWithOptions(opts, cfg, &buf)
+		if err != nil {
+			t.Fatalf("RunInitWithOptions failed: %v", err)
+		}
+
+		if len(res.Packs) != 2 {
+			t.Errorf("expected 2 packs, got %d", len(res.Packs))
+		}
+
+		// Verify facet.lock.json
+		lockFile := filepath.Join(projectDir, "facet.lock.json")
+		if _, err := os.Stat(lockFile); err != nil {
+			t.Errorf("expected facet.lock.json: %v", err)
+		}
+
+		// Verify .facet/ownership.json
+		ownFile := filepath.Join(projectDir, ".facet", "ownership.json")
+		if _, err := os.Stat(ownFile); err != nil {
+			t.Errorf("expected .facet/ownership.json: %v", err)
+		}
+
+		// Verify pack skill was linked
+		explainerSkill := filepath.Join(projectDir, ".claude", "skills", "explainer")
+		if _, err := os.Stat(explainerSkill); err != nil {
+			t.Errorf("expected .claude/skills/explainer: %v", err)
+		}
+
+		// Verify CLAUDE.md and AGENTS.md were scaffolded with anti-drift directives
+		claudeFile := filepath.Join(projectDir, "CLAUDE.md")
+		claudeContent, err := os.ReadFile(claudeFile)
+		if err != nil {
+			t.Errorf("expected CLAUDE.md: %v", err)
+		} else if !strings.Contains(string(claudeContent), "Never Suggest External Manual Tools") {
+			t.Errorf("expected CLAUDE.md to contain anti-drift rules")
+		}
+
+		agentsFile := filepath.Join(projectDir, "AGENTS.md")
+		if _, err := os.Stat(agentsFile); err != nil {
+			t.Errorf("expected AGENTS.md: %v", err)
+		}
+	})
 }
+

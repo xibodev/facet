@@ -3,7 +3,6 @@ package engine
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"strings"
 )
 
@@ -34,45 +33,18 @@ func (a *OpenCodeAdapter) ExecutableName() string {
 	return "opencode"
 }
 
-// BuildArgs constructs the command-line arguments for running OpenCode.
-func (a *OpenCodeAdapter) BuildArgs(dir string, mode string, extraArgs []string) ([]string, error) {
-	args := []string{"-p"}
-
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "rw":
-		// default standard mode
-	case "ro":
-		args = append(args, "--read-only")
-	case "ask":
-		args = append(args, "--ask")
+// BuildTurnArgs constructs one autonomous OpenCode invocation.
+func (a *OpenCodeAdapter) BuildTurnArgs(dir, mode, prompt, nativeID string, extraArgs []string) ([]string, error) {
+	if err := validateAutonomousMode(mode); err != nil {
+		return nil, err
 	}
-
-	if len(extraArgs) > 0 {
-		args = append(args, extraArgs...)
+	args := []string{"run", "--format", "json", "--auto"}
+	args = append(args, extraArgs...)
+	if nativeID != "" {
+		args = append(args, "--session", nativeID)
 	}
-
+	args = append(args, prompt)
 	return args, nil
-}
-
-// FormatUserMessage formats a prompt into a user message payload.
-func (a *OpenCodeAdapter) FormatUserMessage(prompt string) ([]byte, error) {
-	msg := map[string]any{
-		"type": "user",
-		"message": map[string]any{
-			"role": "user",
-			"content": []map[string]any{
-				{
-					"type": "text",
-					"text": prompt,
-				},
-			},
-		},
-	}
-	b, err := json.Marshal(msg)
-	if err != nil {
-		return nil, fmt.Errorf("marshal opencode user message: %w", err)
-	}
-	return append(b, '\n'), nil
 }
 
 // NormalizeEvent parses an OpenCode event line into a NormalizedEvent.
@@ -106,12 +78,48 @@ func (a *OpenCodeAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) 
 	}
 
 	evType, _ := raw["type"].(string)
+	part := mapValue(raw["part"])
+	data := mapValue(raw["data"])
+	maps := []map[string]any{raw, part, data}
+	sessionID := firstString(maps, "sessionID", "session_id")
+	state := mapValue(part["state"])
+	if state != nil {
+		status := strings.ToLower(strings.TrimSpace(firstString([]map[string]any{state}, "status")))
+		toolName := firstString([]map[string]any{part}, "tool")
+		toolID := firstString([]map[string]any{part}, "callID", "callId", "call_id")
+		switch status {
+		case "pending", "running":
+			return &NormalizedEvent{
+				Type:      EventToolUse,
+				SessionID: sessionID,
+				ToolName:  toolName,
+				ToolID:    toolID,
+				ToolInput: state["input"],
+				Raw:       raw,
+			}, nil
+		case "completed", "error", "failed":
+			output := state["output"]
+			isError := status == "error" || status == "failed"
+			if isError && state["error"] != nil {
+				output = state["error"]
+			}
+			return &NormalizedEvent{
+				Type:       EventToolResult,
+				SessionID:  sessionID,
+				ToolName:   toolName,
+				ToolID:     toolID,
+				ToolInput:  state["input"],
+				ToolOutput: valueString(output),
+				IsError:    isError,
+				Raw:        raw,
+			}, nil
+		}
+	}
 
 	switch evType {
-	case "session", "init":
-		sessionID, _ := raw["session_id"].(string)
+	case "step_start", "session", "init":
 		if sessionID == "" {
-			sessionID, _ = raw["id"].(string)
+			sessionID = firstString(maps, "id")
 		}
 		return &NormalizedEvent{
 			Type:      EventSession,
@@ -121,57 +129,54 @@ func (a *OpenCodeAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) 
 
 	case "text_delta", "text", "message":
 		var content string
-		if c, ok := raw["content"].(string); ok {
-			content = c
-		} else if d, ok := raw["delta"].(string); ok {
-			content = d
-		} else if t, ok := raw["text"].(string); ok {
-			content = t
+		for _, value := range []any{part["text"], data["text"], raw["content"], raw["delta"], raw["text"]} {
+			if content = contentString(value); content != "" {
+				break
+			}
 		}
 		if spec, cleaned, ok := ExtractQuestion(content); ok {
 			return &NormalizedEvent{
-				Type:     EventQuestion,
-				Content:  cleaned,
-				Question: spec,
-				Raw:      raw,
+				Type:      EventQuestion,
+				SessionID: sessionID,
+				Content:   cleaned,
+				Question:  spec,
+				Raw:       raw,
 			}, nil
 		}
 		return &NormalizedEvent{
-			Type:    EventTextDelta,
-			Content: content,
-			Raw:     raw,
+			Type:      EventTextDelta,
+			SessionID: sessionID,
+			Content:   content,
+			Raw:       raw,
 		}, nil
 
 	case "think_delta", "thinking", "reasoning":
-		var th string
-		if t, ok := raw["thinking"].(string); ok {
-			th = t
-		} else if d, ok := raw["delta"].(string); ok {
-			th = d
-		} else if c, ok := raw["content"].(string); ok {
-			th = c
+		var thinking string
+		for _, value := range []any{part["text"], data["text"], raw["thinking"], raw["delta"], raw["content"]} {
+			if thinking = contentString(value); thinking != "" {
+				break
+			}
 		}
 		return &NormalizedEvent{
-			Type:     EventThinkDelta,
-			Thinking: th,
-			Raw:      raw,
+			Type:      EventThinkDelta,
+			SessionID: sessionID,
+			Thinking:  thinking,
+			Raw:       raw,
 		}, nil
 
 	case "tool_use", "tool_call", "action":
-		name, _ := raw["name"].(string)
-		if name == "" {
-			name, _ = raw["tool_name"].(string)
+		name := firstString(maps, "tool", "name", "tool_name")
+		id := firstString(maps, "callID", "callId", "call_id", "id", "tool_id")
+		input := part["input"]
+		if input == nil {
+			input = raw["input"]
 		}
-		id, _ := raw["id"].(string)
-		if id == "" {
-			id, _ = raw["tool_id"].(string)
-		}
-		input := raw["input"]
 		if input == nil {
 			input = raw["arguments"]
 		}
 		return &NormalizedEvent{
 			Type:      EventToolUse,
+			SessionID: sessionID,
 			ToolName:  name,
 			ToolID:    id,
 			ToolInput: input,
@@ -179,31 +184,24 @@ func (a *OpenCodeAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) 
 		}, nil
 
 	case "tool_result", "tool_output", "action_result":
-		id, _ := raw["id"].(string)
-		if id == "" {
-			id, _ = raw["tool_id"].(string)
-		}
-		if id == "" {
-			id, _ = raw["tool_use_id"].(string)
-		}
-		var outStr string
-		if out, ok := raw["output"].(string); ok {
-			outStr = out
-		} else if c, ok := raw["content"].(string); ok {
-			outStr = c
-		} else if res := raw["result"]; res != nil {
-			if s, ok := res.(string); ok {
-				outStr = s
-			} else {
-				b, _ := json.Marshal(res)
-				outStr = string(b)
+		id := firstString(maps, "callID", "callId", "call_id", "id", "tool_id", "tool_use_id")
+		var output any
+		for _, value := range []any{part["output"], data["output"], raw["output"], raw["content"], raw["result"]} {
+			if value != nil {
+				output = value
+				break
 			}
 		}
-		isErr, _ := raw["is_error"].(bool)
+		isErr := firstBoolLike(maps, "is_error", "isError")
+		if reason := strings.ToLower(firstString(maps, "reason", "status")); reason == "error" || reason == "failed" || reason == "cancelled" || reason == "canceled" {
+			isErr = true
+		}
 		return &NormalizedEvent{
 			Type:       EventToolResult,
+			SessionID:  sessionID,
+			ToolName:   firstString(maps, "tool", "name", "tool_name"),
 			ToolID:     id,
-			ToolOutput: outStr,
+			ToolOutput: valueString(output),
 			IsError:    isErr,
 			Raw:        raw,
 		}, nil
@@ -214,55 +212,102 @@ func (a *OpenCodeAdapter) NormalizeEvent(line []byte) (*NormalizedEvent, error) 
 			q = raw["data"]
 		}
 		return &NormalizedEvent{
-			Type:     EventQuestion,
-			Question: q,
-			Raw:      raw,
+			Type:      EventQuestion,
+			SessionID: sessionID,
+			Question:  q,
+			Raw:       raw,
 		}, nil
 
 	case "permission", "permission_request":
 		msg, _ := raw["message"].(string)
 		return &NormalizedEvent{
-			Type:    EventPermission,
-			Content: msg,
-			Raw:     raw,
+			Type:      EventPermission,
+			SessionID: sessionID,
+			Content:   msg,
+			Raw:       raw,
 		}, nil
+
+	case "step_finish":
+		reason := strings.ToLower(strings.TrimSpace(firstString([]map[string]any{part, data, raw}, "reason", "finishReason", "finish_reason")))
+		isErr := firstBoolLike(maps, "is_error", "isError")
+		if isOpenCodeFailureReason(reason) {
+			isErr = true
+		}
+		if isErr {
+			content := bestReason(raw, part, data)
+			if content == "" {
+				content = reason
+			}
+			if content == "" {
+				content = "OpenCode step failed"
+			}
+			return &NormalizedEvent{
+				Type:      EventError,
+				SessionID: sessionID,
+				Content:   content,
+				IsError:   true,
+				Raw:       raw,
+			}, nil
+		}
+		if !isOpenCodeFinalReason(reason) {
+			return &NormalizedEvent{SessionID: sessionID, Raw: raw}, nil
+		}
+		return openCodeDoneEvent(raw, part, data, sessionID, false), nil
 
 	case "done", "result", "finish":
-		cost, _ := getFloat(raw["cost_usd"])
-		if cost == 0 {
-			cost, _ = getFloat(raw["total_cost_usd"])
-		}
-		dur, _ := getInt64(raw["duration_ms"])
-		tokens, _ := getInt64(raw["tokens"])
-		if tokens == 0 {
-			if usage, ok := raw["usage"].(map[string]any); ok {
-				outTok, _ := getInt64(usage["output_tokens"])
-				inTok, _ := getInt64(usage["input_tokens"])
-				tokens = outTok + inTok
-			}
-		}
-		isErr, _ := raw["is_error"].(bool)
-		return &NormalizedEvent{
-			Type:       EventDone,
-			CostUSD:    cost,
-			DurationMs: dur,
-			Tokens:     tokens,
-			IsError:    isErr,
-			Raw:        raw,
-		}, nil
+		isErr := firstBoolLike(maps, "is_error", "isError")
+		return openCodeDoneEvent(raw, part, data, sessionID, isErr), nil
 
 	case "error":
-		msg, _ := raw["message"].(string)
-		if msg == "" {
-			msg, _ = raw["error"].(string)
-		}
 		return &NormalizedEvent{
-			Type:    EventError,
-			Content: msg,
-			IsError: true,
-			Raw:     raw,
+			Type:      EventError,
+			SessionID: sessionID,
+			Content:   bestReason(raw, part, data),
+			IsError:   true,
+			Raw:       raw,
 		}, nil
+	}
+	if bestReason(raw, part, data) != "" && (raw["error"] != nil || data["error"] != nil || firstBoolLike(maps, "is_error", "isError")) {
+		return &NormalizedEvent{Type: EventError, SessionID: sessionID, Content: bestReason(raw, part, data), IsError: true, Raw: raw}, nil
+	}
+	if sessionID != "" {
+		return &NormalizedEvent{SessionID: sessionID, Raw: raw}, nil
 	}
 
 	return nil, nil
+}
+
+func isOpenCodeFinalReason(reason string) bool {
+	switch reason {
+	case "stop", "complete", "completed", "completion", "done", "end-turn", "end_turn":
+		return true
+	default:
+		return false
+	}
+}
+
+func isOpenCodeFailureReason(reason string) bool {
+	switch reason {
+	case "length", "content-filter", "content_filter", "cancellation", "cancelled", "canceled", "failure", "failed", "error":
+		return true
+	default:
+		return false
+	}
+}
+
+func openCodeDoneEvent(raw, part, data map[string]any, sessionID string, isError bool) *NormalizedEvent {
+	maps := []map[string]any{part, data, raw}
+	cost, _ := firstFloatValue(maps, "cost", "cost_usd", "costUSD", "total_cost_usd", "totalCostUSD")
+	duration, _ := firstInt64Value(maps, "duration_ms", "durationMs")
+	tokens, _ := tokenCount(part["tokens"], data["tokens"], raw["tokens"], part["usage"], data["usage"], raw["usage"])
+	return &NormalizedEvent{
+		Type:       EventDone,
+		SessionID:  sessionID,
+		Content:    bestReason(raw, part, data),
+		CostUSD:    cost,
+		DurationMs: duration,
+		Tokens:     tokens,
+		IsError:    isError,
+		Raw:        raw,
+	}
 }

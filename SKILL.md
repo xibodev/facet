@@ -1,4 +1,4 @@
-# Video Kit Producer
+# Facet Producer
 
 Use this skill to turn a video request into a reviewed delivery. Claude Code is
 the sole producer and orchestrator; personas are reasoning postures, not agents.
@@ -11,14 +11,16 @@ the sole producer and orchestrator; personas are reasoning postures, not agents.
    affect the result. Confirm the user may use identifiable people, music, and
    other supplied material when rights or consent are unclear.
 2. Select one primary production pipeline from the dominant transformation, not
-   from the genre, format, or platform. For the current slice, select
-   `skills/methods/source-edit.md` only when supplied footage carries the result.
+   from the genre, format, or platform:
+   - For supplied footage, use the core source-edit workflow.
+   - For 2D motion graphics and explainers, use `@xibodev/facet-pack-explainer`.
+   - For archival or documentary montage, use `@xibodev/facet-pack-cinematic`.
 3. Adopt one editor-producer posture: protect the user's intent and source
    truth, choose moments deliberately, prefer clarity and continuity over
    effects, and make editorial tradeoffs explicit. Do not create a subagent or
    hand creative control to the toolbox.
-4. Query the live toolbox with `videokit tools list`, then use
-   `videokit tools describe <tool>` for relevant candidates. Treat
+4. Query the live toolbox with `facet tools list`, then use
+   `facet tools describe <tool>` for relevant candidates. Treat
    implementation, dependency, network, cost, and configuration data as live
    facts. Never infer availability from this documentation or let a ranking
    silently choose a provider.

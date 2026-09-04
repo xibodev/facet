@@ -1,0 +1,41 @@
+{
+  "name": "@xibodev/facet-pack-cinematic",
+  "version": "1.0.0",
+  "description": "Cinematic documentary, public domain montage, color grading, and video stitching pipeline for Facet.",
+  "kind": "content",
+  "requirements": {
+    "probes": ["facet.probe.ffmpeg.v1", "facet.probe.ffprobe.v1"]
+  },
+  "declarations": {
+    "suggestedTools": ["edgetts", "media_probe", "color_grade", "video_stitch", "audio_mix", "output_review"],
+    "networkIntent": "provider-apis",
+    "filesystemIntent": "project-local"
+  },
+  "exports": {
+    "skills": [
+      {
+        "id": "cinematic",
+        "path": "SKILL.md",
+        "description": "Entry skill for cinematic documentary and montage video production"
+      }
+    ],
+    "pipelines": [
+      {
+        "id": "cinematic",
+        "path": "pipelines/cinematic.yaml"
+      },
+      {
+        "id": "documentary-montage",
+        "path": "pipelines/documentary-montage.yaml"
+      }
+    ],
+    "schemas": [
+      "schemas/edit_decisions.schema.json",
+      "schemas/source_media_review.schema.json"
+    ],
+    "styles": [
+      "styles/premium-minimalist.yaml",
+      "styles/anime-ghibli.yaml"
+    ]
+  }
+}

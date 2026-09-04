@@ -1,0 +1,11 @@
+{
+  "name": "@xibodev/facet-pack-social",
+  "version": "1.0.0",
+  "description": "Short-form vertical video, viral clips, podcast repurposing, and caption burn-in pipeline for Facet.",
+  "keywords": ["facet", "facet-pack", "social", "shorts", "reels", "tiktok", "video"],
+  "author": "Facet Authors",
+  "license": "Apache-2.0",
+  "facet": {
+    "manifest": "facet-pack.json"
+  }
+}

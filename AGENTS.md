@@ -20,12 +20,13 @@ named outputs are `UPSTREAM_SURFACE_CENSUS.md`, `PIPELINE_MAP.md`,
 minimum contract in `PHASE1_SLICE.md`.
 
 The user explicitly authorized progression through all phases in this repository.
-Phases 0 through 4 are complete:
+Phases 0 through 5 are complete:
 - Phase 0: Architecture lock approved.
 - Phase 1: Upstream census, pipeline mapping, and port matrix delivered.
 - Phase 2: Minimal agent surface and first reviewed production delivered.
 - Phase 3: Production-driven Go toolbox expansion (33 tools) delivered.
 - Phase 4: First-release readiness validated across three materially different productions.
+- Phase 5: Studio launcher, production catalog, modular capability packs (7 packs), and project projections delivered.
 
 Clean upstream OpenMontage at the pinned commit remains the primary source for
 upstream behavior; never infer it from another checkout.

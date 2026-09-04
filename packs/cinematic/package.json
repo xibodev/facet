@@ -1,0 +1,11 @@
+{
+  "name": "@xibodev/facet-pack-cinematic",
+  "version": "1.0.0",
+  "description": "Cinematic documentary, public domain montage, color grading, and video stitching pipeline for Facet.",
+  "keywords": ["facet", "facet-pack", "cinematic", "documentary", "montage", "video"],
+  "author": "Facet Authors",
+  "license": "Apache-2.0",
+  "facet": {
+    "manifest": "facet-pack.json"
+  }
+}

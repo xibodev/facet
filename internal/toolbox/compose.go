@@ -325,10 +325,22 @@ func doFFmpegCompose(r composeRequest, outPath string, tmo time.Duration) (any, 
 
 func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any, []string, error) {
 	composerDir := "remotion-composer"
-	if _, err := os.Stat(filepath.Join(composerDir, "package.json")); err != nil {
-		// check ../remotion-composer
-		if _, err2 := os.Stat(filepath.Join("..", "remotion-composer", "package.json")); err2 == nil {
-			composerDir = filepath.Join("..", "remotion-composer")
+	candidates := []string{
+		"remotion-composer",
+		filepath.Join("..", "remotion-composer"),
+		filepath.Join("..", "..", "remotion-composer"),
+		filepath.Join("packs", "explainer", "runtime"),
+	}
+	if localApp := os.Getenv("LOCALAPPDATA"); localApp != "" {
+		candidates = append(candidates,
+			filepath.Join(localApp, "Facet", "runtimes", "remotion", "current"),
+			filepath.Join(localApp, "Facet", "runtimes", "remotion"),
+		)
+	}
+	for _, cand := range candidates {
+		if _, err := os.Stat(filepath.Join(cand, "package.json")); err == nil {
+			composerDir = cand
+			break
 		}
 	}
 
