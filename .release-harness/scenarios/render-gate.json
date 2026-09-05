@@ -1,0 +1,26 @@
+{
+  "id": "RENDER-GATE-001",
+  "name": "Autonomous Video Render Gate",
+  "origin_id": "web-app",
+  "tier": "core",
+  "policy": "required",
+  "steps": [
+    {
+      "action": "navigate",
+      "target": "/"
+    }
+  ],
+  "expected_side_effects": [
+    {
+      "service": "custom",
+      "probe_type": "custom",
+      "params": {
+        "command": "./scripts/probe-artifact.sh",
+        "args": [
+          "renders/final.mp4"
+        ],
+        "expect_exit_code": 0
+      }
+    }
+  ]
+}

@@ -131,9 +131,9 @@ func TestRunDoctor(t *testing.T) {
 		}
 	}
 
-	// Verify Tools (33 tools)
-	if len(report.Tools) != 33 {
-		t.Errorf("expected 33 toolbox tools, got %d", len(report.Tools))
+	// Verify Tools
+	if len(report.Tools) < 33 {
+		t.Errorf("expected at least 33 toolbox tools, got %d", len(report.Tools))
 	}
 
 	// Verify Env Vars
@@ -155,8 +155,8 @@ func TestRunDoctor(t *testing.T) {
 	if !strings.Contains(out, "[Environment Variables]") {
 		t.Errorf("output missing [Environment Variables]")
 	}
-	if !strings.Contains(out, "[Toolbox Tools (33 tools)]") {
-		t.Errorf("output missing [Toolbox Tools (33 tools)], output: %s", out)
+	if !strings.Contains(out, "[Toolbox Tools (") {
+		t.Errorf("output missing [Toolbox Tools], output: %s", out)
 	}
 
 	// Verify JSON output helper
@@ -287,8 +287,25 @@ func TestRunInit(t *testing.T) {
 		claudeContent, err := os.ReadFile(claudeFile)
 		if err != nil {
 			t.Errorf("expected CLAUDE.md: %v", err)
-		} else if !strings.Contains(string(claudeContent), "Never Suggest External Manual Tools") {
-			t.Errorf("expected CLAUDE.md to contain anti-drift rules")
+		} else {
+			contentStr := string(claudeContent)
+			if !strings.Contains(contentStr, "Never Suggest External Manual Tools") {
+				t.Errorf("expected CLAUDE.md to contain anti-drift rules")
+			}
+			if !strings.Contains(contentStr, "Immediate Action on Turn 1") {
+				t.Errorf("expected CLAUDE.md to mandate Turn 1 immediate action")
+			}
+			if !strings.Contains(contentStr, "facet tools run edgetts") {
+				t.Errorf("expected CLAUDE.md to include edgetts signature")
+			}
+			if !strings.Contains(contentStr, "facet tools run output_review") {
+				t.Errorf("expected CLAUDE.md to include output_review signature")
+			}
+			// Acceptance criteria: CLAUDE.md must be lean (<50 lines)
+			lines := strings.Split(contentStr, "\n")
+			if len(lines) >= 50 {
+				t.Errorf("expected CLAUDE.md to be <50 lines, got %d lines", len(lines))
+			}
 		}
 
 		agentsFile := filepath.Join(projectDir, "AGENTS.md")

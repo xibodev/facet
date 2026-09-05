@@ -24,15 +24,13 @@ Use this skill when producing, editing, generating, or refining videos in a Face
 ```text
 User Request / Assets
   │
-  ├─► 1. Intake & Classification (intent, source of truth, deliverable, constraints)
-  ├─► 2. Toolbox Discovery (`facet tools list` & `facet tools describe <tool>`)
-  ├─► 3. Pipeline Selection (from core or active pack, e.g. explainer, cinematic, source-edit)
-  ├─► 4. Route Formulation & Feasibility Check (local vs stock vs AI vs hybrid)
-  ├─► 5. Progressive Skill Loading (core skills and pack skills)
-  ├─► 6. Artifact Construction & Schema Validation (`schemas/`)
-  ├─► 7. Tool Execution (`facet tools estimate` / `facet tools run`)
-  ├─► 8. Technical & Visual QA (`output_review`, `visual_qa`, frame sampling)
-  └─► 9. Editorial Revision & Delivery Manifest (`renders/final.mp4`)
+  ├─► 1. Intake & Turn 1 Action (draft artifacts/script.json & generate voiceover)
+  ├─► 2. Direct Tool Execution (no ls or discovery scans)
+  ├─► 3. Pipeline Execution (explainer, cinematic, or source-edit)
+  ├─► 4. Probe & Scene Planning (lock timestamps from audio probe)
+  ├─► 5. Composition & Rendering (video_compose / edit)
+  ├─► 6. Technical & Visual QA (output_review, frame sampling)
+  └─► 7. Editorial Revision & Delivery Manifest (renders/final.mp4)
 ```
 
 ---

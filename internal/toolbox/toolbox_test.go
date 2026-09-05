@@ -22,6 +22,8 @@ var expectedToolNames = []string{
 	"flux_image",
 	"frame_sample",
 	"frame_sampler",
+	"gflow_image",
+	"gflow_video",
 	"hyperframes_compose",
 	"image_selector",
 	"kling_video",
@@ -572,6 +574,8 @@ func TestAllToolEstimates(t *testing.T) {
 		"flux_image":            map[string]any{"prompt": "sunset over mountains", "aspect_ratio": "16:9"},
 		"frame_sample":          map[string]any{"input": dummyFile, "output_dir": filepath.Join(dir, "frames"), "strategy": map[string]any{"type": "uniform", "count": 2}},
 		"frame_sampler":         map[string]any{"input_path": dummyFile, "strategy": "count", "count": 2, "output_dir": filepath.Join(dir, "frames")},
+		"gflow_image":           map[string]any{"prompt": "origami eagle logo", "aspect_ratio": "square"},
+		"gflow_video":           map[string]any{"prompt": "futuristic dragon soaring through clouds", "duration": 6.0, "aspect_ratio": "landscape"},
 		"hyperframes_compose":   map[string]any{"operation": "doctor"},
 		"image_selector":        map[string]any{"prompt": "modern data center server room", "aspect_ratio": "16:9", "style": "photorealistic"},
 		"kling_video":           map[string]any{"prompt": "ocean waves crashing on rocks", "duration": 5.0, "aspect_ratio": "16:9"},
@@ -613,5 +617,70 @@ func TestAllToolEstimates(t *testing.T) {
 		if envelope.Tool != tool || envelope.Operation != "estimate" {
 			t.Fatalf("unexpected estimate envelope for %s: %#v", tool, envelope)
 		}
+	}
+}
+
+func TestToolAliasesAndInlineJSON(t *testing.T) {
+	// 1. Test alias mapping in describe
+	for alias, expected := range map[string]string{
+		"edgetts": "edge_tts",
+		"edit":    "source_edit",
+		"probe":   "media_probe",
+		"review":  "output_review",
+		"compose": "video_compose",
+	} {
+		env, ok := CLI([]string{"tools", "describe", alias})
+		if !ok || !env.OK {
+			t.Fatalf("describe failed for alias %s: %#v", alias, env)
+		}
+		if env.Tool != expected {
+			t.Errorf("expected tool %s for alias %s, got %s", expected, alias, env.Tool)
+		}
+	}
+
+	// 2. Test inline JSON execution for estimate
+	inlineJSON := `{"text": "Hello world from inline json", "output": "narration/test.mp3"}`
+	env, ok := CLI([]string{"tools", "estimate", "edgetts", "--input", inlineJSON})
+	if !ok || !env.OK {
+		t.Fatalf("estimate with inline JSON failed: %#v", env)
+	}
+	if env.Tool != "edge_tts" {
+		t.Errorf("expected tool edge_tts, got %s", env.Tool)
+	}
+
+	// 3. Test inline JSON with surrounding single quotes
+	inlineWithQuotes := `'{"text": "Hello world quoted", "output": "narration/test.mp3"}'`
+	env, ok = CLI([]string{"tools", "estimate", "edgetts", "--input", inlineWithQuotes})
+	if !ok || !env.OK {
+		t.Fatalf("estimate with quoted inline JSON failed: %#v", env)
+	}
+}
+
+func TestVideoComposeDirectProps(t *testing.T) {
+	// 1. Test direct Explainer props estimate
+	explainerProps := `{
+		"theme": "flat-motion-graphics",
+		"cuts": [
+			{"id": "sc1", "type": "hero_title", "in_seconds": 0, "out_seconds": 4, "text": "The Universe"}
+		],
+		"output": "renders/final.mp4"
+	}`
+	env, ok := CLI([]string{"tools", "estimate", "video_compose", "--input", explainerProps})
+	if !ok || !env.OK {
+		t.Fatalf("estimate with direct explainer props failed: %#v", env)
+	}
+
+	// 2. Test direct Scene Plan JSON estimate
+	scenePlan := `{
+		"version": "1.0",
+		"style_playbook": "flat-motion-graphics",
+		"scenes": [
+			{"id": "sc1", "type": "text_card", "description": "Intro to space", "start_seconds": 0, "end_seconds": 5}
+		],
+		"output": "renders/final.mp4"
+	}`
+	env, ok = CLI([]string{"tools", "estimate", "video_compose", "--input", scenePlan})
+	if !ok || !env.OK {
+		t.Fatalf("estimate with direct scene plan failed: %#v", env)
 	}
 }

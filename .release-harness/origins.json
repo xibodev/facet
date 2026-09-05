@@ -1,0 +1,15 @@
+[
+  {
+    "origin_id": "web-app",
+    "type": "browser_app",
+    "auth": "session-cookie",
+    "url_source": "env:APP_URL (default http://127.0.0.1:8787)",
+    "route_families": [
+      "/"
+    ],
+    "safe_for_live": true,
+    "evidence": [
+      "package.json"
+    ]
+  }
+]

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.xibo.dev/schemas/release-harness/topology-v1.json",
+  "schema_version": "1.0.0",
+  "product_slug": "facet",
+  "topology_type": "monorepo",
+  "nodes": [
+    {
+      "id": "web",
+      "path": ".",
+      "type": "browser_app",
+      "served_origin_id": "web-app",
+      "health_probe": {
+        "type": "http",
+        "host": "127.0.0.1",
+        "port": 8787,
+        "path": "/",
+        "expected_status": 200
+      }
+    }
+  ]
+}

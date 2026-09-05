@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Facet — Autonomous Video Production Engine & Agentic Studio</title>
+  <meta name="description" content="Autonomous, local video production engine in Go + agentic CLI skills + web studio. Render finished .mp4 videos directly from AI agents without manual tools.">
+  <meta name="keywords" content="facet, video generation, autonomous video, remotion, ffmpeg, ai agents, claude code, opencode, copilot, motion graphics">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            display: ['Space Grotesk', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#f0fdfa',
+              100: '#ccfbf1',
+              400: '#2dd4bf',
+              500: '#14b8a6',
+              600: '#0d9488',
+              cyan: '#06b6d4',
+              purple: '#8b5cf6',
+              amber: '#f59e0b',
+              emerald: '#10b981',
+              dark: '#070b14',
+              card: '#0c1322',
+              border: '#1e293b',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #070b14;
+      color: #f1f5f9;
+      font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    }
+    .glow-cyan {
+      box-shadow: 0 0 50px -10px rgba(6, 182, 212, 0.25);
+    }
+    .glow-purple {
+      box-shadow: 0 0 50px -10px rgba(139, 92, 246, 0.25);
+    }
+    .glass-card {
+      background: rgba(12, 19, 34, 0.75);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .glass-card:hover {
+      border-color: rgba(6, 182, 212, 0.35);
+    }
+    .code-glow {
+      text-shadow: 0 0 12px rgba(6, 182, 212, 0.4);
+    }
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #070b14;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col font-sans selection:bg-cyan-500/30 selection:text-cyan-200">
+
+  <!-- Top Navigation -->
+  <header class="sticky top-0 z-50 glass-card border-b border-slate-800/80 bg-brand-dark/80 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <a href="index.html" class="flex items-center space-x-2.5 group">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-500 to-purple-600 flex items-center justify-center font-display font-bold text-white text-lg shadow-lg group-hover:scale-105 transition-transform">
+            F
+          </div>
+          <span class="font-display font-bold text-xl tracking-tight text-white group-hover:text-cyan-400 transition-colors">
+            Facet
+          </span>
+        </a>
+        <span class="hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+          v1.0.1 Ready
+        </span>
+      </div>
+
+      <nav class="hidden md:flex items-center space-x-7 text-sm font-medium text-slate-300">
+        <a href="#features" class="hover:text-cyan-400 transition-colors">Features</a>
+        <a href="#architecture" class="hover:text-cyan-400 transition-colors">Architecture</a>
+        <a href="#packs" class="hover:text-cyan-400 transition-colors">Capability Packs</a>
+        <a href="#toolbox" class="hover:text-cyan-400 transition-colors">35 Tools</a>
+        <a href="#studio" class="hover:text-cyan-400 transition-colors">Studio UI</a>
+        <a href="docs.html" class="hover:text-cyan-400 transition-colors">Documentation</a>
+      </nav>
+
+      <div class="flex items-center space-x-3">
+        <a href="docs.html" class="hidden sm:inline-flex items-center justify-center px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors">
+          Docs & Manual
+        </a>
+        <a href="https://github.com/xibodev/facet" target="_blank" rel="noopener" class="inline-flex items-center justify-center px-4 py-1.5 text-xs font-semibold rounded-lg bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-white shadow-md hover:shadow-cyan-500/20 transition-all">
+          <svg class="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+          GitHub
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-grow">
+    
+    <!-- Hero Section -->
+    <section class="relative pt-16 pb-20 md:pt-24 md:pb-32 overflow-hidden">
+      <!-- Background radial effects -->
+      <div class="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[450px] bg-gradient-to-tr from-cyan-600/15 via-purple-600/15 to-transparent rounded-full blur-3xl pointer-events-none"></div>
+      
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center">
+        
+        <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 mb-6">
+          <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+          <span>Next-Gen Autonomous Video Engineering</span>
+        </div>
+
+        <h1 class="font-display font-bold text-4xl sm:text-6xl lg:text-7xl tracking-tight text-white max-w-5xl mx-auto leading-tight sm:leading-none">
+          From Concept to Rendered <span class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-teal-300 to-purple-400">.MP4</span> in Minutes.
+        </h1>
+
+        <p class="mt-6 text-lg sm:text-xl text-slate-400 max-w-3xl mx-auto font-normal leading-relaxed">
+          Facet pairs an <strong>autonomous AI creative producer</strong> with a <strong>stateless Go media engine</strong>, <strong>Remotion React compositions</strong>, and a live web studio. Zero manual editing tools, zero handoffs.
+        </p>
+
+        <!-- Quick Install Box -->
+        <div class="mt-10 max-w-2xl mx-auto">
+          <div class="glass-card rounded-xl p-2 sm:p-3 flex flex-col sm:flex-row items-center justify-between space-y-2 sm:space-y-0 sm:space-x-3 text-left">
+            <div class="flex items-center space-x-2 px-2 overflow-x-auto w-full sm:w-auto">
+              <span class="text-xs font-mono text-cyan-400 font-bold select-none">$</span>
+              <span id="install-cmd" class="text-xs sm:text-sm font-mono text-slate-200 whitespace-nowrap">
+                go install github.com/xibodev/facet/cmd/facet@latest
+              </span>
+            </div>
+            <div class="flex items-center space-x-2 w-full sm:w-auto justify-end">
+              <div class="flex bg-slate-900 rounded-lg p-0.5 border border-slate-800 text-xs font-mono">
+                <button onclick="setInstall('go')" class="install-tab px-2.5 py-1 rounded bg-slate-800 text-cyan-300">Go</button>
+                <button onclick="setInstall('ps')" class="install-tab px-2.5 py-1 rounded text-slate-400 hover:text-slate-200">PS</button>
+                <button onclick="setInstall('bash')" class="install-tab px-2.5 py-1 rounded text-slate-400 hover:text-slate-200">Bash</button>
+                <button onclick="setInstall('scoop')" class="install-tab px-2.5 py-1 rounded text-slate-400 hover:text-slate-200">Scoop</button>
+              </div>
+              <button onclick="copyInstall()" class="p-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 transition-colors" title="Copy command">
+                <svg id="copy-icon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Terminal Demo Window -->
+        <div class="mt-14 max-w-4xl mx-auto rounded-2xl glass-card glow-cyan overflow-hidden text-left border border-slate-700/60 shadow-2xl">
+          <!-- Terminal Titlebar -->
+          <div class="bg-slate-900/90 px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+              <span class="w-3 h-3 rounded-full bg-rose-500/80 inline-block"></span>
+              <span class="w-3 h-3 rounded-full bg-amber-500/80 inline-block"></span>
+              <span class="w-3 h-3 rounded-full bg-emerald-500/80 inline-block"></span>
+              <span class="ml-2 text-xs font-mono text-slate-400">facet-workspace — claude turn-1 autonomous pipeline</span>
+            </div>
+            <div class="text-xs font-mono text-slate-500">Remotion Explainer • 1080p60</div>
+          </div>
+
+          <!-- Terminal Content -->
+          <div class="p-5 font-mono text-xs sm:text-sm text-slate-300 space-y-4 bg-[#080d19]/90 overflow-x-auto">
+            
+            <div>
+              <p class="text-slate-500 select-none"># 1. Initialize workspace with explainer pack & Claude Code engine</p>
+              <p class="text-cyan-300">$ facet init test-universe --engine claude</p>
+              <p class="text-slate-400">✔ Created workspace subdirectories: artifacts/, assets/, narration/, renders/</p>
+              <p class="text-slate-400">✔ Linked pack: explainer (Remotion React runtime ready)</p>
+              <p class="text-slate-400">✔ Scaffolded directive CLAUDE.md (<span class="text-emerald-400">&lt;50 lines, action-biased</span>)</p>
+            </div>
+
+            <div class="pt-2 border-t border-slate-800/80">
+              <p class="text-slate-500 select-none"># 2. Turn 1: Draft script & synthesize neural narration immediately</p>
+              <p class="text-cyan-300">$ facet tools run edgetts --input artifacts/req_tts.json</p>
+              <p class="text-emerald-400">✔ Synthesized narration/universe.mp3 (voice: en-US-ChristopherNeural, duration: 9.98s)</p>
+            </div>
+
+            <div class="pt-2 border-t border-slate-800/80">
+              <p class="text-slate-500 select-none"># 3. Turn 2 & 3: Lock cut timing & render Remotion composition</p>
+              <p class="text-cyan-300">$ facet tools run video_compose --input artifacts/explainer_props.json</p>
+              <p class="text-slate-300">Rendering composition "Explainer" via Remotion React engine...</p>
+              <p class="text-emerald-400">✔ Render complete: renders/final.mp4 (1920x1080 @ 30fps, 3 scenes, synced audio)</p>
+            </div>
+
+            <div class="pt-2 border-t border-slate-800/80">
+              <p class="text-slate-500 select-none"># 4. Turn 4: Automated multi-pass technical and visual QA review</p>
+              <p class="text-cyan-300">$ facet tools run output_review --input '{"rendered_file": "renders/final.mp4"}'</p>
+              <p class="text-emerald-400">✔ Output Review Passed: Video(h264/yuv420p), Audio(aac/stereo), Volume(-5.6dB peak), Freeze(0s)</p>
+              <p class="text-cyan-400">✔ 4 inspection frames extracted to renders/review_frames/frame-0001.jpg...0004.jpg</p>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Core Features Section -->
+    <section id="features" class="py-20 bg-slate-950/60 border-y border-slate-800/80">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        <div class="text-center max-w-3xl mx-auto mb-16">
+          <h2 class="font-display font-bold text-3xl sm:text-4xl text-white">
+            Engineered for Full Autonomy
+          </h2>
+          <p class="mt-4 text-base sm:text-lg text-slate-400">
+            Facet rejects the traditional "script-only" and "manual-assembly" cop-outs. Everything needed to produce, code, and render video is self-contained.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          
+          <!-- Feature 1 -->
+          <div class="glass-card rounded-xl p-6 relative overflow-hidden group">
+            <div class="w-12 h-12 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 mb-5 group-hover:scale-110 transition-transform">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+            </div>
+            <h3 class="font-display font-bold text-xl text-white mb-2">Real Rendered .MP4 Deliverables</h3>
+            <p class="text-slate-400 text-sm leading-relaxed">
+              Never outputs half-finished scripts, web prototype mockups, or tells you to open Premiere Pro. Facet compiles broadcast-ready video files directly.
+            </p>
+          </div>
+
+          <!-- Feature 2 -->
+          <div class="glass-card rounded-xl p-6 relative overflow-hidden group">
+            <div class="w-12 h-12 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 mb-5 group-hover:scale-110 transition-transform">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            </div>
+            <h3 class="font-display font-bold text-xl text-white mb-2">35 Stateless Go Tools</h3>
+            <p class="text-slate-400 text-sm leading-relaxed">
+              Compiled single binary execution for Edge-TTS, Google Flow (Veo 3.1 & Imagen 4), FFmpeg wrappers, silence cutting, audio ducking, frame sampling, scene detection, and loudness verification.
+            </p>
+          </div>
+
+          <!-- Feature 3 -->
+          <div class="glass-card rounded-xl p-6 relative overflow-hidden group">
+            <div class="w-12 h-12 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-5 group-hover:scale-110 transition-transform">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+            </div>
+            <h3 class="font-display font-bold text-xl text-white mb-2">Remotion & React Runtimes</h3>
+            <p class="text-slate-400 text-sm leading-relaxed">
+              Express visual concepts as code: dynamic Bar/Line/Pie charts, stat reveals, comparison matrices, terminal screencasts, and animated typographic cards.
+            </p>
+          </div>
+
+          <!-- Feature 4 -->
+          <div class="glass-card rounded-xl p-6 relative overflow-hidden group">
+            <div class="w-12 h-12 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-5 group-hover:scale-110 transition-transform">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z"/></svg>
+            </div>
+            <h3 class="font-display font-bold text-xl text-white mb-2">Zero-Key Neural Voiceover</h3>
+            <p class="text-slate-400 text-sm leading-relaxed">
+              Out-of-the-box neural voice generation with Microsoft Edge TTS. Zero API keys, zero credits, natural cadence, and instant multi-language support.
+            </p>
+          </div>
+
+          <!-- Feature 5 -->
+          <div class="glass-card rounded-xl p-6 relative overflow-hidden group">
+            <div class="w-12 h-12 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 mb-5 group-hover:scale-110 transition-transform">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+            </div>
+            <h3 class="font-display font-bold text-xl text-white mb-2">Automated Quality Review</h3>
+            <p class="text-slate-400 text-sm leading-relaxed">
+              `output_review` rigorously verifies duration matches, stream codecs (H.264/AAC), LUFS loudness, freeze frames, black frames, and extracts sampled QA stills.
+            </p>
+          </div>
+
+          <!-- Feature 6 -->
+          <div class="glass-card rounded-xl p-6 relative overflow-hidden group">
+            <div class="w-12 h-12 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 mb-5 group-hover:scale-110 transition-transform">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+            </div>
+            <h3 class="font-display font-bold text-xl text-white mb-2">Web Studio Interface (`facet ui`)</h3>
+            <p class="text-slate-400 text-sm leading-relaxed">
+              Inspect multi-project pipelines on port 8787: visual stage progression, interactive audio waveforms, frame scrubbers, and live JSON artifact inspector.
+            </p>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Architecture Section -->
+    <section id="architecture" class="py-20">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        <div class="text-center max-w-3xl mx-auto mb-16">
+          <span class="text-xs font-mono font-bold text-cyan-400 uppercase tracking-widest">System Design</span>
+          <h2 class="font-display font-bold text-3xl sm:text-4xl text-white mt-2">
+            The Three-Tier Video Operating System
+          </h2>
+          <p class="mt-4 text-slate-400 text-base">
+            Clean separation of creative intelligence, stateless execution mechanics, and durable artifact files.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          
+          <!-- Tier 1 -->
+          <div class="glass-card rounded-2xl p-7 flex flex-col justify-between border-t-2 border-t-cyan-500">
+            <div>
+              <div class="text-xs font-mono font-bold text-cyan-400 mb-2">TIER 1 • INTELLIGENCE</div>
+              <h3 class="font-display font-bold text-2xl text-white mb-3">AI Agentic Producer</h3>
+              <p class="text-slate-400 text-sm leading-relaxed mb-4">
+                Operates inside your AI coding CLI (Claude Code, OpenCode, Copilot). Acts as the creative orchestrator: understands requirements, drafts scripts, plans scenes, and reviews renders.
+              </p>
+              <ul class="space-y-2 text-xs font-mono text-slate-300">
+                <li class="flex items-center"><span class="text-cyan-400 mr-2">✔</span> Zero-Ceremony Turn 1 execution</li>
+                <li class="flex items-center"><span class="text-cyan-400 mr-2">✔</span> Reasoned editorial choices</li>
+                <li class="flex items-center"><span class="text-cyan-400 mr-2">✔</span> Schema-backed JSON artifacts</li>
+              </ul>
+            </div>
+            <div class="mt-6 pt-4 border-t border-slate-800 text-xs text-slate-500 font-mono">
+              Role: Story & Orchestration
+            </div>
+          </div>
+
+          <!-- Tier 2 -->
+          <div class="glass-card rounded-2xl p-7 flex flex-col justify-between border-t-2 border-t-purple-500">
+            <div>
+              <div class="text-xs font-mono font-bold text-purple-400 mb-2">TIER 2 • EXECUTION</div>
+              <h3 class="font-display font-bold text-2xl text-white mb-3">Facet Go Engine</h3>
+              <p class="text-slate-400 text-sm leading-relaxed mb-4">
+                Stateless, deterministic CLI toolbox compiled in pure Go. Executes media operations, bridges to Remotion and FFmpeg, queries provider facts, and evaluates strict quality gates.
+              </p>
+              <ul class="space-y-2 text-xs font-mono text-slate-300">
+                <li class="flex items-center"><span class="text-purple-400 mr-2">✔</span> 35 compiled media tools</li>
+                <li class="flex items-center"><span class="text-purple-400 mr-2">✔</span> No database or daemon queues</li>
+                <li class="flex items-center"><span class="text-purple-400 mr-2">✔</span> Fast inline JSON / file arguments</li>
+              </ul>
+            </div>
+            <div class="mt-6 pt-4 border-t border-slate-800 text-xs text-slate-500 font-mono">
+              Role: Deterministic Execution
+            </div>
+          </div>
+
+          <!-- Tier 3 -->
+          <div class="glass-card rounded-2xl p-7 flex flex-col justify-between border-t-2 border-t-emerald-500">
+            <div>
+              <div class="text-xs font-mono font-bold text-emerald-400 mb-2">TIER 3 • RUNTIMES & STUDIO</div>
+              <h3 class="font-display font-bold text-2xl text-white mb-3">Composition & Studio</h3>
+              <p class="text-slate-400 text-sm leading-relaxed mb-4">
+                Remotion React, HyperFrames HTML/GSAP, and FFmpeg render layers turn JSON scene trees into pixels. The local Web Studio (`facet ui`) provides full timeline observability.
+              </p>
+              <ul class="space-y-2 text-xs font-mono text-slate-300">
+                <li class="flex items-center"><span class="text-emerald-400 mr-2">✔</span> Remotion React composition engine</li>
+                <li class="flex items-center"><span class="text-emerald-400 mr-2">✔</span> Local Web Studio on :8787</li>
+                <li class="flex items-center"><span class="text-emerald-400 mr-2">✔</span> Durable project workspace files</li>
+              </ul>
+            </div>
+            <div class="mt-6 pt-4 border-t border-slate-800 text-xs text-slate-500 font-mono">
+              Role: Rendering & Visual Verification
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Capability Packs Section -->
+    <section id="packs" class="py-20 bg-slate-950/60 border-y border-slate-800/80">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        <div class="text-center max-w-3xl mx-auto mb-16">
+          <span class="text-xs font-mono font-bold text-purple-400 uppercase tracking-widest">Modular Ecosystem</span>
+          <h2 class="font-display font-bold text-3xl sm:text-4xl text-white mt-2">
+            7 Specialized Capability Packs
+          </h2>
+          <p class="mt-4 text-slate-400 text-base">
+            Every genre of video requires tailored visual components, schemas, and director skills. Facet packages them as modular, linkable packs.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          
+          <!-- Pack 1: Explainer -->
+          <div class="glass-card rounded-xl p-6 border-l-4 border-l-cyan-500">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs font-mono font-bold text-cyan-400">@xibodev/facet-pack-explainer</span>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">Remotion</span>
+            </div>
+            <h3 class="font-display font-bold text-lg text-white mb-1">2D Animated Explainer</h3>
+            <p class="text-xs text-slate-400 mb-4">
+              Motion graphics, dynamic data charts (Bar, Line, Pie, KPI), stat cards, and animated concept comparisons.
+            </p>
+            <div class="text-[11px] font-mono text-slate-500">Styles: flat-motion-graphics, clean-professional, minimalist-diagram</div>
+          </div>
+
+          <!-- Pack 2: Cinematic -->
+          <div class="glass-card rounded-xl p-6 border-l-4 border-l-purple-500">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs font-mono font-bold text-purple-400">@xibodev/facet-pack-cinematic</span>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-500/10 text-purple-300 border border-purple-500/20">Ken Burns</span>
+            </div>
+            <h3 class="font-display font-bold text-lg text-white mb-1">Cinematic & Documentary</h3>
+            <p class="text-xs text-slate-400 mb-4">
+              Dramatic archival montages, Ken Burns motion on historical stills, letterbox typography, and emotional pacing.
+            </p>
+            <div class="text-[11px] font-mono text-slate-500">Styles: archival-documentary, cinematic-trailer, film-noir</div>
+          </div>
+
+          <!-- Pack 3: Screen Demo -->
+          <div class="glass-card rounded-xl p-6 border-l-4 border-l-emerald-500">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs font-mono font-bold text-emerald-400">@xibodev/facet-pack-screen-demo</span>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">Terminal / UI</span>
+            </div>
+            <h3 class="font-display font-bold text-lg text-white mb-1">Developer & Screen Demo</h3>
+            <p class="text-xs text-slate-400 mb-4">
+              Synthetic typing terminals, highlighted code diffs, screenshot walkthroughs, and software launch showcases.
+            </p>
+            <div class="text-[11px] font-mono text-slate-500">Styles: terminal-dark, modern-ide, product-walkthrough</div>
+          </div>
+
+          <!-- Pack 4: Talking Head -->
+          <div class="glass-card rounded-xl p-6 border-l-4 border-l-amber-500">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs font-mono font-bold text-amber-400">@xibodev/facet-pack-talking-head</span>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-300 border border-amber-500/20">Avatar / Captions</span>
+            </div>
+            <h3 class="font-display font-bold text-lg text-white mb-1">Talking Head & Presenter</h3>
+            <p class="text-xs text-slate-400 mb-4">
+              Vertical and horizontal presenter videos, animated word-by-word karaoke captions, and lower-third graphics.
+            </p>
+            <div class="text-[11px] font-mono text-slate-500">Styles: bold-caption, split-screen, studio-presenter</div>
+          </div>
+
+          <!-- Pack 5: Social -->
+          <div class="glass-card rounded-xl p-6 border-l-4 border-l-rose-500">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs font-mono font-bold text-rose-400">@xibodev/facet-pack-social</span>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-rose-500/10 text-rose-300 border border-rose-500/20">9:16 Shorts</span>
+            </div>
+            <h3 class="font-display font-bold text-lg text-white mb-1">Social Shorts & Reels</h3>
+            <p class="text-xs text-slate-400 mb-4">
+              Aggressive hook pacing, high-retention cuts, kinetic text bursts, emojis, and sound effect choreography.
+            </p>
+            <div class="text-[11px] font-mono text-slate-500">Styles: viral-hook, kinetic-pop, reel-creator</div>
+          </div>
+
+          <!-- Pack 6: Character Animation -->
+          <div class="glass-card rounded-xl p-6 border-l-4 border-l-indigo-500">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs font-mono font-bold text-indigo-400">@xibodev/facet-pack-character-animation</span>
+              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">Puppet 2D</span>
+            </div>
+            <h3 class="font-display font-bold text-lg text-white mb-1">Character & Rigged 2D</h3>
+            <p class="text-xs text-slate-400 mb-4">
+              Data-driven 2D character puppet rigs, joint constraints, walk cycles, particle weather, and anime crossfades.
+            </p>
+            <div class="text-[11px] font-mono text-slate-500">Styles: anime-ghibli, vector-puppet, retro-cartoon</div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- 35-Tool Interactive Matrix -->
+    <section id="toolbox" class="py-20">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        <div class="flex flex-col md:flex-row md:items-end justify-between mb-12">
+          <div>
+            <span class="text-xs font-mono font-bold text-cyan-400 uppercase tracking-widest">Complete API Registry</span>
+            <h2 class="font-display font-bold text-3xl sm:text-4xl text-white mt-2">
+              The 35 Compiled Toolbox Tools
+            </h2>
+            <p class="mt-2 text-slate-400 text-sm sm:text-base">
+              Explore the stateless CLI tool engine. Every tool supports `--input` with either JSON file paths or inline strings.
+            </p>
+          </div>
+
+          <!-- Search & Filter Controls -->
+          <div class="mt-6 md:mt-0 flex items-center space-x-3">
+            <div class="relative">
+              <input type="text" id="tool-search" placeholder="Search 35 tools..." oninput="filterTools()" class="bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-xs font-mono text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 w-56">
+            </div>
+          </div>
+        </div>
+
+        <!-- Filter category buttons -->
+        <div class="flex flex-wrap gap-2 mb-8 text-xs font-mono">
+          <button onclick="setCategory('all')" class="cat-btn px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">All (35)</button>
+          <button onclick="setCategory('audio')" class="cat-btn px-3 py-1.5 rounded-lg bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800">Audio & Voice (6)</button>
+          <button onclick="setCategory('probes')" class="cat-btn px-3 py-1.5 rounded-lg bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800">Probes & QA (6)</button>
+          <button onclick="setCategory('compose')" class="cat-btn px-3 py-1.5 rounded-lg bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800">Compose & Edit (9)</button>
+          <button onclick="setCategory('stock')" class="cat-btn px-3 py-1.5 rounded-lg bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800">Stock & Media (4)</button>
+          <button onclick="setCategory('ai')" class="cat-btn px-3 py-1.5 rounded-lg bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800">AI & Cloud Gateways (8)</button>
+        </div>
+
+        <!-- Tool Cards Container -->
+        <div id="tools-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <!-- Dynamically populated / server rendered cards -->
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Web Studio Deep Dive -->
+    <section id="studio" class="py-20 bg-slate-950/60 border-y border-slate-800/80">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+          <div>
+            <span class="text-xs font-mono font-bold text-cyan-400 uppercase tracking-widest">Observability & Control</span>
+            <h2 class="font-display font-bold text-3xl sm:text-4xl text-white mt-2">
+              Facet Studio Web Interface
+            </h2>
+            <p class="mt-4 text-slate-400 text-base leading-relaxed">
+              Run <code class="font-mono text-cyan-300 bg-slate-900 px-2 py-0.5 rounded">facet ui</code> to launch a lightweight, local web studio. Inspect production stages, scrub video frames, examine waveform loudness, and verify outputs in real-time.
+            </p>
+
+            <div class="mt-8 space-y-4 text-sm text-slate-300">
+              <div class="flex items-start">
+                <div class="w-6 h-6 rounded bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-bold text-xs mr-3 mt-0.5">1</div>
+                <div>
+                  <strong class="text-white">Pipeline Stage Progression:</strong> Visual stage badges (Brief → Script → Audio → Scene Plan → Compose → Review → Deliver) update as artifacts land.
+                </div>
+              </div>
+              <div class="flex items-start">
+                <div class="w-6 h-6 rounded bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold text-xs mr-3 mt-0.5">2</div>
+                <div>
+                  <strong class="text-white">Audio Waveform & Level Metering:</strong> Inspect generated voiceover tracks, background music mixing curves, and ducking envelopes.
+                </div>
+              </div>
+              <div class="flex items-start">
+                <div class="w-6 h-6 rounded bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs mr-3 mt-0.5">3</div>
+                <div>
+                  <strong class="text-white">Frame Sampling & Review Carousel:</strong> Automated visual inspection carousel showing extracted QA stills and technical gate evaluations.
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-8 flex items-center space-x-4">
+              <div class="px-4 py-2 rounded-lg bg-slate-900 border border-slate-800 font-mono text-xs text-slate-300">
+                Default: <span class="text-cyan-400">http://127.0.0.1:8787</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Studio Mockup Window -->
+          <div class="glass-card rounded-2xl p-5 border border-slate-700/60 shadow-2xl glow-purple">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-800 text-xs font-mono">
+              <div class="flex items-center space-x-2 text-slate-300">
+                <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+                <span>Facet Studio — quantum-computing-30s</span>
+              </div>
+              <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px]">STAGE: REVIEW PASSED</span>
+            </div>
+
+            <div class="py-4 space-y-3 font-mono text-xs">
+              <div class="grid grid-cols-3 gap-2 text-center text-[10px]">
+                <div class="p-2 rounded bg-slate-900/90 border border-slate-800">
+                  <div class="text-slate-500">RESOLUTION</div>
+                  <div class="text-cyan-300 font-bold">1920x1080</div>
+                </div>
+                <div class="p-2 rounded bg-slate-900/90 border border-slate-800">
+                  <div class="text-slate-500">DURATION</div>
+                  <div class="text-purple-300 font-bold">29.0s</div>
+                </div>
+                <div class="p-2 rounded bg-slate-900/90 border border-slate-800">
+                  <div class="text-slate-500">CONTAINER</div>
+                  <div class="text-emerald-300 font-bold">MP4 / H.264</div>
+                </div>
+              </div>
+
+              <div class="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
+                <div class="text-slate-400 text-[11px] mb-1">PRODUCED ARTIFACTS</div>
+                <div class="text-slate-200 text-[11px] space-y-1">
+                  <div>✔ artifacts/script.json <span class="text-slate-500">(7 sections)</span></div>
+                  <div>✔ narration/universe.mp3 <span class="text-slate-500">(en-US-ChristopherNeural)</span></div>
+                  <div>✔ artifacts/explainer_props.json <span class="text-slate-500">(7 cuts, Remotion)</span></div>
+                  <div>✔ renders/final.mp4 <span class="text-emerald-400">(Passed QA)</span></div>
+                </div>
+              </div>
+
+              <!-- Mini Waveform Visualizer simulation -->
+              <div class="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
+                <div class="text-slate-400 text-[11px] mb-2">AUDIO DUCKING & LOUDNESS</div>
+                <div class="h-8 flex items-center space-x-1">
+                  <div class="w-1 bg-cyan-400 h-3 rounded-full"></div>
+                  <div class="w-1 bg-cyan-400 h-5 rounded-full"></div>
+                  <div class="w-1 bg-cyan-400 h-7 rounded-full"></div>
+                  <div class="w-1 bg-cyan-400 h-4 rounded-full"></div>
+                  <div class="w-1 bg-cyan-400 h-6 rounded-full"></div>
+                  <div class="w-1 bg-cyan-400 h-8 rounded-full"></div>
+                  <div class="w-1 bg-purple-400 h-5 rounded-full"></div>
+                  <div class="w-1 bg-purple-400 h-7 rounded-full"></div>
+                  <div class="w-1 bg-cyan-400 h-6 rounded-full"></div>
+                  <div class="w-1 bg-cyan-400 h-4 rounded-full"></div>
+                  <div class="w-1 bg-cyan-400 h-8 rounded-full"></div>
+                  <div class="w-1 bg-cyan-400 h-5 rounded-full"></div>
+                  <div class="w-1 bg-emerald-400 h-3 rounded-full"></div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Detailed Documentation Reference Banner -->
+    <section class="py-16">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="glass-card rounded-2xl p-8 sm:p-12 text-center bg-gradient-to-r from-cyan-950/40 via-slate-900/80 to-purple-950/40 border border-cyan-500/20 glow-cyan">
+          <h2 class="font-display font-bold text-3xl sm:text-4xl text-white">
+            Ready to Build With Facet?
+          </h2>
+          <p class="mt-4 text-slate-300 max-w-2xl mx-auto text-base">
+            Read the comprehensive developer guide, Remotion component catalog, full schema definitions, and custom pack authoring tutorials.
+          </p>
+          <div class="mt-8 flex flex-col sm:flex-row items-center justify-center space-y-3 sm:space-y-0 sm:space-x-4">
+            <a href="docs.html" class="px-6 py-3 rounded-lg font-semibold text-sm bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-white shadow-lg transition-all">
+              Read Technical Documentation →
+            </a>
+            <a href="https://github.com/xibodev/facet" target="_blank" rel="noopener" class="px-6 py-3 rounded-lg font-semibold text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors">
+              View on GitHub
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="glass-card border-t border-slate-800 py-12 text-xs font-mono text-slate-500">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0">
+      <div>
+        Facet is licensed under the <a href="https://github.com/xibodev/facet/blob/main/LICENSE" class="text-slate-400 hover:text-cyan-400 underline">Apache-2.0 License</a>. Copyright © 2026 XiboDev.
+      </div>
+      <div class="flex items-center space-x-6 text-slate-400">
+        <a href="docs.html" class="hover:text-cyan-400">Docs</a>
+        <a href="https://github.com/xibodev/facet" class="hover:text-cyan-400">GitHub</a>
+        <a href="https://github.com/xibodev/gflow-cli" class="hover:text-cyan-400">gflow-cli</a>
+        <a href="https://github.com/xibodev/release-harness" class="hover:text-cyan-400">release-harness</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Interactive Scripts -->
+  <script>
+    // 35 Tools Data
+    const TOOLS = [
+      // Audio & Speech (6)
+      { id: "edgetts", category: "audio", name: "edge_tts / edgetts", desc: "Free, zero-key neural speech synthesis powered by Microsoft Edge.", cmd: "facet tools run edgetts --input artifacts/req_tts.json" },
+      { id: "openai_tts", category: "audio", name: "openai_tts", desc: "Cloud text-to-speech synthesis via OpenAI TTS-1 / TTS-1-HD models.", cmd: "facet tools run openai_tts --input req.json" },
+      { id: "elevenlabs_tts", category: "audio", name: "elevenlabs_tts", desc: "Premium voice synthesis and voice cloning via ElevenLabs API.", cmd: "facet tools run elevenlabs_tts --input req.json" },
+      { id: "piper_tts", category: "audio", name: "piper_tts", desc: "Local fast neural TTS running completely offline with Piper binary.", cmd: "facet tools run piper_tts --input req.json" },
+      { id: "audio_mix", category: "audio", name: "audio_mix / audio_mixer", desc: "Mixes voiceover with background music, applying automated ducking.", cmd: "facet tools run audio_mix --input artifacts/audio_mix.json" },
+      { id: "music_library", category: "audio", name: "music_library", desc: "Local music track indexing, discovery, and duration/energy analysis.", cmd: "facet tools run music_library --input req.json" },
+
+      // Analysis & Probes (6)
+      { id: "media_probe", category: "probes", name: "media_probe / audio_probe", desc: "Inspects media container streams, exact duration, FPS, and sample rates.", cmd: "facet tools run media_probe --input '{\"file_path\": \"narration/beat1.mp3\"}'" },
+      { id: "output_review", category: "probes", name: "output_review", desc: "Comprehensive technical QA: loudness, freeze frames, black frames, codecs.", cmd: "facet tools run output_review --input '{\"rendered_file\": \"renders/final.mp4\"}'" },
+      { id: "frame_sample", category: "probes", name: "frame_sample / frame_sampler", desc: "Extracts review stills at fixed intervals or scene timestamps.", cmd: "facet tools run frame_sample --input '{\"video_path\": \"clip.mp4\", \"sample_count\": 5}'" },
+      { id: "scene_detect", category: "probes", name: "scene_detect", desc: "Detects shot cut boundaries and scene transitions in source video.", cmd: "facet tools run scene_detect --input req.json" },
+      { id: "visual_qa", category: "probes", name: "visual_qa", desc: "Visual quality assessment and artifact inspection.", cmd: "facet tools run visual_qa --input req.json" },
+      { id: "silence_cutter", category: "probes", name: "silence_cutter", desc: "Detects dead air and cuts silent pauses with configurable dB threshold.", cmd: "facet tools run silence_cutter --input req.json" },
+
+      // Compose & Edit (9)
+      { id: "video_compose", category: "compose", name: "video_compose / compose", desc: "Orchestrates Remotion React & HyperFrames composition rendering.", cmd: "facet tools run video_compose --input artifacts/explainer_props.json" },
+      { id: "source_edit", category: "compose", name: "source_edit / edit", desc: "Trims, scales, normalizes, and cuts supplied footage into an assembly.", cmd: "facet tools run edit --input artifacts/edit.json" },
+      { id: "video_trimmer", category: "compose", name: "video_trimmer", desc: "Trims video start/end points and changes speed factors without re-encoding.", cmd: "facet tools run video_trimmer --input req.json" },
+      { id: "video_stitch", category: "compose", name: "video_stitch", desc: "Concatenates multiple video segments seamlessly into a unified track.", cmd: "facet tools run video_stitch --input req.json" },
+      { id: "hyperframes_compose", category: "compose", name: "hyperframes_compose", desc: "Renders HTML/CSS/GSAP web-standards compositions to video.", cmd: "facet tools run hyperframes_compose --input req.json" },
+      { id: "remotion_caption_burn", category: "compose", name: "remotion_caption_burn", desc: "Burns animated word-by-word highlighted captions onto video.", cmd: "facet tools run remotion_caption_burn --input req.json" },
+      { id: "color_grade", category: "compose", name: "color_grade", desc: "Applies FFmpeg LUTs and cinematic color curves to footage.", cmd: "facet tools run color_grade --input req.json" },
+      { id: "audio_mixer", category: "compose", name: "audio_mixer", desc: "Multi-track audio ducking, envelope curves, and master level mixing.", cmd: "facet tools run audio_mixer --input req.json" },
+      { id: "frame_sampler", category: "compose", name: "frame_sampler", desc: "Scene-guided and timestamp-based frame sampling utility.", cmd: "facet tools run frame_sampler --input req.json" },
+
+      // Subtitles & Stock (4)
+      { id: "subtitle_gen", category: "stock", name: "subtitle_gen", desc: "Generates SRT, VTT, and JSON timed subtitle files from transcripts.", cmd: "facet tools run subtitle_gen --input req.json" },
+      { id: "direct_clip_search", category: "stock", name: "direct_clip_search", desc: "Direct stock media search across open and public domain archives.", cmd: "facet tools run direct_clip_search --input req.json" },
+      { id: "pexels_video", category: "stock", name: "pexels_video", desc: "Searches and downloads high-definition stock video from Pexels API.", cmd: "facet tools run pexels_video --input req.json" },
+      { id: "pixabay_video", category: "stock", name: "pixabay_video", desc: "Searches and downloads royalty-free video clips from Pixabay API.", cmd: "facet tools run pixabay_video --input req.json" },
+
+      // AI Generation & Selection (8)
+      { id: "wikimedia", category: "stock", name: "wikimedia", desc: "Searches and downloads historical media from Wikimedia Commons.", cmd: "facet tools run wikimedia --input req.json" },
+      { id: "gflow_video", category: "ai", name: "gflow_video / veo", desc: "Google Flow Veo 3.1 video generation with 1080p/4K upsampling.", cmd: "facet tools run gflow_video --input req.json" },
+      { id: "gflow_image", category: "ai", name: "gflow_image / imagen", desc: "Google Flow Imagen 4 (Nano Banana 2) neural image generation.", cmd: "facet tools run gflow_image --input req.json" },
+      { id: "flux_image", category: "ai", name: "flux_image", desc: "Generates high-resolution visuals via fal.ai FLUX.1 / FLUX.2 models.", cmd: "facet tools run flux_image --input req.json" },
+      { id: "openai_image", category: "ai", name: "openai_image", desc: "Generates images via OpenAI DALL-E 3 / GPT Image models.", cmd: "facet tools run openai_image --input req.json" },
+      { id: "kling_video", category: "ai", name: "kling_video", desc: "Cloud AI cinematic video generation via Kling API.", cmd: "facet tools run kling_video --input req.json" },
+      { id: "sora_video", category: "ai", name: "sora_video", desc: "Cloud AI high-fidelity video generation via Sora API.", cmd: "facet tools run sora_video --input req.json" },
+      { id: "image_selector", category: "ai", name: "image_selector", desc: "Discovers and ranks image generation providers based on cost & latency.", cmd: "facet tools run image_selector --input req.json" },
+      { id: "video_selector", category: "ai", name: "video_selector", desc: "Discovers and ranks video generation providers with duration limits.", cmd: "facet tools run video_selector --input req.json" },
+    ];
+
+    let currentCategory = 'all';
+
+    function renderTools() {
+      const grid = document.getElementById('tools-grid');
+      const search = (document.getElementById('tool-search').value || '').toLowerCase();
+      
+      const filtered = TOOLS.filter(t => {
+        const matchesCat = currentCategory === 'all' || t.category === currentCategory;
+        const matchesSearch = t.name.toLowerCase().includes(search) || t.desc.toLowerCase().includes(search);
+        return matchesCat && matchesSearch;
+      });
+
+      grid.innerHTML = filtered.map(t => `
+        <div class="glass-card rounded-xl p-4 flex flex-col justify-between hover:border-cyan-500/40 transition-all">
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <span class="font-mono font-bold text-xs text-cyan-300">${t.name}</span>
+              <span class="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400">${t.category}</span>
+            </div>
+            <p class="text-xs text-slate-400 mb-3 leading-relaxed">${t.desc}</p>
+          </div>
+          <div class="mt-2 pt-2 border-t border-slate-800/80">
+            <div class="text-[11px] font-mono text-slate-500 truncate bg-slate-950/80 px-2 py-1 rounded select-all border border-slate-800/50">
+              ${t.cmd}
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function setCategory(cat) {
+      currentCategory = cat;
+      document.querySelectorAll('.cat-btn').forEach(btn => {
+        btn.classList.remove('bg-cyan-500/20', 'text-cyan-300', 'border-cyan-500/30');
+        btn.classList.add('bg-slate-900', 'text-slate-400', 'border-slate-800');
+      });
+      event.target.classList.add('bg-cyan-500/20', 'text-cyan-300', 'border-cyan-500/30');
+      event.target.classList.remove('bg-slate-900', 'text-slate-400', 'border-slate-800');
+      renderTools();
+    }
+
+    function filterTools() {
+      renderTools();
+    }
+
+    function setInstall(type) {
+      const el = document.getElementById('install-cmd');
+      document.querySelectorAll('.install-tab').forEach(t => {
+        t.classList.remove('bg-slate-800', 'text-cyan-300');
+        t.classList.add('text-slate-400');
+      });
+      event.target.classList.add('bg-slate-800', 'text-cyan-300');
+      event.target.classList.remove('text-slate-400');
+
+      if (type === 'go') {
+        el.innerText = 'go install github.com/xibodev/facet/cmd/facet@latest';
+      } else if (type === 'ps') {
+        el.innerText = 'irm https://raw.githubusercontent.com/xibodev/facet/main/install.ps1 | iex';
+      } else if (type === 'bash') {
+        el.innerText = 'curl -fsSL https://raw.githubusercontent.com/xibodev/facet/main/install.sh | bash';
+      } else if (type === 'scoop') {
+        el.innerText = 'scoop bucket add xibodev https://github.com/xibodev/facet && scoop install facet';
+      }
+    }
+
+    function copyInstall() {
+      const text = document.getElementById('install-cmd').innerText.trim();
+      navigator.clipboard.writeText(text);
+      const icon = document.getElementById('copy-icon');
+      icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>';
+      setTimeout(() => {
+        icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>';
+      }, 2000);
+    }
+
+    // Initialize tools matrix on load
+    document.addEventListener('DOMContentLoaded', () => {
+      renderTools();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "id": "SMOKE-001",
+  "name": "Facet Studio availability",
+  "origin_id": "web-app",
+  "tier": "smoke",
+  "policy": "required",
+  "steps": [
+    {
+      "action": "navigate",
+      "target": "/"
+    },
+    {
+      "action": "assert",
+      "target": "text:Facet Studio"
+    },
+    {
+      "action": "screenshot"
+    }
+  ]
+}

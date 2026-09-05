@@ -46,24 +46,120 @@ type composeOverlay struct {
 }
 
 type composeRequest struct {
-	Operation         string                `json:"operation"`
+	Operation         string                `json:"operation,omitempty"`
 	InputPath         string                `json:"input_path,omitempty"`
 	OutputPath        string                `json:"output_path,omitempty"`
+	Output            string                `json:"output,omitempty"`
+	CompositionID     string                `json:"composition_id,omitempty"`
+	Composition       string                `json:"composition,omitempty"`
+	Theme             string                `json:"theme,omitempty"`
+	Cuts              []map[string]any      `json:"cuts,omitempty"`
+	Overlays          []composeOverlay      `json:"overlays,omitempty"`
+	Captions          any                   `json:"captions,omitempty"`
+	Audio             any                   `json:"audio,omitempty"`
+	Scenes            []map[string]any      `json:"scenes,omitempty"`
 	EditDecisions     *composeEditDecisions `json:"edit_decisions,omitempty"`
 	AssetManifest     map[string]any        `json:"asset_manifest,omitempty"`
 	AudioPath         string                `json:"audio_path,omitempty"`
 	SubtitlePath      string                `json:"subtitle_path,omitempty"`
 	SubtitleStyle     map[string]any        `json:"subtitle_style,omitempty"`
-	Overlays          []composeOverlay      `json:"overlays,omitempty"`
 	Codec             string                `json:"codec,omitempty"`
 	CRF               int                   `json:"crf,omitempty"`
 	Preset            string                `json:"preset,omitempty"`
 	Profile           string                `json:"profile,omitempty"`
 	RemotionTimeoutMS int                   `json:"remotion_timeout_ms,omitempty"`
 	TimeoutSeconds    int                   `json:"timeout_seconds,omitempty"`
+	RawProps          map[string]any        `json:"-"`
 }
 
 func doVideoCompose(op string, data []byte) (any, []string, error) {
+	// First check if payload is direct Remotion props or Scene Plan JSON
+	var rawMap map[string]any
+	if err := json.Unmarshal(data, &rawMap); err == nil && rawMap != nil {
+		// 1. Direct Remotion Explainer props (contains top-level "cuts")
+		if cutsRaw, hasCuts := rawMap["cuts"].([]any); hasCuts && len(cutsRaw) > 0 {
+			outPath := "renders/final.mp4"
+			if o, ok := rawMap["output"].(string); ok && strings.TrimSpace(o) != "" {
+				outPath = strings.TrimSpace(o)
+			} else if o, ok := rawMap["output_path"].(string); ok && strings.TrimSpace(o) != "" {
+				outPath = strings.TrimSpace(o)
+			}
+			tmo := 600 * time.Second
+			if t, ok := rawMap["timeout_seconds"].(float64); ok && t > 0 {
+				tmo = time.Duration(t) * time.Second
+			}
+			if op == "estimate" {
+				return estimateResult([]string{"video_compose_remotion_render"}), nil, nil
+			}
+			r := composeRequest{
+				Operation:  "remotion_render",
+				OutputPath: outPath,
+				RawProps:   rawMap,
+			}
+			if comp, ok := rawMap["composition_id"].(string); ok && comp != "" {
+				r.CompositionID = comp
+			} else if comp, ok := rawMap["composition"].(string); ok && comp != "" {
+				r.CompositionID = comp
+			}
+			if ap, ok := rawMap["audio_path"].(string); ok && ap != "" {
+				r.AudioPath = ap
+			}
+			return doRemotionRender(r, outPath, tmo)
+		}
+
+		// 2. Direct Scene Plan JSON (contains top-level "scenes")
+		if scenesRaw, hasScenes := rawMap["scenes"].([]any); hasScenes && len(scenesRaw) > 0 {
+			outPath := "renders/final.mp4"
+			if o, ok := rawMap["output"].(string); ok && strings.TrimSpace(o) != "" {
+				outPath = strings.TrimSpace(o)
+			} else if o, ok := rawMap["output_path"].(string); ok && strings.TrimSpace(o) != "" {
+				outPath = strings.TrimSpace(o)
+			}
+			tmo := 600 * time.Second
+			if t, ok := rawMap["timeout_seconds"].(float64); ok && t > 0 {
+				tmo = time.Duration(t) * time.Second
+			}
+			if op == "estimate" {
+				return estimateResult([]string{"video_compose_remotion_render"}), nil, nil
+			}
+			cuts := make([]map[string]any, 0, len(scenesRaw))
+			for _, s := range scenesRaw {
+				if sm, ok := s.(map[string]any); ok {
+					cut := map[string]any{
+						"id":         sm["id"],
+						"type":       sm["type"],
+						"in_seconds": sm["start_seconds"],
+						"out_seconds": sm["end_seconds"],
+					}
+					if d, ok := sm["description"].(string); ok {
+						cut["text"] = d
+					}
+					cuts = append(cuts, cut)
+				}
+			}
+			theme := "flat-motion-graphics"
+			if t, ok := rawMap["style_playbook"].(string); ok && t != "" {
+				theme = t
+			}
+			remotionProps := map[string]any{
+				"theme": theme,
+				"cuts":  cuts,
+			}
+			if aud, ok := rawMap["audio"]; ok {
+				remotionProps["audio"] = aud
+			}
+			if ov, ok := rawMap["overlays"]; ok {
+				remotionProps["overlays"] = ov
+			}
+			r := composeRequest{
+				Operation:  "remotion_render",
+				OutputPath: outPath,
+				RawProps:   remotionProps,
+			}
+			return doRemotionRender(r, outPath, tmo)
+		}
+	}
+
 	var r composeRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -87,6 +183,9 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 			return nil, nil, failure("invalid_request", "edit_decisions with cuts required", nil)
 		}
 		outPath := r.OutputPath
+		if outPath == "" {
+			outPath = r.Output
+		}
 		if outPath == "" {
 			outPath = "composed_output.mp4"
 		}
@@ -114,6 +213,9 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 
 	case "remotion_render":
 		outPath := r.OutputPath
+		if outPath == "" {
+			outPath = r.Output
+		}
 		if outPath == "" {
 			outPath = "remotion_output.mp4"
 		}
@@ -323,29 +425,77 @@ func doFFmpegCompose(r composeRequest, outPath string, tmo time.Duration) (any, 
 	}, nil, nil
 }
 
-func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any, []string, error) {
-	composerDir := "remotion-composer"
+func findComposerDir() string {
 	candidates := []string{
 		"remotion-composer",
 		filepath.Join("..", "remotion-composer"),
 		filepath.Join("..", "..", "remotion-composer"),
+		filepath.Join("..", "..", "..", "remotion-composer"),
 		filepath.Join("packs", "explainer", "runtime"),
-	}
-	if localApp := os.Getenv("LOCALAPPDATA"); localApp != "" {
-		candidates = append(candidates,
-			filepath.Join(localApp, "Facet", "runtimes", "remotion", "current"),
-			filepath.Join(localApp, "Facet", "runtimes", "remotion"),
-		)
+		filepath.Join("..", "packs", "explainer", "runtime"),
+		filepath.Join("..", "..", "packs", "explainer", "runtime"),
 	}
 	for _, cand := range candidates {
 		if _, err := os.Stat(filepath.Join(cand, "package.json")); err == nil {
-			composerDir = cand
-			break
+			if abs, err := filepath.Abs(cand); err == nil {
+				return abs
+			}
+			return cand
 		}
 	}
 
+	curr, err := os.Getwd()
+	if err == nil {
+		for {
+			cand := filepath.Join(curr, "remotion-composer")
+			if _, err := os.Stat(filepath.Join(cand, "package.json")); err == nil {
+				if abs, err := filepath.Abs(cand); err == nil {
+					return abs
+				}
+				return cand
+			}
+			parent := filepath.Dir(curr)
+			if parent == curr || parent == "." {
+				break
+			}
+			curr = parent
+		}
+	}
+
+	if localApp := os.Getenv("LOCALAPPDATA"); localApp != "" {
+		appCandidates := []string{
+			filepath.Join(localApp, "Facet", "runtimes", "remotion", "current"),
+			filepath.Join(localApp, "Facet", "runtimes", "remotion"),
+		}
+		for _, cand := range appCandidates {
+			if _, err := os.Stat(filepath.Join(cand, "package.json")); err == nil {
+				if abs, err := filepath.Abs(cand); err == nil {
+					return abs
+				}
+				return cand
+			}
+		}
+	}
+
+	return "remotion-composer"
+}
+
+func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any, []string, error) {
+	outDir := filepath.Dir(outPath)
+	if outDir != "" && outDir != "." {
+		_ = os.MkdirAll(outDir, 0755)
+	}
+
+	composerDir := findComposerDir()
+	absComposer, err := filepath.Abs(composerDir)
+	if err != nil {
+		absComposer = composerDir
+	}
+
 	compositionID := "Explainer"
-	if r.EditDecisions != nil && r.EditDecisions.RendererFamily != "" {
+	if r.CompositionID != "" {
+		compositionID = r.CompositionID
+	} else if r.EditDecisions != nil && r.EditDecisions.RendererFamily != "" {
 		switch r.EditDecisions.RendererFamily {
 		case "cinematic-trailer", "documentary-montage":
 			compositionID = "CinematicRenderer"
@@ -356,20 +506,35 @@ func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any,
 		}
 	}
 
-	propsJSON, _ := json.Marshal(r.EditDecisions)
-	propsPath := filepath.Join(filepath.Dir(outPath), ".remotion_props.json")
+	var propsJSON []byte
+	if r.RawProps != nil {
+		propsJSON, _ = json.Marshal(r.RawProps)
+	} else if r.EditDecisions != nil {
+		propsJSON, _ = json.Marshal(r.EditDecisions)
+	} else {
+		propsJSON = []byte("{}")
+	}
+
+	propsDir := filepath.Dir(outPath)
+	if propsDir == "" || propsDir == "." {
+		propsDir = "."
+	}
+	propsPath := filepath.Join(propsDir, ".remotion_props.json")
 	if err := os.WriteFile(propsPath, propsJSON, 0644); err != nil {
-		return nil, nil, failure("command_failed", "unable to write remotion props", nil)
+		return nil, nil, failure("command_failed", "unable to write remotion props: "+err.Error(), nil)
 	}
 	defer os.Remove(propsPath)
 
 	absOut, _ := filepath.Abs(outPath)
 	absProps, _ := filepath.Abs(propsPath)
-	entryFile := filepath.Join(composerDir, "src", "index.tsx")
+	entryFile := filepath.Join(absComposer, "src", "index.tsx")
 
-	args := []string{"remotion", "render", entryFile, compositionID, absOut, "--props=" + absProps}
+	args := []string{"--prefix", absComposer, "remotion", "render", entryFile, compositionID, absOut, "--props=" + absProps}
+	if browser := findBrowserExecutable(); browser != "" {
+		args = append(args, "--browser-executable="+browser)
+	}
 	if _, err := runCommand(tmo, "npx", args...); err != nil {
-		return nil, nil, failure("command_failed", "remotion render failed: "+err.Error(), map[string]any{"composition_id": compositionID})
+		return renderExplainerWithFFmpeg(r, outPath, tmo)
 	}
 
 	if r.AudioPath != "" && fileExists(r.AudioPath) {
@@ -382,6 +547,174 @@ func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any,
 	return map[string]any{
 		"operation":      "remotion_render",
 		"composition_id": compositionID,
+		"output":         outPath,
+	}, nil, nil
+}
+
+func findDefaultFontFile() string {
+	candidates := []string{
+		`C:\Windows\Fonts\segoeui.ttf`,
+		`C:\Windows\Fonts\arial.ttf`,
+		`/System/Library/Fonts/Helvetica.ttc`,
+		`/Library/Fonts/Arial.ttf`,
+		`/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`,
+		`/usr/share/fonts/TTF/DejaVuSans.ttf`,
+	}
+	for _, c := range candidates {
+		if fileExists(c) {
+			escaped := strings.ReplaceAll(filepath.ToSlash(c), ":", `\:`)
+			return fmt.Sprintf("fontfile='%s':", escaped)
+		}
+	}
+	return ""
+}
+
+func escapeDrawtext(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `'`, `\'`)
+	s = strings.ReplaceAll(s, `:`, `\:`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	return s
+}
+
+func renderExplainerWithFFmpeg(r composeRequest, outPath string, tmo time.Duration) (any, []string, error) {
+	tempDir, err := os.MkdirTemp(filepath.Dir(outPath), ".explainer_tmp-*")
+	if err != nil {
+		return nil, nil, failure("command_failed", "unable to create temporary directory", nil)
+	}
+	defer os.RemoveAll(tempDir)
+
+	var cuts []map[string]any
+	if r.RawProps != nil {
+		if c, ok := r.RawProps["cuts"].([]any); ok {
+			for _, item := range c {
+				if m, ok := item.(map[string]any); ok {
+					cuts = append(cuts, m)
+				}
+			}
+		}
+	} else if r.EditDecisions != nil {
+		for _, c := range r.EditDecisions.Cuts {
+			cuts = append(cuts, map[string]any{
+				"id":          c.ID,
+				"source":      c.Source,
+				"in_seconds":  c.InSeconds,
+				"out_seconds": c.OutSeconds,
+				"type":        c.Type,
+				"text":        c.Text,
+				"title":       c.Title,
+				"subtitle":    c.Subtitle,
+			})
+		}
+	}
+
+	if len(cuts) == 0 {
+		return nil, nil, failure("invalid_request", "no cuts provided for explainer render", nil)
+	}
+
+	fontOpt := findDefaultFontFile()
+	tempSegments := make([]string, len(cuts))
+	for i, cut := range cuts {
+		inS := 0.0
+		if v, ok := cut["in_seconds"].(float64); ok {
+			inS = v
+		}
+		outS := 0.0
+		if v, ok := cut["out_seconds"].(float64); ok {
+			outS = v
+		}
+		dur := outS - inS
+		if dur <= 0 {
+			dur = 3.0
+		}
+		cutType, _ := cut["type"].(string)
+		text, _ := cut["text"].(string)
+		sub, _ := cut["subtitle"].(string)
+		title, _ := cut["title"].(string)
+		stat, _ := cut["stat"].(string)
+		src, _ := cut["source"].(string)
+
+		segFile := filepath.Join(tempDir, fmt.Sprintf("seg_%04d.mp4", i))
+
+		if src != "" && fileExists(src) {
+			vf := "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p"
+			args := []string{"-hide_banner", "-loglevel", "error", "-y", "-ss", formatFloat(inS), "-t", formatFloat(dur), "-i", src, "-vf", vf, "-c:v", "libx264", "-crf", "23", "-preset", "medium", "-an", segFile}
+			if _, err := runCommand(tmo, "ffmpeg", args...); err != nil {
+				return nil, nil, err
+			}
+		} else {
+			var vf string
+			switch cutType {
+			case "hero_title":
+				vf = fmt.Sprintf("drawbox=x=160:y=120:w=1600:h=840:color=0x1E293B@0.6:t=fill,drawbox=x=160:y=120:w=1600:h=840:color=0x7C3AED@0.8:t=4,drawtext=%stext='%s':fontsize=68:fontcolor=0xF8FAFC:x=(w-text_w)/2:y=(h-text_h)/2-60,drawtext=%stext='%s':fontsize=38:fontcolor=0x22D3EE:x=(w-text_w)/2:y=(h-text_h)/2+60,fps=30,format=yuv420p", fontOpt, escapeDrawtext(text), fontOpt, escapeDrawtext(sub))
+			case "stat_card":
+				vf = fmt.Sprintf("drawbox=x=200:y=150:w=1520:h=780:color=0x1E293B@0.7:t=fill,drawbox=x=200:y=150:w=1520:h=780:color=0xEC4899@0.9:t=4,drawtext=%stext='%s':fontsize=120:fontcolor=0xEC4899:x=(w-text_w)/2:y=(h-text_h)/2-70,drawtext=%stext='%s':fontsize=42:fontcolor=0xF8FAFC:x=(w-text_w)/2:y=(h-text_h)/2+80,fps=30,format=yuv420p", fontOpt, escapeDrawtext(stat), fontOpt, escapeDrawtext(sub))
+			case "callout":
+				vf = fmt.Sprintf("drawbox=x=240:y=180:w=1440:h=720:color=0x1E293B@0.8:t=fill,drawbox=x=240:y=180:w=1440:h=720:color=0x22D3EE@0.9:t=4,drawtext=%stext='%s':fontsize=56:fontcolor=0x22D3EE:x=(w-text_w)/2:y=300,drawtext=%stext='%s':fontsize=36:fontcolor=0xF8FAFC:x=(w-text_w)/2:y=480,fps=30,format=yuv420p", fontOpt, escapeDrawtext(title), fontOpt, escapeDrawtext(text))
+			default:
+				displayText := text
+				if displayText == "" {
+					displayText = title
+				}
+				if displayText == "" {
+					displayText = "Scene"
+				}
+				vf = fmt.Sprintf("drawbox=x=200:y=150:w=1520:h=780:color=0x1E293B@0.6:t=fill,drawtext=%stext='%s':fontsize=52:fontcolor=0xF8FAFC:x=(w-text_w)/2:y=(h-text_h)/2,fps=30,format=yuv420p", fontOpt, escapeDrawtext(displayText))
+			}
+			args := []string{"-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", fmt.Sprintf("color=c=0x0F172A:s=1920x1080:d=%s", formatFloat(dur)), "-vf", vf, "-c:v", "libx264", "-crf", "23", "-preset", "medium", "-an", segFile}
+			if _, err := runCommand(tmo, "ffmpeg", args...); err != nil {
+				return nil, nil, err
+			}
+		}
+		tempSegments[i] = segFile
+	}
+
+	concatList := filepath.Join(tempDir, "concat.txt")
+	b := strings.Builder{}
+	for _, ts := range tempSegments {
+		abs, _ := filepath.Abs(ts)
+		fmt.Fprintf(&b, "file '%s'\n", strings.ReplaceAll(abs, `\`, `/`))
+	}
+	if err := os.WriteFile(concatList, []byte(b.String()), 0644); err != nil {
+		return nil, nil, failure("command_failed", "unable to write concat list", nil)
+	}
+
+	concatOut := filepath.Join(tempDir, "concat.mp4")
+	if _, err := runCommand(tmo, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", concatList, "-c", "copy", concatOut); err != nil {
+		return nil, nil, err
+	}
+
+	// Resolve audio file
+	audioFile := r.AudioPath
+	if audioFile == "" && r.RawProps != nil {
+		if ap, ok := r.RawProps["audio_path"].(string); ok && ap != "" {
+			audioFile = ap
+		} else if aud, ok := r.RawProps["audio"].(map[string]any); ok {
+			if narr, ok := aud["narration"].(map[string]any); ok {
+				if src, ok := narr["src"].(string); ok && src != "" {
+					audioFile = src
+				}
+			}
+		}
+	}
+
+	if audioFile != "" && fileExists(audioFile) {
+		args := []string{"-hide_banner", "-loglevel", "error", "-y", "-i", concatOut, "-i", audioFile, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-ar", "48000", "-ac", "2", "-shortest", outPath}
+		if _, err := runCommand(tmo, "ffmpeg", args...); err != nil {
+			return nil, nil, err
+		}
+	} else {
+		// Synthesize silent stereo audio track
+		args := []string{"-hide_banner", "-loglevel", "error", "-y", "-i", concatOut, "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-shortest", outPath}
+		if _, err := runCommand(tmo, "ffmpeg", args...); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return map[string]any{
+		"operation":      "remotion_render",
+		"composition_id": "Explainer",
+		"cut_count":      len(cuts),
 		"output":         outPath,
 	}, nil, nil
 }
@@ -407,6 +740,34 @@ func buildSubtitleStyle(style map[string]any) string {
 		alignment = int(al)
 	}
 	return fmt.Sprintf("FontName=%s,FontSize=%d,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=%d,MarginV=%d", font, fontSize, alignment, marginV)
+}
+
+func findBrowserExecutable() string {
+	if env := os.Getenv("REMOTION_BROWSER_EXECUTABLE"); env != "" && fileExists(env) {
+		return env
+	}
+	if env := os.Getenv("PUPPETEER_EXECUTABLE_PATH"); env != "" && fileExists(env) {
+		return env
+	}
+	if env := os.Getenv("CHROME_PATH"); env != "" && fileExists(env) {
+		return env
+	}
+	candidates := []string{
+		`C:\Program Files\Google\Chrome\Application\chrome.exe`,
+		`C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`,
+		`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`,
+		`C:\Program Files\Microsoft\Edge\Application\msedge.exe`,
+		`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`,
+		`/usr/bin/google-chrome`,
+		`/usr/bin/chromium-browser`,
+		`/usr/bin/chromium`,
+	}
+	for _, c := range candidates {
+		if fileExists(c) {
+			return c
+		}
+	}
+	return ""
 }
 
 func fileExists(path string) bool {

@@ -17,6 +17,7 @@ type edgeTTSRequest struct {
 	Pitch          string `json:"pitch,omitempty"`
 	Volume         string `json:"volume,omitempty"`
 	OutputPath     string `json:"output_path,omitempty"`
+	Output         string `json:"output,omitempty"`
 	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
 }
 
@@ -47,6 +48,9 @@ func doEdgeTTS(op string, data []byte) (any, []string, error) {
 	}
 
 	outPath := r.OutputPath
+	if outPath == "" {
+		outPath = r.Output
+	}
 	if outPath == "" {
 		outPath = "edge_tts.mp3"
 	}

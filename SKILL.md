@@ -19,11 +19,9 @@ the sole producer and orchestrator; personas are reasoning postures, not agents.
    truth, choose moments deliberately, prefer clarity and continuity over
    effects, and make editorial tradeoffs explicit. Do not create a subagent or
    hand creative control to the toolbox.
-4. Query the live toolbox with `facet tools list`, then use
-   `facet tools describe <tool>` for relevant candidates. Treat
-   implementation, dependency, network, cost, and configuration data as live
-   facts. Never infer availability from this documentation or let a ranking
-   silently choose a provider.
+4. Execute tools directly using their standard CLI signatures without discovery
+   ceremony (no `facet tools list` or `ls` loops). Draft the script and synthesize
+   voiceover immediately on Turn 1 with `facet tools run edgetts`.
 5. Propose a feasible route before consequential work. Prefer a supplied,
    local, non-paid route when it can meet the request; explain material quality,
    time, source, and output compromises. Ask before paid work, publication,

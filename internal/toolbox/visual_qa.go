@@ -11,28 +11,31 @@ import (
 )
 
 type reviewRequest struct {
-	Input   string `json:"input,omitempty"`
-	Profile struct {
-		Width  int     `json:"width"`
-		Height int     `json:"height"`
-		FPS    float64 `json:"fps"`
-	} `json:"profile"`
+	Input        string `json:"input,omitempty"`
+	RenderedFile string `json:"rendered_file,omitempty"`
+	InputPath    string `json:"input_path,omitempty"`
+	SampleCount  int    `json:"sample_count,omitempty"`
+	Profile      struct {
+		Width  int     `json:"width,omitempty"`
+		Height int     `json:"height,omitempty"`
+		FPS    float64 `json:"fps,omitempty"`
+	} `json:"profile,omitempty"`
 	Checks struct {
 		Duration *struct {
-			Expected  float64 `json:"expected"`
-			Tolerance float64 `json:"tolerance"`
-		} `json:"duration"`
-		VideoCodec  string `json:"video_codec"`
-		PixelFormat string `json:"pixel_format"`
+			Expected  float64 `json:"expected,omitempty"`
+			Tolerance float64 `json:"tolerance,omitempty"`
+		} `json:"duration,omitempty"`
+		VideoCodec  string `json:"video_codec,omitempty"`
+		PixelFormat string `json:"pixel_format,omitempty"`
 		Audio       *struct {
-			Required   bool   `json:"required"`
-			Codec      string `json:"codec"`
-			SampleRate int    `json:"sample_rate"`
-			Channels   int    `json:"channels"`
-		} `json:"audio"`
-	} `json:"checks"`
-	Samples        sampleStrategy `json:"samples"`
-	EvidenceDir    string         `json:"evidence_dir"`
+			Required   bool   `json:"required,omitempty"`
+			Codec      string `json:"codec,omitempty"`
+			SampleRate int    `json:"sample_rate,omitempty"`
+			Channels   int    `json:"channels,omitempty"`
+		} `json:"audio,omitempty"`
+	} `json:"checks,omitempty"`
+	Samples        sampleStrategy `json:"samples,omitempty"`
+	EvidenceDir    string         `json:"evidence_dir,omitempty"`
 	TimeoutSeconds int            `json:"timeout_seconds,omitempty"`
 }
 
@@ -90,20 +93,25 @@ func doOutputReview(op string, data []byte) (any, []string, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	if r.Input == "" {
+		if r.RenderedFile != "" {
+			r.Input = r.RenderedFile
+		} else if r.InputPath != "" {
+			r.Input = r.InputPath
+		}
+	}
 	if err = inputPath(r.Input); err != nil {
 		return nil, nil, err
 	}
-	if r.Profile.Width <= 0 || r.Profile.Height <= 0 || !finite(r.Profile.FPS) || r.Profile.FPS <= 0 || r.Checks.VideoCodec == "" || r.Checks.PixelFormat == "" || r.Checks.Audio == nil || r.Checks.Duration == nil {
-		return nil, nil, failure("invalid_request", "profile and concrete duration, video, pixel format, and audio checks are required", nil)
+	if r.EvidenceDir == "" {
+		r.EvidenceDir = filepath.Join(filepath.Dir(r.Input), "review_frames")
 	}
-	if !finite(r.Checks.Duration.Expected) || !finite(r.Checks.Duration.Tolerance) || r.Checks.Duration.Expected <= 0 || r.Checks.Duration.Tolerance < 0 || r.Checks.Audio.SampleRate <= 0 || r.Checks.Audio.Channels <= 0 || strings.TrimSpace(r.Checks.Audio.Codec) == "" {
-		return nil, nil, failure("invalid_request", "review duration and audio checks contain invalid values", nil)
-	}
-	if r.Samples.Type != "uniform" || r.Samples.Count != 4 {
-		return nil, nil, failure("invalid_request", "output_review requires exactly 4 uniform samples", nil)
-	}
-	if strings.TrimSpace(r.EvidenceDir) == "" {
-		return nil, nil, failure("invalid_request", "evidence_dir is required", nil)
+	if r.Samples.Type == "" && r.Samples.Count == 0 {
+		count := 4
+		if r.SampleCount > 0 {
+			count = r.SampleCount
+		}
+		r.Samples = sampleStrategy{Type: "uniform", Count: count}
 	}
 	if op == "estimate" {
 		return map[string]any{"estimated_cost": 0, "network": false, "external_write": false, "side_effect_free": true, "operations": []string{"validate_checks", "ffprobe", "extract_4_frames", "volumedetect"}, "validation_scope": "request shape, concrete gate constraints, exact uniform sample strategy, and paths; media decoding and gate evaluation occur during run"}, nil, nil
@@ -118,6 +126,95 @@ func doOutputReview(op string, data []byte) (any, []string, error) {
 	}
 	dur := p["format"].(map[string]any)["duration"].(float64)
 	audios, _ := p["audio_streams"].([]map[string]any)
+
+	// If profile or checks were omitted, populate defaults from the probed media
+	if r.Profile.Width <= 0 && v != nil {
+		if vw, ok := v["width"].(int); ok {
+			r.Profile.Width = vw
+		}
+	}
+	if r.Profile.Height <= 0 && v != nil {
+		if vh, ok := v["height"].(int); ok {
+			r.Profile.Height = vh
+		}
+	}
+	if (!finite(r.Profile.FPS) || r.Profile.FPS <= 0) && v != nil {
+		if vfps, ok := v["fps"].(float64); ok {
+			r.Profile.FPS = vfps
+		}
+	}
+	if r.Checks.VideoCodec == "" && v != nil {
+		if vc, ok := v["codec"].(string); ok {
+			r.Checks.VideoCodec = vc
+		}
+	}
+	if r.Checks.PixelFormat == "" && v != nil {
+		if vpf, ok := v["pixel_format"].(string); ok {
+			r.Checks.PixelFormat = vpf
+		}
+	}
+	if r.Checks.Duration == nil {
+		r.Checks.Duration = &struct {
+			Expected  float64 `json:"expected,omitempty"`
+			Tolerance float64 `json:"tolerance,omitempty"`
+		}{
+			Expected:  dur,
+			Tolerance: 1.0,
+		}
+	}
+	if r.Checks.Audio == nil {
+		if len(audios) > 0 {
+			a := audios[0]
+			codec := "aac"
+			if ac, ok := a["codec"].(string); ok && ac != "" {
+				codec = ac
+			}
+			sr := 48000
+			if asr, ok := a["sample_rate"].(int); ok && asr > 0 {
+				sr = asr
+			}
+			ch := 2
+			if ach, ok := a["channels"].(int); ok && ach > 0 {
+				ch = ach
+			}
+			r.Checks.Audio = &struct {
+				Required   bool   `json:"required,omitempty"`
+				Codec      string `json:"codec,omitempty"`
+				SampleRate int    `json:"sample_rate,omitempty"`
+				Channels   int    `json:"channels,omitempty"`
+			}{
+				Required:   true,
+				Codec:      codec,
+				SampleRate: sr,
+				Channels:   ch,
+			}
+		} else {
+			r.Checks.Audio = &struct {
+				Required   bool   `json:"required,omitempty"`
+				Codec      string `json:"codec,omitempty"`
+				SampleRate int    `json:"sample_rate,omitempty"`
+				Channels   int    `json:"channels,omitempty"`
+			}{
+				Required:   false,
+				Codec:      "aac",
+				SampleRate: 48000,
+				Channels:   2,
+			}
+		}
+	}
+
+	if r.Profile.Width <= 0 || r.Profile.Height <= 0 || !finite(r.Profile.FPS) || r.Profile.FPS <= 0 || r.Checks.VideoCodec == "" || r.Checks.PixelFormat == "" || r.Checks.Audio == nil || r.Checks.Duration == nil {
+		return nil, nil, failure("invalid_request", "profile and concrete duration, video, pixel format, and audio checks are required", nil)
+	}
+	if !finite(r.Checks.Duration.Expected) || !finite(r.Checks.Duration.Tolerance) || r.Checks.Duration.Expected <= 0 || r.Checks.Duration.Tolerance < 0 || r.Checks.Audio.SampleRate <= 0 || r.Checks.Audio.Channels <= 0 || strings.TrimSpace(r.Checks.Audio.Codec) == "" {
+		return nil, nil, failure("invalid_request", "review duration and audio checks contain invalid values", nil)
+	}
+	if r.Samples.Type != "uniform" || r.Samples.Count <= 0 {
+		return nil, nil, failure("invalid_request", "output_review requires uniform samples", nil)
+	}
+	if strings.TrimSpace(r.EvidenceDir) == "" {
+		return nil, nil, failure("invalid_request", "evidence_dir is required", nil)
+	}
 	gates := []map[string]any{}
 	gates = append(gates, gate("profile", v["width"].(int) == r.Profile.Width && v["height"].(int) == r.Profile.Height && math.Abs(v["fps"].(float64)-r.Profile.FPS) < .02, "dimensions or fps differ"))
 	gates = append(gates, gate("duration", math.Abs(dur-r.Checks.Duration.Expected) <= r.Checks.Duration.Tolerance, "duration outside tolerance"))

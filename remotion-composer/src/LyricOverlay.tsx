@@ -7,13 +7,9 @@ import {
   useVideoConfig,
 } from "remotion";
 import React from "react";
-import { loadFont as loadPlayfair } from "@remotion/google-fonts/PlayfairDisplay";
 import { resolveAsset } from "./lib/resolveAsset";
 
-const { fontFamily: playfairItalic } = loadPlayfair("italic", {
-  weights: ["400", "700"],
-  subsets: ["latin"],
-});
+const playfairItalic = "'Playfair Display', Georgia, serif";
 
 export interface Lyric {
   text: string;

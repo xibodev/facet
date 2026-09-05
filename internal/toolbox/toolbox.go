@@ -29,6 +29,8 @@ var names = []string{
 	"flux_image",
 	"frame_sample",
 	"frame_sampler",
+	"gflow_image",
+	"gflow_video",
 	"hyperframes_compose",
 	"image_selector",
 	"kling_video",
@@ -143,8 +145,70 @@ func executionFor(tool string) Execution {
 		network = true
 	case "hyperframes_compose":
 		provider = "hyperframes"
+	case "gflow_video", "gflow_image":
+		provider = "google_flow"
+		network = true
 	}
 	return Execution{Provider: provider, Network: network}
+}
+
+func canonicalToolName(tool string) string {
+	tool = strings.ToLower(strings.TrimSpace(tool))
+	for _, n := range names {
+		if n == tool {
+			return tool
+		}
+	}
+	switch tool {
+	case "edgetts", "edge-tts":
+		return "edge_tts"
+	case "edit", "source-edit":
+		return "source_edit"
+	case "probe", "media-probe":
+		return "media_probe"
+	case "audio-probe":
+		return "audio_probe"
+	case "output-review", "review":
+		return "output_review"
+	case "frame-sample":
+		return "frame_sample"
+	case "audio-mix":
+		return "audio_mix"
+	case "video-compose", "compose":
+		return "video_compose"
+	case "remotion_render", "remotion-render":
+		return "video_compose"
+	case "hyperframes", "hyperframes-compose":
+		return "hyperframes_compose"
+	case "gflow-video", "gflowvideo", "veo":
+		return "gflow_video"
+	case "gflow-image", "gflowimage", "imagen":
+		return "gflow_image"
+	case "openai-tts", "openaitts":
+		return "openai_tts"
+	case "elevenlabs-tts", "elevenlabs":
+		return "elevenlabs_tts"
+	case "piper-tts", "piper":
+		return "piper_tts"
+	case "subtitle-gen", "subtitles":
+		return "subtitle_gen"
+	case "scene-detect":
+		return "scene_detect"
+	case "silence-cutter":
+		return "silence_cutter"
+	case "color-grade":
+		return "color_grade"
+	case "video-trimmer", "trimmer":
+		return "video_trimmer"
+	case "video-stitch", "stitch":
+		return "video_stitch"
+	case "visual-qa", "vqa":
+		return "visual_qa"
+	case "clip_search", "direct-clip-search":
+		return "direct_clip_search"
+	default:
+		return tool
+	}
 }
 
 func CLI(args []string) (Envelope, bool) {
@@ -178,22 +242,32 @@ func CLI(args []string) (Envelope, bool) {
 		if len(args) != 3 {
 			return bad("usage: videokit tools describe <tool>")
 		}
-		tool = args[2]
+		tool = canonicalToolName(args[2])
 		if !known(tool) {
-			return bad("unknown tool: " + tool)
+			return bad("unknown tool: " + args[2])
 		}
 		return success(tool, op, description(tool), nil), true
 	case "estimate", "run":
 		if len(args) != 5 || args[3] != "--input" {
 			return bad("usage: videokit tools " + op + " <tool> --input <request.json>")
 		}
-		tool = args[2]
+		tool = canonicalToolName(args[2])
 		if !known(tool) {
-			return bad("unknown tool: " + tool)
+			return bad("unknown tool: " + args[2])
 		}
-		data, err := os.ReadFile(args[4])
-		if err != nil {
-			return errorEnvelope(tool, op, failure("input_not_found", "request input could not be read", map[string]any{"path": args[4], "error": bounded(err.Error())})), false
+		var data []byte
+		rawInput := strings.TrimSpace(args[4])
+		unquoted := strings.Trim(rawInput, "'`\"")
+		unquoted = strings.TrimSpace(unquoted)
+		if (strings.HasPrefix(unquoted, "{") && strings.HasSuffix(unquoted, "}")) ||
+			(strings.HasPrefix(unquoted, "[") && strings.HasSuffix(unquoted, "]")) {
+			data = []byte(unquoted)
+		} else {
+			var err error
+			data, err = os.ReadFile(args[4])
+			if err != nil {
+				return errorEnvelope(tool, op, failure("input_not_found", "request input could not be read", map[string]any{"path": args[4], "error": bounded(err.Error())})), false
+			}
 		}
 		result, warnings, err := execute(tool, op, data)
 		if err != nil {
@@ -222,8 +296,9 @@ func errorEnvelope(tool, op string, err error) Envelope {
 }
 
 func known(name string) bool {
+	cName := canonicalToolName(name)
 	for _, n := range names {
-		if n == name {
+		if n == cName {
 			return true
 		}
 	}
@@ -268,8 +343,8 @@ func summary(name string) map[string]any {
 		deps = append(deps, envDependency("FAL_KEY"))
 	case "piper_tts":
 		deps = append(deps, dependency("piper"))
-	case "edge_tts", "subtitle_gen", "wikimedia", "image_selector", "video_selector":
-		// pure go / public api / selector logic
+	case "edge_tts", "subtitle_gen", "wikimedia", "image_selector", "video_selector", "gflow_video", "gflow_image":
+		// pure go / public api / selector logic / local gflow bridge
 	}
 
 	configured := dependenciesAvailable(deps)
@@ -277,7 +352,7 @@ func summary(name string) map[string]any {
 		configured = true
 	} else if name == "direct_clip_search" {
 		configured = true // Wikimedia always available
-	} else if name == "image_selector" || name == "video_selector" {
+	} else if name == "image_selector" || name == "video_selector" || name == "gflow_video" || name == "gflow_image" {
 		configured = true
 	}
 
@@ -312,6 +387,8 @@ var capabilities = map[string]string{
 	"flux_image":            "cloud AI image generation via FLUX",
 	"frame_sample":          "review frame extraction",
 	"frame_sampler":         "frame extraction and sampling",
+	"gflow_image":           "Google Flow Imagen 4 / Nano Banana 2 image generation",
+	"gflow_video":           "Google Flow Veo 3.1 cinematic video generation and 4K upsampling",
 	"hyperframes_compose":   "HTML/CSS/GSAP video composition",
 	"image_selector":        "image provider discovery, facts, and explainable ranking",
 	"kling_video":           "cloud AI video generation via Kling",
@@ -374,10 +451,11 @@ var schemas = map[string]any{
 		"operation": map[string]any{"enum": []string{"review", "probe", "audio_levels"}}, "input_path": map[string]any{"type": "string", "minLength": 1},
 		"timestamps": map[string]any{"type": "array", "items": map[string]any{"type": "number"}}, "output_dir": map[string]any{"type": "string"}, "expected": map[string]any{"type": "object"},
 	}},
-	"output_review": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"input", "profile", "checks", "samples", "evidence_dir"}, "properties": map[string]any{
-		"input": map[string]any{"type": "string", "minLength": 1}, "profile": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"width", "height", "fps"}, "properties": map[string]any{"width": map[string]any{"type": "integer", "minimum": 1}, "height": map[string]any{"type": "integer", "minimum": 1}, "fps": map[string]any{"type": "number", "exclusiveMinimum": 0}}},
+	"output_review": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{
+		"input": map[string]any{"type": "string", "minLength": 1}, "rendered_file": map[string]any{"type": "string", "minLength": 1}, "input_path": map[string]any{"type": "string", "minLength": 1}, "sample_count": map[string]any{"type": "integer", "minimum": 1},
+		"profile": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"width", "height", "fps"}, "properties": map[string]any{"width": map[string]any{"type": "integer", "minimum": 1}, "height": map[string]any{"type": "integer", "minimum": 1}, "fps": map[string]any{"type": "number", "exclusiveMinimum": 0}}},
 		"checks": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"duration", "video_codec", "pixel_format", "audio"}, "properties": map[string]any{"duration": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"expected", "tolerance"}, "properties": map[string]any{"expected": map[string]any{"type": "number", "exclusiveMinimum": 0}, "tolerance": map[string]any{"type": "number", "minimum": 0}}}, "video_codec": map[string]any{"type": "string", "minLength": 1}, "pixel_format": map[string]any{"type": "string", "minLength": 1}, "audio": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"required", "codec", "sample_rate", "channels"}, "properties": map[string]any{"required": map[string]any{"type": "boolean"}, "codec": map[string]any{"type": "string", "minLength": 1}, "sample_rate": map[string]any{"type": "integer", "minimum": 1}, "channels": map[string]any{"type": "integer", "minimum": 1}}}}},
-		"samples": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"type", "count"}, "properties": map[string]any{"type": map[string]any{"const": "uniform"}, "count": map[string]any{"const": 4}}}, "evidence_dir": map[string]any{"type": "string", "minLength": 1}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 90},
+		"samples": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{"type": map[string]any{"const": "uniform"}, "count": map[string]any{"type": "integer", "minimum": 1}}}, "evidence_dir": map[string]any{"type": "string", "minLength": 1}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 90},
 	}},
 	"source_edit": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"segments", "target", "output"}, "properties": map[string]any{
 		"segments":          map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"input", "start", "end"}, "properties": map[string]any{"input": map[string]any{"type": "string", "minLength": 1}, "start": map[string]any{"type": "number", "minimum": 0}, "end": map[string]any{"type": "number", "exclusiveMinimum": 0}, "transition": map[string]any{"enum": []string{"cut"}}, "position": map[string]any{"enum": framePositions}, "focal_point": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"x", "y"}, "properties": map[string]any{"x": map[string]any{"type": "number", "minimum": 0, "maximum": 1}, "y": map[string]any{"type": "number", "minimum": 0, "maximum": 1}}}}}},
@@ -483,6 +561,17 @@ var schemas = map[string]any{
 		"resolution": map[string]any{"enum": []string{"720p", "1080p"}, "default": "720p"},
 		"output_path": map[string]any{"type": "string"}, "mock": map[string]any{"type": "boolean", "default": false}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 300},
 	}},
+	"gflow_video": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"prompt"}, "properties": map[string]any{
+		"prompt": map[string]any{"type": "string", "minLength": 1}, "model": map[string]any{"type": "string", "default": "veo-3.1"},
+		"duration": map[string]any{"type": "number", "default": 6}, "aspect_ratio": map[string]any{"type": "string", "default": "landscape"},
+		"resolution": map[string]any{"enum": []string{"720p", "1080p", "4k"}, "default": "1080p"}, "start_frame": map[string]any{"type": "string"}, "end_frame": map[string]any{"type": "string"},
+		"output_path": map[string]any{"type": "string"}, "mock": map[string]any{"type": "boolean", "default": false}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 300},
+	}},
+	"gflow_image": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"prompt"}, "properties": map[string]any{
+		"prompt": map[string]any{"type": "string", "minLength": 1}, "model": map[string]any{"type": "string", "default": "narwhal"},
+		"aspect_ratio": map[string]any{"type": "string", "default": "landscape"}, "count": map[string]any{"type": "integer", "default": 1},
+		"reference_image": map[string]any{"type": "string"}, "output_path": map[string]any{"type": "string"}, "mock": map[string]any{"type": "boolean", "default": false}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 180},
+	}},
 	"color_grade": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"input_path", "output_path"}, "properties": map[string]any{
 		"input_path": map[string]any{"type": "string", "minLength": 1}, "output_path": map[string]any{"type": "string", "minLength": 1},
 		"profile": map[string]any{"enum": []string{"cinematic_warm", "cinematic_cool", "moody_dark", "bright_clean", "vintage_film", "high_contrast", "neutral", "custom"}, "default": "cinematic_warm"},
@@ -555,6 +644,8 @@ var resultSchemas = map[string]any{
 	"flux_image":    objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "aspect_ratio": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"}, "url": stringSchema(), "seed": map[string]any{"type": "integer"}}),
 	"kling_video":   objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "duration": map[string]any{"type": "number"}, "aspect_ratio": stringSchema(), "mode": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"}, "video_url": stringSchema()}),
 	"sora_video":    objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "duration": map[string]any{"type": "number"}, "aspect_ratio": stringSchema(), "resolution": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"}, "video_url": stringSchema()}),
+	"gflow_video":   objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "duration": map[string]any{"type": "number"}, "aspect_ratio": stringSchema(), "resolution": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"}}),
+	"gflow_image":   objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "aspect_ratio": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"}}),
 	"color_grade":   objectSchema([]string{"input", "output", "profile", "intensity", "filter_graph"}, map[string]any{"input": stringSchema(), "output": stringSchema(), "profile": stringSchema(), "intensity": map[string]any{"type": "number"}, "lut_path": stringSchema(), "filter_graph": stringSchema(), "duration": map[string]any{"type": "number"}, "output_facts": map[string]any{"type": "object"}}),
 	"image_selector": objectSchema([]string{"selected_recommendation", "rationale", "candidates", "total_candidates", "configured_candidates"}, map[string]any{"selected_recommendation": stringSchema(), "rationale": stringSchema(), "candidates": map[string]any{"type": "array"}, "total_candidates": map[string]any{"type": "integer"}, "configured_candidates": map[string]any{"type": "integer"}, "requested_aspect_ratio": stringSchema(), "requested_style": stringSchema()}),
 	"video_selector": objectSchema([]string{"selected_recommendation", "rationale", "candidates", "total_candidates", "configured_candidates"}, map[string]any{"selected_recommendation": stringSchema(), "rationale": stringSchema(), "candidates": map[string]any{"type": "array"}, "total_candidates": map[string]any{"type": "integer"}, "configured_candidates": map[string]any{"type": "integer"}, "requested_duration": map[string]any{"type": "number"}, "requested_aspect_ratio": stringSchema()}),
@@ -653,6 +744,10 @@ func execute(tool, op string, data []byte) (any, []string, error) {
 		return doKlingVideo(op, data)
 	case "sora_video":
 		return doSoraVideo(op, data)
+	case "gflow_video":
+		return doGFlowVideo(op, data)
+	case "gflow_image":
+		return doGFlowImage(op, data)
 	case "color_grade":
 		return doColorGrade(op, data)
 	case "image_selector":

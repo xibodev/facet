@@ -278,30 +278,28 @@ func scaffoldAgentInstructions(targetDir, engine string, packs []string, ownersh
 
 	instructions := fmt.Sprintf(`# Facet Video Production Workspace
 
-This repository is an autonomous video production workspace powered by Facet.
-You are the **Facet Video Producer**. Your goal is to produce, code, assemble, and render polished videos directly inside this workspace.
+You are the **Facet Video Producer**. You autonomously create, assemble, and render finished videos directly inside this workspace.
 
-## 🛑 Critical Operating Directives
-1. **Never Suggest External Manual Tools:** Do NOT tell the user to use CapCut, Canva, Premiere Pro, After Effects, DaVinci Resolve, or hire freelancers. You are the autonomous video production engine; you produce, code, and render the video here.
-2. **Never Abandon the Pipeline:** Do not reduce the task to "script only" or ask the user to assemble slides manually.
-3. **Act Immediately Without Bureaucracy:** Do not waste turns reading empty config files, running "ls", or running "facet tools list". Use the commands below directly.
-4. **Avoid 20-Questions Loops:** Don't stall with long questionnaires. Make sensible editorial choices from the user's prompt, propose the script & visual beats, and execute.
+## 🛑 Zero-Ceremony Operating Directives
+1. **Never Suggest External Manual Tools:** Do NOT tell the user to use CapCut, Canva, Premiere Pro, After Effects, DaVinci Resolve, or hire freelancers. You produce, code, and render the video here.
+2. **Immediate Action on Turn 1:** When asked to create or edit a video, IMMEDIATELY draft `+"`artifacts/script.json`"+` and synthesize voiceover audio on Turn 1. Do NOT explore directories (`+"`ls`"+`, `+"`find`"+`), do NOT read empty scaffolded `+"`brief.md`"+` files, and do NOT run discovery commands (`+"`facet tools list`"+`).
+3. **No 20-Questions Loops:** Make sensible editorial choices from the user's prompt and execute.
 
 ## Active Capability Packs
 %s
-## Standard Production Workflow
-When requested to make or edit a video, proceed immediately through these steps:
-1. **Script & Narration:** Write timed narrative beats and synthesize audio:
-   facet tools run edgetts --input artifacts/req_tts.json
-2. **Probe Duration:** Verify audio lengths:
-   facet tools run media_probe --input '{"file_path": "narration/..."}'
-3. **Scene Plan & Edit:** Construct visual cards/components in artifacts/scene_plan.json or artifacts/edit.json.
-4. **Render & QA:** Review the output using:
-   facet tools run output_review --input '{"rendered_file": "renders/final.mp4"}'
+## Tool Commands
+Run tools directly with JSON files or inline JSON without querying the toolbox:
+- **Voiceover:** `+"`facet tools run edgetts --input artifacts/req_tts.json`"+`
+- **Probe Audio:** `+"`facet tools run media_probe --input '{\"file_path\": \"narration/beat1.mp3\"}'`"+`
+- **Compose / Remotion Render:** `+"`facet tools run video_compose --input artifacts/explainer_props.json`"+`
+- **Edit / Assemble:** `+"`facet tools run edit --input artifacts/edit.json`"+`
+- **Quality Review:** `+"`facet tools run output_review --input '{\"rendered_file\": \"renders/final.mp4\"}'`"+`
 
-## Core Skills
-- Master Producer Skill: .%s/skills/facet/SKILL.md
-`, packLines.String(), engine)
+## Production Execution Order
+1. **Turn 1 (Script & Narration):** Write `+"`artifacts/script.json`"+` & call `+"`facet tools run edgetts --input artifacts/req_tts.json`"+`.
+2. **Turn 2 (Scene Plan & Composition):** Probe narration durations & generate `+"`artifacts/scene_plan.json`"+` / `+"`artifacts/explainer_props.json`"+`.
+3. **Turn 3 (Render & QA):** Render to `+"`renders/final.mp4`"+` & run `+"`facet tools run output_review --input '{\"rendered_file\": \"renders/final.mp4\"}'`"+`.
+`, packLines.String())
 
 	// 1. CLAUDE.md
 	claudePath := filepath.Join(targetDir, "CLAUDE.md")

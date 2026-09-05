@@ -23,7 +23,10 @@
   },
   "scripts": {
     "doctor": "node bin/facet-cli.js doctor",
-    "ui": "node bin/facet-ui-cli.js"
+    "ui": "node bin/facet-ui-cli.js",
+    "check-pr": "release-harness check-pr",
+    "run-local": "release-harness run-local",
+    "clean": "release-harness clean"
   },
   "keywords": [
     "video",
@@ -41,5 +44,8 @@
   "license": "AGPL-3.0-or-later",
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "@xibodev/release-harness": "^1.2.0"
   }
 }
