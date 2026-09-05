@@ -11,7 +11,6 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
-      darkMode: 'class',
       theme: {
         extend: {
           fontFamily: {
@@ -21,13 +20,10 @@
           },
           colors: {
             brand: {
-              cyan: '#06b6d4',
-              purple: '#8b5cf6',
-              amber: '#f59e0b',
-              emerald: '#10b981',
-              dark: '#070b14',
-              card: '#0c1322',
-              border: '#1e293b',
+              cyan: '#0284c7',
+              purple: '#7c3aed',
+              amber: '#d97706',
+              emerald: '#059669',
             }
           }
         }
@@ -36,16 +32,13 @@
   </script>
   <style>
     body {
-      background-color: #070b14;
-      color: #f1f5f9;
+      background-color: #f8fafc;
+      color: #0f172a;
     }
-    .glass-card {
-      background: rgba(12, 19, 34, 0.75);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-    }
-    .glass-card:hover {
-      border-color: rgba(6, 182, 212, 0.35);
+    .light-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
     }
     /* Custom scrollbar */
     ::-webkit-scrollbar {
@@ -53,25 +46,25 @@
       height: 6px;
     }
     ::-webkit-scrollbar-track {
-      background: #070b14;
+      background: #f1f5f9;
     }
     ::-webkit-scrollbar-thumb {
-      background: #1e293b;
+      background: #cbd5e1;
       border-radius: 3px;
     }
   </style>
 </head>
-<body class="min-h-screen flex flex-col font-sans selection:bg-cyan-500/30 selection:text-cyan-200">
+<body class="min-h-screen flex flex-col font-sans selection:bg-cyan-500/20 selection:text-cyan-900 bg-slate-50 text-slate-900">
 
   <!-- Header -->
-  <header class="sticky top-0 z-50 glass-card border-b border-slate-800 bg-brand-dark/90 backdrop-blur-md">
+  <header class="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200/80 shadow-sm">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
       <div class="flex items-center space-x-3">
         <a href="index.html" class="flex items-center space-x-2.5">
-          <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-500 to-purple-600 flex items-center justify-center font-display font-bold text-white text-lg shadow-lg">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-600 to-purple-600 flex items-center justify-center font-display font-bold text-white text-lg shadow-md">
             F
           </div>
-          <span class="font-display font-bold text-xl tracking-tight text-white hover:text-cyan-400 transition-colors">
+          <span class="font-display font-bold text-xl tracking-tight text-slate-900 hover:text-cyan-600 transition-colors">
             Facet Docs
           </span>
         </a>
@@ -79,8 +72,8 @@
       </div>
 
       <div class="flex items-center space-x-4">
-        <a href="index.html" class="text-xs font-medium text-slate-400 hover:text-white transition-colors">← Back to Overview</a>
-        <a href="https://github.com/xibodev/facet" target="_blank" rel="noopener" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors">
+        <a href="index.html" class="text-xs font-medium text-slate-600 hover:text-slate-900 transition-colors">← Back to Overview</a>
+        <a href="https://github.com/xibodev/facet" target="_blank" rel="noopener" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 shadow-sm transition-colors">
           GitHub Repo
         </a>
       </div>
@@ -92,91 +85,92 @@
     
     <!-- Sidebar Navigation -->
     <aside class="w-full md:w-64 flex-shrink-0">
-      <div class="sticky top-24 space-y-6 text-sm font-medium">
+      <div class="sticky top-24 space-y-6 text-sm font-medium bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
         <div>
-          <div class="text-xs font-mono font-bold text-cyan-400 uppercase tracking-wider mb-2">Getting Started</div>
-          <ul class="space-y-1 text-slate-400 text-xs font-mono">
-            <li><a href="#quickstart" class="block py-1 hover:text-cyan-300">Quickstart & Installation</a></li>
-            <li><a href="#doctor" class="block py-1 hover:text-cyan-300">Host Doctor Check</a></li>
-            <li><a href="#workspace" class="block py-1 hover:text-cyan-300">Workspace Anatomy</a></li>
+          <div class="text-xs font-mono font-bold text-cyan-700 uppercase tracking-wider mb-2">Getting Started</div>
+          <ul class="space-y-1 text-slate-600 text-xs font-mono">
+            <li><a href="#quickstart" class="block py-1 hover:text-cyan-600">Quickstart & Installation</a></li>
+            <li><a href="#doctor" class="block py-1 hover:text-cyan-600">Host Doctor Check</a></li>
+            <li><a href="#workspace" class="block py-1 hover:text-cyan-600">Workspace Anatomy</a></li>
           </ul>
         </div>
 
         <div>
-          <div class="text-xs font-mono font-bold text-purple-400 uppercase tracking-wider mb-2">Agent Contracts</div>
-          <ul class="space-y-1 text-slate-400 text-xs font-mono">
-            <li><a href="#turn-1" class="block py-1 hover:text-purple-300">Zero-Ceremony Turn 1 Rule</a></li>
-            <li><a href="#skills" class="block py-1 hover:text-purple-300">6 Director Roles</a></li>
-            <li><a href="#ownership" class="block py-1 hover:text-purple-300">Ownership & Anti-Clobbering</a></li>
+          <div class="text-xs font-mono font-bold text-purple-700 uppercase tracking-wider mb-2">Agent Contracts</div>
+          <ul class="space-y-1 text-slate-600 text-xs font-mono">
+            <li><a href="#turn-1" class="block py-1 hover:text-purple-600">Zero-Ceremony Turn 1 Rule</a></li>
+            <li><a href="#skills" class="block py-1 hover:text-purple-600">6 Director Roles</a></li>
+            <li><a href="#ownership" class="block py-1 hover:text-purple-600">Ownership & Anti-Clobbering</a></li>
           </ul>
         </div>
 
         <div>
-          <div class="text-xs font-mono font-bold text-emerald-400 uppercase tracking-wider mb-2">Remotion & Scenes</div>
-          <ul class="space-y-1 text-slate-400 text-xs font-mono">
-            <li><a href="#explainer-props" class="block py-1 hover:text-emerald-300">explainer_props.json Schema</a></li>
-            <li><a href="#scene-components" class="block py-1 hover:text-emerald-300">Scene Component Library</a></li>
-            <li><a href="#charts" class="block py-1 hover:text-emerald-300">Data Charts (Bar/Line/Pie)</a></li>
-            <li><a href="#themes" class="block py-1 hover:text-emerald-300">Theme Configurations</a></li>
+          <div class="text-xs font-mono font-bold text-emerald-700 uppercase tracking-wider mb-2">Remotion & Scenes</div>
+          <ul class="space-y-1 text-slate-600 text-xs font-mono">
+            <li><a href="#explainer-props" class="block py-1 hover:text-emerald-600">explainer_props.json Schema</a></li>
+            <li><a href="#scene-components" class="block py-1 hover:text-emerald-600">Scene Component Library</a></li>
+            <li><a href="#charts" class="block py-1 hover:text-emerald-600">Data Charts (Bar/Line/Pie)</a></li>
+            <li><a href="#themes" class="block py-1 hover:text-emerald-600">Theme Configurations</a></li>
           </ul>
         </div>
 
         <div>
-          <div class="text-xs font-mono font-bold text-amber-400 uppercase tracking-wider mb-2">Toolbox & CLI</div>
-          <ul class="space-y-1 text-slate-400 text-xs font-mono">
-            <li><a href="#tool-invocations" class="block py-1 hover:text-amber-300">Standard Tool Invocations</a></li>
-            <li><a href="#output-review" class="block py-1 hover:text-amber-300">output_review Quality Gates</a></li>
-            <li><a href="#custom-packs" class="block py-1 hover:text-amber-300">Authoring Custom Packs</a></li>
+          <div class="text-xs font-mono font-bold text-amber-700 uppercase tracking-wider mb-2">Toolbox & CLI</div>
+          <ul class="space-y-1 text-slate-600 text-xs font-mono">
+            <li><a href="#tool-invocations" class="block py-1 hover:text-amber-600">Standard Tool Invocations</a></li>
+            <li><a href="#output-review" class="block py-1 hover:text-amber-600">output_review Quality Gates</a></li>
+            <li><a href="#custom-packs" class="block py-1 hover:text-amber-600">Authoring Custom Packs</a></li>
           </ul>
         </div>
       </div>
     </aside>
 
     <!-- Main Content Area -->
-    <main class="flex-grow max-w-4xl space-y-16 text-slate-300 leading-relaxed text-sm">
+    <main class="flex-grow max-w-4xl space-y-16 text-slate-700 leading-relaxed text-sm">
       
       <!-- Section 1: Quickstart & Installation -->
       <section id="quickstart" class="space-y-4">
-        <h1 class="font-display font-bold text-3xl text-white">Quickstart & Installation</h1>
+        <h1 class="font-display font-bold text-3xl text-slate-950">Quickstart & Installation</h1>
         <p>
           Facet is distributed as a single Go binary, as an npm development dependency, and via system package managers.
         </p>
 
-        <div class="glass-card rounded-xl p-4 font-mono text-xs text-slate-200 space-y-2">
+        <div class="bg-slate-950 rounded-xl p-4 font-mono text-xs text-slate-200 space-y-2 border border-slate-800 shadow-md">
           <div class="text-slate-500"># Install via Go</div>
-          <div class="text-cyan-300 select-all">go install github.com/xibodev/facet/cmd/facet@latest</div>
+          <div class="text-cyan-400 select-all">go install github.com/xibodev/facet/cmd/facet@latest</div>
           
           <div class="text-slate-500 pt-2"># Install via PowerShell (Windows)</div>
-          <div class="text-cyan-300 select-all">irm https://raw.githubusercontent.com/xibodev/facet/main/install.ps1 | iex</div>
+          <div class="text-cyan-400 select-all">irm https://raw.githubusercontent.com/xibodev/facet/main/install.ps1 | iex</div>
 
           <div class="text-slate-500 pt-2"># Install via Bash (macOS & Linux)</div>
-          <div class="text-cyan-300 select-all">curl -fsSL https://raw.githubusercontent.com/xibodev/facet/main/install.sh | bash</div>
+          <div class="text-cyan-400 select-all">curl -fsSL https://raw.githubusercontent.com/xibodev/facet/main/install.sh | bash</div>
         </div>
       </section>
 
       <!-- Section 2: Host Doctor Check -->
       <section id="doctor" class="space-y-4">
-        <h2 class="font-display font-bold text-2xl text-white">System Prerequisites & Doctor</h2>
+        <h2 class="font-display font-bold text-2xl text-slate-950">System Prerequisites & Doctor</h2>
         <p>
           Facet requires <strong>FFmpeg</strong>, <strong>FFprobe</strong>, and <strong>Node.js</strong> for local Remotion rendering. Verify your environment at any time by running:
         </p>
 
-        <div class="glass-card rounded-xl p-4 font-mono text-xs text-slate-200">
-          <div class="text-cyan-300">$ facet doctor</div>
+        <div class="bg-slate-950 rounded-xl p-4 font-mono text-xs text-slate-200 border border-slate-800 shadow-md">
+          <div class="text-cyan-400">$ facet doctor</div>
           <pre class="mt-2 text-slate-400 overflow-x-auto text-[11px]">
 === Facet System Doctor ===
 
 [System Runtimes]
-  ✔ FFmpeg:           Available (ffmpeg version 7.1-essentials_build)
-  ✔ FFprobe:          Available (ffprobe version 7.1-essentials_build)
+  ✔ FFmpeg:           Available (ffmpeg version 8.1.1)
+  ✔ FFprobe:          Available (ffprobe version 8.1.1)
   ✔ Node:             Available (v24.18.0)
   ✔ Remotion Composer: OK (remotion-composer/package.json)
-  ✔ Edge-TTS:         Available (integrated Go client)
+  ✔ Edge-TTS:         Available (integrated Go neural client)
 
 [Agent CLIs]
   ✔ Claude Code:      Available (claude.exe)
   ✔ OpenCode:         Available (opencode.exe)
   ✔ GitHub Copilot:   Available (gh.exe copilot)
+  ✔ OpenAI Codex:     Available (codex.exe)
 
 [Toolbox Tools (35 tools)]
   ✔ 35 / 35 tools ready and configured
@@ -186,13 +180,13 @@
 
       <!-- Section 3: Workspace Anatomy -->
       <section id="workspace" class="space-y-4">
-        <h2 class="font-display font-bold text-2xl text-white">Workspace Anatomy</h2>
+        <h2 class="font-display font-bold text-2xl text-slate-950">Workspace Anatomy</h2>
         <p>
-          Running <code class="font-mono text-cyan-300 bg-slate-900 px-1.5 py-0.5 rounded">facet init &lt;project-slug&gt; --engine claude</code> constructs an isolated production workspace:
+          Running <code class="font-mono text-cyan-800 bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 font-semibold">facet init &lt;project-slug&gt; --engine claude</code> constructs an isolated production workspace:
         </p>
 
-        <div class="glass-card rounded-xl p-4 font-mono text-xs overflow-x-auto">
-          <pre class="text-slate-300">
+        <div class="bg-white rounded-xl p-4 font-mono text-xs overflow-x-auto border border-slate-200 shadow-sm text-slate-800">
+          <pre>
 my-project/
 ├── artifacts/
 │   ├── brief.md              # High-level creative goals & audience metadata
@@ -217,74 +211,74 @@ my-project/
 
       <!-- Section 4: Zero-Ceremony Turn 1 Rule -->
       <section id="turn-1" class="space-y-4">
-        <h2 class="font-display font-bold text-2xl text-white">The Zero-Ceremony Turn 1 Directive</h2>
+        <h2 class="font-display font-bold text-2xl text-slate-950">The Zero-Ceremony Turn 1 Directive</h2>
         <p>
-          AI agents often fall into bureaucratic loops: listing file trees with <code class="font-mono text-slate-300 bg-slate-900 px-1 py-0.5 rounded">ls</code>, querying available tools with <code class="font-mono text-slate-300 bg-slate-900 px-1 py-0.5 rounded">facet tools list</code>, or reading empty scaffolded <code class="font-mono text-slate-300 bg-slate-900 px-1 py-0.5 rounded">brief.md</code> files.
+          AI agents often fall into bureaucratic loops: listing file trees with <code class="font-mono text-slate-800 bg-slate-100 px-1 py-0.5 rounded border border-slate-200">ls</code>, querying available tools with <code class="font-mono text-slate-800 bg-slate-100 px-1 py-0.5 rounded border border-slate-200">facet tools list</code>, or reading empty scaffolded <code class="font-mono text-slate-800 bg-slate-100 px-1 py-0.5 rounded border border-slate-200">brief.md</code> files.
         </p>
         <p>
-          Facet's prompt contract <strong>strictly prohibits discovery ceremony</strong>. The agent is required to draft <code class="font-mono text-cyan-300 bg-slate-900 px-1 py-0.5 rounded">artifacts/script.json</code> and synthesize audio on <strong>Turn 1</strong>.
+          Facet's prompt contract <strong>strictly prohibits discovery ceremony</strong>. The agent is required to draft <code class="font-mono text-cyan-800 bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 font-semibold">artifacts/script.json</code> and synthesize audio on <strong>Turn 1</strong>.
         </p>
 
-        <div class="border-l-4 border-l-cyan-500 bg-cyan-950/20 p-4 rounded-r-xl">
-          <div class="font-mono text-xs font-bold text-cyan-300 mb-1">Standard Production Flow</div>
-          <ol class="list-decimal list-inside space-y-1 text-xs text-slate-300 font-mono">
-            <li><strong>Turn 1:</strong> Write <code class="text-cyan-400">artifacts/script.json</code> & call <code class="text-cyan-400">facet tools run edgetts --input artifacts/req_tts.json</code>.</li>
-            <li><strong>Turn 2:</strong> Probe audio duration (<code class="text-cyan-400">media_probe</code>) & write <code class="text-cyan-400">artifacts/explainer_props.json</code>.</li>
-            <li><strong>Turn 3:</strong> Render composition via <code class="text-cyan-400">facet tools run video_compose --input artifacts/explainer_props.json</code>.</li>
-            <li><strong>Turn 4:</strong> Run <code class="text-cyan-400">output_review</code> and deliver <code class="text-cyan-400">renders/final.mp4</code>.</li>
+        <div class="border-l-4 border-l-cyan-600 bg-cyan-50/70 p-4 rounded-r-xl border border-cyan-200">
+          <div class="font-mono text-xs font-bold text-cyan-900 mb-1">Standard Production Flow</div>
+          <ol class="list-decimal list-inside space-y-1 text-xs text-slate-800 font-mono">
+            <li><strong>Turn 1:</strong> Write <code class="text-cyan-700 font-bold">artifacts/script.json</code> & call <code class="text-cyan-700 font-bold">facet tools run edgetts --input artifacts/req_tts.json</code>.</li>
+            <li><strong>Turn 2:</strong> Probe audio duration (<code class="text-cyan-700 font-bold">media_probe</code>) & write <code class="text-cyan-700 font-bold">artifacts/explainer_props.json</code>.</li>
+            <li><strong>Turn 3:</strong> Render composition via <code class="text-cyan-700 font-bold">facet tools run video_compose --input artifacts/explainer_props.json</code>.</li>
+            <li><strong>Turn 4:</strong> Run <code class="text-cyan-700 font-bold">output_review</code> and deliver <code class="text-cyan-700 font-bold">renders/final.mp4</code>.</li>
           </ol>
         </div>
       </section>
 
       <!-- Section 5: Remotion Scene Components -->
       <section id="scene-components" class="space-y-4">
-        <h2 class="font-display font-bold text-2xl text-white">Remotion Scene Components Reference</h2>
+        <h2 class="font-display font-bold text-2xl text-slate-950">Remotion Scene Components Reference</h2>
         <p>
-          The Explainer pack (<code class="font-mono text-cyan-300">@xibodev/facet-pack-explainer</code>) provides a rich library of declarative visual scene cuts:
+          The Explainer pack (<code class="font-mono text-cyan-800 bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 font-semibold">@xibodev/facet-pack-explainer</code>) provides a rich library of declarative visual scene cuts:
         </p>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
-          <div class="glass-card p-3 rounded-lg">
-            <span class="text-cyan-300 font-bold">hero_title</span>
-            <p class="text-slate-400 mt-1">Cinematic title card with subtitle, spring physics, and animated light scrim.</p>
+          <div class="light-card p-3 rounded-lg">
+            <span class="text-cyan-800 font-bold">hero_title</span>
+            <p class="text-slate-600 mt-1">Cinematic title card with subtitle, spring physics, and animated light scrim.</p>
           </div>
-          <div class="glass-card p-3 rounded-lg">
-            <span class="text-cyan-300 font-bold">text_card</span>
-            <p class="text-slate-400 mt-1">Centered punchy typography with customizable font size, color, and background.</p>
+          <div class="light-card p-3 rounded-lg">
+            <span class="text-cyan-800 font-bold">text_card</span>
+            <p class="text-slate-600 mt-1">Centered punchy typography with customizable font size, color, and background.</p>
           </div>
-          <div class="glass-card p-3 rounded-lg">
-            <span class="text-cyan-300 font-bold">stat_card / stat_reveal</span>
-            <p class="text-slate-400 mt-1">Large animated metric callout (e.g., "8.1B", "99.9%") with descriptive subtitle.</p>
+          <div class="light-card p-3 rounded-lg">
+            <span class="text-cyan-800 font-bold">stat_card / stat_reveal</span>
+            <p class="text-slate-600 mt-1">Large animated metric callout (e.g., "8.1B", "99.9%") with descriptive subtitle.</p>
           </div>
-          <div class="glass-card p-3 rounded-lg">
-            <span class="text-cyan-300 font-bold">comparison</span>
-            <p class="text-slate-400 mt-1">Two-column comparison card contrasting concepts (e.g., Classical Bit vs Quantum Qubit).</p>
+          <div class="light-card p-3 rounded-lg">
+            <span class="text-cyan-800 font-bold">comparison</span>
+            <p class="text-slate-600 mt-1">Two-column comparison card contrasting concepts (e.g., Classical Bit vs Quantum Qubit).</p>
           </div>
-          <div class="glass-card p-3 rounded-lg">
-            <span class="text-cyan-300 font-bold">callout</span>
-            <p class="text-slate-400 mt-1">Framed callout box with border accent (<code class="text-slate-300">info</code>, <code class="text-slate-300">warning</code>, <code class="text-slate-300">tip</code>, <code class="text-slate-300">quote</code>).</p>
+          <div class="light-card p-3 rounded-lg">
+            <span class="text-cyan-800 font-bold">callout</span>
+            <p class="text-slate-600 mt-1">Framed callout box with border accent (<code class="text-slate-800">info</code>, <code class="text-slate-800">warning</code>, <code class="text-slate-800">tip</code>, <code class="text-slate-800">quote</code>).</p>
           </div>
-          <div class="glass-card p-3 rounded-lg">
-            <span class="text-cyan-300 font-bold">terminal_scene</span>
-            <p class="text-slate-400 mt-1">Simulated developer terminal with syntax-highlighted typing and command execution.</p>
+          <div class="light-card p-3 rounded-lg">
+            <span class="text-cyan-800 font-bold">terminal_scene</span>
+            <p class="text-slate-600 mt-1">Simulated developer terminal with syntax-highlighted typing and command execution.</p>
           </div>
-          <div class="glass-card p-3 rounded-lg">
-            <span class="text-cyan-300 font-bold">bar_chart / line_chart / pie_chart</span>
-            <p class="text-slate-400 mt-1">Animated charts with count-up values, legends, customizable series, and donut modes.</p>
+          <div class="light-card p-3 rounded-lg">
+            <span class="text-cyan-800 font-bold">bar_chart / line_chart / pie_chart</span>
+            <p class="text-slate-600 mt-1">Animated charts with count-up values, legends, customizable series, and donut modes.</p>
           </div>
-          <div class="glass-card p-3 rounded-lg">
-            <span class="text-cyan-300 font-bold">kpi_grid</span>
-            <p class="text-slate-400 mt-1">Multi-column dashboard KPI matrix (2, 3, or 4 columns) with count-up animations.</p>
+          <div class="light-card p-3 rounded-lg">
+            <span class="text-cyan-800 font-bold">kpi_grid</span>
+            <p class="text-slate-600 mt-1">Multi-column dashboard KPI matrix (2, 3, or 4 columns) with count-up animations.</p>
           </div>
         </div>
       </section>
 
       <!-- Section 6: explainer_props.json schema example -->
       <section id="explainer-props" class="space-y-4">
-        <h2 class="font-display font-bold text-2xl text-white">explainer_props.json Example Payload</h2>
+        <h2 class="font-display font-bold text-2xl text-slate-950">explainer_props.json Example Payload</h2>
         
-        <div class="glass-card rounded-xl p-4 font-mono text-xs overflow-x-auto">
-          <pre class="text-slate-300">
+        <div class="bg-slate-950 rounded-xl p-4 font-mono text-xs overflow-x-auto border border-slate-800 shadow-md">
+          <pre class="text-slate-200">
 {
   "theme": "flat-motion-graphics",
   "cuts": [
@@ -339,13 +333,13 @@ my-project/
 
       <!-- Section 7: Output Review Quality Gates -->
       <section id="output-review" class="space-y-4">
-        <h2 class="font-display font-bold text-2xl text-white">output_review Quality Gates</h2>
+        <h2 class="font-display font-bold text-2xl text-slate-950">output_review Quality Gates</h2>
         <p>
-          Before concluding video production, <code class="font-mono text-cyan-300 bg-slate-900 px-1.5 py-0.5 rounded">output_review</code> evaluates five automated quality gates:
+          Before concluding video production, <code class="font-mono text-cyan-800 bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 font-semibold">output_review</code> evaluates five automated quality gates:
         </p>
 
-        <ul class="space-y-2 text-xs font-mono text-slate-300 list-disc list-inside">
-          <li><strong>Container & Codec Gate:</strong> Validates H.264 video codec (<code class="text-cyan-400">libx264</code>), YUV420p pixel format, AAC 48kHz audio, and faststart MP4 flags.</li>
+        <ul class="space-y-2 text-xs font-mono text-slate-800 list-disc list-inside">
+          <li><strong>Container & Codec Gate:</strong> Validates H.264 video codec (<code class="text-cyan-700 font-bold">libx264</code>), YUV420p pixel format, AAC 48kHz audio, and faststart MP4 flags.</li>
           <li><strong>Loudness & Audio Curve Gate:</strong> Evaluates Integrated LUFS (-14 to -23 LUFS) and prevents clipping (peak &lt; 0 dBFS).</li>
           <li><strong>Silence & Dead-Air Gate:</strong> Asserts that audio silence intervals do not exceed the editorial limit (default: 2.5s).</li>
           <li><strong>Freeze & Black Frame Gate:</strong> Detects rendering glitches, stuck frame sequences, or unintentional black screens.</li>
@@ -358,12 +352,12 @@ my-project/
   </div>
 
   <!-- Footer -->
-  <footer class="glass-card border-t border-slate-800 py-8 text-xs font-mono text-slate-500 mt-12">
+  <footer class="bg-white border-t border-slate-200 py-8 text-xs font-mono text-slate-500 mt-12">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0">
       <div>Facet Video Engine • Apache-2.0 License • Copyright © 2026 XiboDev.</div>
-      <div class="flex items-center space-x-6 text-slate-400">
-        <a href="index.html" class="hover:text-cyan-400">Overview</a>
-        <a href="https://github.com/xibodev/facet" class="hover:text-cyan-400">GitHub</a>
+      <div class="flex items-center space-x-6 text-slate-600">
+        <a href="index.html" class="hover:text-cyan-700 font-medium">Overview</a>
+        <a href="https://github.com/xibodev/facet" class="hover:text-cyan-700 font-medium">GitHub</a>
       </div>
     </div>
   </footer>
