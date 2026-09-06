@@ -87,39 +87,31 @@
     <aside class="w-full md:w-64 flex-shrink-0">
       <div class="sticky top-24 space-y-6 text-sm font-medium bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
         <div>
-          <div class="text-xs font-mono font-bold text-cyan-700 uppercase tracking-wider mb-2">Getting Started</div>
+          <div class="text-xs font-mono font-bold text-cyan-700 uppercase tracking-wider mb-2">Core Concepts</div>
           <ul class="space-y-1 text-slate-600 text-xs font-mono">
-            <li><a href="#quickstart" class="block py-1 hover:text-cyan-600">Quickstart & Installation</a></li>
-            <li><a href="#doctor" class="block py-1 hover:text-cyan-600">Host Doctor Check</a></li>
-            <li><a href="#workspace" class="block py-1 hover:text-cyan-600">Workspace Anatomy</a></li>
+            <li><a href="#operating-model" class="block py-1 hover:text-cyan-600">The 3-Tier Model</a></li>
+            <li><a href="#two-workflows" class="block py-1 hover:text-cyan-600">CLI & Studio Workflows</a></li>
+            <li><a href="#quickstart" class="block py-1 hover:text-cyan-600">Installation Guide</a></li>
+            <li><a href="#doctor" class="block py-1 hover:text-cyan-600">Host Doctor Diagnostics</a></li>
           </ul>
         </div>
 
         <div>
-          <div class="text-xs font-mono font-bold text-purple-700 uppercase tracking-wider mb-2">Agent Contracts</div>
+          <div class="text-xs font-mono font-bold text-purple-700 uppercase tracking-wider mb-2">Workspace & Schemas</div>
           <ul class="space-y-1 text-slate-600 text-xs font-mono">
-            <li><a href="#turn-1" class="block py-1 hover:text-purple-600">Zero-Ceremony Turn 1 Rule</a></li>
-            <li><a href="#skills" class="block py-1 hover:text-purple-600">6 Director Roles</a></li>
-            <li><a href="#ownership" class="block py-1 hover:text-purple-600">Ownership & Anti-Clobbering</a></li>
+            <li><a href="#workspace" class="block py-1 hover:text-purple-600">Workspace File Structure</a></li>
+            <li><a href="#explainer-props" class="block py-1 hover:text-purple-600">Remotion Scene Schema</a></li>
+            <li><a href="#scene-components" class="block py-1 hover:text-purple-600">Scene Component Library</a></li>
+            <li><a href="#themes" class="block py-1 hover:text-purple-600">Visual Themes</a></li>
           </ul>
         </div>
 
         <div>
-          <div class="text-xs font-mono font-bold text-emerald-700 uppercase tracking-wider mb-2">Remotion & Scenes</div>
+          <div class="text-xs font-mono font-bold text-emerald-700 uppercase tracking-wider mb-2">Engine & Quality Gates</div>
           <ul class="space-y-1 text-slate-600 text-xs font-mono">
-            <li><a href="#explainer-props" class="block py-1 hover:text-emerald-600">explainer_props.json Schema</a></li>
-            <li><a href="#scene-components" class="block py-1 hover:text-emerald-600">Scene Component Library</a></li>
-            <li><a href="#charts" class="block py-1 hover:text-emerald-600">Data Charts (Bar/Line/Pie)</a></li>
-            <li><a href="#themes" class="block py-1 hover:text-emerald-600">Theme Configurations</a></li>
-          </ul>
-        </div>
-
-        <div>
-          <div class="text-xs font-mono font-bold text-amber-700 uppercase tracking-wider mb-2">Toolbox & CLI</div>
-          <ul class="space-y-1 text-slate-600 text-xs font-mono">
-            <li><a href="#tool-invocations" class="block py-1 hover:text-amber-600">Standard Tool Invocations</a></li>
-            <li><a href="#output-review" class="block py-1 hover:text-amber-600">output_review Quality Gates</a></li>
-            <li><a href="#custom-packs" class="block py-1 hover:text-amber-600">Authoring Custom Packs</a></li>
+            <li><a href="#agent-engine" class="block py-1 hover:text-emerald-600">Agent Tool Execution</a></li>
+            <li><a href="#output-review" class="block py-1 hover:text-emerald-600">output_review Quality QA</a></li>
+            <li><a href="#release-harness" class="block py-1 hover:text-emerald-600">Release-Harness Local UAT</a></li>
           </ul>
         </div>
       </div>
@@ -128,113 +120,139 @@
     <!-- Main Content Area -->
     <main class="flex-grow max-w-4xl space-y-16 text-slate-700 leading-relaxed text-sm">
       
-      <!-- Section 1: Quickstart & Installation -->
-      <section id="quickstart" class="space-y-4">
-        <h1 class="font-display font-bold text-3xl text-slate-950">Quickstart & Installation</h1>
+      <!-- Section 1: The 3-Tier Operating Model -->
+      <section id="operating-model" class="space-y-4">
+        <h1 class="font-display font-bold text-3xl text-slate-950">How Facet Works: The 3-Tier Model</h1>
         <p>
-          Facet is distributed as a single Go binary, as an npm development dependency, and via system package managers.
+          Facet is designed around a clean separation of concerns so human creators never have to memorize complex media commands or manually splice video clips.
         </p>
 
-        <div class="bg-slate-950 rounded-xl p-4 font-mono text-xs text-slate-200 space-y-2 border border-slate-800 shadow-md">
-          <div class="text-slate-500"># Install via Go</div>
-          <div class="text-cyan-400 select-all">go install github.com/xibodev/facet/cmd/facet@latest</div>
-          
-          <div class="text-slate-500 pt-2"># Install via PowerShell (Windows)</div>
-          <div class="text-cyan-400 select-all">irm https://raw.githubusercontent.com/xibodev/facet/main/install.ps1 | iex</div>
-
-          <div class="text-slate-500 pt-2"># Install via Bash (macOS & Linux)</div>
-          <div class="text-cyan-400 select-all">curl -fsSL https://raw.githubusercontent.com/xibodev/facet/main/install.sh | bash</div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs text-slate-800 pt-2">
+          <div class="p-4 rounded-xl bg-cyan-50 border border-cyan-200">
+            <div class="font-bold text-cyan-900 mb-1">1. You (The Director)</div>
+            <p class="text-slate-600 text-[11px]">You prompt in plain English or open the Studio UI. You make creative choices and describe what you want.</p>
+          </div>
+          <div class="p-4 rounded-xl bg-purple-50 border border-purple-200">
+            <div class="font-bold text-purple-900 mb-1">2. AI Agent (The Producer)</div>
+            <p class="text-slate-600 text-[11px]">Claude Code, OpenCode, or Copilot drafts scripts, plans scenes, and calls the Facet engine under the hood.</p>
+          </div>
+          <div class="p-4 rounded-xl bg-emerald-50 border border-emerald-200">
+            <div class="font-bold text-emerald-900 mb-1">3. Facet Engine (The Render)</div>
+            <p class="text-slate-600 text-[11px]">Stateless Go toolbox + Remotion React renderers compile code and neural audio into broadcast-quality <code class="text-emerald-800 font-bold">.mp4</code>.</p>
+          </div>
         </div>
       </section>
 
-      <!-- Section 2: Host Doctor Check -->
-      <section id="doctor" class="space-y-4">
-        <h2 class="font-display font-bold text-2xl text-slate-950">System Prerequisites & Doctor</h2>
-        <p>
-          Facet requires <strong>FFmpeg</strong>, <strong>FFprobe</strong>, and <strong>Node.js</strong> for local Remotion rendering. Verify your environment at any time by running:
-        </p>
+      <!-- Section 2: The Two Workflows -->
+      <section id="two-workflows" class="space-y-4">
+        <h2 class="font-display font-bold text-2xl text-slate-950">The Two Ways to Use Facet</h2>
+        
+        <div class="space-y-4">
+          <div class="light-card p-5 rounded-xl border-l-4 border-l-cyan-600">
+            <h3 class="font-bold text-slate-900 text-base mb-1">Workflow A: The Headless AI CLI</h3>
+            <p class="text-slate-600 text-xs mb-3">
+              Run <code class="font-mono text-cyan-800 bg-cyan-50 px-1 py-0.5 rounded font-semibold">facet init my-video --engine claude</code>. Your AI coding agent starts up, and you simply prompt:
+            </p>
+            <div class="bg-slate-950 p-3 rounded-lg font-mono text-xs text-slate-200 border border-slate-800">
+              <span class="text-amber-400 font-bold">&gt; You:</span> "Make a 30s explainer about how neural networks learn with animated bar charts."<br>
+              <span class="text-purple-400 font-bold">&gt; Agent:</span> "Drafting script, synthesizing voiceover, compiling Remotion charts, rendering to renders/final.mp4..."
+            </div>
+          </div>
 
-        <div class="bg-slate-950 rounded-xl p-4 font-mono text-xs text-slate-200 border border-slate-800 shadow-md">
-          <div class="text-cyan-400">$ facet doctor</div>
-          <pre class="mt-2 text-slate-400 overflow-x-auto text-[11px]">
+          <div class="light-card p-5 rounded-xl border-l-4 border-l-purple-600">
+            <h3 class="font-bold text-slate-900 text-base mb-1">Workflow B: The Web Studio (`facet ui`)</h3>
+            <p class="text-slate-600 text-xs mb-3">
+              Run <code class="font-mono text-purple-800 bg-purple-50 px-1 py-0.5 rounded font-semibold">facet ui</code> in your project folder. Open <code class="font-mono text-slate-900 font-bold">http://localhost:8787</code> in your browser:
+            </p>
+            <ul class="list-disc list-inside text-xs text-slate-600 space-y-1">
+              <li>Track stage progress: <code class="font-mono text-[11px]">Brief → Script → Audio → Scene Plan → Compose → Review → Deliver</code></li>
+              <li>Inspect audio waveforms, volume meters, and voice ducking curves.</li>
+              <li>Scrub video frames and examine extracted QA stills.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 3: Installation & Doctor -->
+      <section id="quickstart" class="space-y-4">
+        <h2 class="font-display font-bold text-2xl text-slate-950">Installation & System Doctor</h2>
+        
+        <div class="bg-slate-950 rounded-xl p-4 font-mono text-xs text-slate-200 space-y-2 border border-slate-800 shadow-md">
+          <div class="text-slate-500"># Install with Go</div>
+          <div class="text-cyan-400 select-all">go install github.com/xibodev/facet/cmd/facet@latest</div>
+          
+          <div class="text-slate-500 pt-2"># Install with PowerShell (Windows)</div>
+          <div class="text-cyan-400 select-all">irm https://raw.githubusercontent.com/xibodev/facet/main/install.ps1 | iex</div>
+
+          <div class="text-slate-500 pt-2"># Install with Bash (macOS & Linux)</div>
+          <div class="text-cyan-400 select-all">curl -fsSL https://raw.githubusercontent.com/xibodev/facet/main/install.sh | bash</div>
+        </div>
+
+        <div id="doctor" class="pt-4">
+          <h3 class="font-bold text-slate-900 text-base mb-2">Host Diagnostics (`facet doctor`)</h3>
+          <p class="text-xs text-slate-600 mb-3">
+            Facet verifies your local media dependencies (FFmpeg, FFprobe, Node.js, and Remotion):
+          </p>
+          <div class="bg-slate-950 rounded-xl p-4 font-mono text-xs text-slate-200 border border-slate-800">
+            <div class="text-cyan-400">$ facet doctor</div>
+            <pre class="mt-2 text-slate-400 overflow-x-auto text-[11px]">
 === Facet System Doctor ===
 
 [System Runtimes]
-  ✔ FFmpeg:           Available (ffmpeg version 8.1.1)
-  ✔ FFprobe:          Available (ffprobe version 8.1.1)
-  ✔ Node:             Available (v24.18.0)
-  ✔ Remotion Composer: OK (remotion-composer/package.json)
-  ✔ Edge-TTS:         Available (integrated Go neural client)
+  ✔ FFmpeg             : OK (ffmpeg version 8.1.1)
+  ✔ FFprobe            : OK (ffprobe version 8.1.1)
+  ✔ Node               : OK (v24.18.0)
+  ✔ Remotion Composer  : OK (remotion-composer/package.json)
+  ✔ Edge-TTS           : OK (built-in keyless neural TTS runtime ready)
 
 [Agent CLIs]
-  ✔ Claude Code:      Available (claude.exe)
-  ✔ OpenCode:         Available (opencode.exe)
-  ✔ GitHub Copilot:   Available (gh.exe copilot)
-  ✔ OpenAI Codex:     Available (codex.exe)
+  ✔ Claude Code        : Found
+  ✔ OpenCode           : Found
+  ✔ GitHub Copilot     : Found
 
 [Toolbox Tools (35 tools)]
   ✔ 35 / 35 tools ready and configured
-          </pre>
+            </pre>
+          </div>
         </div>
       </section>
 
-      <!-- Section 3: Workspace Anatomy -->
+      <!-- Section 4: Workspace Anatomy -->
       <section id="workspace" class="space-y-4">
-        <h2 class="font-display font-bold text-2xl text-slate-950">Workspace Anatomy</h2>
+        <h2 class="font-display font-bold text-2xl text-slate-950">Workspace Structure & Artifacts</h2>
         <p>
-          Running <code class="font-mono text-cyan-800 bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 font-semibold">facet init &lt;project-slug&gt; --engine claude</code> constructs an isolated production workspace:
+          Running <code class="font-mono text-cyan-800 bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 font-semibold">facet init &lt;project-slug&gt;</code> sets up a clean, version-controlled workspace:
         </p>
 
         <div class="bg-white rounded-xl p-4 font-mono text-xs overflow-x-auto border border-slate-200 shadow-sm text-slate-800">
           <pre>
 my-project/
 ├── artifacts/
-│   ├── brief.md              # High-level creative goals & audience metadata
-│   ├── script.json           # Timecoded narrative sections and speaker directions
-│   ├── scene_plan.json       # Visual shot breakdown and cinematography roles
-│   └── explainer_props.json  # Remotion scene cut specifications and theme config
+│   ├── brief.md              # Project concept and metadata
+│   ├── script.json           # Timed narrative sections written by the AI agent
+│   ├── scene_plan.json       # Visual shot breakdown and cinematography intents
+│   └── explainer_props.json  # Remotion scene cut parameters and theme settings
 ├── narration/
-│   └── beat1.mp3             # Synthesized neural voiceover tracks from Edge TTS
-├── assets/                   # User-provided raw footage, images, or music
+│   └── voice.mp3             # Synthesized neural voiceover audio from Edge TTS
+├── assets/                   # User-provided raw footage, audio tracks, or brand logos
 ├── renders/
 │   ├── final.mp4             # Broadcast-ready rendered H.264 video file
-│   └── review_frames/        # Sampled QA review stills extracted by output_review
-├── .claude/skills/           # Directory junctions to active capability packs
+│   └── review_frames/        # Sampled QA stills extracted by output_review
+├── .claude/skills/           # Junctions to active capability packs (e.g. explainer)
 ├── .facet/
-│   └── ownership.json        # Ownership registry preventing clobbering of user files
-├── .facet.yaml               # Pinned resolution (1920x1080), FPS (30), and voice
-├── facet.lock.json           # Pinned lockfile recording engine and active packs
-└── CLAUDE.md                 # Action-biased prompt contract (<50 lines)
+│   └── ownership.json        # Ownership ledger preventing clobbering of user files
+├── .facet.yaml               # Pinned resolution, FPS (30), and voice
+├── facet.lock.json           # Lockfile recording active packs and engine version
+└── CLAUDE.md                 # Lean, action-biased prompt contract (&lt;50 lines)
           </pre>
-        </div>
-      </section>
-
-      <!-- Section 4: Zero-Ceremony Turn 1 Rule -->
-      <section id="turn-1" class="space-y-4">
-        <h2 class="font-display font-bold text-2xl text-slate-950">The Zero-Ceremony Turn 1 Directive</h2>
-        <p>
-          AI agents often fall into bureaucratic loops: listing file trees with <code class="font-mono text-slate-800 bg-slate-100 px-1 py-0.5 rounded border border-slate-200">ls</code>, querying available tools with <code class="font-mono text-slate-800 bg-slate-100 px-1 py-0.5 rounded border border-slate-200">facet tools list</code>, or reading empty scaffolded <code class="font-mono text-slate-800 bg-slate-100 px-1 py-0.5 rounded border border-slate-200">brief.md</code> files.
-        </p>
-        <p>
-          Facet's prompt contract <strong>strictly prohibits discovery ceremony</strong>. The agent is required to draft <code class="font-mono text-cyan-800 bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 font-semibold">artifacts/script.json</code> and synthesize audio on <strong>Turn 1</strong>.
-        </p>
-
-        <div class="border-l-4 border-l-cyan-600 bg-cyan-50/70 p-4 rounded-r-xl border border-cyan-200">
-          <div class="font-mono text-xs font-bold text-cyan-900 mb-1">Standard Production Flow</div>
-          <ol class="list-decimal list-inside space-y-1 text-xs text-slate-800 font-mono">
-            <li><strong>Turn 1:</strong> Write <code class="text-cyan-700 font-bold">artifacts/script.json</code> & call <code class="text-cyan-700 font-bold">facet tools run edgetts --input artifacts/req_tts.json</code>.</li>
-            <li><strong>Turn 2:</strong> Probe audio duration (<code class="text-cyan-700 font-bold">media_probe</code>) & write <code class="text-cyan-700 font-bold">artifacts/explainer_props.json</code>.</li>
-            <li><strong>Turn 3:</strong> Render composition via <code class="text-cyan-700 font-bold">facet tools run video_compose --input artifacts/explainer_props.json</code>.</li>
-            <li><strong>Turn 4:</strong> Run <code class="text-cyan-700 font-bold">output_review</code> and deliver <code class="text-cyan-700 font-bold">renders/final.mp4</code>.</li>
-          </ol>
         </div>
       </section>
 
       <!-- Section 5: Remotion Scene Components -->
       <section id="scene-components" class="space-y-4">
-        <h2 class="font-display font-bold text-2xl text-slate-950">Remotion Scene Components Reference</h2>
+        <h2 class="font-display font-bold text-2xl text-slate-950">Remotion Scene Component Library</h2>
         <p>
-          The Explainer pack (<code class="font-mono text-cyan-800 bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 font-semibold">@xibodev/facet-pack-explainer</code>) provides a rich library of declarative visual scene cuts:
+          The Explainer pack (<code class="font-mono text-cyan-800 bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 font-semibold">@xibodev/facet-pack-explainer</code>) provides declarative visual scene components:
         </p>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
@@ -273,10 +291,13 @@ my-project/
         </div>
       </section>
 
-      <!-- Section 6: explainer_props.json schema example -->
+      <!-- Section 6: explainer_props.json payload example -->
       <section id="explainer-props" class="space-y-4">
         <h2 class="font-display font-bold text-2xl text-slate-950">explainer_props.json Example Payload</h2>
-        
+        <p class="text-xs text-slate-600">
+          Your AI agent generates this JSON specification automatically during Turn 2:
+        </p>
+
         <div class="bg-slate-950 rounded-xl p-4 font-mono text-xs overflow-x-auto border border-slate-800 shadow-md">
           <pre class="text-slate-200">
 {
@@ -321,7 +342,7 @@ my-project/
   ],
   "audio": {
     "narration": {
-      "src": "narration/beat1.mp3",
+      "src": "narration/voice.mp3",
       "volume": 1.0
     }
   },
@@ -334,8 +355,8 @@ my-project/
       <!-- Section 7: Output Review Quality Gates -->
       <section id="output-review" class="space-y-4">
         <h2 class="font-display font-bold text-2xl text-slate-950">output_review Quality Gates</h2>
-        <p>
-          Before concluding video production, <code class="font-mono text-cyan-800 bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 font-semibold">output_review</code> evaluates five automated quality gates:
+        <p class="text-xs text-slate-600">
+          Before finalizing, the agent calls <code class="font-mono text-cyan-800 bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 font-semibold">output_review</code> to evaluate five automated technical gates:
         </p>
 
         <ul class="space-y-2 text-xs font-mono text-slate-800 list-disc list-inside">
@@ -343,7 +364,7 @@ my-project/
           <li><strong>Loudness & Audio Curve Gate:</strong> Evaluates Integrated LUFS (-14 to -23 LUFS) and prevents clipping (peak &lt; 0 dBFS).</li>
           <li><strong>Silence & Dead-Air Gate:</strong> Asserts that audio silence intervals do not exceed the editorial limit (default: 2.5s).</li>
           <li><strong>Freeze & Black Frame Gate:</strong> Detects rendering glitches, stuck frame sequences, or unintentional black screens.</li>
-          <li><strong>Frame Inspection Samples:</strong> Extracts high-resolution JPEG stills for visual and OCR verification.</li>
+          <li><strong>Frame Inspection Samples:</strong> Extracts high-resolution JPEG stills for visual verification.</li>
         </ul>
       </section>
 
