@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -44,6 +45,15 @@ func doKlingVideo(op string, data []byte) (any, []string, error) {
 	}
 	if strings.TrimSpace(r.Prompt) == "" {
 		return nil, nil, failure("invalid_request", "prompt is required", nil)
+	}
+	timeout, err := cloudTimeout(r.TimeoutSeconds, 300)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !slices.Contains([]float64{0, 5, 10}, r.Duration) ||
+		!slices.Contains([]string{"", "16:9", "9:16", "1:1"}, r.AspectRatio) ||
+		!slices.Contains([]string{"", "std", "pro"}, r.Mode) {
+		return nil, nil, failure("invalid_request", "Kling requires duration 5/10, aspect_ratio 16:9/9:16/1:1, and mode std/pro", nil)
 	}
 
 	model := r.Model
@@ -81,6 +91,13 @@ func doKlingVideo(op string, data []byte) (any, []string, error) {
 		return res, nil, nil
 	}
 
+	apiKey := strings.TrimSpace(os.Getenv("FAL_KEY"))
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(os.Getenv("KLING_API_KEY"))
+	}
+	if apiKey == "" && !r.Mock {
+		return nil, nil, failure("credentials_missing", "FAL_KEY or KLING_API_KEY is required unless mock=true", nil)
+	}
 	outPath := r.OutputPath
 	if outPath == "" {
 		outPath = "kling_video.mp4"
@@ -89,13 +106,7 @@ func doKlingVideo(op string, data []byte) (any, []string, error) {
 		return nil, nil, err
 	}
 
-	apiKey := os.Getenv("FAL_KEY")
-	if apiKey == "" {
-		apiKey = os.Getenv("KLING_API_KEY")
-	}
-
-	if apiKey == "" || r.Mock {
-		// Mock contract when API key missing or mock requested
+	if r.Mock {
 		if err := createMockVideo(outPath, 640, 360, duration); err != nil {
 			return nil, nil, failure("command_failed", "failed to create mock video: "+err.Error(), nil)
 		}
@@ -110,11 +121,6 @@ func doKlingVideo(op string, data []byte) (any, []string, error) {
 			"mock":         true,
 			"video_url":    "mock://fal/kling/" + filepath.Base(outPath),
 		}, nil, nil
-	}
-
-	timeout, err := positiveTimeout(r.TimeoutSeconds, 300)
-	if err != nil {
-		return nil, nil, err
 	}
 
 	queueBase := os.Getenv("FAL_QUEUE_BASE_URL")
@@ -271,6 +277,15 @@ func doSoraVideo(op string, data []byte) (any, []string, error) {
 	if strings.TrimSpace(r.Prompt) == "" {
 		return nil, nil, failure("invalid_request", "prompt is required", nil)
 	}
+	timeout, err := cloudTimeout(r.TimeoutSeconds, 300)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !finite(r.Duration) || r.Duration < 0 || r.Duration > 20 || (r.Duration > 0 && r.Duration < 1) ||
+		!slices.Contains([]string{"", "16:9", "9:16", "1:1"}, r.AspectRatio) ||
+		!slices.Contains([]string{"", "720p", "1080p"}, r.Resolution) {
+		return nil, nil, failure("invalid_request", "invalid Sora duration, aspect_ratio, or resolution", nil)
+	}
 
 	model := r.Model
 	if model == "" {
@@ -307,6 +322,10 @@ func doSoraVideo(op string, data []byte) (any, []string, error) {
 		return res, nil, nil
 	}
 
+	apiKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+	if apiKey == "" && !r.Mock {
+		return nil, nil, failure("credentials_missing", "OPENAI_API_KEY is required unless mock=true", nil)
+	}
 	outPath := r.OutputPath
 	if outPath == "" {
 		outPath = "sora_video.mp4"
@@ -315,9 +334,7 @@ func doSoraVideo(op string, data []byte) (any, []string, error) {
 		return nil, nil, err
 	}
 
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" || r.Mock {
-		// Mock contract when API key is missing or mock explicitly requested
+	if r.Mock {
 		if err := createMockVideo(outPath, 1280, 720, duration); err != nil {
 			return nil, nil, failure("command_failed", "failed to create mock video: "+err.Error(), nil)
 		}
@@ -332,11 +349,6 @@ func doSoraVideo(op string, data []byte) (any, []string, error) {
 			"mock":         true,
 			"video_url":    "mock://openai/sora/" + filepath.Base(outPath),
 		}, nil, nil
-	}
-
-	timeout, err := positiveTimeout(r.TimeoutSeconds, 300)
-	if err != nil {
-		return nil, nil, err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)

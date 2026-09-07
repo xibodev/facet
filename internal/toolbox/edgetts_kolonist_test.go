@@ -11,6 +11,9 @@ import (
 )
 
 func TestKolonistEdgeTTS_Synthesis(t *testing.T) {
+	if testing.Short() {
+		t.Skip("live Microsoft Edge TTS integration; run without -short explicitly")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

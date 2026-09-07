@@ -1,5 +1,6 @@
-import { Composition, CalculateMetadataFunction } from "remotion";
-import { Explainer, ExplainerProps } from "./Explainer";
+import { Composition } from "remotion";
+import { Explainer } from "./Explainer";
+import { calculateExplainerMetadata } from "./explainerMetadata";
 import {
   CinematicRenderer,
   calculateCinematicMetadata,
@@ -120,18 +121,6 @@ export function resolveTheme(props: Record<string, unknown>): ThemeConfig {
   return DEFAULT_THEME;
 }
 
-const calculateMetadata: CalculateMetadataFunction<ExplainerProps> = async ({
-  props,
-}) => {
-  const cuts = props.cuts || [];
-  if (cuts.length === 0) {
-    return { durationInFrames: 30 * 60 };
-  }
-  const lastEnd = Math.max(...cuts.map((c) => c.out_seconds || 0));
-  // Add 1 second padding for final fade
-  return { durationInFrames: Math.ceil((lastEnd + 1) * 30) };
-};
-
 export const Root: React.FC = () => {
   return (
     <>
@@ -148,7 +137,7 @@ export const Root: React.FC = () => {
           captions: [],
           audio: {},
         }}
-        calculateMetadata={calculateMetadata}
+        calculateMetadata={({ props }) => calculateExplainerMetadata(props)}
       />
       <Composition
         id="CinematicRenderer"

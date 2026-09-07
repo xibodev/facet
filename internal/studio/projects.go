@@ -29,6 +29,7 @@ type ProjectSummary struct {
 	Slug             string        `json:"slug"`
 	Name             string        `json:"name"`
 	Path             string        `json:"path"`
+	Engine           string        `json:"engine,omitempty"`
 	LastModified     time.Time     `json:"last_modified"`
 	Stages           StageStatuses `json:"stages"`
 	BriefPath        string        `json:"brief_path,omitempty"`
@@ -70,6 +71,7 @@ type ProjectDetails struct {
 	Slug             string        `json:"slug"`
 	Name             string        `json:"name"`
 	Path             string        `json:"path"`
+	Engine           string        `json:"engine,omitempty"`
 	LastModified     time.Time     `json:"last_modified"`
 	Stages           StageStatuses `json:"stages"`
 	Brief            string        `json:"brief,omitempty"`
@@ -83,6 +85,8 @@ type ProjectDetails struct {
 	ReviewFrames     []MediaFile   `json:"review_frames,omitempty"`
 	QAFrames         []MediaFile   `json:"qa_frames,omitempty"`
 	ReviewReport     any           `json:"review_report,omitempty"`
+	ReviewReportPath string        `json:"review_report_path,omitempty"`
+	ReviewReportURL  string        `json:"review_report_url,omitempty"`
 	RemotionProps    any           `json:"remotion_props,omitempty"`
 	CompositionPath  string        `json:"composition_path,omitempty"`
 	CompositionURL   string        `json:"composition_url,omitempty"`
@@ -113,13 +117,13 @@ type videoEvidence struct {
 type projectEvidence struct {
 	Brief              artifactEvidence
 	Script             artifactEvidence
-	ScriptBeats        []BeatItem
 	Narration          []MediaFile
 	Composition        artifactEvidence
 	CompositionIsProps bool
 	QAFrames           []MediaFile
 	ReviewFrames       []MediaFile
 	ReviewReport       any
+	ReviewArtifact     artifactEvidence
 	HasReviewReport    bool
 	Master             videoEvidence
 	Preview            videoEvidence
@@ -137,6 +141,8 @@ type projectScope struct {
 	slug             string
 	projectPath      string
 	canonicalProject string
+	engine           string
+	catalog          bool
 }
 
 type projectFile struct {
@@ -167,6 +173,9 @@ func resolveProjectsScope(rootDir string) (projectsScope, error) {
 	projectsPath := filepath.Join(rootPath, "projects")
 	canonicalProjects, err := canonicalExistingPath(projectsPath)
 	if err != nil {
+		if _, statErr := os.Lstat(projectsPath); os.IsNotExist(statErr) {
+			return projectsScope{rootPath: rootPath, projectsPath: projectsPath}, nil
+		}
 		return projectsScope{}, fmt.Errorf("resolve projects directory: %w", err)
 	}
 	if !pathStrictlyWithin(canonicalRoot, canonicalProjects) {
@@ -210,27 +219,36 @@ func (scope projectsScope) selectProject(slug string) (projectScope, os.FileInfo
 	if err := validateProjectSlug(slug); err != nil {
 		return projectScope{}, nil, err
 	}
-	entries, err := os.ReadDir(scope.canonicalProjects)
-	if err != nil {
-		return projectScope{}, nil, fmt.Errorf("project %q not found: %w", slug, err)
-	}
-	for _, entry := range entries {
-		if entry.Name() == slug {
-			return scope.projectEntry(slug)
+	if scope.canonicalProjects != "" {
+		entries, err := os.ReadDir(scope.canonicalProjects)
+		if err != nil {
+			return projectScope{}, nil, fmt.Errorf("project %q not found: %w", slug, err)
+		}
+		for _, entry := range entries {
+			if entry.Name() == slug {
+				return scope.projectEntry(slug)
+			}
 		}
 	}
 	// Fallback to catalog lookup
 	if cat, err := LoadCatalog(scope.rootPath); err == nil {
 		for _, cp := range cat.Projects {
 			if strings.EqualFold(cp.ID, slug) || strings.EqualFold(filepath.Base(cp.Path), slug) {
-				return makeCustomProjectScope(slug, cp.Path)
+				id := cp.ID
+				if id == "" {
+					id = filepath.Base(cp.Path)
+				}
+				return makeCustomProjectScope(id, cp.Path, cp.Engine)
 			}
 		}
 	}
 	return projectScope{}, nil, fmt.Errorf("project %q is not an actual direct child directory of %q", slug, scope.projectsPath)
 }
 
-func makeCustomProjectScope(slug, dirPath string) (projectScope, os.FileInfo, error) {
+func makeCustomProjectScope(slug, dirPath, engine string) (projectScope, os.FileInfo, error) {
+	if err := validateProjectSlug(slug); err != nil {
+		return projectScope{}, nil, err
+	}
 	canonicalProject, err := canonicalExistingPath(dirPath)
 	if err != nil {
 		return projectScope{}, nil, fmt.Errorf("resolve project %q: %w", slug, err)
@@ -251,6 +269,8 @@ func makeCustomProjectScope(slug, dirPath string) (projectScope, os.FileInfo, er
 		slug:             slug,
 		projectPath:      dirPath,
 		canonicalProject: canonicalProject,
+		engine:           engine,
+		catalog:          true,
 	}, info, nil
 }
 
@@ -319,6 +339,10 @@ func (scope projectScope) resolveFile(path string) (projectFile, bool) {
 	if relativePath == "" || mediaURL == "" {
 		return projectFile{}, false
 	}
+	if scope.catalog {
+		relativePath = "catalog/" + scope.slug + "/" + relativePath
+		mediaURL = "/api/media/catalog/" + url.PathEscape(scope.slug) + "/" + strings.TrimPrefix(mediaURL, "/api/media/")
+	}
 	return projectFile{
 		canonicalPath: canonicalPath,
 		relativePath:  relativePath,
@@ -347,6 +371,9 @@ func ListProjects(rootDir string) ([]ProjectSummary, error) {
 			return []ProjectSummary{}, nil
 		}
 		return nil, fmt.Errorf("failed to read projects directory: %w", err)
+	}
+	if projects.canonicalProjects == "" {
+		return []ProjectSummary{}, nil
 	}
 	entries, err := os.ReadDir(projects.canonicalProjects)
 	if err != nil {
@@ -406,7 +433,7 @@ func ListProjectsWithCatalog(rootDir string) ([]ProjectSummary, error) {
 			if !cp.Exists {
 				continue
 			}
-			customScope, info, err := makeCustomProjectScope(slug, cp.Path)
+			customScope, info, err := makeCustomProjectScope(slug, cp.Path, cp.Engine)
 			if err != nil {
 				continue
 			}
@@ -440,12 +467,13 @@ func GetProjectDetails(rootDir, slug string) (*ProjectDetails, error) {
 	if err != nil {
 		return nil, err
 	}
-	evidence := scanProjectEvidence(project)
+	evidence := scanProjectEvidence(project, true)
 
 	details := &ProjectDetails{
 		Slug:             slug,
 		Name:             slugToTitle(slug),
 		Path:             project.projectPath,
+		Engine:           project.projectEngine(),
 		LastModified:     info.ModTime(),
 		Stages:           evidence.stages(),
 		Brief:            evidence.Brief.Text,
@@ -454,11 +482,13 @@ func GetProjectDetails(rootDir, slug string) (*ProjectDetails, error) {
 		Script:           evidence.Script.Text,
 		ScriptPath:       evidence.Script.Path,
 		ScriptURL:        evidence.Script.URL,
-		Beats:            evidence.ScriptBeats,
+		Beats:            extractJSONBeats(evidence.Script.Value),
 		Narration:        evidence.Narration,
 		ReviewFrames:     evidence.ReviewFrames,
 		QAFrames:         evidence.QAFrames,
 		ReviewReport:     evidence.ReviewReport,
+		ReviewReportPath: evidence.ReviewArtifact.Path,
+		ReviewReportURL:  evidence.ReviewArtifact.URL,
 		CompositionPath:  evidence.Composition.Path,
 		CompositionURL:   evidence.Composition.URL,
 		VideoPath:        evidence.Master.Path,
@@ -467,6 +497,9 @@ func GetProjectDetails(rootDir, slug string) (*ProjectDetails, error) {
 		PreviewVideoURL:  evidence.Preview.URL,
 		ThumbnailPath:    evidence.Thumbnail.Path,
 		ThumbnailURL:     evidence.Thumbnail.URL,
+	}
+	if len(details.Beats) == 0 && strings.EqualFold(filepath.Ext(evidence.Script.FullPath), ".md") {
+		details.Beats = parseMarkdownTableBeats(evidence.Script.Text)
 	}
 	if evidence.Master.Version != "" {
 		details.VideoVersion = evidence.Master.Version
@@ -494,12 +527,13 @@ func GetProjectDetails(rootDir, slug string) (*ProjectDetails, error) {
 }
 
 func scanProjectSummary(project projectScope, info os.FileInfo) (ProjectSummary, error) {
-	evidence := scanProjectEvidence(project)
+	evidence := scanProjectEvidence(project, false)
 
 	summary := ProjectSummary{
 		Slug:             project.slug,
 		Name:             slugToTitle(project.slug),
 		Path:             project.projectPath,
+		Engine:           project.projectEngine(),
 		LastModified:     info.ModTime(),
 		Stages:           evidence.stages(),
 		BriefPath:        evidence.Brief.Path,
@@ -531,30 +565,46 @@ func scanProjectSummary(project projectScope, info os.FileInfo) (ProjectSummary,
 	return summary, nil
 }
 
-func scanProjectEvidence(project projectScope) projectEvidence {
+func (project projectScope) projectEngine() string {
+	if project.engine != "" {
+		return project.engine
+	}
+	if lock, ok := readJSONArtifact(project, filepath.Join(project.projectPath, "facet.lock.json")); ok {
+		if values, ok := lock.Value.(map[string]any); ok {
+			engine, _ := values["engine"].(string)
+			return engine
+		}
+	}
+	return ""
+}
+
+func scanProjectEvidence(project projectScope, details bool) projectEvidence {
 	brief := resolveTextArtifact(project, "brief")
 	script := resolveTextArtifact(project, "script")
 	evidence := projectEvidence{
-		Brief:       brief,
-		Script:      script,
-		ScriptBeats: extractJSONBeats(script.Value),
-	}
-	if len(evidence.ScriptBeats) == 0 && strings.EqualFold(filepath.Ext(script.FullPath), ".md") {
-		evidence.ScriptBeats = parseMarkdownTableBeats(script.Text)
+		Brief:  brief,
+		Script: script,
 	}
 
 	audioExts := []string{".mp3", ".wav", ".aac", ".m4a", ".ogg"}
-	evidence.Narration = append(evidence.Narration, scanMediaDir(project, "narration", audioExts)...)
-	evidence.Narration = append(evidence.Narration, scanMediaDir(project, "voice-samples", audioExts)...)
-	evidence.Narration = append(evidence.Narration, scanMediaDir(project, filepath.Join("assets", "audio"), audioExts)...)
+	// Lists need presence only, not a full media inventory or parsed beat table.
+	limit := 1
+	if details {
+		limit = 0
+	}
+	evidence.Narration = append(evidence.Narration, scanMediaDir(project, "narration", audioExts, limit)...)
+	evidence.Narration = append(evidence.Narration, scanMediaDir(project, "voice-samples", audioExts, limit)...)
+	evidence.Narration = append(evidence.Narration, scanMediaDir(project, filepath.Join("assets", "audio"), audioExts, limit)...)
 
 	evidence.Composition, evidence.CompositionIsProps = resolveCompositionArtifact(project)
 	imageExts := []string{".png", ".jpg", ".jpeg", ".webp"}
-	evidence.QAFrames = scanMediaDir(project, "qa", imageExts)
-	evidence.ReviewFrames = append(evidence.ReviewFrames, scanMediaDir(project, filepath.Join("review", "final-frames"), imageExts)...)
-	evidence.ReviewFrames = append(evidence.ReviewFrames, scanMediaDir(project, filepath.Join("review", "source-frames"), imageExts)...)
+	evidence.QAFrames = scanMediaDir(project, "qa", imageExts, limit)
+	evidence.ReviewFrames = append(evidence.ReviewFrames, scanMediaDir(project, filepath.Join("review", "final-frames"), imageExts, limit)...)
+	evidence.ReviewFrames = append(evidence.ReviewFrames, scanMediaDir(project, filepath.Join("review", "source-frames"), imageExts, limit)...)
+	evidence.ReviewFrames = append(evidence.ReviewFrames, scanMediaDir(project, filepath.Join("renders", "review_frames"), imageExts, limit)...)
 
 	if report, ok := readJSONArtifact(project, filepath.Join(project.projectPath, "review", "report.json")); ok {
+		evidence.ReviewArtifact = report
 		evidence.ReviewReport = normalizeReviewReport(report.Value)
 		evidence.HasReviewReport = true
 	}
@@ -767,7 +817,7 @@ func jsonText(value any) string {
 	}
 }
 
-func scanMediaDir(project projectScope, subDir string, exts []string) []MediaFile {
+func scanMediaDir(project projectScope, subDir string, exts []string, limit ...int) []MediaFile {
 	dirPath := filepath.Join(project.projectPath, subDir)
 	entries, ok := project.readDir(dirPath)
 	if !ok {
@@ -794,6 +844,9 @@ func scanMediaDir(project projectScope, subDir string, exts []string) []MediaFil
 			Size:         file.info.Size(),
 			LastModified: file.info.ModTime(),
 		})
+		if len(limit) > 0 && limit[0] > 0 && len(results) >= limit[0] {
+			break
+		}
 	}
 	return results
 }
@@ -867,6 +920,7 @@ func normalizeReviewReport(report any) any {
 func findThumbnailEvidence(project projectScope) videoEvidence {
 	searchDirs := []string{
 		filepath.Join(project.projectPath, "review", "final-frames"),
+		filepath.Join(project.projectPath, "renders", "review_frames"),
 		filepath.Join(project.projectPath, "qa"),
 		filepath.Join(project.projectPath, "review", "source-frames"),
 		filepath.Join(project.projectPath, "assets", "raw"),
@@ -941,34 +995,28 @@ func formatEvidenceLocation(rootDir, path string) (string, string) {
 
 func findLatestModTime(project projectScope) time.Time {
 	var latest time.Time
-	_ = filepath.WalkDir(project.canonicalProject, func(path string, entry os.DirEntry, err error) error {
-		if err != nil || entry == nil {
-			return nil
-		}
-		canonicalPath, err := canonicalExistingPath(path)
-		if err != nil || !pathWithin(project.canonicalProject, canonicalPath) {
-			if entry.IsDir() {
-				return filepath.SkipDir
+	// Only inspect production locations, never dependency or agent working trees.
+	for _, sub := range []string{".", "artifacts", "narration", "voice-samples", "assets/audio", "assets/raw", "qa", "review", "review/final-frames", "review/source-frames", "renders", "renders/review_frames"} {
+		dir := filepath.Join(project.projectPath, filepath.FromSlash(sub))
+		if sub != "." {
+			if _, info, ok := project.resolveEntry(dir); !ok || !info.IsDir() {
+				continue
 			}
-			return nil
 		}
-		if !samePath(path, canonicalPath) {
-			if entry.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		info, err := os.Stat(canonicalPath)
+		entries, err := os.ReadDir(dir)
 		if err != nil {
-			return nil
+			continue
 		}
-		if info.IsDir() || info.Mode().IsRegular() {
-			if info.ModTime().After(latest) {
-				latest = info.ModTime()
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			file, ok := project.resolveFile(filepath.Join(dir, entry.Name()))
+			if ok && file.info.ModTime().After(latest) {
+				latest = file.info.ModTime()
 			}
 		}
-		return nil
-	})
+	}
 	return latest
 }
 

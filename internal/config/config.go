@@ -210,7 +210,7 @@ func (c *Config) AutoDetect() map[string]string {
 
 	// Auto-detect bundle root directory if not pinned
 	if c.Paths.Bundle == "" {
-		candidates := []string{".", "..", filepath.Join("..", "..")}
+		candidates := bundleCandidates()
 		for _, cand := range candidates {
 			if isBundleRoot(cand) {
 				if abs, err := filepath.Abs(cand); err == nil {
@@ -232,6 +232,9 @@ func (c *Config) AutoDetect() map[string]string {
 		if c.Paths.Bundle != "" {
 			candidates = append([]string{filepath.Join(c.Paths.Bundle, "remotion-composer")}, candidates...)
 		}
+		for _, root := range bundleCandidates() {
+			candidates = append(candidates, filepath.Join(root, "remotion-composer"))
+		}
 		for _, cand := range candidates {
 			if fi, err := os.Stat(filepath.Join(cand, "package.json")); err == nil && !fi.IsDir() {
 				if abs, err := filepath.Abs(cand); err == nil {
@@ -244,6 +247,29 @@ func (c *Config) AutoDetect() map[string]string {
 	}
 
 	return detected
+}
+
+// Source checkouts take precedence over the executable's installed bundle and HOME.
+func bundleCandidates() []string {
+	cwd, _ := os.Getwd()
+	home, _ := os.UserHomeDir()
+	executable, _ := os.Executable()
+	if resolved, err := filepath.EvalSymlinks(executable); err == nil {
+		executable = resolved
+	}
+	return bundleCandidatesFor(cwd, home, executable)
+}
+
+func bundleCandidatesFor(cwd, home, executable string) []string {
+	candidates := []string{cwd, filepath.Dir(cwd), filepath.Dir(filepath.Dir(cwd))}
+	if executable != "" {
+		root := filepath.Dir(filepath.Dir(executable))
+		candidates = append(candidates, filepath.Join(root, "bundle"), root)
+	}
+	if home != "" {
+		candidates = append(candidates, filepath.Join(home, ".facet", "bundle"))
+	}
+	return candidates
 }
 
 func isBundleRoot(dir string) bool {

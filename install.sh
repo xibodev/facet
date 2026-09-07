@@ -1,119 +1,72 @@
 #!/usr/bin/env bash
-# Facet Video Kit - macOS / Linux Installer
-# Usage: ./install.sh
-# or one-liner: curl -fsSL https://raw.githubusercontent.com/xibodev/facet/main/install.sh | bash
-
-set -e
-
-CYAN='\033[0;36m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-WHITE='\033[1;37m'
-NC='\033[0m'
-
-echo ""
-echo -e "${CYAN}======================================================${NC}"
-echo -e "${CYAN}      Facet - Autonomous Video Production Kit         ${NC}"
-echo -e "${CYAN}======================================================${NC}"
-echo ""
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# 1. Check Go Compiler
-echo -e "${YELLOW}==> Checking Go environment...${NC}"
-if ! command -v go &> /dev/null; then
-    echo "Error: Go compiler was not found in PATH. Please install Go 1.22+ from https://go.dev and rerun." >&2
+# Install from a source checkout: bash /path/to/facet/install.sh
+if [ -z "${BASH_VERSION:-}" ]; then
+    printf '%s\n' 'Run this source installer with bash, not sh.' >&2
     exit 1
 fi
-echo -e "${GREEN}  Found Go compiler: $(go version)${NC}"
+set -euo pipefail
 
-# 2. Build Binaries
-echo -e "${YELLOW}==> Compiling Facet binaries (facet, facet-ui)...${NC}"
-BIN_DIR="${SCRIPT_DIR}/bin"
-mkdir -p "${BIN_DIR}"
+case "$(uname -s)" in
+    Linux|Darwin) ;;
+    *) printf '%s\n' 'This installer supports Linux/macOS. Use install.ps1 from the checkout on Windows.' >&2; exit 1 ;;
+esac
 
-FACET_BIN="${BIN_DIR}/facet"
-FACET_UI_BIN="${BIN_DIR}/facet-ui"
+source_help() {
+    printf '%s\n' \
+        'Facet requires a complete source checkout; this script does not download source code.' \
+        'Run: git clone https://github.com/xibodev/facet.git' \
+        'Then: bash /absolute/path/to/facet/install.sh' >&2
+    exit 1
+}
 
-cd "${SCRIPT_DIR}"
-echo "  Building bin/facet..."
-go build -o "${FACET_BIN}" ./cmd/facet
-chmod +x "${FACET_BIN}"
-
-echo "  Building bin/facet-ui..."
-go build -o "${FACET_UI_BIN}" ./cmd/facet-ui
-chmod +x "${FACET_UI_BIN}"
-
-echo -e "${GREEN}  Successfully built binaries in ${BIN_DIR}${NC}"
-
-# 3. Setup User Install Directory
-USER_BIN_DIR="${HOME}/.facet/bin"
-mkdir -p "${USER_BIN_DIR}"
-cp -f "${FACET_BIN}" "${USER_BIN_DIR}/facet"
-cp -f "${FACET_UI_BIN}" "${USER_BIN_DIR}/facet-ui"
-chmod +x "${USER_BIN_DIR}/facet" "${USER_BIN_DIR}/facet-ui"
-
-export PATH="${USER_BIN_DIR}:${PATH}"
-
-# Check shell profile for PATH
-PROFILE_HINT=""
-if [[ ":$PATH:" != *":${USER_BIN_DIR}:"* ]]; then
-    if [ -n "$ZSH_VERSION" ] || [ -f "$HOME/.zshrc" ]; then
-        PROFILE_HINT="export PATH=\"\$HOME/.facet/bin:\$PATH\" >> ~/.zshrc"
-    else
-        PROFILE_HINT="export PATH=\"\$HOME/.facet/bin:\$PATH\" >> ~/.bashrc"
-    fi
-fi
-
-# 4. Setup Central Bundle
-USER_BUNDLE_DIR="${HOME}/.facet/bundle"
-mkdir -p "${USER_BUNDLE_DIR}"
-for folder in skills pipeline_defs schemas styles; do
-    if [ -d "${SCRIPT_DIR}/${folder}" ]; then
-        mkdir -p "${USER_BUNDLE_DIR}/${folder}"
-        cp -rf "${SCRIPT_DIR}/${folder}/"* "${USER_BUNDLE_DIR}/${folder}/" 2>/dev/null || true
-    fi
+[ -n "${BASH_SOURCE[0]:-}" ] || source_help
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+for file in go.mod cmd/facet/main.go cmd/facet-ui/main.go skills/facet/SKILL.md remotion-composer/package-lock.json; do
+    [ -f "${SCRIPT_DIR}/${file}" ] || source_help
 done
-echo -e "${GREEN}  Installed central bundle to ${USER_BUNDLE_DIR}${NC}"
+for folder in skills packs pipeline_defs schemas styles remotion-composer; do
+    [ -d "${SCRIPT_DIR}/${folder}" ] || source_help
+done
 
-# 5. Register Agent Skills
-echo -e "${YELLOW}==> Registering Facet skills for Agent CLIs...${NC}"
-SKILLS_SRC="${USER_BUNDLE_DIR}/skills"
-if [ -d "${SKILLS_SRC}" ]; then
-    # 5a. Claude Code
-    CLAUDE_DIR="${HOME}/.claude/skills"
-    mkdir -p "${CLAUDE_DIR}"
-    rm -rf "${CLAUDE_DIR}/facet"
-    ln -sf "${SKILLS_SRC}" "${CLAUDE_DIR}/facet" 2>/dev/null || cp -rf "${SKILLS_SRC}" "${CLAUDE_DIR}/facet"
-    echo -e "${GREEN}  Linked skills -> ~/.claude/skills/facet${NC}"
-
-    # 5b. OpenCode
-    OPENCODE_DIR="${HOME}/.config/opencode/skills"
-    mkdir -p "${OPENCODE_DIR}"
-    rm -rf "${OPENCODE_DIR}/facet"
-    ln -sf "${SKILLS_SRC}" "${OPENCODE_DIR}/facet" 2>/dev/null || cp -rf "${SKILLS_SRC}" "${OPENCODE_DIR}/facet"
-    echo -e "${GREEN}  Linked skills -> ~/.config/opencode/skills/facet${NC}"
+for program in go node npm ffmpeg ffprobe tar; do
+    command -v "$program" >/dev/null 2>&1 || {
+        printf 'Missing prerequisite: %s. Install Go 1.25+, Node.js 18+ with npm, FFmpeg/FFprobe and tar first.\n' "$program" >&2
+        exit 1
+    }
+done
+GO_VERSION="$(go env GOVERSION)"
+if [[ ! "$GO_VERSION" =~ ^go([0-9]+)\.([0-9]+) ]] || (( BASH_REMATCH[1] < 1 || (BASH_REMATCH[1] == 1 && BASH_REMATCH[2] < 25) )); then
+    printf 'Go 1.25+ is required; found %s.\n' "$GO_VERSION" >&2
+    exit 1
 fi
+node -e 'if (Number(process.versions.node.split(".")[0]) < 18) { console.error("Node.js 18+ is required"); process.exit(1); }'
 
-# 6. Run Doctor
-echo ""
-echo -e "${YELLOW}==> Running Facet Doctor...${NC}"
-echo ""
-"${FACET_BIN}" doctor
+INSTALL_ROOT="${HOME:?HOME must be set}/.facet"
+USER_BIN_DIR="${INSTALL_ROOT}/bin"
+USER_BUNDLE_DIR="${INSTALL_ROOT}/bundle"
+mkdir -p "$USER_BIN_DIR" "$USER_BUNDLE_DIR"
 
-echo ""
-echo -e "${GREEN}======================================================${NC}"
-echo -e "${GREEN}  Facet Installation & Registration Complete!         ${NC}"
-echo -e "${GREEN}======================================================${NC}"
-echo ""
-if [ -n "$PROFILE_HINT" ]; then
-    echo -e "${YELLOW}Tip: To add facet to your persistent PATH, run:${NC}"
-    echo -e "  echo '${PROFILE_HINT}'"
-    echo ""
-fi
-echo -e "${CYAN}Quick Start:${NC}"
-echo -e "${WHITE}  facet ui                  # Launch Facet Studio in browser (:8787)${NC}"
-echo -e "${WHITE}  facet init <project-name> # Initialize a new video workspace${NC}"
-echo -e "${WHITE}  facet doctor              # Verify system runtimes & tools${NC}"
-echo -e "${WHITE}  facet tools list          # List 33 available toolbox tools${NC}"
-echo ""
+printf '%s\n' 'Building Facet from source...'
+(
+    cd "$SCRIPT_DIR"
+    go build -o "${USER_BIN_DIR}/facet" ./cmd/facet
+    go build -o "${USER_BIN_DIR}/facet-ui" ./cmd/facet-ui
+)
+
+printf '%s\n' 'Installing skills, packs and Remotion source (excluding local dependencies and render outputs)...'
+(
+    cd "$SCRIPT_DIR"
+    tar --exclude=node_modules --exclude=.git --exclude=out --exclude=dist --exclude=.cache \
+        -cf - skills packs pipeline_defs schemas styles remotion-composer
+) | tar -xf - -C "$USER_BUNDLE_DIR"
+
+printf '%s\n' 'Installing locked Remotion dependencies with npm ci (network access may be required)...'
+npm ci --prefix "${USER_BUNDLE_DIR}/remotion-composer" --no-audit --no-fund
+
+printf '\nInstalled binaries: %s\nInstalled bundle: %s\n' "$USER_BIN_DIR" "$USER_BUNDLE_DIR"
+printf '%s\n' 'No shell profiles, global agent skills or custom Facet configuration were changed.'
+printf '%s\n' 'For this shell, run: export PATH="$HOME/.facet/bin:$PATH"'
+printf '%s\n' 'Add that export to your shell profile for future terminals.'
+printf '%s\n' 'Then: facet doctor'
+printf '%s\n' '      facet init /absolute/path/to/my-video --engine opencode --no-launch'
+printf '%s\n' 'Install/authenticate your agent separately before starting a production.'

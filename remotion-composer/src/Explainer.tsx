@@ -30,6 +30,7 @@ import { ScreenshotScene } from "./components/ScreenshotScene";
 import type { ScreenshotStep } from "./components/ScreenshotScene";
 import { ProviderChip } from "./components/ProviderChip";
 import { resolveAsset } from "./lib/resolveAsset";
+import { explainerLayout } from "./explainerLayout";
 import type { ParticleType } from "./components/ParticleOverlay";
 import { resolveTheme, type ThemeConfig, DEFAULT_THEME } from "./Root";
 
@@ -300,6 +301,10 @@ interface AudioConfig {
 
 export interface ExplainerProps {
   [key: string]: unknown;
+  width?: number;
+  height?: number;
+  fps?: number;
+  duration_seconds?: number;
   cuts: Cut[];
   overlays?: Overlay[];
   captions?: WordCaption[];
@@ -832,53 +837,68 @@ const OverlayRenderer: React.FC<{ overlay: Overlay; theme: ThemeConfig }> = ({
 
 export const Explainer: React.FC<ExplainerProps> = (props) => {
   const { cuts, overlays, captions, audio } = props;
-  const { fps, durationInFrames } = useVideoConfig();
+  const { fps, durationInFrames, width, height } = useVideoConfig();
+  const canvas = explainerLayout(width, height);
 
   // Resolve theme from props — playbook name, theme name, or custom themeConfig
   const theme = resolveTheme(props as Record<string, unknown>);
 
   return (
     <AbsoluteFill style={{ background: theme.backgroundColor, fontFamily: theme.headingFont || fontFamily }}>
-      {/* Layer 0: Animated gradient background — driven by theme */}
-      <AnimatedBackground theme={theme} />
+      {/* Sequence dimensions also give useVideoConfig-based scenes logical coordinates. */}
+      <Sequence
+        width={canvas.width}
+        height={canvas.height}
+        showInTimeline={false}
+        style={{
+          left: canvas.left,
+          top: canvas.top,
+          transform: canvas.scale === 1 ? undefined : `scale(${canvas.scale})`,
+          transformOrigin: "top left",
+          overflow: "hidden",
+        }}
+      >
+        {/* Layer 0: Animated gradient background — driven by theme */}
+        <AnimatedBackground theme={theme} />
 
-      {/* Layer 1: Visual scenes */}
-      {cuts.map((cut) => {
-        const from = Math.round(cut.in_seconds * fps);
-        const duration = Math.round((cut.out_seconds - cut.in_seconds) * fps);
+        {/* Layer 1: Visual scenes */}
+        {cuts.map((cut) => {
+          const from = Math.round(cut.in_seconds * fps);
+          const duration = Math.round(cut.out_seconds * fps) - from;
 
-        return (
-          <Sequence key={cut.id} from={from} durationInFrames={duration}>
-            <SceneRenderer cut={cut} theme={theme} />
-          </Sequence>
-        );
-      })}
+          return (
+            <Sequence key={cut.id} from={from} durationInFrames={duration}>
+              <SceneRenderer cut={cut} theme={theme} />
+            </Sequence>
+          );
+        })}
 
-      {/* Layer 2: Overlays (section titles, stat reveals, hero titles) */}
-      {overlays?.map((overlay, i) => {
-        const from = Math.round(overlay.in_seconds * fps);
-        const duration = Math.round(
-          (overlay.out_seconds - overlay.in_seconds) * fps
-        );
+        {/* Layer 2: Overlays (section titles, stat reveals, hero titles) */}
+        {overlays?.map((overlay, i) => {
+          const from = Math.round(overlay.in_seconds * fps);
+          const duration = Math.round(
+            (overlay.out_seconds - overlay.in_seconds) * fps
+          );
 
-        return (
-          <Sequence key={`overlay-${i}`} from={from} durationInFrames={duration}>
-            <OverlayRenderer overlay={overlay} theme={theme} />
-          </Sequence>
-        );
-      })}
+          return (
+            <Sequence key={`overlay-${i}`} from={from} durationInFrames={duration}>
+              <OverlayRenderer overlay={overlay} theme={theme} />
+            </Sequence>
+          );
+        })}
 
-      {/* Layer 3: Captions (word-by-word highlight) */}
-      {captions && captions.length > 0 && (
-        <CaptionOverlay
-          words={captions}
-          wordsPerPage={6}
-          fontSize={42}
-          color={theme.textColor}
-          highlightColor={theme.captionHighlightColor}
-          backgroundColor={theme.captionBackgroundColor}
-        />
-      )}
+        {/* Layer 3: Captions (word-by-word highlight) */}
+        {captions && captions.length > 0 && (
+          <CaptionOverlay
+            words={captions}
+            wordsPerPage={6}
+            fontSize={42}
+            color={theme.textColor}
+            highlightColor={theme.captionHighlightColor}
+            backgroundColor={theme.captionBackgroundColor}
+          />
+        )}
+      </Sequence>
 
       {/* Layer 4: Audio — narration */}
       {audio?.narration?.src && (

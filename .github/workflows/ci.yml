@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [staging, main]
+  push:
+    branches: [staging, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Dependency downloads are allowed. These gates use local fixtures, not Docker,
+# agent/model inference, live media providers, release certification or publishing.
+jobs:
+  checks:
+    name: Checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.18.0'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            remotion-composer/package-lock.json
+      - name: Install FFmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ffmpeg
+      - name: Install FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ffmpeg --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify FFmpeg
+        run: ffmpeg -version
+      - name: Verify FFprobe
+        run: ffprobe -version
+      - name: Install root dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install composer dependencies
+        working-directory: remotion-composer
+        run: npm ci --no-audit --no-fund
+      - name: Go short suite (no live providers)
+        run: go test -short ./... -count=1 -timeout=6m
+      - name: Go vet
+        run: go vet ./...
+      - name: Launcher and UAT fixture tests (no model calls)
+        run: node --test "bin/*.test.js" "scripts/*.test.mjs"
+      - name: Composer metadata and layout tests
+        working-directory: remotion-composer
+        run: node --test "src/*.test.mjs"
+      - name: Composer typecheck
+        working-directory: remotion-composer
+        run: node node_modules/typescript/bin/tsc --noEmit
+      - name: Windows installer parser and preflight
+        shell: pwsh
+        run: ./scripts/test-install.ps1
+      - name: npm content and native source version checks (not binary distribution)
+        run: node scripts/release-package-smoke.mjs
+      - name: Windows isolated source installation
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/test-install-windows.ps1
+      - name: Linux isolated source installation
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          export GOCACHE="$(go env GOCACHE)"
+          export GOMODCACHE="$(go env GOMODCACHE)"
+          export HOME="$(mktemp -d "$RUNNER_TEMP/facet-install-XXXXXX")"
+          mkdir -p "$HOME/.config/facet" "$HOME/work"
+          printf 'defaults:\n  voice: keep-custom-voice\n' > "$HOME/.config/facet/config.yaml"
+          cp "$HOME/.config/facet/config.yaml" "$HOME/config-before.yaml"
+          cd "$HOME/work"
+          bash "$GITHUB_WORKSPACE/install.sh"
+          cmp "$HOME/config-before.yaml" "$HOME/.config/facet/config.yaml"
+          "$HOME/.facet/bin/facet" init --help
+          test -z "$(ls -A)"
+          "$HOME/.facet/bin/facet" init project --engine opencode --no-launch
+          test -f project/.opencode/skills/facet/SKILL.md
+          test -f project/.opencode/skills/explainer/SKILL.md
+          grep -q keep-custom-voice project/.facet.yaml
+          grep -q bundle/remotion-composer project/.facet.yaml
+          "$HOME/.facet/bin/facet" doctor
+          "$HOME/.facet/bin/facet-ui" --version
+          node -e 'const p=process.argv[1]; for (const m of ["remotion","@remotion/cli","@remotion/renderer"]) console.log(require.resolve(m,{paths:[p]})); require(require.resolve("esbuild",{paths:[p]})).transformSync("const n: number = 1",{loader:"ts"});' "$HOME/.facet/bundle/remotion-composer"
+      - name: Install fixture browser (Linux)
+        if: runner.os == 'Linux'
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Studio synthetic browser regression (not real-agent UAT)
+        if: runner.os == 'Linux'
+        run: node scripts/studio-repair-smoke.mjs

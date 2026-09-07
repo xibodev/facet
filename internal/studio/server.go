@@ -98,6 +98,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/projects/{slug}", s.guardRequest(noToken, s.handleGetProject))
 	s.mux.HandleFunc("GET /api/engines", s.guardRequest(noToken, s.handleListEngines))
 	s.mux.HandleFunc("GET /api/session-token", s.guardRequest(noToken, s.handleSessionToken))
+	s.mux.HandleFunc("GET /api/session", s.guardRequest(tokenHeader, s.handleGetSession))
 
 	// Media File Serving
 	s.mux.HandleFunc("GET /api/media/{path...}", s.guardRequest(noToken, s.handleServeMedia))
@@ -435,13 +436,14 @@ func (s *Server) handleServeMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	unescaped, err := url.PathUnescape(reqPath)
-	if err != nil {
-		http.Error(w, "Bad request", http.StatusBadRequest)
-		return
+	// ServeMux has already unescaped each path segment.
+	for _, segment := range strings.FieldsFunc(reqPath, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if segment == ".." {
+			http.Error(w, "Access denied", http.StatusForbidden)
+			return
+		}
 	}
-
-	cleaned := filepath.Clean(filepath.FromSlash(unescaped))
+	cleaned := filepath.Clean(filepath.FromSlash(reqPath))
 	if filepath.IsAbs(cleaned) || filepath.VolumeName(cleaned) != "" || cleaned == "." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
 		http.Error(w, "Access denied", http.StatusForbidden)
 		return
@@ -453,7 +455,8 @@ func (s *Server) handleServeMedia(w http.ResponseWriter, r *http.Request) {
 	projectsRoot, err := s.canonicalProjectsRoot()
 	if err == nil {
 		candidate, cErr := canonicalExistingPath(filepath.Join(s.rootDir, cleaned))
-		if cErr == nil && pathStrictlyWithin(projectsRoot, candidate) {
+		_, mediaURL := evidenceLocation(s.rootDir, filepath.Join(s.rootDir, cleaned))
+		if cErr == nil && mediaURL != "" && pathStrictlyWithin(projectsRoot, candidate) {
 			fullPath = candidate
 			allowed = true
 		}
@@ -463,11 +466,20 @@ func (s *Server) handleServeMedia(w http.ResponseWriter, r *http.Request) {
 		if cat, err := LoadCatalog(s.rootDir); err == nil {
 			for _, cp := range cat.Projects {
 				dirName := filepath.Base(cp.Path)
-				if cleaned == dirName || strings.HasPrefix(cleaned, dirName+string(filepath.Separator)) {
-					sub := strings.TrimPrefix(cleaned, dirName)
-					sub = strings.TrimPrefix(sub, string(filepath.Separator))
+				id := cp.ID
+				if id == "" {
+					id = dirName
+				}
+				prefix := filepath.Join("catalog", id) + string(filepath.Separator)
+				legacyPrefix := dirName + string(filepath.Separator)
+				if strings.HasPrefix(cleaned, prefix) || (!strings.HasPrefix(cleaned, "catalog"+string(filepath.Separator)) && strings.HasPrefix(cleaned, legacyPrefix)) {
+					sub := strings.TrimPrefix(cleaned, prefix)
+					if sub == cleaned {
+						sub = strings.TrimPrefix(cleaned, legacyPrefix)
+					}
+					projectRoot, rootErr := canonicalExistingPath(cp.Path)
 					candidate, cErr := canonicalExistingPath(filepath.Join(cp.Path, sub))
-					if cErr == nil && (samePath(cp.Path, candidate) || pathStrictlyWithin(cp.Path, candidate)) {
+					if rootErr == nil && cErr == nil && pathStrictlyWithin(projectRoot, candidate) {
 						fullPath = candidate
 						allowed = true
 						break
@@ -595,10 +607,7 @@ func (s *Server) resolveSessionDir(dir string) (string, error) {
 		return resolved, nil
 	}
 	projects, err := s.canonicalProjectsRoot()
-	if err != nil {
-		return "", fmt.Errorf("resolve Studio projects directory: %w", err)
-	}
-	if pathStrictlyWithin(projects, resolved) {
+	if err == nil && pathStrictlyWithin(projects, resolved) {
 		return resolved, nil
 	}
 	// Also permit catalog projects
@@ -746,6 +755,12 @@ func (s *Server) handleChatSSE(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
+		if (q.Get("dir") != "" || q.Get("engine") != "") && !s.sessionMatches(sess, q.Get("dir"), q.Get("engine")) {
+			if sse(w, "error", map[string]string{"message": "session belongs to a different project or engine"}) == nil {
+				_ = sendEnd(w, false, false, "session context mismatch")
+			}
+			return
+		}
 	} else {
 		dir := q.Get("dir")
 		mode := q.Get("mode")
@@ -802,6 +817,25 @@ func (s *Server) handleChatSSE(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = sendEnd(w, true, true, "")
+}
+
+func (s *Server) sessionMatches(sess *Session, dir, engineName string) bool {
+	resolved, err := s.resolveSessionDir(dir)
+	return err == nil && dir != "" && samePath(resolved, sess.Dir) && engineName == sess.Engine
+}
+
+func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	sess := s.getSession(r.URL.Query().Get("session"))
+	if sess == nil || !sess.IsAlive() {
+		http.NotFound(w, r)
+		return
+	}
+	if !s.sessionMatches(sess, r.URL.Query().Get("dir"), r.URL.Query().Get("engine")) {
+		http.Error(w, "Session context mismatch", http.StatusConflict)
+		return
+	}
+	respondJSON(w, http.StatusOK, sessionPayload(sess))
 }
 
 func (s *Server) handleCloseSession(w http.ResponseWriter, r *http.Request) {

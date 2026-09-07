@@ -3,6 +3,7 @@
   "schema_version": "1.0.0",
   "product_slug": "facet",
   "topology_type": "monorepo",
+  "network_policy": { "mode": "sealed", "allowed_egress": [] },
   "nodes": [
     {
       "id": "web",
@@ -12,7 +13,7 @@
       "health_probe": {
         "type": "http",
         "host": "127.0.0.1",
-        "port": 8787,
+        "port": 31000,
         "path": "/",
         "expected_status": 200
       }

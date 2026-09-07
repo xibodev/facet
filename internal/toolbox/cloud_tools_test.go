@@ -29,7 +29,7 @@ func TestOpenAIImageEstimateAndMock(t *testing.T) {
 		t.Fatalf("unexpected estimate result: %#v", estMap)
 	}
 
-	// Mock run when OPENAI_API_KEY is unset
+	// Mock output must be explicitly requested, regardless of credentials.
 	origKey := os.Getenv("OPENAI_API_KEY")
 	os.Unsetenv("OPENAI_API_KEY")
 	defer func() {
@@ -42,6 +42,7 @@ func TestOpenAIImageEstimateAndMock(t *testing.T) {
 		"prompt":      "A futuristic cityscape at dusk",
 		"size":        "1024x1024",
 		"output_path": outImg,
+		"mock":        true,
 	})
 	res, _, err := doOpenAIImage("run", runReq)
 	if err != nil {
@@ -98,6 +99,7 @@ func TestFluxImageEstimateAndMock(t *testing.T) {
 		"prompt":       "Cinematic portrait of an astronaut",
 		"aspect_ratio": "16:9",
 		"output_path":  outImg,
+		"mock":         true,
 	})
 	res, _, err := doFluxImage("run", runReq)
 	if err != nil {
@@ -145,6 +147,7 @@ func TestKlingVideoEstimateAndMock(t *testing.T) {
 		"prompt":      "Ocean waves in slow motion",
 		"duration":    5.0,
 		"output_path": outVid,
+		"mock":        true,
 	})
 	res, _, err := doKlingVideo("run", runReq)
 	if err != nil {
@@ -191,6 +194,7 @@ func TestSoraVideoEstimateAndMock(t *testing.T) {
 		"prompt":      "Drone flight over autumn forest",
 		"duration":    5.0,
 		"output_path": outVid,
+		"mock":        true,
 	})
 	res, _, err := doSoraVideo("run", runReq)
 	if err != nil {

@@ -5,16 +5,17 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestCatalogOperations(t *testing.T) {
 	tmpDir := t.TempDir()
-	origLocalAppData := os.Getenv("LOCALAPPDATA")
-	defer os.Setenv("LOCALAPPDATA", origLocalAppData)
-	_ = os.Setenv("LOCALAPPDATA", tmpDir)
+	t.Setenv("LOCALAPPDATA", tmpDir)
+	t.Setenv("HOME", tmpDir)
 
 	// 1. Initial Load should be empty
 	cat, err := LoadCatalog()
@@ -77,9 +78,8 @@ func TestDiscoverPacks(t *testing.T) {
 
 func TestCatalogEndpoints(t *testing.T) {
 	tmpDir := t.TempDir()
-	origLocalAppData := os.Getenv("LOCALAPPDATA")
-	defer os.Setenv("LOCALAPPDATA", origLocalAppData)
-	_ = os.Setenv("LOCALAPPDATA", tmpDir)
+	t.Setenv("LOCALAPPDATA", tmpDir)
+	t.Setenv("HOME", tmpDir)
 
 	server := NewServer(tmpDir)
 
@@ -148,5 +148,198 @@ func TestCatalogEndpoints(t *testing.T) {
 	server.mux.ServeHTTP(wOpen, reqOpen)
 	if wOpen.Code != http.StatusOK {
 		t.Fatalf("POST /api/catalog/open returned %d: %s", wOpen.Code, wOpen.Body.String())
+	}
+}
+
+func TestCatalogProjectJourney(t *testing.T) {
+	for _, withProjects := range []bool{false, true} {
+		name := "catalog-only"
+		if withProjects {
+			name = "with-local-projects"
+		}
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			if withProjects {
+				mustWriteTestFile(t, filepath.Join(root, "projects", "local", "brief.md"), "# Local")
+			}
+			// The catalog ID intentionally differs from the external folder name.
+			project := filepath.Join(t.TempDir(), "external-folder")
+			files := map[string]string{
+				"brief.md":                     "# External Production",
+				"artifacts/script.json":        `{"title":"Script","beats":[{"narration":"Hello"}]}`,
+				"artifacts/edit.json":          `{"clips":[]}`,
+				"narration/voice 100% #1.mp3":  "audio",
+				"qa/frame #1.png":              "image",
+				"review/final-frames/shot.png": "review image",
+				"review/report.json":           `{"status":"passed"}`,
+				"renders/final.mp4":            "video",
+				"facet.lock.json":              `{"engine":"claude"}`,
+			}
+			for path, content := range files {
+				mustWriteTestFile(t, filepath.Join(project, filepath.FromSlash(path)), content)
+			}
+			registered, err := RegisterOrUpdateProject("Catalog Movie", project, "codex", nil, root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			server := NewServer(root)
+			get := func(path string) *httptest.ResponseRecorder {
+				t.Helper()
+				rec := httptest.NewRecorder()
+				server.Handler().ServeHTTP(rec, newSecurityRequest(http.MethodGet, path, ""))
+				if rec.Code != http.StatusOK {
+					t.Fatalf("GET %s = %d: %s", path, rec.Code, rec.Body.String())
+				}
+				return rec
+			}
+			var summaries []ProjectSummary
+			if err := json.Unmarshal(get("/api/projects").Body.Bytes(), &summaries); err != nil {
+				t.Fatal(err)
+			}
+			var summary *ProjectSummary
+			for i := range summaries {
+				if summaries[i].Slug == registered.ID {
+					summary = &summaries[i]
+				}
+			}
+			if summary == nil || summary.Engine != "codex" || summary.Path != project {
+				t.Fatalf("missing catalog identity/engine: %#v", summary)
+			}
+			var details ProjectDetails
+			if err := json.Unmarshal(get("/api/projects/"+registered.ID).Body.Bytes(), &details); err != nil {
+				t.Fatal(err)
+			}
+			if details.Engine != "codex" || details.Path != project || details.Brief != files["brief.md"] || len(details.Beats) != 1 {
+				t.Fatalf("catalog details = %#v", details)
+			}
+			if len(details.Narration) != 1 || len(details.QAFrames) != 1 || len(details.ReviewFrames) != 1 {
+				t.Fatalf("missing catalog media: %#v", details)
+			}
+			urls := map[string]string{
+				details.BriefURL:            files["brief.md"],
+				details.ScriptURL:           files["artifacts/script.json"],
+				details.CompositionURL:      files["artifacts/edit.json"],
+				details.Narration[0].URL:    "audio",
+				details.QAFrames[0].URL:     "image",
+				details.ReviewFrames[0].URL: "review image",
+				details.ThumbnailURL:        "review image",
+				details.VideoURL:            "video",
+			}
+			for mediaURL, content := range urls {
+				if !strings.HasPrefix(mediaURL, "/api/media/catalog/"+registered.ID+"/") {
+					t.Fatalf("media URL lacks catalog ID: %q", mediaURL)
+				}
+				if got := get(mediaURL).Body.String(); got != content {
+					t.Errorf("GET %s = %q, want %q", mediaURL, got, content)
+				}
+			}
+			if summary.VideoURL != details.VideoURL || summary.ThumbnailURL != details.ThumbnailURL {
+				t.Fatal("summary and details media URLs differ")
+			}
+			// Existing basename aliases must still produce URLs using the catalog ID.
+			alias, err := GetProjectDetails(root, filepath.Base(project))
+			if err != nil || alias.VideoURL != details.VideoURL {
+				t.Fatalf("catalog alias details = %#v, %v", alias, err)
+			}
+			for _, dir := range []string{details.Path, filepath.Join(project, "artifacts")} {
+				sess, err := server.newSession(dir, "rw", details.Engine)
+				if err != nil {
+					t.Fatalf("catalog chat session: %v", err)
+				}
+				canonical, err := canonicalExistingPath(dir)
+				if err != nil || sess.Dir != canonical || sess.Engine != "codex" {
+					t.Fatalf("session dir/engine = %q/%q, want %q/codex: %v", sess.Dir, sess.Engine, canonical, err)
+				}
+			}
+			if _, err := server.resolveSessionDir(filepath.Dir(project)); err == nil {
+				t.Fatal("unregistered parent directory accepted for chat")
+			}
+			mustWriteTestFile(t, filepath.Join(project, "private.env"), "not media")
+			for _, path := range []string{
+				"/api/media/catalog/" + registered.ID + "/private.env",
+				"/api/media/catalog/" + registered.ID + "/%2e%2e/private.txt",
+				"/api/projects/" + url.PathEscape("../external-folder"),
+			} {
+				rec := httptest.NewRecorder()
+				server.Handler().ServeHTTP(rec, newSecurityRequest(http.MethodGet, path, ""))
+				if rec.Code == http.StatusOK {
+					t.Errorf("unsafe path accepted: %s", path)
+				}
+			}
+			if !withProjects {
+				if _, err := os.Stat(filepath.Join(root, "projects")); !os.IsNotExist(err) {
+					t.Fatalf("catalog access must not create root/projects: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestProjectEngineFromLock(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "projects", "local")
+	mustWriteTestFile(t, filepath.Join(project, "facet.lock.json"), `{"engine":"opencode"}`)
+	list, err := ListProjects(root)
+	if err != nil || len(list) != 1 || list[0].Engine != "opencode" {
+		t.Fatalf("local engine summary = %#v, %v", list, err)
+	}
+	details, err := GetProjectDetails(root, "local")
+	if err != nil || details.Engine != "opencode" {
+		t.Fatalf("local engine details = %#v, %v", details, err)
+	}
+	if _, err := RegisterOrUpdateProject("External Lock", project, "", nil, root); err != nil {
+		t.Fatal(err)
+	}
+	details, err = GetProjectDetails(root, "external-lock")
+	if err != nil || details.Engine != "opencode" {
+		t.Fatalf("catalog lock fallback = %#v, %v", details, err)
+	}
+}
+
+func TestCatalogProjectRejectsEscapedSymlinks(t *testing.T) {
+	root := t.TempDir()
+	project := t.TempDir()
+	outside := t.TempDir()
+	mustWriteTestFile(t, filepath.Join(outside, "secret.txt"), "outside")
+	if !makeTestSymlink(t, outside, filepath.Join(project, "escaped")) {
+		return
+	}
+	if _, err := RegisterOrUpdateProject("External", project, "codex", nil, root); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(root)
+	if _, err := server.resolveSessionDir(filepath.Join(project, "escaped")); err == nil {
+		t.Fatal("escaped catalog session directory accepted")
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, newSecurityRequest(http.MethodGet, "/api/media/catalog/external/escaped/secret.txt", ""))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("escaped media returned %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCatalogMediaDistinguishesMatchingFolderNames(t *testing.T) {
+	root := t.TempDir()
+	server := NewServer(root)
+	for _, name := range []string{"first", "second"} {
+		project := filepath.Join(t.TempDir(), "same-folder")
+		mustWriteTestFile(t, filepath.Join(project, "renders", "edit.mp4"), name)
+		if _, err := RegisterOrUpdateProject(name, project, "codex", nil, root); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"first", "second"} {
+		details, err := GetProjectDetails(root, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if details.Stages.Master || details.VideoURL != "" || details.PreviewVideoURL == "" {
+			t.Fatalf("preview promoted to master: %#v", details)
+		}
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, newSecurityRequest(http.MethodGet, details.PreviewVideoURL, ""))
+		if rec.Code != http.StatusOK || rec.Body.String() != name {
+			t.Fatalf("preview for %s = %d %q", name, rec.Code, rec.Body.String())
+		}
 	}
 }

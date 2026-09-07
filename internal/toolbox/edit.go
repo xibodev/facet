@@ -245,6 +245,8 @@ func doSourceEdit(op string, data []byte) (any, []string, error) {
 	filters = append(filters, fmt.Sprintf("%sconcat=n=%d:v=1:a=1[vcat][acat]", concatInputs.String(), len(r.Segments)))
 	audioLabel := "[acat]"
 	if replacementIndex >= 0 {
+		// Keep concat timing unchanged while consuming the discarded source audio.
+		filters = append(filters, "[acat]anullsink")
 		filters = append(filters, fmt.Sprintf("[%d:a]apad,atrim=duration=%s,asetpts=PTS-STARTPTS,aformat=sample_rates=48000:channel_layouts=stereo[replacement]", replacementIndex, formatFloat(total)))
 		audioLabel = "[replacement]"
 	}

@@ -1,252 +1,176 @@
-# Facet Video Kit - Windows PowerShell Interactive Installer
-# Usage: powershell -ExecutionPolicy Bypass -File .\install.ps1
-
+# Windows source installer. Run with -File from a complete, trusted checkout.
+# InstallDir is the binary directory; the bundle is installed beside it.
 param(
     [switch]$Quiet,
     [switch]$NonInteractive,
-    [string]$Scope = "on-demand",
-    [string]$InstallDir = ""
+    [ValidateSet('on-demand', 'global')][string]$Scope = 'on-demand',
+    [string]$InstallDir = '',
+    [string]$HomeDir = '',
+    [switch]$NoPath,
+    [switch]$NoShortcuts,
+    [switch]$UpdateShortcuts,
+    [switch]$Isolated
 )
 
-$ErrorActionPreference = "Stop"
-
-Write-Host ''
-Write-Host '======================================================' -ForegroundColor Cyan
-Write-Host '      Facet - Autonomous Video Production Studio      ' -ForegroundColor Cyan
-Write-Host '======================================================' -ForegroundColor Cyan
-Write-Host ''
-
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-if (-not $ScriptDir) {
-    $ScriptDir = Get-Location
+$ErrorActionPreference = 'Stop'
+$sourceHelp = 'Facet requires a complete source checkout; this script does not download source. Run: git clone https://github.com/xibodev/facet.git ; then: pwsh -File /absolute/path/to/facet/install.ps1'
+# Invoke-Expression / piped invocations have no script path. Never infer source from cwd.
+if (-not $PSCommandPath) { throw $sourceHelp }
+$ScriptDir = Split-Path -Parent $PSCommandPath
+foreach ($file in @('go.mod', 'cmd/facet/main.go', 'cmd/facet-ui/main.go', 'skills/facet/SKILL.md', 'packs/explainer/SKILL.md', 'remotion-composer/package.json', 'remotion-composer/package-lock.json', 'remotion-composer/src/index.tsx')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $ScriptDir $file) -PathType Leaf)) { throw $sourceHelp }
 }
-
-# 1. Check Go Compiler
-Write-Host '==> Checking Go compiler environment...' -ForegroundColor Yellow
-$GoCmd = Get-Command 'go' -ErrorAction SilentlyContinue
-if (-not $GoCmd) {
-    Write-Error 'Go compiler (go.dev) was not found in PATH. Please install Go 1.22+ to build Facet from source.'
-    exit 1
-}
-$goVer = go version
-Write-Host ('  Found Go compiler: ' + $goVer) -ForegroundColor Green
-
-# 2. Build Binaries
-Write-Host '==> Compiling Facet binaries (facet, facet-ui)...' -ForegroundColor Yellow
-$LocalBin = Join-Path $ScriptDir 'bin'
-if (-not (Test-Path $LocalBin)) {
-    New-Item -ItemType Directory -Path $LocalBin -Force | Out-Null
-}
-
-$FacetExe = Join-Path $LocalBin 'facet.exe'
-$FacetUIExe = Join-Path $LocalBin 'facet-ui.exe'
-
-Push-Location $ScriptDir
-try {
-    Write-Host '  Building bin/facet.exe...' -ForegroundColor DarkGray
-    & go build -o $FacetExe ./cmd/facet
-    if ($LASTEXITCODE -ne 0) { throw 'Failed to build cmd/facet' }
-
-    Write-Host '  Building bin/facet-ui.exe...' -ForegroundColor DarkGray
-    & go build -o $FacetUIExe ./cmd/facet-ui
-    if ($LASTEXITCODE -ne 0) { throw 'Failed to build cmd/facet-ui' }
-}
-finally {
-    Pop-Location
-}
-Write-Host '  Compiled successfully.' -ForegroundColor Green
-
-# 3. Setup Install Location
-if (-not $InstallDir) {
-    $InstallDir = Join-Path $env:LOCALAPPDATA 'Programs/Facet/bin'
-}
-$UserFacetBin = Join-Path $env:USERPROFILE '.facet/bin'
-$UserFacetBundle = Join-Path $env:USERPROFILE '.facet/bundle'
-
-foreach ($d in @($InstallDir, $UserFacetBin, $UserFacetBundle)) {
-    if (-not (Test-Path $d)) {
-        New-Item -ItemType Directory -Path $d -Force | Out-Null
-    }
-}
-
-Copy-Item -Path $FacetExe -Destination (Join-Path $InstallDir 'facet.exe') -Force
-Copy-Item -Path $FacetUIExe -Destination (Join-Path $InstallDir 'facet-ui.exe') -Force
-Copy-Item -Path $FacetExe -Destination (Join-Path $UserFacetBin 'facet.exe') -Force
-Copy-Item -Path $FacetUIExe -Destination (Join-Path $UserFacetBin 'facet-ui.exe') -Force
-
-# Copy Bundle Knowledge Assets to ~/.facet/bundle
-Write-Host '==> Installing central bundle assets...' -ForegroundColor Yellow
-$BundleFolders = @('skills', 'pipeline_defs', 'schemas', 'styles')
+$BundleFolders = @('skills', 'packs', 'pipeline_defs', 'schemas', 'styles', 'remotion-composer')
 foreach ($folder in $BundleFolders) {
-    $src = Join-Path $ScriptDir $folder
-    $dst = Join-Path $UserFacetBundle $folder
-    if (Test-Path $src) {
-        if (-not (Test-Path $dst)) {
-            New-Item -ItemType Directory -Path $dst -Force | Out-Null
-        }
-        Copy-Item -Path ($src + '/*') -Destination $dst -Recurse -Force
-    }
+    if (-not (Test-Path -LiteralPath (Join-Path $ScriptDir $folder) -PathType Container)) { throw $sourceHelp }
 }
-Write-Host ('  Installed central bundle to ' + $UserFacetBundle) -ForegroundColor Green
-
-# 4. PATH Configuration
-Write-Host '==> Configuring User PATH environment...' -ForegroundColor Yellow
-$UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-if (-not $UserPath) { $UserPath = '' }
-
-$PathsToAdd = @($InstallDir, $UserFacetBin)
-$PathModified = $false
-
-foreach ($p in $PathsToAdd) {
-    if ($UserPath -notlike ('*' + $p + '*')) {
-        $UserPath = $p + ';' + $UserPath
-        $PathModified = $true
-    }
-    if ($env:Path -notlike ('*' + $p + '*')) {
-        $env:Path = $p + ';' + $env:Path
-    }
+if ($env:OS -ne 'Windows_NT') { throw 'This installer supports Windows. Use install.sh on Linux/macOS.' }
+if ($UpdateShortcuts -and ($NoShortcuts -or $Isolated)) { throw '-UpdateShortcuts cannot be combined with -NoShortcuts or -Isolated.' }
+if ($HomeDir -and -not $Isolated) { throw '-HomeDir requires -Isolated to prevent unintended user-profile writes.' }
+if ($Isolated -and (-not $HomeDir -or -not $InstallDir -or -not $NoPath -or -not $NoShortcuts -or $Scope -ne 'on-demand')) {
+    throw '-Isolated requires explicit -HomeDir, -InstallDir, -NoPath, -NoShortcuts and on-demand scope.'
+}
+if (-not $HomeDir) { $HomeDir = $env:USERPROFILE }
+$HomeDir = [IO.Path]::GetFullPath($HomeDir)
+if ($Isolated -and $HomeDir.TrimEnd('\', '/') -eq $env:USERPROFILE.TrimEnd('\', '/')) {
+    throw '-Isolated requires a home different from the real user profile.'
+}
+if (-not $InstallDir) { $InstallDir = Join-Path $HomeDir '.facet/bin' }
+$InstallDir = [IO.Path]::GetFullPath($InstallDir).TrimEnd('\', '/')
+$BundleDir = Join-Path (Split-Path -Parent $InstallDir) 'bundle'
+foreach ($target in @((Join-Path $InstallDir 'facet.exe'), (Join-Path $InstallDir 'facet-ui.exe'), $BundleDir)) {
+    if (Test-Path -LiteralPath $target) { throw "Refusing to overwrite existing installation files: $target. Choose a fresh -InstallDir (bin directory with a fresh sibling bundle)." }
 }
 
-if ($PathModified) {
-    [Environment]::SetEnvironmentVariable('Path', $UserPath, 'User')
-    Write-Host '  Updated Windows User PATH in registry.' -ForegroundColor Green
-} else {
-    Write-Host '  User PATH already contains Facet directories.' -ForegroundColor DarkGray
+function Copy-BundleTree([string]$Source, [string]$Destination) {
+    New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+    foreach ($item in Get-ChildItem -LiteralPath $Source -Force) {
+        if ($item.Name -in @('node_modules', '.git', 'out', 'dist', '.cache', '.env') -or $item.Name -like '.env.*') { continue }
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Refusing bundle link: $($item.FullName)" }
+        $target = Join-Path $Destination $item.Name
+        if ($item.PSIsContainer) { Copy-BundleTree $item.FullName $target }
+        else { Copy-Item -LiteralPath $item.FullName -Destination $target }
+    }
 }
 
-# 5. Discover Agent CLIs on Machine
-Write-Host ''
-Write-Host '==> [1/3] Discovering installed Agent CLIs...' -ForegroundColor Cyan
-
-$DiscoveredCLIs = @{}
-
-$CheckList = @(
-    @{ Name = 'Claude Code'; Executables = @('claude.exe', 'claude.cmd', 'claude.ps1', 'claude'); Key = 'claude' },
-    @{ Name = 'OpenCode'; Executables = @('opencode.exe', 'opencode.cmd', 'opencode.ps1', 'opencode'); Key = 'opencode' },
-    @{ Name = 'OpenAI Codex'; Executables = @('codex.exe', 'codex.cmd', 'codex.ps1', 'codex'); Key = 'codex' },
-    @{ Name = 'GitHub Copilot'; Executables = @('copilot.exe', 'copilot.cmd', 'copilot.ps1', 'copilot', 'github-copilot-cli'); Key = 'copilot' }
-)
-
-foreach ($item in $CheckList) {
-    $found = $null
-    foreach ($exe in $item.Executables) {
-        $cmd = Get-Command $exe -ErrorAction SilentlyContinue
-        if ($cmd) {
-            $found = $cmd.Source
-            break
+function Set-FacetShortcut($Shell, [string]$Target, [string]$InstallDir, [string]$HomeDir, [switch]$UpdateShortcuts) {
+    $executable = Join-Path $InstallDir 'facet-ui.exe'
+    $shortcut = $null
+    if (Test-Path -LiteralPath $Target) {
+        $local = $env:LOCALAPPDATA
+        if (-not $local) { $local = Join-Path $HomeDir 'AppData/Local' }
+        $knownTargets = @($executable, (Join-Path $HomeDir '.facet/bin/facet-ui.exe'), (Join-Path $local 'Programs/Facet/bin/facet-ui.exe'))
+        $knownTargets = @($knownTargets | ForEach-Object { [IO.Path]::GetFullPath($_) })
+        $known = $false
+        if ($UpdateShortcuts) {
+            try {
+                $shortcut = $Shell.CreateShortcut($Target)
+                $known = $shortcut.TargetPath -and [IO.Path]::IsPathRooted($shortcut.TargetPath) -and ([IO.Path]::GetFullPath($shortcut.TargetPath) -in $knownTargets) -and -not $shortcut.Arguments
+            } catch { $known = $false }
         }
-        if ($env:APPDATA) {
-            $npmPath = Join-Path $env:APPDATA ('npm/' + $exe)
-            if (Test-Path $npmPath) {
-                $found = $npmPath
-                break
-            }
-        }
-        $localBinPath = Join-Path $env:USERPROFILE ('.local/bin/' + $exe)
-        if (Test-Path $localBinPath) {
-            $found = $localBinPath
-            break
+        if (-not $UpdateShortcuts -or -not $known) {
+            $command = "& '" + $executable.Replace("'", "''") + "'"
+            Write-Warning "Preserving existing shortcut: $Target. It may still launch another installation. Launch this install with: $command . Use -UpdateShortcuts during a fresh install to retarget recognized Facet shortcuts; custom targets or arguments must be changed manually."
+            return
         }
     }
-    if ($found) {
-        $DiscoveredCLIs[$item.Key] = @{ Name = $item.Name; Path = $found }
-        Write-Host ('  [✓] ' + $item.Name + ': Found at ' + $found) -ForegroundColor Green
-    } else {
-        Write-Host ('  [ ] ' + $item.Name + ': Not found in PATH') -ForegroundColor DarkGray
-    }
+    New-Item -ItemType Directory -Path (Split-Path -Parent $Target) -Force | Out-Null
+    if (-not $shortcut) { $shortcut = $Shell.CreateShortcut($Target) }
+    $shortcut.TargetPath = $executable
+    $shortcut.WorkingDirectory = $HomeDir
+    $shortcut.Description = 'Facet Studio'
+    $shortcut.Save()
 }
 
-# 6. Skill Scope Selection
-Write-Host ''
-$ChosenScope = $Scope
-if (-not $Quiet -and -not $NonInteractive) {
-    Write-Host '==> [2/3] Choose Skill Scope Preference:' -ForegroundColor Cyan
-    Write-Host '  [1] On-Demand: Skills active only in projects initialized with facet init (Recommended)' -ForegroundColor White
-    Write-Host '  [2] Global: Skills always active across all CLI terminal sessions' -ForegroundColor White
-    $choice = Read-Host 'Select option [1/2] (default: 1)'
-    if ($choice -eq '2') {
-        $ChosenScope = 'global'
-    } else {
-        $ChosenScope = 'on-demand'
+# Redirect build/package caches as well as application config discovery in isolated tests.
+$savedEnv = @{}
+try {
+    $savedEnv['GOTOOLCHAIN'] = [Environment]::GetEnvironmentVariable('GOTOOLCHAIN', 'Process')
+    $env:GOTOOLCHAIN = 'local'
+    if ($Isolated) {
+        $overrides = @{
+            USERPROFILE = $HomeDir; HOME = $HomeDir
+            APPDATA = (Join-Path $HomeDir 'AppData/Roaming'); LOCALAPPDATA = (Join-Path $HomeDir 'AppData/Local')
+            GOCACHE = (Join-Path $HomeDir 'cache/go-build'); GOMODCACHE = (Join-Path $HomeDir 'cache/go-mod')
+            GOPATH = (Join-Path $HomeDir 'go'); GOENV = 'off'
+            NPM_CONFIG_CACHE = (Join-Path $HomeDir 'cache/npm'); NPM_CONFIG_USERCONFIG = (Join-Path $HomeDir '.npmrc')
+            NPM_CONFIG_GLOBALCONFIG = (Join-Path $HomeDir 'npm-globalrc')
+        }
+        foreach ($key in $overrides.Keys) {
+            $savedEnv[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
+            [Environment]::SetEnvironmentVariable($key, $overrides[$key], 'Process')
+        }
     }
-}
-
-if ($ChosenScope -eq 'global') {
-    Write-Host '==> Registering global skills for detected CLIs...' -ForegroundColor Yellow
-    $GlobalClaudeSkills = Join-Path $env:USERPROFILE '.claude/skills/facet'
-    if (-not (Test-Path $GlobalClaudeSkills)) {
-        New-Item -ItemType Directory -Path $GlobalClaudeSkills -Force | Out-Null
+    Write-Host 'Checking prerequisites: Go 1.25+, Node.js 18+ with npm, FFmpeg and FFprobe...'
+    foreach ($program in @('go', 'node', 'npm', 'ffmpeg', 'ffprobe')) {
+        if (-not (Get-Command $program -ErrorAction SilentlyContinue)) {
+            throw "Missing prerequisite: $program. Install Go 1.25+, Node.js 18+ with npm and FFmpeg/FFprobe on PATH."
+        }
     }
-    Copy-Item -Path ($UserFacetBundle + '/skills/*') -Destination $GlobalClaudeSkills -Recurse -Force
-    Write-Host ('  Registered global skill: ' + $GlobalClaudeSkills) -ForegroundColor Green
-
-    $GlobalOpenCodeSkills = Join-Path $env:USERPROFILE '.config/opencode/skills/facet'
-    if (-not (Test-Path $GlobalOpenCodeSkills)) {
-        New-Item -ItemType Directory -Path $GlobalOpenCodeSkills -Force | Out-Null
+    $goVersion = & go version
+    if ($LASTEXITCODE -ne 0 -or "$goVersion" -notmatch 'go(\d+)\.(\d+)' -or [int]$Matches[1] -lt 1 -or ([int]$Matches[1] -eq 1 -and [int]$Matches[2] -lt 25)) {
+        throw "Go 1.25+ is required; found $goVersion."
     }
-    Copy-Item -Path ($UserFacetBundle + '/skills/*') -Destination $GlobalOpenCodeSkills -Recurse -Force
-    Write-Host ('  Registered global skill: ' + $GlobalOpenCodeSkills) -ForegroundColor Green
-} else {
-    Write-Host '  On-demand scope selected. Use facet init to link skills into any workspace.' -ForegroundColor DarkGray
-}
-
-# 7. Create Windows Desktop and Start Menu Shortcuts
-Write-Host ''
-$CreateShortcuts = $true
-if (-not $Quiet -and -not $NonInteractive) {
-    Write-Host '==> [3/3] Desktop and Start Menu Shortcuts:' -ForegroundColor Cyan
-    $scChoice = Read-Host 'Create Desktop and Start Menu shortcuts for Facet Studio? [Y/n] (default: Y)'
-    if ($scChoice -and $scChoice.ToLower().StartsWith('n')) {
-        $CreateShortcuts = $false
+    $nodeVersion = & node --version
+    if ($LASTEXITCODE -ne 0 -or "$nodeVersion" -notmatch '^v(\d+)\.' -or [int]$Matches[1] -lt 18) { throw "Node.js 18+ is required; found $nodeVersion." }
+    & npm --version
+    if ($LASTEXITCODE -ne 0) { throw 'npm prerequisite check failed.' }
+    foreach ($program in @('ffmpeg', 'ffprobe')) {
+        & $program -version | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "$program prerequisite check failed." }
     }
-}
-
-if ($CreateShortcuts) {
+    New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+    Push-Location $ScriptDir
     try {
-        $WshShell = New-Object -ComObject WScript.Shell
-
-        # Desktop Shortcut
-        $DesktopPath = [Environment]::GetFolderPath('Desktop')
-        $DesktopShortcutPath = Join-Path $DesktopPath 'Facet Studio.lnk'
-        $Shortcut = $WshShell.CreateShortcut($DesktopShortcutPath)
-        $Shortcut.TargetPath = (Join-Path $InstallDir 'facet-ui.exe')
-        $Shortcut.WorkingDirectory = $env:USERPROFILE
-        $Shortcut.Description = 'Facet - Autonomous Video Production Studio'
-        $Shortcut.Save()
-        Write-Host ('  [✓] Created Desktop Shortcut: ' + $DesktopShortcutPath) -ForegroundColor Green
-
-        # Start Menu Shortcut
-        $StartMenuPrograms = [Environment]::GetFolderPath('Programs')
-        $FacetStartMenu = Join-Path $StartMenuPrograms 'Facet'
-        if (-not (Test-Path $FacetStartMenu)) {
-            New-Item -ItemType Directory -Path $FacetStartMenu -Force | Out-Null
+        foreach ($name in @('facet', 'facet-ui')) {
+            & go build -o (Join-Path $InstallDir "$name.exe") "./cmd/$name"
+            if ($LASTEXITCODE -ne 0) { throw "Failed to build cmd/$name." }
         }
-        $StartMenuShortcutPath = Join-Path $FacetStartMenu 'Facet Studio.lnk'
-        $SMShortcut = $WshShell.CreateShortcut($StartMenuShortcutPath)
-        $SMShortcut.TargetPath = (Join-Path $InstallDir 'facet-ui.exe')
-        $SMShortcut.WorkingDirectory = $env:USERPROFILE
-        $SMShortcut.Description = 'Facet - Autonomous Video Production Studio'
-        $SMShortcut.Save()
-        Write-Host ('  [✓] Created Start Menu Shortcut: ' + $StartMenuShortcutPath) -ForegroundColor Green
+    } finally { Pop-Location }
+
+    Write-Host 'Installing skills, packs and Remotion source (excluding dependencies and render/cache outputs)...'
+    foreach ($folder in $BundleFolders) {
+        Copy-BundleTree (Join-Path $ScriptDir $folder) (Join-Path $BundleDir $folder)
     }
-    catch {
-        Write-Warning ('Could not create Windows shortcuts: ' + $_)
+    Write-Host 'Installing locked Remotion dependencies (network access may be required)...'
+    & npm ci --prefix (Join-Path $BundleDir 'remotion-composer') --no-audit --no-fund
+    if ($LASTEXITCODE -ne 0) { throw 'Remotion npm ci failed; installation is incomplete.' }
+
+    if ($Scope -eq 'global') {
+        # Only these two global skill conventions are supported. Never replace user skills.
+        foreach ($agentDir in @('.claude/skills', '.config/opencode/skills')) {
+            $target = Join-Path $HomeDir "$agentDir/facet"
+            if (Test-Path -LiteralPath $target) { Write-Warning "Preserving existing global skill: $target"; continue }
+            Copy-BundleTree (Join-Path $BundleDir 'skills/facet') $target
+        }
+        Write-Host 'Global scope: core Facet skill registered for Claude Code and OpenCode only; packs remain project-local via facet init.'
+    } else { Write-Host 'On-demand scope: no global agent skills changed. Use facet init to project core and pack skills.' }
+
+    if (-not $NoPath) {
+        $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+        if ($InstallDir -notin ($userPath -split ';')) {
+            [Environment]::SetEnvironmentVariable('Path', "$InstallDir;$userPath", 'User')
+        }
+        if ($InstallDir -notin ($env:Path -split ';')) { $env:Path = "$InstallDir;$env:Path" }
     }
+    $createShortcuts = -not $NoShortcuts
+    if ($createShortcuts -and -not $Quiet -and -not $NonInteractive) {
+        $answer = Read-Host 'Create Desktop and Start Menu shortcuts? [Y/n]'
+        $createShortcuts = $answer -notmatch '^[nN]'
+    }
+    if ($createShortcuts) {
+        $shell = New-Object -ComObject WScript.Shell
+        foreach ($folder in @([Environment]::GetFolderPath('Desktop'), (Join-Path ([Environment]::GetFolderPath('Programs')) 'Facet'))) {
+            $target = Join-Path $folder 'Facet Studio.lnk'
+            Set-FacetShortcut $shell $target $InstallDir $HomeDir -UpdateShortcuts:$UpdateShortcuts
+        }
+    }
+    Write-Host "Installed binaries: $InstallDir"
+    Write-Host "Installed bundle: $BundleDir"
+    Write-Host 'No Facet configuration files were changed. This is a source install, not a standalone release download.'
+    Write-Host 'Run facet doctor for diagnostics; doctor is not a render-success gate. Install/authenticate your agent separately.'
+    Write-Host 'Rendering requires a supported Chromium browser and its dependencies. No video render was verified by this installer.'
+    if ($NoPath) { Write-Host "PATH was not changed. Invoke: & '$InstallDir/facet.exe' doctor" }
+} finally {
+    foreach ($key in $savedEnv.Keys) { [Environment]::SetEnvironmentVariable($key, $savedEnv[$key], 'Process') }
 }
-
-# 8. Run Doctor Verification
-Write-Host ''
-Write-Host '==> Running system doctor verification...' -ForegroundColor Yellow
-$FacetInstalled = Join-Path $InstallDir 'facet.exe'
-& $FacetInstalled doctor
-
-Write-Host ''
-Write-Host '======================================================' -ForegroundColor Green
-Write-Host '            Facet Installation Complete!              ' -ForegroundColor Green
-Write-Host '======================================================' -ForegroundColor Green
-Write-Host 'Commands available in any terminal:' -ForegroundColor White
-Write-Host '  - facet doctor             - inspect system runtimes & 33 tools' -ForegroundColor Cyan
-Write-Host '  - facet init [my-project]  - initialize workspace and launch agent' -ForegroundColor Cyan
-Write-Host '  - facet ui                 - start and open Facet Studio webapp' -ForegroundColor Cyan
-Write-Host '  - Double-click Facet Studio on your Desktop to open Studio anytime.' -ForegroundColor Cyan
-Write-Host ''

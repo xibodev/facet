@@ -6,6 +6,8 @@ remotion-composer/node_modules/
 .playwright-cli/
 /.brains/
 /.opencode/
+# Generated local verification fixtures/cache/evidence, not product source; retain on disk.
+/.quality-run/
 *.temp
 *.log
 *.tgz

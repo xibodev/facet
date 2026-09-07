@@ -1,605 +1,191 @@
 <!DOCTYPE html>
-<html lang="en" class="scroll-smooth">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Facet — Autonomous Video Production for AI Agents & Engineers</title>
-  <meta name="description" content="Facet gives AI coding agents (Claude Code, OpenCode, Copilot) the power to autonomously script, voice, code, and render finished .MP4 videos — plus a visual Web Studio.">
-  <meta name="keywords" content="facet, autonomous video, ai video agent, remotion, ffmpeg, claude code, opencode, copilot, motion graphics, video generator">
+  <title>Facet | Video Production With Your AI Agent</title>
+  <meta name="description" content="Install Facet from source, describe a video to your coding agent, and review project files and rendered media in the local Studio.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['Inter', 'sans-serif'],
-            display: ['Space Grotesk', 'sans-serif'],
-            mono: ['JetBrains Mono', 'monospace'],
-          },
-          colors: {
-            brand: {
-              cyan: '#0284c7',
-              teal: '#0d9488',
-              purple: '#7c3aed',
-              amber: '#d97706',
-              emerald: '#059669',
-            }
-          }
-        }
-      }
-    }
-  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
   <style>
-    body {
-      background-color: #f8fafc;
-      color: #0f172a;
-      font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 6rem; }
+    body { margin: 0; background: #f8fafc; color: #0f172a; font: 16px/1.65 Inter, sans-serif; }
+    a { color: #0369a1; text-underline-offset: .2em; }
+    a:hover { color: #6d28d9; }
+    a:focus-visible, summary:focus-visible { outline: 3px solid #0284c7; outline-offset: 4px; }
+    h1, h2, h3, .brand { font-family: 'Space Grotesk', sans-serif; line-height: 1.15; }
+    h1 { font-size: clamp(2.5rem, 5.4vw, 4.5rem); letter-spacing: -.035em; margin: 1rem auto; max-width: 18ch; }
+    h2 { font-size: clamp(1.8rem, 3vw, 2.5rem); margin: 0 0 1rem; }
+    h3 { font-size: 1.2rem; margin: 0 0 .75rem; }
+    p { margin: 0 0 1rem; }
+    code, pre { font-family: 'JetBrains Mono', monospace; font-size: .85em; }
+    code { overflow-wrap: anywhere; }
+    pre { background: #0f172a; color: #e2e8f0; padding: 1.25rem; border-radius: .75rem; overflow-x: auto; line-height: 1.9; }
+    pre code { overflow-wrap: normal; font-size: inherit; }
+    .wrap { max-width: 1200px; margin: auto; padding: 0 1.5rem; }
+    header { background: #ffffffed; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 10; }
+    .topbar { min-height: 4.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+    .brand { display: inline-flex; align-items: center; gap: .65rem; text-decoration: none; color: #0f172a; font-size: 1.4rem; font-weight: 700; }
+    .mark { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .5rem; background: linear-gradient(135deg, #0284c7, #7c3aed); color: white; }
+    nav { display: flex; flex-wrap: wrap; gap: .4rem 1.5rem; }
+    nav a { padding: .6rem 0; font-size: .875rem; font-weight: 600; text-decoration: none; color: #475569; }
+    .hero { text-align: center; padding: 5rem 0; background: radial-gradient(ellipse at top, #e0f2fe, #f3e8ff55 50%, transparent 80%); }
+    .eyebrow { color: #0369a1; font-weight: 600; font-size: .875rem; }
+    .accent { color: #0369a1; }
+    .lead { max-width: 70ch; color: #475569; font-size: 1.125rem; margin: 1.5rem auto; }
+    .actions { display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap; margin: 1.5rem 0; }
+    .button { display: inline-block; padding: .75rem 1.25rem; border-radius: .6rem; background: white; border: 1px solid #cbd5e1; text-decoration: none; color: #0f172a; font-weight: 600; }
+    .button.primary { color: white; background: linear-gradient(100deg, #0284c7, #7c3aed); border: 0; }
+    .prompt { max-width: 850px; margin: 3rem auto 0; text-align: left; background: #0f172a; color: #f8fafc; padding: 1.5rem; border: 1px solid #334155; border-radius: 1rem; box-shadow: 0 16px 30px -14px #0f172a66; }
+    .prompt .label { color: #7dd3fc; font-size: .8rem; font-family: 'JetBrains Mono', monospace; }
+    .prompt blockquote { margin: 1rem 0; font-size: 1.125rem; }
+    .prompt small { color: #cbd5e1; }
+    section { padding: 4.5rem 0; }
+    section.white { background: white; border-block: 1px solid #e2e8f0; }
+    .intro { max-width: 72ch; color: #475569; margin-bottom: 2rem; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; }
+    .card { background: white; border: 1px solid #e2e8f0; border-radius: 1rem; padding: 1.75rem; box-shadow: 0 2px 5px #0f172a08; min-width: 0; }
+    .card p, li { color: #475569; }
+    .card code.package { display: block; color: #0369a1; margin: 0 0 1rem; }
+    .card .condition { margin: 1rem 0 0; padding-top: 1rem; border-top: 1px solid #e2e8f0; font-size: .875rem; }
+    ol, ul { padding-left: 1.4rem; }
+    li { margin-bottom: .75rem; }
+    .notice { border-left: 3px solid #7c3aed; padding: .25rem 0 .25rem 1.25rem; margin: 1.5rem 0; }
+    details { background: white; border: 1px solid #cbd5e1; border-radius: .75rem; padding: 1.25rem; }
+    summary { cursor: pointer; font-weight: 600; }
+    details[open] summary { margin-bottom: 1rem; }
+    footer { padding: 2rem 0; border-top: 1px solid #e2e8f0; background: white; color: #475569; font-size: .875rem; }
+    .footer-row { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+    @media (max-width: 700px) {
+      .wrap { padding-inline: 1.1rem; }
+      .topbar { flex-wrap: wrap; padding-block: .75rem; gap: .3rem; }
+      nav { gap: 0 1rem; }
+      nav a { min-height: 44px; display: inline-flex; align-items: center; }
+      .grid { grid-template-columns: 1fr; }
+      .hero { padding: 3rem 0; }
+      section { padding: 3rem 0; }
+      .card { padding: 1.25rem; }
+      html { scroll-padding-top: 9rem; }
     }
-    .light-card {
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
-      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.03);
-    }
-    .light-card:hover {
-      border-color: #0284c7;
-      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
-    }
-    .hero-gradient {
-      background: radial-gradient(circle at center, rgba(14, 165, 233, 0.1) 0%, rgba(124, 58, 237, 0.06) 50%, transparent 100%);
-    }
-    /* Custom scrollbar */
-    ::-webkit-scrollbar {
-      width: 8px;
-      height: 8px;
-    }
-    ::-webkit-scrollbar-track {
-      background: #f1f5f9;
-    }
-    ::-webkit-scrollbar-thumb {
-      background: #cbd5e1;
-      border-radius: 4px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-      background: #94a3b8;
-    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   </style>
 </head>
-<body class="min-h-screen flex flex-col font-sans selection:bg-cyan-500/20 selection:text-cyan-900 bg-slate-50 text-slate-900">
-
-  <!-- Top Navigation -->
-  <header class="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200/80 shadow-sm">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-      <div class="flex items-center space-x-3">
-        <a href="index.html" class="flex items-center space-x-2.5 group">
-          <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-600 to-purple-600 flex items-center justify-center font-display font-bold text-white text-lg shadow-md group-hover:scale-105 transition-transform">
-            F
-          </div>
-          <span class="font-display font-bold text-xl tracking-tight text-slate-900 group-hover:text-cyan-600 transition-colors">
-            Facet
-          </span>
-        </a>
-        <span class="hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-medium bg-cyan-50 text-cyan-700 border border-cyan-200">
-          v1.0.1 Ready
-        </span>
-      </div>
-
-      <nav class="hidden md:flex items-center space-x-7 text-sm font-medium text-slate-600">
-        <a href="#how-it-works" class="hover:text-cyan-600 transition-colors">How It Works</a>
-        <a href="#studio" class="hover:text-cyan-600 transition-colors">Web Studio</a>
-        <a href="#packs" class="hover:text-cyan-600 transition-colors">Capability Packs</a>
-        <a href="#agent-tools" class="hover:text-cyan-600 transition-colors">Agent Toolbox</a>
-        <a href="docs.html" class="hover:text-cyan-600 transition-colors">Documentation</a>
+<body>
+  <header>
+    <div class="wrap topbar">
+      <a href="index.html" class="brand"><span class="mark" aria-hidden="true">F</span>Facet</a>
+      <nav aria-label="Main navigation">
+        <a href="#studio">Studio</a><a href="#packs">Packs</a><a href="#quickstart">Install</a><a href="docs.html">Documentation</a><a href="https://github.com/xibodev/facet">GitHub</a>
       </nav>
-
-      <div class="flex items-center space-x-3">
-        <a href="docs.html" class="hidden sm:inline-flex items-center justify-center px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 transition-colors">
-          Docs & Manual
-        </a>
-        <a href="https://github.com/xibodev/facet" target="_blank" rel="noopener" class="inline-flex items-center justify-center px-4 py-1.5 text-xs font-semibold rounded-lg bg-gradient-to-r from-cyan-600 to-purple-600 hover:from-cyan-700 hover:to-purple-700 text-white shadow-sm transition-all">
-          <svg class="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
-          GitHub
-        </a>
-      </div>
     </div>
   </header>
-
-  <main class="flex-grow">
-    
-    <!-- Hero Section -->
-    <section class="relative pt-16 pb-20 md:pt-24 md:pb-28 overflow-hidden hero-gradient">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center">
-        
-        <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-semibold bg-cyan-100/80 text-cyan-800 border border-cyan-300 mb-6 shadow-sm">
-          <span class="w-2 h-2 rounded-full bg-cyan-600 animate-pulse"></span>
-          <span>Autonomous Video Production Engine & Studio</span>
-        </div>
-
-        <h1 class="font-display font-bold text-4xl sm:text-6xl lg:text-7xl tracking-tight text-slate-950 max-w-5xl mx-auto leading-tight sm:leading-none">
-          You describe the video.<br>
-          Your AI agent produces it.<br>
-          <span class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-600 via-teal-600 to-purple-600">Facet renders the .MP4.</span>
-        </h1>
-
-        <p class="mt-6 text-lg sm:text-xl text-slate-600 max-w-3xl mx-auto font-normal leading-relaxed">
-          Never touch CapCut, Premiere Pro, or manual video editors again. Facet equips <strong>Claude Code, OpenCode, and Copilot</strong> with a local Go media engine to script, synthesize voiceover, code animated React graphics, and render broadcast-ready videos — with a live <strong>Web Studio</strong> to inspect and preview.
-        </p>
-
-        <!-- Quick Action Buttons -->
-        <div class="mt-8 flex flex-col sm:flex-row items-center justify-center space-y-3 sm:space-y-0 sm:space-x-4">
-          <a href="#quickstart" class="px-6 py-3 rounded-lg font-semibold text-sm bg-gradient-to-r from-cyan-600 to-purple-600 hover:from-cyan-700 hover:to-purple-700 text-white shadow-md transition-all">
-            Start Producing in 30 Seconds →
-          </a>
-          <a href="#studio" class="px-6 py-3 rounded-lg font-semibold text-sm bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 shadow-sm transition-colors">
-            Explore Web Studio (`facet ui`)
-          </a>
-        </div>
-
-        <!-- Terminal Demo: Real Human <-> AI Conversation -->
-        <div class="mt-14 max-w-4xl mx-auto rounded-2xl overflow-hidden text-left border border-slate-800 shadow-2xl">
-          <!-- Terminal Titlebar -->
-          <div class="bg-slate-900 px-4 py-3 border-b border-slate-800 flex items-center justify-between">
-            <div class="flex items-center space-x-2">
-              <span class="w-3 h-3 rounded-full bg-rose-500 inline-block"></span>
-              <span class="w-3 h-3 rounded-full bg-amber-500 inline-block"></span>
-              <span class="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span>
-              <span class="ml-2 text-xs font-mono text-slate-400">Your AI Coding CLI — Full Autonomy</span>
-            </div>
-            <div class="text-xs font-mono text-cyan-400">Zero Manual Assembly</div>
-          </div>
-
-          <!-- Terminal Content -->
-          <div class="p-6 font-mono text-xs sm:text-sm text-slate-200 space-y-4 bg-slate-950 overflow-x-auto">
-            
-            <div class="space-y-1">
-              <p class="text-slate-500 select-none"># 1. Initialize your project (launches your AI CLI)</p>
-              <p class="text-cyan-400">$ facet init quantum-computing --engine claude</p>
-              <p class="text-slate-400">🚀 Initialized workspace & launched Claude Code.</p>
-            </div>
-
-            <div class="pt-3 border-t border-slate-800 space-y-2">
-              <p class="text-amber-400 font-bold select-none">&gt; You prompt your AI agent:</p>
-              <p class="text-white bg-slate-900/90 p-3 rounded-lg border border-slate-800">
-                "Make me a 30s animated explainer comparing classical bits to quantum qubits with a modern motion graphics style."
-              </p>
-            </div>
-
-            <div class="pt-3 border-t border-slate-800 space-y-2">
-              <p class="text-purple-400 font-bold select-none">&gt; Claude Code autonomously produces the video:</p>
-              <div class="pl-3 border-l-2 border-purple-500/50 space-y-1.5 text-xs text-slate-300">
-                <p>✍️ <strong>Script & Story:</strong> Drafted 4-beat narrative in <span class="text-cyan-300">artifacts/script.json</span></p>
-                <p>🎙️ <strong>Voiceover:</strong> Synthesized neural speech via Edge TTS (<span class="text-cyan-300">narration/voice.mp3</span> • 9.8s)</p>
-                <p>🎨 <strong>Scene Composition:</strong> Generated Remotion React components (Hero Title, Bit vs Qubit Comparison, State Matrix)</p>
-                <p>🎬 <strong>Render Engine:</strong> Compiled video via Remotion + FFmpeg (<span class="text-cyan-300">renders/final.mp4</span> • 1080p @ 30fps)</p>
-                <p>🛡️ <strong>Quality Assurance:</strong> Evaluated loudness (-5.6dB peak), audio ducking, and 0 freeze frames</p>
-              </div>
-              <p class="text-emerald-400 font-bold pt-1">
-                ✔ Your video is ready! Watch <span class="underline text-emerald-300">renders/final.mp4</span> or open <span class="underline text-cyan-300">facet ui</span> to preview in browser.
-              </p>
-            </div>
-
-          </div>
-        </div>
-
-      </div>
-    </section>
-
-    <!-- The 2 Ways to Experience Facet -->
-    <section id="how-it-works" class="py-20 bg-white border-y border-slate-200">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        <div class="text-center max-w-3xl mx-auto mb-16">
-          <span class="text-xs font-mono font-bold text-cyan-700 uppercase tracking-widest">Two Frictionless Workflows</span>
-          <h2 class="font-display font-bold text-3xl sm:text-4xl text-slate-950 mt-2">
-            How You Actually Use Facet
-          </h2>
-          <p class="mt-4 text-base sm:text-lg text-slate-600">
-            Whether you love working in terminal chat or inspecting visual timelines in a browser, Facet gives you complete video autonomy.
-          </p>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          
-          <!-- Mode 1: Agentic Terminal -->
-          <div class="light-card rounded-2xl p-8 border-t-4 border-t-cyan-600 flex flex-col justify-between">
-            <div>
-              <div class="inline-flex items-center px-3 py-1 rounded-full text-xs font-mono font-bold bg-cyan-100 text-cyan-800 mb-4">
-                WORKFLOW 1: THE AGENTIC CLI
-              </div>
-              <h3 class="font-display font-bold text-2xl text-slate-900 mb-3">Natural Language Video Production</h3>
-              <p class="text-slate-600 text-sm leading-relaxed mb-6">
-                You prompt your AI coding assistant (Claude Code, OpenCode, or Copilot). The agent adopts the Facet Producer persona, loads capability packs, orchestrates speech & Remotion rendering, and delivers a completed `.mp4` on Turn 1.
-              </p>
-              
-              <div class="bg-slate-950 p-4 rounded-xl font-mono text-xs text-slate-300 space-y-2 border border-slate-800">
-                <div class="text-slate-500"># Human prompt inside Claude Code:</div>
-                <div class="text-white">"Create a 15-second teaser for our new open source CLI."</div>
-                <div class="text-emerald-400 pt-1">✔ Agent calls Facet engine in background</div>
-                <div class="text-cyan-300">✔ Output: renders/final.mp4 (Broadcast 1080p)</div>
-              </div>
-            </div>
-
-            <div class="mt-6 pt-4 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 font-mono">
-              <span>Zero manual editing software</span>
-              <span class="text-cyan-700 font-bold">100% Agent-Driven</span>
-            </div>
-          </div>
-
-          <!-- Mode 2: Web Studio UI -->
-          <div class="light-card rounded-2xl p-8 border-t-4 border-t-purple-600 flex flex-col justify-between">
-            <div>
-              <div class="inline-flex items-center px-3 py-1 rounded-full text-xs font-mono font-bold bg-purple-100 text-purple-800 mb-4">
-                WORKFLOW 2: FACET STUDIO UI
-              </div>
-              <h3 class="font-display font-bold text-2xl text-slate-900 mb-3">Visual Timeline & Reviewer</h3>
-              <p class="text-slate-600 text-sm leading-relaxed mb-6">
-                Run <code class="font-mono text-purple-800 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200 font-semibold">facet ui</code> to launch the Studio web app on <code class="text-slate-900 font-bold">http://localhost:8787</code>. Track stage progression, preview audio waveforms, scrub frame samples, and review final videos in your browser.
-              </p>
-              
-              <div class="bg-slate-50 p-4 rounded-xl font-mono text-xs text-slate-800 space-y-2 border border-slate-200">
-                <div class="flex items-center justify-between text-[11px] font-bold">
-                  <span>STAGE PROGRESSION:</span>
-                  <span class="text-emerald-700">REVIEW PASSED</span>
-                </div>
-                <div class="text-slate-600 text-[11px]">
-                  Brief → Script → Audio → Scene Plan → Compose → Review → Deliver
-                </div>
-                <div class="text-purple-700 pt-1 font-semibold">✔ Live Audio Waveforms & Frame Scrubbers</div>
-              </div>
-            </div>
-
-            <div class="mt-6 pt-4 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 font-mono">
-              <span>Browser UI on port 8787</span>
-              <span class="text-purple-700 font-bold">Visual Observability</span>
-            </div>
-          </div>
-
-        </div>
-
-      </div>
-    </section>
-
-    <!-- Web Studio Deep Dive Showcase -->
-    <section id="studio" class="py-20 bg-slate-50">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-          <div>
-            <span class="text-xs font-mono font-bold text-purple-700 uppercase tracking-widest">Built-In Visual Studio</span>
-            <h2 class="font-display font-bold text-3xl sm:text-4xl text-slate-950 mt-2">
-              Facet Studio at `localhost:8787`
-            </h2>
-            <p class="mt-4 text-slate-600 text-base leading-relaxed">
-              Video production shouldn't be a black box. Facet Studio provides a live, browser-based dashboard that connects to your project workspace.
-            </p>
-
-            <div class="mt-8 space-y-4 text-sm text-slate-700">
-              <div class="flex items-start">
-                <div class="w-7 h-7 rounded-lg bg-cyan-100 text-cyan-800 border border-cyan-200 flex items-center justify-center font-bold text-xs mr-3 mt-0.5">1</div>
-                <div>
-                  <strong class="text-slate-900">Multi-Project Management:</strong> Switch between video productions, inspect active capability packs, and monitor render statuses.
-                </div>
-              </div>
-              <div class="flex items-start">
-                <div class="w-7 h-7 rounded-lg bg-purple-100 text-purple-800 border border-purple-200 flex items-center justify-center font-bold text-xs mr-3 mt-0.5">2</div>
-                <div>
-                  <strong class="text-slate-900">Audio Waveforms & Level Meters:</strong> Inspect voiceover tracks, background music mixing curves, and automatic voice ducking.
-                </div>
-              </div>
-              <div class="flex items-start">
-                <div class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center justify-center font-bold text-xs mr-3 mt-0.5">3</div>
-                <div>
-                  <strong class="text-slate-900">Automated QA Frame Carousel:</strong> Review high-resolution JPEG stills extracted by the quality review gate to verify layout, font contrast, and timing.
-                </div>
-              </div>
-            </div>
-
-            <div class="mt-8">
-              <div class="inline-flex items-center px-4 py-2 rounded-lg bg-white border border-slate-300 font-mono text-xs text-slate-800 shadow-sm">
-                Start Studio: <span class="text-cyan-700 font-bold ml-2">facet ui</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Studio Mockup Window -->
-          <div class="light-card rounded-2xl p-6 border border-slate-300 shadow-xl bg-white">
-            <div class="flex items-center justify-between pb-4 border-b border-slate-200 text-xs font-mono">
-              <div class="flex items-center space-x-2 text-slate-800 font-semibold">
-                <span class="w-2.5 h-2.5 rounded-full bg-cyan-600"></span>
-                <span>Facet Studio — quantum-computing-30s</span>
-              </div>
-              <span class="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px] border border-emerald-200">STAGE: REVIEW PASSED</span>
-            </div>
-
-            <div class="py-4 space-y-3 font-mono text-xs">
-              <div class="grid grid-cols-3 gap-2 text-center text-[10px]">
-                <div class="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-                  <div class="text-slate-500">RESOLUTION</div>
-                  <div class="text-cyan-800 font-bold text-xs">1920x1080</div>
-                </div>
-                <div class="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-                  <div class="text-slate-500">DURATION</div>
-                  <div class="text-purple-800 font-bold text-xs">29.0s</div>
-                </div>
-                <div class="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-                  <div class="text-slate-500">CONTAINER</div>
-                  <div class="text-emerald-800 font-bold text-xs">MP4 / H.264</div>
-                </div>
-              </div>
-
-              <div class="p-3.5 rounded-lg bg-slate-50 border border-slate-200">
-                <div class="text-slate-500 text-[11px] mb-1.5 font-semibold">PRODUCTION ARTIFACTS IN WORKSPACE</div>
-                <div class="text-slate-800 text-[11px] space-y-1">
-                  <div>✔ <span class="text-slate-600">artifacts/script.json</span> (7 narrative sections)</div>
-                  <div>✔ <span class="text-slate-600">narration/voice.mp3</span> (Edge TTS • ChristopherNeural)</div>
-                  <div>✔ <span class="text-slate-600">artifacts/explainer_props.json</span> (Remotion composition)</div>
-                  <div>✔ <span class="text-emerald-700 font-bold">renders/final.mp4</span> (1080p • Passed QA)</div>
-                </div>
-              </div>
-
-              <!-- Mini Waveform Visualizer simulation -->
-              <div class="p-3.5 rounded-lg bg-slate-50 border border-slate-200">
-                <div class="text-slate-500 text-[11px] mb-2 font-semibold">VOICE DUCKING & LOUDNESS ENVELOPE</div>
-                <div class="h-8 flex items-center space-x-1">
-                  <div class="w-1 bg-cyan-600 h-3 rounded-full"></div>
-                  <div class="w-1 bg-cyan-600 h-5 rounded-full"></div>
-                  <div class="w-1 bg-cyan-600 h-7 rounded-full"></div>
-                  <div class="w-1 bg-cyan-600 h-4 rounded-full"></div>
-                  <div class="w-1 bg-cyan-600 h-6 rounded-full"></div>
-                  <div class="w-1 bg-cyan-600 h-8 rounded-full"></div>
-                  <div class="w-1 bg-purple-600 h-5 rounded-full"></div>
-                  <div class="w-1 bg-purple-600 h-7 rounded-full"></div>
-                  <div class="w-1 bg-cyan-600 h-6 rounded-full"></div>
-                  <div class="w-1 bg-cyan-600 h-4 rounded-full"></div>
-                  <div class="w-1 bg-cyan-600 h-8 rounded-full"></div>
-                  <div class="w-1 bg-cyan-600 h-5 rounded-full"></div>
-                  <div class="w-1 bg-emerald-600 h-3 rounded-full"></div>
-                </div>
-              </div>
-
-            </div>
-          </div>
-        </div>
-
-      </div>
-    </section>
-
-    <!-- Capability Packs Section -->
-    <section id="packs" class="py-20 bg-white border-y border-slate-200">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        <div class="text-center max-w-3xl mx-auto mb-16">
-          <span class="text-xs font-mono font-bold text-cyan-700 uppercase tracking-widest">Modular Capabilities</span>
-          <h2 class="font-display font-bold text-3xl sm:text-4xl text-slate-950 mt-2">
-            7 Specialized Capability Packs
-          </h2>
-          <p class="mt-4 text-slate-600 text-base">
-            Every video genre demands distinct cinematography, timing, and visual components. Facet packages them as modular packs that link directly into your AI agent's skill library.
-          </p>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          
-          <!-- Pack 1: Explainer -->
-          <div class="light-card rounded-xl p-6 border-l-4 border-l-cyan-600">
-            <div class="flex items-center justify-between mb-3">
-              <span class="text-xs font-mono font-bold text-cyan-800">@xibodev/facet-pack-explainer</span>
-              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-100 text-cyan-800 border border-cyan-200 font-semibold">Remotion</span>
-            </div>
-            <h3 class="font-display font-bold text-lg text-slate-900 mb-1">2D Animated Explainer</h3>
-            <p class="text-xs text-slate-600 mb-4">
-              Motion graphics, dynamic data charts (Bar, Line, Pie, KPI), stat cards, and animated concept comparisons.
-            </p>
-            <div class="text-[11px] font-mono text-slate-500">Styles: flat-motion-graphics, clean-professional, minimalist-diagram</div>
-          </div>
-
-          <!-- Pack 2: Cinematic -->
-          <div class="light-card rounded-xl p-6 border-l-4 border-l-purple-600">
-            <div class="flex items-center justify-between mb-3">
-              <span class="text-xs font-mono font-bold text-purple-800">@xibodev/facet-pack-cinematic</span>
-              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-100 text-purple-800 border border-purple-200 font-semibold">Ken Burns</span>
-            </div>
-            <h3 class="font-display font-bold text-lg text-slate-900 mb-1">Cinematic & Documentary</h3>
-            <p class="text-xs text-slate-600 mb-4">
-              Dramatic archival montages, Ken Burns motion on historical stills, letterbox typography, and emotional pacing.
-            </p>
-            <div class="text-[11px] font-mono text-slate-500">Styles: archival-documentary, cinematic-trailer, film-noir</div>
-          </div>
-
-          <!-- Pack 3: Screen Demo -->
-          <div class="light-card rounded-xl p-6 border-l-4 border-l-emerald-600">
-            <div class="flex items-center justify-between mb-3">
-              <span class="text-xs font-mono font-bold text-emerald-800">@xibodev/facet-pack-screen-demo</span>
-              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold">Terminal / UI</span>
-            </div>
-            <h3 class="font-display font-bold text-lg text-slate-900 mb-1">Developer & Screen Demo</h3>
-            <p class="text-xs text-slate-600 mb-4">
-              Synthetic typing terminals, highlighted code diffs, screenshot walkthroughs, and software launch showcases.
-            </p>
-            <div class="text-[11px] font-mono text-slate-500">Styles: terminal-dark, modern-ide, product-walkthrough</div>
-          </div>
-
-          <!-- Pack 4: Talking Head -->
-          <div class="light-card rounded-xl p-6 border-l-4 border-l-amber-600">
-            <div class="flex items-center justify-between mb-3">
-              <span class="text-xs font-mono font-bold text-amber-800">@xibodev/facet-pack-talking-head</span>
-              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-100 text-amber-800 border border-amber-200 font-semibold">Avatar / Captions</span>
-            </div>
-            <h3 class="font-display font-bold text-lg text-slate-900 mb-1">Talking Head & Presenter</h3>
-            <p class="text-xs text-slate-600 mb-4">
-              Vertical and horizontal presenter videos, animated word-by-word karaoke captions, and lower-third graphics.
-            </p>
-            <div class="text-[11px] font-mono text-slate-500">Styles: bold-caption, split-screen, studio-presenter</div>
-          </div>
-
-          <!-- Pack 5: Social -->
-          <div class="light-card rounded-xl p-6 border-l-4 border-l-rose-600">
-            <div class="flex items-center justify-between mb-3">
-              <span class="text-xs font-mono font-bold text-rose-800">@xibodev/facet-pack-social</span>
-              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-rose-100 text-rose-800 border border-rose-200 font-semibold">9:16 Shorts</span>
-            </div>
-            <h3 class="font-display font-bold text-lg text-slate-900 mb-1">Social Shorts & Reels</h3>
-            <p class="text-xs text-slate-600 mb-4">
-              Aggressive hook pacing, high-retention cuts, kinetic text bursts, emojis, and sound effect choreography.
-            </p>
-            <div class="text-[11px] font-mono text-slate-500">Styles: viral-hook, kinetic-pop, reel-creator</div>
-          </div>
-
-          <!-- Pack 6: Character Animation -->
-          <div class="light-card rounded-xl p-6 border-l-4 border-l-indigo-600">
-            <div class="flex items-center justify-between mb-3">
-              <span class="text-xs font-mono font-bold text-indigo-800">@xibodev/facet-pack-character-animation</span>
-              <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-indigo-100 text-indigo-800 border border-indigo-200 font-semibold">Puppet 2D</span>
-            </div>
-            <h3 class="font-display font-bold text-lg text-slate-900 mb-1">Character & Rigged 2D</h3>
-            <p class="text-xs text-slate-600 mb-4">
-              Data-driven 2D character puppet rigs, joint constraints, walk cycles, particle weather, and anime crossfades.
-            </p>
-            <div class="text-[11px] font-mono text-slate-500">Styles: anime-ghibli, vector-puppet, retro-cartoon</div>
-          </div>
-
-        </div>
-
-      </div>
-    </section>
-
-    <!-- Why the 35 Tools Exist (The Agent Engine) -->
-    <section id="agent-tools" class="py-20 bg-slate-50">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        <div class="text-center max-w-3xl mx-auto mb-16">
-          <span class="text-xs font-mono font-bold text-cyan-700 uppercase tracking-widest">Under The Hood</span>
-          <h2 class="font-display font-bold text-3xl sm:text-4xl text-slate-950 mt-2">
-            The Agent's 35-Tool Execution Engine
-          </h2>
-          <p class="mt-4 text-slate-600 text-base">
-            You don't need to memorize or run these commands. This compiled Go toolbox provides the stateless muscles for your AI agent so it never fails with "I cannot create videos".
-          </p>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          
-          <div class="light-card rounded-xl p-6">
-            <div class="w-10 h-10 rounded-lg bg-cyan-100 text-cyan-800 flex items-center justify-center font-bold text-sm mb-4">🎙️</div>
-            <h3 class="font-bold text-slate-900 text-base mb-2">Speech & Audio (6 Tools)</h3>
-            <p class="text-xs text-slate-600 mb-3 leading-relaxed">Edge TTS (free, keyless), ElevenLabs, OpenAI TTS, Piper offline, automated audio ducking & mixing.</p>
-            <div class="text-[11px] font-mono text-slate-500">edgetts, elevenlabs_tts, piper_tts, audio_mix...</div>
-          </div>
-
-          <div class="light-card rounded-xl p-6">
-            <div class="w-10 h-10 rounded-lg bg-purple-100 text-purple-800 flex items-center justify-center font-bold text-sm mb-4">🎨</div>
-            <h3 class="font-bold text-slate-900 text-base mb-2">Composition & Renders (9 Tools)</h3>
-            <p class="text-xs text-slate-600 mb-3 leading-relaxed">Remotion React composition, HyperFrames HTML/GSAP, source footage trimming, concatenation, and color LUTs.</p>
-            <div class="text-[11px] font-mono text-slate-500">video_compose, source_edit, video_stitch...</div>
-          </div>
-
-          <div class="light-card rounded-xl p-6">
-            <div class="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-sm mb-4">🛡️</div>
-            <h3 class="font-bold text-slate-900 text-base mb-2">Inspection & QA (6 Tools)</h3>
-            <p class="text-xs text-slate-600 mb-3 leading-relaxed">Stream codec verification, LUFS loudness curves, freeze-frame detection, silence cutting, and review sampling.</p>
-            <div class="text-[11px] font-mono text-slate-500">output_review, media_probe, frame_sample...</div>
-          </div>
-
-          <div class="light-card rounded-xl p-6">
-            <div class="w-10 h-10 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-sm mb-4">🤖</div>
-            <h3 class="font-bold text-slate-900 text-base mb-2">AI Media & Stock (14 Tools)</h3>
-            <p class="text-xs text-slate-600 mb-3 leading-relaxed">Google Flow (Veo 3.1 & Imagen 4), Kling, Sora, FLUX, Pexels, Pixabay, Wikimedia, and AI provider ranking.</p>
-            <div class="text-[11px] font-mono text-slate-500">gflow_video, gflow_image, flux_image...</div>
-          </div>
-
-        </div>
-
-      </div>
-    </section>
-
-    <!-- 3-Step Quickstart Section -->
-    <section id="quickstart" class="py-20 bg-white border-y border-slate-200">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        <div class="text-center max-w-3xl mx-auto mb-16">
-          <span class="text-xs font-mono font-bold text-cyan-700 uppercase tracking-widest">Get Started</span>
-          <h2 class="font-display font-bold text-3xl sm:text-4xl text-slate-950 mt-2">
-            Up and Running in 3 Steps
-          </h2>
-          <p class="mt-4 text-slate-600 text-base">
-            Install the binary, start a project, and let your AI agent handle the video production.
-          </p>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-          
-          <div class="light-card rounded-2xl p-6 relative">
-            <div class="w-8 h-8 rounded-full bg-cyan-600 text-white font-bold flex items-center justify-center text-sm mb-4">1</div>
-            <h3 class="font-bold text-slate-900 text-lg mb-2">Install Facet</h3>
-            <p class="text-xs text-slate-600 mb-4 leading-relaxed">Single binary installation with Go, PowerShell, Bash, or Scoop.</p>
-            <div class="bg-slate-950 p-3 rounded-lg font-mono text-[11px] text-cyan-400 select-all border border-slate-800">
-              go install github.com/xibodev/facet/cmd/facet@latest
-            </div>
-          </div>
-
-          <div class="light-card rounded-2xl p-6 relative">
-            <div class="w-8 h-8 rounded-full bg-purple-600 text-white font-bold flex items-center justify-center text-sm mb-4">2</div>
-            <h3 class="font-bold text-slate-900 text-lg mb-2">Start a Video Project</h3>
-            <p class="text-xs text-slate-600 mb-4 leading-relaxed">Scaffolds workspace and launches Claude Code, OpenCode, or Copilot.</p>
-            <div class="bg-slate-950 p-3 rounded-lg font-mono text-[11px] text-cyan-400 select-all border border-slate-800">
-              facet init my-video --engine claude
-            </div>
-          </div>
-
-          <div class="light-card rounded-2xl p-6 relative">
-            <div class="w-8 h-8 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center text-sm mb-4">3</div>
-            <h3 class="font-bold text-slate-900 text-lg mb-2">Prompt & Inspect</h3>
-            <p class="text-xs text-slate-600 mb-4 leading-relaxed">Describe the video to your agent, then preview output in the Studio UI.</p>
-            <div class="bg-slate-950 p-3 rounded-lg font-mono text-[11px] text-cyan-400 select-all border border-slate-800">
-              facet ui   # Opens http://localhost:8787
-            </div>
-          </div>
-
-        </div>
-
-      </div>
-    </section>
-
-    <!-- Detailed Documentation Reference Banner -->
-    <section class="py-16 bg-slate-50">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="bg-gradient-to-r from-cyan-50 via-white to-purple-50 rounded-2xl p-8 sm:p-12 text-center border border-slate-300 shadow-md">
-          <h2 class="font-display font-bold text-3xl sm:text-4xl text-slate-950">
-            Ready to Build With Facet?
-          </h2>
-          <p class="mt-4 text-slate-600 max-w-2xl mx-auto text-base">
-            Read the complete technical manual, Remotion scene component specifications, full JSON schema definitions, and custom pack authoring tutorials.
-          </p>
-          <div class="mt-8 flex flex-col sm:flex-row items-center justify-center space-y-3 sm:space-y-0 sm:space-x-4">
-            <a href="docs.html" class="px-6 py-3 rounded-lg font-semibold text-sm bg-gradient-to-r from-cyan-600 to-purple-600 hover:from-cyan-700 hover:to-purple-700 text-white shadow-md transition-all">
-              Read Technical Documentation →
-            </a>
-            <a href="https://github.com/xibodev/facet" target="_blank" rel="noopener" class="px-6 py-3 rounded-lg font-semibold text-sm bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 shadow-sm transition-colors">
-              View on GitHub
-            </a>
-          </div>
+  <main>
+    <section class="hero">
+      <div class="wrap">
+        <p class="eyebrow">Local media tools. Your coding agent. A browser Studio.</p>
+        <h1>Describe the video.<br><span class="accent">Build it with Facet.</span></h1>
+        <p class="lead">Facet gives your AI coding agent production guidance and tools for editing, narration, animation, and rendering. Work in the terminal or use Studio to chat about a project and preview the media it produces.</p>
+        <div class="actions"><a class="button primary" href="#quickstart">Install From Source</a><a class="button" href="docs.html#studio">Use Studio</a></div>
+        <p>Bring an installed, authenticated agent CLI. Media providers and rendering runtimes have their own requirements.</p>
+        <div class="prompt">
+          <p class="label">Example prompt, not a recorded production result</p>
+          <blockquote>"Make a short explainer about how rain forms, with simple animated diagrams and narration."</blockquote>
+          <small>Start with the idea. The agent can clarify the audience, use available tools, and write project files. Review the actual render before sharing it; a prompt is not a guarantee of a finished video.</small>
         </div>
       </div>
     </section>
-
+    <section id="how-it-works" class="white">
+      <div class="wrap">
+        <h2>Two Ways to Work</h2>
+        <p class="intro">You describe the outcome. The agent plans and executes media work. Facet provides the project workspace, local tools, and access to configured providers.</p>
+        <div class="grid">
+          <article class="card">
+            <h3>In Your Terminal</h3>
+            <p>Initialize a separate production directory and launch your chosen coding agent. Continue the conversation there to request changes.</p>
+            <pre><code>facet init my-video --engine opencode</code></pre>
+            <p>Supported engine names: <code>claude</code>, <code>opencode</code>, <code>codex</code>, and <code>copilot</code>. Install and authenticate that CLI separately.</p>
+          </article>
+          <article class="card">
+            <h3>In Facet Studio</h3>
+            <p>Open the local browser interface to create or open a production, choose an available engine, send prompts, and inspect project artifacts.</p>
+            <pre><code>facet ui</code></pre>
+            <p>The default address is <code>http://localhost:8787</code>. Studio is a local interface, not a hosted service or a replacement for agent authentication.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+    <section id="studio">
+      <div class="wrap grid">
+        <div>
+          <h2>From a New Production to a Preview</h2>
+          <p class="intro">Studio connects a project folder to your agent conversation and the files it creates. No fabricated timeline or success screen is shown here.</p>
+          <ol>
+            <li><strong>Create or open a production.</strong> Choose its name, folder, engine, and packs in the new-production form, then select <strong>Create &amp; Launch</strong>.</li>
+            <li><strong>Choose an available engine and chat.</strong> Send a plain-language request. Missing engines need installation; a detected executable still needs a working login and model access.</li>
+            <li><strong>Inspect the output.</strong> Open available script, narration, and review artifacts. Play or download the rendered video when one exists.</li>
+          </ol>
+        </div>
+        <div class="card">
+          <h3>Keep Revisions in the Same Project</h3>
+          <p>"Make the opening shorter and lower the background music."</p>
+          <p>Reselecting the same project retains its active conversation. Changing project or engine starts separate context.</p>
+          <div class="notice"><strong>Reload is limited.</strong> The same browser tab can restore a completed conversation only while the current Studio process remains running. In-flight turns, earlier activity replay, and recovery after a Studio restart are not supported.</div>
+          <p>Project files remain on disk. After a restart, ask the agent to inspect those files rather than assuming it remembers the chat.</p>
+          <a href="docs.html#studio">Studio walkthrough and recovery notes</a>
+        </div>
+      </div>
+    </section>
+    <section id="packs" class="white">
+      <div class="wrap">
+        <h2>Production Packs</h2>
+        <p class="intro">Packs contain instructions, pipeline definitions, and supporting content. They do not install every provider or make every described route executable. Select installed packs in Studio; basic CLI initialization selects Explainer.</p>
+        <div class="grid">
+          <article class="card" data-pack="explainer"><h3>Animated Explainer</h3><code class="package">@xibodev/facet-pack-explainer</code><p>Topic explainers, diagrams, text cards, comparisons, and charts using Remotion.</p><p class="condition">Requires the installed composer, its npm dependencies, and a supported browser. Narration needs a working speech route.</p></article>
+          <article class="card" data-pack="cinematic"><h3>Cinematic &amp; Documentary</h3><code class="package">@xibodev/facet-pack-cinematic</code><p>Montages of supplied, sourced, or generated images and footage, with grading and audio mixing.</p><p class="condition">Source media must be available and licensed for your use. Generated shots require a separately configured provider.</p></article>
+          <article class="card" data-pack="screen-demo"><h3>Screen Demo</h3><code class="package">@xibodev/facet-pack-screendemo</code><p>Software walkthroughs, supplied screen recordings, and synthetic terminal scenes.</p><p class="condition">Real product demonstrations need actual screenshots or recordings and access to the app. Synthetic scenes are not evidence of product behavior.</p></article>
+          <article class="card" data-pack="talking-head"><h3>Talking Head &amp; Avatar</h3><code class="package">@xibodev/facet-pack-talkinghead</code><p>Presenter scripts, edits to recorded takes, and provider-dependent avatar workflows.</p><p class="condition">Use supplied presenter footage or an available avatar/lip-sync provider with appropriate consent. Voice synthesis alone does not create a talking face.</p></article>
+          <article class="card" data-pack="social"><h3>Social &amp; Short-Form</h3><code class="package">@xibodev/facet-pack-social</code><p>Vertical edits, podcast highlights, reframing, and captioned clips.</p><p class="condition">Needs source footage and accurate transcript/timing data for captions. Hook selection and framing still need editorial review.</p></article>
+          <article class="card" data-pack="character-animation"><h3>Character Animation</h3><code class="package">@xibodev/facet-pack-animation</code><p>SVG character design, rigs, pose libraries, and authored action timelines.</p><p class="condition">Requires suitable character assets, rig and animation authoring, and a working renderer. The pack is not a bundled character-generation model.</p></article>
+          <article class="card" data-pack="localization"><h3>Localization &amp; Dubbing</h3><code class="package">@xibodev/facet-pack-localization</code><p>Translated voiceovers, subtitle timing, and localized exports of existing videos.</p><p class="condition">Needs source media, transcription/translation, and a supported target-language voice. Voice cloning and lip-sync need separate providers and consent; language review remains necessary.</p></article>
+        </div>
+      </div>
+    </section>
+    <section id="quickstart">
+      <div class="wrap">
+        <h2>Install the Source Bundle</h2>
+        <p class="intro">Prerequisites: Git, <strong>Go 1.25+</strong>, <strong>Node.js 18+ with npm</strong>, and <strong>FFmpeg plus FFprobe</strong> on PATH. Linux/macOS also need Bash and tar. Rendering needs supported Chromium and its system libraries and fonts. Dependency downloads require network access.</p>
+        <div class="grid">
+          <div class="card"><h3>Windows / PowerShell</h3><pre><code>git clone https://github.com/xibodev/facet.git
+pwsh -File ./facet/install.ps1 -NonInteractive</code></pre><p>The default installs binaries under <code>%USERPROFILE%/.facet/bin</code> and the bundle beside them. Reopen your terminal for the updated user PATH.</p><p><code>-NonInteractive</code> still creates shortcuts. Use <code>-NoShortcuts</code> or <code>-NoPath</code> to opt out of those changes.</p></div>
+          <div class="card"><h3>Linux / macOS</h3><pre><code>git clone https://github.com/xibodev/facet.git
+bash ./facet/install.sh
+export PATH="$HOME/.facet/bin:$PATH"</code></pre><p>Installs binaries and the bundle under <code>~/.facet</code>. The script does not edit shell profiles; add the PATH export there for future terminals.</p></div>
+        </div>
+        <p class="notice">Run the scripts from a complete checkout, not a pipe. <code>go install</code> builds the CLI alone, not the full production bundle. npm launchers do not guarantee delivery of native binaries. <a href="docs.html#install">Read installation details and Windows flags.</a></p>
+        <pre><code>facet doctor
+facet ui</code></pre>
+        <p><code>doctor</code> reports dependencies and configuration; it does not render a video or certify that providers work. Install and authenticate your chosen agent before sending a prompt.</p>
+      </div>
+    </section>
+    <section id="limitations" class="white">
+      <div class="wrap">
+        <h2>What to Know Before Producing</h2>
+        <ul>
+          <li><strong>Generation is conditional.</strong> Provider credentials, browser sessions, quotas, and supported models can prevent a request from completing. Errors are not replaced with mock media; explicit mock mode is for testing, not delivery.</li>
+          <li><strong>Google Flow needs separate setup.</strong> Install the standalone <code>gflow</code> CLI and its Chrome extension, grant site permissions for <code>labs.google</code>, and log in to Flow. Setup/status checks do not prove generation. Costs and credits depend on your account. <a href="docs.html#gflow">See the prerequisite checklist.</a></li>
+          <li><strong>Review is still your responsibility.</strong> Check the actual video, audio, captions, and asset rights. There is no fixed-turn, completion-time, or broadcast-quality guarantee.</li>
+          <li><strong>Studio is local and sessions are limited.</strong> No in-flight reload recovery or restart persistence. Loopback binding also means ordinary Docker port publishing is insufficient.</li>
+        </ul>
+        <details>
+          <summary>For Integrators: Technical Reference</summary>
+          <p>Use <code>facet tools list</code> and <code>facet tools describe &lt;name&gt;</code> to inspect your installed build. Registry entries and schema files are not proof of provider availability or an exhaustive compatibility contract.</p>
+          <a href="docs.html#reference">Open the source-linked reference</a>
+        </details>
+      </div>
+    </section>
   </main>
-
-  <!-- Footer -->
-  <footer class="bg-white border-t border-slate-200 py-12 text-xs font-mono text-slate-500">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0">
-      <div>
-        Facet is licensed under the <a href="https://github.com/xibodev/facet/blob/main/LICENSE" class="text-slate-700 hover:text-cyan-700 underline font-medium">Apache-2.0 License</a>. Copyright © 2026 XiboDev.
-      </div>
-      <div class="flex items-center space-x-6 text-slate-600">
-        <a href="docs.html" class="hover:text-cyan-700 font-medium">Docs</a>
-        <a href="https://github.com/xibodev/facet" class="hover:text-cyan-700 font-medium">GitHub</a>
-        <a href="https://github.com/xibodev/gflow-cli" class="hover:text-cyan-700 font-medium">gflow-cli</a>
-        <a href="https://github.com/xibodev/release-harness" class="hover:text-cyan-700 font-medium">release-harness</a>
-      </div>
-    </div>
-  </footer>
-
+  <footer><div class="wrap footer-row"><span>Facet is licensed under <a href="https://github.com/xibodev/facet/blob/main/LICENSE">AGPL-3.0-or-later</a>.</span><span><a href="docs.html">Documentation</a> &middot; <a href="https://github.com/xibodev/facet">Source on GitHub</a></span></div></footer>
 </body>
 </html>

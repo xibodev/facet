@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -49,6 +50,15 @@ func doOpenAIImage(op string, data []byte) (any, []string, error) {
 	}
 	if strings.TrimSpace(r.Prompt) == "" {
 		return nil, nil, failure("invalid_request", "prompt is required", nil)
+	}
+	timeout, err := cloudTimeout(r.TimeoutSeconds, 120)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !slices.Contains([]string{"", "1:1", "16:9", "9:16", "4:3", "3:4"}, r.AspectRatio) ||
+		!slices.Contains([]string{"", "standard", "hd"}, r.Quality) ||
+		!slices.Contains([]string{"", "vivid", "natural"}, r.Style) {
+		return nil, nil, failure("invalid_request", "invalid OpenAI image aspect_ratio, quality, or style", nil)
 	}
 
 	model := r.Model
@@ -103,6 +113,10 @@ func doOpenAIImage(op string, data []byte) (any, []string, error) {
 		return res, nil, nil
 	}
 
+	apiKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+	if apiKey == "" && !r.Mock {
+		return nil, nil, failure("credentials_missing", "OPENAI_API_KEY is required unless mock=true", nil)
+	}
 	outPath := r.OutputPath
 	if outPath == "" {
 		outPath = "openai_image.png"
@@ -111,9 +125,7 @@ func doOpenAIImage(op string, data []byte) (any, []string, error) {
 		return nil, nil, err
 	}
 
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" || r.Mock {
-		// Mock contract when API key is missing or mock explicitly requested
+	if r.Mock {
 		if err := createMockPNG(outPath, 1024, 1024, "OpenAI Image: "+r.Prompt); err != nil {
 			return nil, nil, failure("command_failed", "failed to create mock image: "+err.Error(), nil)
 		}
@@ -127,11 +139,6 @@ func doOpenAIImage(op string, data []byte) (any, []string, error) {
 			"mock":     true,
 			"url":      "mock://openai/image/" + filepath.Base(outPath),
 		}, nil, nil
-	}
-
-	timeout, err := positiveTimeout(r.TimeoutSeconds, 120)
-	if err != nil {
-		return nil, nil, err
 	}
 
 	payload := map[string]any{
@@ -230,6 +237,14 @@ func doFluxImage(op string, data []byte) (any, []string, error) {
 	if strings.TrimSpace(r.Prompt) == "" {
 		return nil, nil, failure("invalid_request", "prompt is required", nil)
 	}
+	timeout, err := cloudTimeout(r.TimeoutSeconds, 120)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !slices.Contains([]string{"", "1:1", "16:9", "9:16", "4:3", "3:4", "21:9"}, r.AspectRatio) ||
+		r.NumImages < 0 || (r.GuidanceScale != nil && (!finite(*r.GuidanceScale) || *r.GuidanceScale < 0)) {
+		return nil, nil, failure("invalid_request", "invalid FLUX aspect_ratio, num_images, or guidance_scale", nil)
+	}
 
 	model := r.Model
 	if model == "" {
@@ -255,6 +270,13 @@ func doFluxImage(op string, data []byte) (any, []string, error) {
 		return res, nil, nil
 	}
 
+	apiKey := strings.TrimSpace(os.Getenv("FAL_KEY"))
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(os.Getenv("FLUX_API_KEY"))
+	}
+	if apiKey == "" && !r.Mock {
+		return nil, nil, failure("credentials_missing", "FAL_KEY or FLUX_API_KEY is required unless mock=true", nil)
+	}
 	outPath := r.OutputPath
 	if outPath == "" {
 		outPath = "flux_image.png"
@@ -263,13 +285,7 @@ func doFluxImage(op string, data []byte) (any, []string, error) {
 		return nil, nil, err
 	}
 
-	apiKey := os.Getenv("FAL_KEY")
-	if apiKey == "" {
-		apiKey = os.Getenv("FLUX_API_KEY")
-	}
-
-	if apiKey == "" || r.Mock {
-		// Mock contract when API key missing or mock requested
+	if r.Mock {
 		if err := createMockPNG(outPath, 1280, 720, "FLUX Image: "+r.Prompt); err != nil {
 			return nil, nil, failure("command_failed", "failed to create mock image: "+err.Error(), nil)
 		}
@@ -289,16 +305,11 @@ func doFluxImage(op string, data []byte) (any, []string, error) {
 		}, nil, nil
 	}
 
-	timeout, err := positiveTimeout(r.TimeoutSeconds, 120)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	payload := map[string]any{
-		"prompt":       r.Prompt,
-		"image_size":   aspectRatioToFalSize(aspectRatio),
-		"num_images":   1,
-		"sync_mode":    true,
+		"prompt":     r.Prompt,
+		"image_size": aspectRatioToFalSize(aspectRatio),
+		"num_images": 1,
+		"sync_mode":  true,
 	}
 	if r.GuidanceScale != nil {
 		payload["guidance_scale"] = *r.GuidanceScale

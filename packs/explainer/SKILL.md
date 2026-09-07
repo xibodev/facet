@@ -1,36 +1,40 @@
 ---
 name: explainer
-description: Produce 2D animated explainer videos using Facet and Remotion. Use for topic explainers, product walkthroughs, educational concepts, and motion graphics.
+description: Produce reviewed 2D explainers and motion graphics with Facet and the bundled Remotion renderer.
 ---
 
 # Explainer Production Pack
 
-Use this skill when producing an animated explainer, educational video, or motion graphics piece.
+This pack entry and the core Facet skill are authoritative for normal production and take precedence over deep legacy references. The minimal normal path for a simple title card is supplied intent, a brief plan, the direct request below, estimate, render, and review; no separate script or narration is required.
+Supporting legacy skills under this pack (including compose-director, runtime-selection guides, and Python API workflows) are references only for a relevant specialized need or an actual error, never a preflight requirement. They do not impose source archaeology or persona/pipeline ceremony on normal production.
 
-## Overview
+Understand the thesis, audience, duration, format, and visual direction. Explain the plan and provider choices; ask for explicit consent before paid generation. Narration, music, and captions are optional: honor silent-video requests. No forced turn sequencing.
+Choose clean-professional, flat-motion-graphics, or minimalist-diagram as a theme identifier (no .yaml suffix). Plan meaningful visuals rather than filling every scene with a text card.
 
-The Explainer pipeline generates polished 2D explainer videos from a concept or script:
-1. **Research & Concept:** Clarify core thesis, target audience, duration, and key data points.
-2. **Script & Narration:** Write timed narrative beats and generate voiceover audio using `facet tools run edgetts`.
-3. **Scene Plan:** Generate visual cards, comparisons, stats, and charts in `artifacts/scene_plan.json`.
-4. **Remotion Composition:** Render visual elements and timed audio tracks into `renders/final.mp4`.
-5. **Quality Review:** Sample frames with `facet tools run frame_sample` and verify AV sync with `facet tools run output_review`.
-
-## Recommended Styles
-
-- `clean-professional.yaml`: Modern corporate, subtle gradients, clean typography (Inter / Space Grotesk).
-- `flat-motion-graphics.yaml`: High contrast, punchy primary accents, geometric shapes.
-- `minimalist-diagram.yaml`: Dark background, mono typography, focused chart lines.
-
-## Tool Commands
-
-```powershell
-# Generate voiceover for narrative beats
-facet tools run edgetts --input artifacts/req_tts.json
-
-# Probe generated audio for exact duration
-facet tools run media_probe --input '{"file_path": "narration/beat1.mp3"}'
-
-# Verify final render quality
-facet tools run output_review --input '{"rendered_file": "renders/final.mp4"}'
+## Direct Renderer Request
+Write `artifacts/explainer_props.json` with a nonempty cuts array, then estimate and run video_compose. This minimal example is silent:
+```json
+{"composition_id":"Explainer","theme":"clean-professional","width":1920,"height":1080,"fps":30,"duration_seconds":4,"cuts":[{"id":"intro","type":"text_card","source":"","in_seconds":0,"out_seconds":4,"text":"A clearer explanation"}],"output":"renders/final.mp4"}
 ```
+```sh
+facet tools estimate video_compose --input artifacts/explainer_props.json
+facet tools run video_compose --input artifacts/explainer_props.json
+```
+Direct cuts take precedence over operation and select Remotion. Use in_seconds/out_seconds for timeline placement and source_in_seconds for source video trim. Set top-level width/height/fps/duration_seconds explicitly; the example is exactly four seconds (120 frames), without padding. A 320x180, 24 fps, three-second profile uses `"width":320,"height":180,"fps":24,"duration_seconds":3` and cuts ending by three seconds. Dimensions must be positive even safe integers, fps/duration positive finite numbers, and duration * fps a whole safe frame count. Cuts need finite 0 <= in_seconds < out_seconds, at least one frame after boundary rounding, and must fit explicit duration; invalid timings fail instead of truncating. Omitted width/height/fps default to 1920/1080/30; only omitted duration adds one second after the last cut (60 seconds for empty cuts in Remotion).
+An alternative operation envelope uses `{"operation":"compose","edit_decisions":{"render_runtime":"remotion","cuts":[...]},"output_path":"renders/final.mp4"}`. Direct scenes plans are converted from start_seconds/end_seconds and description, losing richer component fields; prefer cuts for precise authoring.
+Remotion requires the composer source, npm dependencies, Node, and Chromium; configure paths.remotion_composer or paths.bundle if discovery fails. Estimates do not run metadata validation, render, or verify installed runtime dependencies. Do not silently downgrade to an FFmpeg slideshow.
+
+## Optional Audio And Assets
+```sh
+facet tools run edge_tts --input '{"text":"A clearer explanation.","output_path":"narration/voice.mp3"}'
+facet tools run media_probe --input '{"input":"narration/voice.mp3"}'
+```
+If narration is requested, probe it and time cuts to the real duration. Add `"audio":{"narration":{"src":"narration/voice.mp3","volume":1}}` to direct props; music uses audio.music.src and volume. Omit audio for silence. video_compose stages explicit media fields from the project directory, with composer public/ as fallback for absent relative files; local absolute paths and file URLs are also supported. It does not expose the entire project or public tree.
+For generated assets use `gflow_image` or `gflow_video`, never generic gflow. Check the core skill for exact requests, PATH/authentication requirements, null/unknown real estimates, and outputs[] provenance. Obtain paid consent first. `mock:true` is only for explicitly requested tests, never production.
+
+## Review And Deliver
+```sh
+facet tools run frame_sample --input '{"input":"renders/final.mp4","output_dir":"artifacts/frames","strategy":{"type":"uniform","count":4}}'
+facet tools run output_review --input '{"rendered_file":"renders/final.mp4"}'
+```
+media_probe also accepts input_path, not file_path. Configure review expectations to match resolution, timing, and intentional silence; inspect sampled frames for clipping, hierarchy, legibility, continuity, and any audio sync. Deliver the verified file with provenance and remaining limitations, not just a successful tool exit.

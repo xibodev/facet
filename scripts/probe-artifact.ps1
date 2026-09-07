@@ -1,18 +1,13 @@
-# Custom artifact probe for Facet & Release-Harness (PowerShell)
+# Fail closed; use the same decoder and codec assertions on every platform.
 param(
     [string]$FilePath = "renders/final.mp4"
 )
 
-if (-not (Test-Path $FilePath)) {
-    Write-Error "Error: Rendered artifact $FilePath does not exist"
-    exit 1
-}
-
-$fileInfo = Get-Item $FilePath
-if ($fileInfo.Length -gt 1000) {
-    Write-Output "Artifact $FilePath is valid ($($fileInfo.Length) bytes)"
-    exit 0
-} else {
-    Write-Error "Error: File $FilePath size is too small ($($fileInfo.Length) bytes)"
+$ErrorActionPreference = 'Stop'
+try {
+    & node (Join-Path $PSScriptRoot 'probe-artifact.mjs') $FilePath
+    exit $LASTEXITCODE
+} catch {
+    Write-Error 'Artifact verifier could not execute; Node, ffprobe and ffmpeg are required.'
     exit 1
 }

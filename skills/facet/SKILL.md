@@ -1,127 +1,43 @@
 ---
 name: facet
-description: Create, produce, edit, assemble, animate, or render videos in Facet. Use whenever asked to make a video, edit footage, generate an explainer, create shorts/clips, add captions, mix audio, or do any video production task.
+description: Create, edit, assemble, animate, and render reviewed videos with Facet from any supported agent CLI.
 ---
 
 # Facet Video Producer
 
-Use this skill when producing, editing, generating, or refining videos in a Facet workspace. Claude Code operates as the sole creative producer and orchestrator. Personas are creative reasoning postures, and the Go toolbox (`facet`) provides stateless execution mechanics.
+The user's selected agent (OpenCode, Codex, Copilot, Claude Code, or another supported engine) directs the production. Facet supplies stateless tools; project files preserve useful decisions and assets, not mandatory workflow stages.
 
----
+## Normal Production Path
+This core skill and the selected pack entry SKILL.md are authoritative for normal production and take precedence over deep legacy references. For simple tasks such as a supplied title card, start from the supplied intent and documented core tools: explain the plan, prepare the minimal request, estimate, render, and review. No source archaeology or persona/pipeline ceremony is required.
+Consult deep legacy references (such as compose-director, runtime-selection guides, or Python APIs) only for a relevant specialized need or an actual error, never as a preflight requirement. Use targeted tool descriptions for uncertain contracts; do not scan sources or load every supporting skill before a normal render.
 
-## 1. Operating Architecture & Principles
+## Working Agreement
+- Understand the outcome, supplied material, audience, format, and constraints. Inspect relevant files; clarify only consequential unknowns and rights/consent concerns.
+- Briefly explain the plan, renderer, provider/model choices, and quality/time/cost tradeoffs. Ask for explicit consent before paid generation, publication, or material creative downgrades. Unknown cost is not free.
+- Preserve the user's intent: silent videos need no narration or music; captions and scripts are optional. Work naturally without forced turn sequencing or unwanted narration.
+- Prefer supplied/local assets when they meet the brief. Use source_edit for footage, the explainer pack for 2D motion, or another appropriate installed pack.
+- Use `facet tools describe <tool>` when the contract is uncertain and `facet tools estimate <tool> --input request.json` before consequential calls. Estimates perform tool-specific checks, not deep renderer validation or proof of live availability or successful rendering.
+- Execute and render here; do not hand the task off to a manual editor. `mock:true` is only for explicitly requested tests, never a production fallback for missing credentials or tools.
 
-- **Claude Code is the Active Orchestrator:** Claude drives intake, direction, storytelling, asset planning, provider selection, tool invocation, and multi-pass review.
-- **Go Toolbox is Stateless:** The `facet` CLI exposes tool capabilities, runs validations, queries live provider status/costs, and executes deterministic operations. It does not own workflow state.
-- **Project Files are Durable Records:** Productions live under `projects/<project-slug>/` or dedicated project directories. Artifacts (briefs, scripts, scene plans, edits, reviews) are ordinary JSON/Markdown files created as needed.
-- **Modular Production Packs:** Specialized capabilities (Explainers, Cinematic Montages, Screen Demos) are supplied by installed Facet packs providing focused skills, styles, and pipeline definitions.
-- **Honest Feasibility & Gated Actions:** Announce provider choices and costs before execution. Seek explicit approval before incurring paid API charges, external mutations, or irreversible creative downgrades.
-
----
-
-## 2. Production Workflow Loop
-
-```text
-User Request / Assets
-  │
-  ├─► 1. Intake & Turn 1 Action (draft artifacts/script.json & generate voiceover)
-  ├─► 2. Direct Tool Execution (no ls or discovery scans)
-  ├─► 3. Pipeline Execution (explainer, cinematic, or source-edit)
-  ├─► 4. Probe & Scene Planning (lock timestamps from audio probe)
-  ├─► 5. Composition & Rendering (video_compose / edit)
-  ├─► 6. Technical & Visual QA (output_review, frame sampling)
-  └─► 7. Editorial Revision & Delivery Manifest (renders/final.mp4)
+## Concise Requests
+JSON files work across shells; these inline requests are also accepted. Replace example paths with existing project assets before probing or sampling.
+```sh
+facet tools run media_probe --input '{"input":"assets/source.mp4"}'
+facet tools run frame_sample --input '{"input":"renders/final.mp4","output_dir":"artifacts/frames","strategy":{"type":"uniform","count":4}}'
+facet tools run edge_tts --input '{"text":"Hello","output_path":"narration/voice.mp3"}'
+facet tools estimate gflow_image --input '{"prompt":"Paper landscape","model":"narwhal","aspect_ratio":"landscape","count":1,"output_path":"assets/landscape.png"}'
+facet tools estimate gflow_video --input '{"prompt":"Slow landscape pan","model":"veo-3.1","duration":6,"aspect_ratio":"landscape","resolution":"1080p","output_path":"assets/pan.mp4"}'
+facet tools run output_review --input '{"rendered_file":"renders/final.mp4"}'
 ```
+Narration is optional. `media_probe` accepts `input` or `input_path`, not `file_path`. `frame_sample` needs a strategy object: uniform/count, timestamps/timestamps array, or scenes/count with optional threshold. It does not accept video_path.
 
----
+## Renderer Contract
+`facet tools run video_compose --input artifacts/explainer_props.json` accepts direct Remotion props with nonempty cuts, or an operation envelope with edit_decisions. Direct cuts take precedence and select Remotion, not FFmpeg. See the explainer pack for a complete request.
+Default composition `Explainer` is 1920x1080 at 30 fps. Set top-level direct props `width`, `height`, `fps`, `duration_seconds` for an explicit profile, e.g. `"width":320,"height":180,"fps":24,"duration_seconds":3` renders 72 frames without padding. Dimensions must be positive even safe integers; fps/duration must be positive finite numbers and duration * fps a whole safe frame count. Only omitted duration retains last cut out_seconds + 1 second (60 seconds for empty cuts in Remotion). Cuts must have finite 0 <= in_seconds < out_seconds, span at least one frame after boundary rounding, and fit within explicit duration; invalid timings are rejected, not truncated.
+Use timeline in_seconds/out_seconds; use source_in_seconds to trim source media. Optional audio is `{"narration":{"src":"narration/voice.mp3","volume":1}}`; video_compose stages explicit media fields from the project directory, falling back to composer public/ for absent relative files. Explicit local absolute paths and file URLs are supported; unrelated files are not exposed. Omit audio for silence. Remotion needs the bundled composer, npm dependencies, Node, and Chromium; configure paths.remotion_composer or paths.bundle when needed. Estimates neither render nor run metadata validation; inspect the actual output profile.
 
-## 3. Step-by-Step Production Guide
-
-### Step 1: Intake & Creative Discovery
-
-1. **Classify the Request Source:**
-   - **Supplied Footage:** User provided raw videos, screen recordings, or talking head clips $\rightarrow$ Prioritize source-edit / assembly workflows.
-   - **Animated Explainer / 2D Motion:** User wants concepts, diagrams, stats, charts $\rightarrow$ Use Explainer Pack (`@xibodev/facet-pack-explainer`).
-   - **Cinematic / Archival Montage:** Historical, dramatic, narrative, public domain stills $\rightarrow$ Use Cinematic Pack (`@xibodev/facet-pack-cinematic`).
-2. **Clarify Critical Parameters:**
-   - Deliverable target (aspect ratio: 16:9, 9:16 vertical, 1:1 square; platform: YouTube, TikTok, Web).
-   - Core message, target audience, tone, and pacing.
-   - Inspect supplied assets immediately using `facet tools run media_probe --input <req.json>`.
-
-### Step 2: Standard Tool Commands
-
-Use the standard tools directly without running discovery scans:
-
-```bash
-# Voice synthesis via keyless neural Edge TTS
-facet tools run edgetts --input artifacts/req_tts.json
-
-# Probe audio duration to lock scene plan timestamps
-facet tools run media_probe --input '{"file_path": "narration/beat1.mp3"}'
-
-# Sample frames for inspection
-facet tools run frame_sample --input '{"video_path": "assets/clip.mp4", "output_dir": "artifacts/frames", "interval_seconds": 2.0}'
-
-# Assemble edit cuts
-facet tools run edit --input artifacts/edit.json
-
-# Mix audio tracks and duck background music
-facet tools run audio_mix --input artifacts/audio_mix.json
-
-# Review final output against quality gates
-facet tools run output_review --input '{"rendered_file": "renders/final.mp4"}'
-```
-
-### Step 3: Formulate Feasible Routes & Announce Costs
-
-- Propose a concrete route matching user constraints (e.g. Local FFmpeg + Remotion vs Edge TTS vs Cloud Video Gen).
-- If an operation incurs cost or calls external APIs, provide an estimate:
-  ```bash
-  facet tools estimate <tool> --input <request.json>
-  ```
-- Clearly communicate the provider, model, estimated latency, and cost before execution.
-
-### Step 4: Execute Tools via Go CLI
-
-Execute tools with explicit JSON inputs conforming to the tool's schema:
-
-```bash
-facet tools run <tool> --input <request.json>
-```
-
-#### Standard Execution Protocol:
-1. **Probe Source Media:**
-   ```bash
-   facet tools run media_probe --input '{"file_path": "assets/source.mp4"}'
-   ```
-2. **Sample Frames for Analysis:**
-   ```bash
-   facet tools run frame_sample --input '{"video_path": "assets/source.mp4", "output_dir": "artifacts/frames", "interval_seconds": 2.0}'
-   ```
-3. **Assemble Edit & Audio:**
-   ```bash
-   facet tools run edit --input artifacts/edit.json
-   facet tools run audio_mix --input artifacts/audio_mix.json
-   ```
-
-### Step 5: Quality Assurance & Multi-Pass Review
-
-Review is mandatory for every production:
-
-1. **Automated & Technical QA:**
-   Run `output_review` to inspect container, stream parameters, audio levels, black frames, silence, and freeze frames:
-   ```bash
-   facet tools run output_review --input '{"rendered_file": "renders/final.mp4", "sample_count": 8}'
-   ```
-2. **Visual & Creative Critique:**
-   - Inspect sampled frames from `output_review`.
-   - Evaluate pacing, hook retention, text legibility, audio balance (dialogue vs BGM), and brand alignment.
-3. **Targeted Revision:**
-   - Modify the edit plan, composition code, or assets.
-   - Re-render and re-verify only the changed segments.
-
-### Step 6: Final Delivery & Provenance
-
-When the video passes review:
-1. Place final deliverables in `renders/final.mp4`.
-2. Generate a compact delivery summary with resolution, duration, fps, size, provenance of assets, tools used, and review verdict.
+## Provider And Delivery Contract
+Only `gflow_image` and `gflow_video` are Facet tools, never generic `gflow`. The gflow CLI must be on PATH and authenticated; configured checks binary discovery only, not authentication. If installed in ~/go/bin, add that directory to PATH; there is no home-directory fallback.
+Real gflow estimates return estimated_cost:null and cost_known:false. Get paid consent before run, including unknown pricing. Images support models narwhal/harbor_seal/gem_pix_2, count 1-4; video uses veo-3.1 and duration 4/6/8/10. Use landscape/portrait/square aspect names (images also accept 4:3 and 3:4).
+Real gflow results contain output plus outputs[] records with id, type, mime_type, output, source_file, sha256. Use output for the retained file; source_file is staging provenance, not a persistent asset path. Do not retry a failed generation blindly or claim estimates/mocks are real media.
+Run output_review with expectations matching the brief, including optional audio for silence; inspect frames, pacing, legibility, and any audio. Revise defects and deliver the verified file with provider/asset provenance, review outcome, and limitations.

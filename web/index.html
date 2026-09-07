@@ -196,7 +196,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
     .workspace-note { color: var(--muted); font: 9px/1.4 var(--font-mono); text-align: center; }
 
     .workspace { min-width: 0; overflow: auto; padding: 20px 24px; }
-    .workspace-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+    .workspace-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 16px; background: var(--bg); }
     .workspace-heading { min-width: 0; }
     .eyebrow { margin: 0 0 4px; color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: .075em; text-transform: uppercase; }
     h1 { margin: 0; overflow-wrap: anywhere; font-family: var(--font-display); font-size: clamp(28px, 3vw, 40px); line-height: 1.05; letter-spacing: -.015em; }
@@ -557,6 +557,22 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
     }
     .titlebar-btn:hover { background: var(--surface-strong); border-color: var(--fg-2); }
     .titlebar-btn svg { width: 13px; height: 13px; }
+
+    @media (max-width: 820px) {
+      .project-selector-group { flex: 1; }
+      .titlebar-btn { min-height: 44px; flex: none; }
+    }
+    @media (max-width: 560px) {
+      .shell, .shell.inspector-closed { grid-template-rows: 104px 60px minmax(0, 1fr) auto; }
+      .titlebar { flex-wrap: wrap; align-content: center; gap: 4px; padding-block: 6px; }
+      .project-selector-group { flex-basis: 100%; }
+      .project-select { max-width: none; }
+      .toolbar-tail { width: 100%; justify-content: space-between; }
+      .engine-select { max-width: 160px; flex: 1; }
+      .sidebar { padding-inline: 6px; overflow-x: hidden; }
+      .nav-list { width: 100%; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+      .nav-button { width: 100%; flex-direction: column; gap: 3px; padding: 4px 0; font-size: 10px; }
+    }
 
     .projects-view {
       display: flex;
@@ -1101,6 +1117,9 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         project: null,
         projectFingerprint: '',
         projectLoadSerial: 0,
+        contextChangeSerial: 0,
+        contextResetPromise: Promise.resolve(),
+        sessionRecoveryPending: null,
         projectsInitialized: false,
         sessionToken: '',
         securityState: 'loading',
@@ -1441,6 +1460,9 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         if (!mutationsReady()) {
           control.textContent = ui.securityState === 'loading' ? 'Securing Studio' : 'Security unavailable';
           control.disabled = true;
+        } else if (ui.sessionRecoveryPending) {
+          control.textContent = 'Restoring session';
+          control.disabled = true;
         } else if (!ui.sessionId && ui.engineAvailability.loading) {
           control.textContent = 'Checking engines';
           control.disabled = true;
@@ -1475,7 +1497,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         const send = $('#sendButton');
         const checkingEngines = ui.engineAvailability.loading;
         const noEngines = !hasAvailableEngine();
-        const blocked = !mutationsReady() || checkingEngines || noEngines || !engineCanStart() || !ui.projectSlug || !ui.project || ui.busy || ['connecting', 'connected', 'working', 'disconnected'].includes(ui.lifecycle);
+        const blocked = !mutationsReady() || ui.sessionRecoveryPending || checkingEngines || noEngines || !engineCanStart() || !ui.projectSlug || !ui.project || ui.busy || ['connecting', 'connected', 'working', 'disconnected'].includes(ui.lifecycle);
         input.disabled = blocked;
         send.disabled = blocked || input.value.trim() === '';
         $('#composerAgent').textContent = noEngines ? 'No agent engine available' : `Message ${engineName()}`;
@@ -1484,6 +1506,8 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
           input.placeholder = ui.securityState === 'loading'
             ? 'Securing local agent controls…'
             : 'Agent controls disabled: local security token unavailable.';
+        } else if (ui.sessionRecoveryPending) {
+          input.placeholder = 'Restoring the previous conversation...';
         } else if (checkingEngines) {
           input.placeholder = 'Checking agent engine availability…';
         } else if (noEngines) {
@@ -1868,7 +1892,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         if (project.brief || brief.path || brief.url) add({ name: String(brief.path || 'brief.md').split(/[\\/]/).pop() || 'brief.md', path: brief.path, url: brief.url, kind: 'brief', info: 'Production brief' });
         if (project.script || script.path || script.url) add({ name: String(script.path || 'script.md').split(/[\\/]/).pop() || 'script.md', path: script.path, url: script.url, kind: 'script', info: `${Array.isArray(project.beats) ? project.beats.length : 0} parsed beats` });
         if (project.remotion_props || composition.path || composition.url) add({ name: String(composition.path || 'composition').split(/[\\/]/).pop() || 'composition', path: composition.path, url: composition.url, kind: 'compose', info: 'Composition properties' });
-        if (project.review_report) add({ name: 'report.json', path: `projects/${slug}/review/report.json`, url: projectMediaURL(slug, 'review/report.json'), kind: 'review', info: 'Output review report' });
+        if (project.review_report_url) add({ name: 'report.json', path: project.review_report_path, url: project.review_report_url, kind: 'review', info: 'Output review report' });
 
         const mediaGroups = [
           ['audio', project.narration],
@@ -2207,6 +2231,11 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
           const project = await response.json();
           if (serial !== ui.projectLoadSerial || ui.projectSlug !== slug) return;
           applyEngineAvailability(project);
+          if (!ui.project && !ui.sessionId && ENGINE_NAMES[project.engine]) {
+            ui.engine = project.engine;
+            $('#engineSelect').value = ui.engine;
+            updateSessionControl();
+          }
           const fingerprint = JSON.stringify(project);
           const recovered = ui.projectRefreshWarning;
           if (!projectChanged && ui.project && ui.projectFingerprint === fingerprint && !recovered) return;
@@ -2275,7 +2304,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
               }
               return;
             }
-            await resetForContextChange('');
+            if (!await resetForContextChange('')) return;
             ui.projectSlug = '';
             clearProjectUI(true);
           }
@@ -2305,7 +2334,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
             }
             return;
           }
-          await resetForContextChange('');
+          if (!await resetForContextChange('')) return;
           const select = $('#projectSelect');
           const option = new Option('Projects unavailable', '');
           option.disabled = true;
@@ -2813,30 +2842,85 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
       async function requestClose(sessionID) {
         if (!sessionID) return true;
         if (!mutationsReady()) return false;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
         try {
           const response = await fetch(`/api/close?session=${encodeURIComponent(sessionID)}`, {
             method: 'POST',
             credentials: 'same-origin',
+            signal: controller.signal,
             headers: { Accept: 'application/json', [SESSION_TOKEN_HEADER]: ui.sessionToken }
           });
           return response.ok || response.status === 404;
         } catch {
           return false;
+        } finally {
+          clearTimeout(timeout);
         }
       }
 
       function closeSessionOnPageHide() {
-        const sessionID = ui.sessionId;
-        if (!sessionID || !mutationsReady()) return;
-        const url = `/api/close?session=${encodeURIComponent(sessionID)}`;
+        // Retain only this tab's completed conversation, not an in-flight turn.
         try {
-          void fetch(url, {
-            method: 'POST',
-            keepalive: true,
-            credentials: 'same-origin',
-            headers: { [SESSION_TOKEN_HEADER]: ui.sessionToken }
-          }).catch(() => {});
+          sessionStorage.setItem('facet-active-context', JSON.stringify({
+            slug: ui.projectSlug, engine: ui.engine,
+            session: ui.busy ? '' : ui.sessionId, turns: ui.turns, cost: ui.cost
+          }));
         } catch { }
+      }
+
+      async function restoreActiveContext() {
+        let saved;
+        try { saved = JSON.parse(sessionStorage.getItem('facet-active-context')); } catch { return; }
+        if (!saved?.slug || !ui.projects.some(project => project.slug === saved.slug)) return;
+        if (ui.projectSlug || ui.contextChangeSerial) return;
+        const selection = selectProject(saved.slug);
+        // Own recovery across project loading as well as the session request.
+        const recovery = { serial: ui.contextChangeSerial };
+        ui.sessionRecoveryPending = recovery;
+        updateSessionControl();
+        updateComposerState();
+        const controller = new AbortController();
+        let recoveryTimeout;
+        const deadline = new Promise((_, reject) => {
+          recoveryTimeout = setTimeout(() => {
+            controller.abort();
+            reject(new Error('Session recovery timed out'));
+          }, 10000);
+        });
+        try {
+          // One deadline covers selection, fetch and body parsing, even if selection never settles.
+          await Promise.race([selection, deadline]);
+          if (ui.sessionRecoveryPending !== recovery || ui.contextChangeSerial !== recovery.serial || !ui.project || ui.projectSlug !== saved.slug || !ENGINE_NAMES[saved.engine]) return;
+          ui.engine = saved.engine;
+          $('#engineSelect').value = ui.engine;
+          updateComposerState();
+          if (!saved.session || !mutationsReady()) return;
+          const projectPath = ui.project.path;
+          const parameters = new URLSearchParams({ session: saved.session, dir: projectPath, engine: ui.engine });
+          const response = await Promise.race([
+            fetch(`/api/session?${parameters}`, { headers: { [SESSION_TOKEN_HEADER]: ui.sessionToken }, signal: controller.signal }),
+            deadline
+          ]);
+          if (!response.ok) return;
+          const session = await Promise.race([response.json(), deadline]);
+          if (ui.sessionRecoveryPending !== recovery || ui.contextChangeSerial !== recovery.serial || ui.projectSlug !== saved.slug || ui.project?.path !== projectPath || ui.engine !== saved.engine || ui.busy || ui.sessionId) return;
+          if (session?.id !== saved.session || session.engine !== saved.engine || session.alive !== true) return;
+          ui.sessionId = session.id;
+          ui.agentSessionId = session.native_id || '';
+          ui.turns = Number(saved.turns) || 0;
+          ui.cost = Number(saved.cost) || 0;
+          setLifecycle('ready');
+          setLiveSummary(`${engineName()} conversation restored. Earlier activity is not replayed.`);
+        } catch { /* A restarted Studio starts a new session on the next message. */ }
+        finally {
+          clearTimeout(recoveryTimeout);
+          if (ui.sessionRecoveryPending === recovery) {
+            ui.sessionRecoveryPending = null;
+            updateSessionControl();
+            updateComposerState();
+          }
+        }
       }
 
       function detachStream() {
@@ -2890,7 +2974,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
 
       function sendPrompt(value, fromQuestion = false) {
         const text = String(value ?? $('#promptInput').value).trim();
-        if (!text || !mutationsReady() || !ui.projectSlug || ui.busy || ui.lifecycle === 'disconnected') return;
+        if (!text || !mutationsReady() || ui.sessionRecoveryPending || !ui.projectSlug || !ui.project || ui.busy || ui.lifecycle === 'disconnected') return;
         if (!engineCanStart()) {
           const reason = ui.engineAvailability.engines[ui.engine]?.reason;
           setLiveSummary(ui.engineAvailability.loading ? 'Engine availability is still being checked.' : reason ? `${engineName()} is unavailable: ${reason}` : 'No available agent engine can start this session.', 'warning');
@@ -2930,7 +3014,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
           setLiveSummary(`Connecting to ${engineName()}.`, 'active');
         }
 
-        const parameters = new URLSearchParams({ prompt: text, token: ui.sessionToken });
+        const parameters = new URLSearchParams({ prompt: text, token: ui.sessionToken, dir: ui.project.path, engine: ui.engine });
         if (ui.sessionId) {
           parameters.set('session', ui.sessionId);
         } else {
@@ -3035,6 +3119,9 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
       }
 
       async function resetForContextChange(message) {
+        try { sessionStorage.removeItem('facet-active-context'); } catch { }
+        const serial = ++ui.contextChangeSerial;
+        ui.sessionRecoveryPending = null;
         const sessionID = ui.sessionId;
         detachStream();
         finalizeLiveRecords('reset', true);
@@ -3046,7 +3133,9 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         ui.cost = 0;
         updateComposerState();
         setLifecycle('idle', 'Resetting session…');
-        await requestClose(sessionID);
+        ui.contextResetPromise = Promise.all([ui.contextResetPromise, requestClose(sessionID)]).then(() => {});
+        await ui.contextResetPromise;
+        if (serial !== ui.contextChangeSerial) return false;
         ui.busy = false;
         setLifecycle('idle');
         if (ui.projectSlug && message) {
@@ -3054,26 +3143,27 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
           record.root.classList.add('success');
           appendTextBlock(record, message);
         }
+        return true;
       }
 
       async function handleProjectChange(event) {
-        const next = event.target.value;
+        return selectProject(event.target.value);
+      }
+
+      async function selectProject(next) {
         const previous = ui.projectSlug;
-        if (next === previous) return;
+        if (next === previous) {
+          if (next) await loadProjectDetails(next, false);
+          return;
+        }
         const remainDisconnected = ui.lifecycle === 'disconnected';
         const resetPromise = resetForContextChange('The next message will start a new engine process for this project.');
         ui.projectSlug = next;
+        $('#projectSelect').value = next;
         ui.project = null;
         ui.projectLoadSerial += 1;
         updateComposerState();
         clearActivity(next ? 'No agent activity for this project yet.' : 'No project activity.');
-        await resetPromise;
-        if (!next) {
-          clearProjectUI(false);
-          setLifecycle('idle');
-          return;
-        }
-        ui.projectLoadSerial += 1;
         $('#kicker').textContent = 'Loading project';
         $('#workspaceTitle').textContent = next;
         $('#projectMeta').textContent = 'Reading the production record…';
@@ -3081,7 +3171,15 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         clearVideo();
         renderArtifacts(null);
         renderProperties(null);
+        if (!await resetPromise) return;
+        const contextSerial = ui.contextChangeSerial;
+        if (!next) {
+          clearProjectUI(false);
+          setLifecycle('idle');
+          return;
+        }
         await loadProjectDetails(next, true);
+        if (contextSerial !== ui.contextChangeSerial || ui.projectSlug !== next) return;
         if (remainDisconnected) setLifecycle('disconnected');
         else $('#promptInput').focus();
       }
@@ -3110,7 +3208,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         updateComposerState();
         const resetPromise = resetForContextChange(`${prior} was closed. ${engineName()} will start on the next message.`);
         setLiveSummary(`Switching to ${engineName()}…`, 'active');
-        await resetPromise;
+        if (!await resetPromise) return;
         if (remainDisconnected) setLifecycle('disconnected');
         setLiveSummary(`Engine set to ${engineName()}.`);
         if (ui.projectSlug && !remainDisconnected) $('#promptInput').focus();
@@ -3257,6 +3355,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
               slug: p.slug,
               name: p.name || p.slug,
               path: p.path || p.slug,
+              engine: p.engine,
               stages: p.stages,
               lastModified: p.last_modified ? new Date(p.last_modified) : null,
               videoVersion: p.video_version,
@@ -3318,9 +3417,9 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
 
           card.append(title, pathEl, tags, stages, foot);
 
-          const openProj = () => {
-            selectProject(proj.slug);
+          const openProj = async () => {
             showView('produce');
+            await selectProject(proj.slug);
           };
           card.addEventListener('click', openProj);
           card.addEventListener('keydown', e => {
@@ -3332,14 +3431,6 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
 
           grid.appendChild(card);
         });
-      }
-
-      function selectProject(slug) {
-        if (!slug) return;
-        ui.projectSlug = slug;
-        const sel = $('#projectSelect');
-        if (sel) sel.value = slug;
-        handleProjectChange();
       }
 
       function openModal(id) {
@@ -3406,9 +3497,10 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
             $('#newProductionForm').reset();
 
             await loadProjects(true);
-            selectProject(created.id || created.slug || slug);
             showView('produce');
-            setLiveSummary(`Created and initialized production "${name}".`, 'ready');
+            const selected = created.id || created.slug || slug;
+            await selectProject(selected);
+            if (ui.projectSlug === selected && ui.project) setLiveSummary(`Created and initialized production "${name}".`, 'ready');
           } catch (err) {
             alert('Failed to create production: ' + err.message);
           } finally {
@@ -3441,9 +3533,10 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
             $('#openFolderForm').reset();
 
             await loadProjects(true);
-            selectProject(opened.id || opened.slug);
             showView('produce');
-            setLiveSummary(`Opened workspace at "${path}".`, 'ready');
+            const selected = opened.id || opened.slug;
+            await selectProject(selected);
+            if (ui.projectSlug === selected && ui.project) setLiveSummary(`Opened workspace at "${path}".`, 'ready');
           } catch (err) {
             alert('Failed to open folder: ' + err.message);
           } finally {
@@ -3671,7 +3764,8 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
       renderActivityEmpty();
       clearProjectUI(false);
       setLifecycle('idle');
-      Promise.allSettled([loadSessionToken(), loadEngines(), loadProjects(true), loadCatalogAndPacks()]).then(() => {
+      Promise.allSettled([loadSessionToken(), loadEngines(), loadProjects(true), loadCatalogAndPacks()]).then(async () => {
+        await restoreActiveContext();
         if (ui.securityState === 'failed') setLiveSummary(LOCAL_SECURITY_ERROR, 'failed');
       });
       window.setInterval(() => {

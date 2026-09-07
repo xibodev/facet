@@ -1,0 +1,49 @@
+services:
+  studio:
+    build:
+      context: .
+      dockerfile: .release-harness/docker/Dockerfile
+    init: true
+    shm_size: 1gb
+    environment:
+      UAT_REAL_AGENT: "${UAT_REAL_AGENT:-0}"
+      UAT_TURN_TIMEOUT_MS: "${UAT_TURN_TIMEOUT_MS:-240000}"
+      OPENCODE_CONFIG: /run/uat/opencode.json
+      OPENCODE_DISABLE_AUTOUPDATE: "true"
+      OPENCODE_DISABLE_MODELS_FETCH: "true"
+    volumes:
+      - type: bind
+        source: ${UAT_OPENCODE_CONFIG_FILE:-./.release-harness/docker/unconfigured.json}
+        target: /run/uat/opencode.json
+        read_only: true
+    labels:
+      com.xibodev.release-harness: "true"
+      com.xibodev.release-harness.run-id: "${RUN_ID:?Set RUN_ID explicitly}"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8788/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+    networks: [uat]
+  gateway:
+    image: node:24.14.0-bookworm
+    init: true
+    user: node
+    read_only: true
+    depends_on:
+      studio:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${UAT_PORT:-31000}:8788"
+    command:
+      - node
+      - -e
+      - "const net=require('node:net');net.createServer(c=>{const u=net.connect(8788,'studio');c.pipe(u).pipe(c);c.on('error',()=>u.destroy());u.on('error',()=>c.destroy());c.on('close',()=>u.destroy())}).listen(8788,'0.0.0.0')"
+    labels:
+      com.xibodev.release-harness: "true"
+      com.xibodev.release-harness.run-id: "${RUN_ID:?Set RUN_ID explicitly}"
+    networks: [uat, ingress]
+networks:
+  uat:
+    internal: ${UAT_NETWORK_INTERNAL:-true}
+  ingress: {}

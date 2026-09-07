@@ -6,6 +6,10 @@ const os = require('os');
 const fs = require('fs');
 
 function getPlatformBinary(name) {
+  if (process.env.FACET_BIN && fs.existsSync(process.env.FACET_BIN)) {
+    return process.env.FACET_BIN;
+  }
+
   const platform = os.platform(); // 'win32', 'darwin', 'linux'
   const arch = os.arch(); // 'x64', 'arm64'
 
@@ -31,19 +35,26 @@ function getPlatformBinary(name) {
 
   // 3. User installation path
   const home = os.homedir();
-  const userInstall = platform === 'win32'
-    ? path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Programs', 'Facet', 'bin', `${name}.exe`)
-    : path.join(home, '.facet', 'bin', name);
+  const userInstall = path.join(home, '.facet', 'bin', platform === 'win32' ? `${name}.exe` : name);
   if (fs.existsSync(userInstall)) {
     return userInstall;
   }
+  if (platform === 'win32') {
+    const legacyInstall = path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Programs', 'Facet', 'bin', `${name}.exe`);
+    if (fs.existsSync(legacyInstall)) return legacyInstall;
+  }
 
-  // 4. Fallback to system PATH
-  return name;
+  // Never resolve our own npm shim through PATH.
+  return null;
 }
 
 const bin = getPlatformBinary('facet');
 const args = process.argv.slice(2);
+
+if (!bin) {
+  console.error('Facet native binary is missing. npm supplies a launcher, not a binary installer. Clone https://github.com/xibodev/facet and run bash /path/to/facet/install.sh (Linux/macOS), or install.ps1 from the checkout (Windows).');
+  process.exit(1);
+}
 
 const child = spawn(bin, args, { stdio: 'inherit' });
 

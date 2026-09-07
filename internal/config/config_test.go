@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -182,6 +183,9 @@ func TestRunInit(t *testing.T) {
 
 	cfg := DefaultConfig()
 	cfg.Paths.Bundle = bundleDir
+	for _, name := range []string{"explainer", "cinematic"} {
+		writeConfigFixture(t, filepath.Join(bundleDir, "packs", name, "SKILL.md"), "# Pack")
+	}
 
 	// 1. Test Claude engine init
 	t.Run("ClaudeEngine", func(t *testing.T) {
@@ -289,14 +293,14 @@ func TestRunInit(t *testing.T) {
 			t.Errorf("expected CLAUDE.md: %v", err)
 		} else {
 			contentStr := string(claudeContent)
-			if !strings.Contains(contentStr, "Never Suggest External Manual Tools") {
+			if !strings.Contains(contentStr, "Produce and review the requested video here") {
 				t.Errorf("expected CLAUDE.md to contain anti-drift rules")
 			}
-			if !strings.Contains(contentStr, "Immediate Action on Turn 1") {
-				t.Errorf("expected CLAUDE.md to mandate Turn 1 immediate action")
+			if !strings.Contains(contentStr, "Never substitute mock media in production") {
+				t.Errorf("expected CLAUDE.md to prohibit production mock substitution")
 			}
-			if !strings.Contains(contentStr, "facet tools run edgetts") {
-				t.Errorf("expected CLAUDE.md to include edgetts signature")
+			if !strings.Contains(contentStr, "facet tools run edge_tts") {
+				t.Errorf("expected CLAUDE.md to include edge_tts signature")
 			}
 			if !strings.Contains(contentStr, "facet tools run output_review") {
 				t.Errorf("expected CLAUDE.md to include output_review signature")
@@ -315,3 +319,89 @@ func TestRunInit(t *testing.T) {
 	})
 }
 
+func writeConfigFixture(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInstalledBundleFromUnrelatedDirectory(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("LOCALAPPDATA", "")
+	t.Chdir(t.TempDir())
+	bundle := filepath.Join(home, ".facet", "bundle")
+	writeConfigFixture(t, filepath.Join(bundle, "skills", "facet", "SKILL.md"), "# Installed core")
+	writeConfigFixture(t, filepath.Join(bundle, "packs", "explainer", "SKILL.md"), "# Installed pack")
+	writeConfigFixture(t, filepath.Join(bundle, "remotion-composer", "package.json"), "{}")
+	cfg := DefaultConfig()
+	cfg.AutoDetect()
+	if cfg.Paths.Bundle != bundle || cfg.Paths.RemotionComposer != filepath.Join(bundle, "remotion-composer") {
+		t.Fatalf("unexpected installed paths: %+v", cfg.Paths)
+	}
+	if got := findPackSource("@xibodev/facet-pack-explainer", nil); got != filepath.Join(bundle, "packs", "explainer") {
+		t.Fatalf("home pack resolution = %q", got)
+	}
+	project := filepath.Join(t.TempDir(), "production")
+	_, err := RunInitWithOptions(InitOptions{ProjectDir: project, Engine: "opencode", Packs: []string{"explainer"}}, cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, skill := range []string{"facet", "explainer"} {
+		if _, err := os.ReadFile(filepath.Join(project, ".opencode", "skills", skill, "SKILL.md")); err != nil {
+			t.Fatalf("installed skill %s not projected: %v", skill, err)
+		}
+	}
+}
+
+func TestBundleResolutionOrder(t *testing.T) {
+	root := t.TempDir()
+	cwd := filepath.Join(root, "checkout", "projects", "demo")
+	home := filepath.Join(root, "home")
+	executable := filepath.Join(root, "install", "bin", "facet")
+	want := []string{cwd, filepath.Dir(cwd), filepath.Join(root, "checkout"), filepath.Join(root, "install", "bundle"), filepath.Join(root, "install"), filepath.Join(home, ".facet", "bundle")}
+	if got := bundleCandidatesFor(cwd, home, executable); !reflect.DeepEqual(got, want) {
+		t.Fatalf("candidate order = %v, want %v", got, want)
+	}
+}
+
+func TestPinnedPathsAndProjectDefaultsSurviveInit(t *testing.T) {
+	t.Chdir(t.TempDir())
+	bundle := t.TempDir()
+	writeConfigFixture(t, filepath.Join(bundle, "skills", "facet", "SKILL.md"), "# Custom core")
+	writeConfigFixture(t, filepath.Join(bundle, "packs", "explainer", "SKILL.md"), "# Custom pack")
+	// A local pack must not shadow the configured bundle.
+	writeConfigFixture(t, filepath.Join("packs", "explainer", "SKILL.md"), "# Other pack")
+	cfg := DefaultConfig()
+	cfg.Paths = PathsConfig{Bundle: bundle, RemotionComposer: "/custom/composer", FFmpeg: "/custom/ffmpeg", Node: "/custom/node", OpenCode: "/custom/opencode"}
+	cfg.Defaults.Voice = "custom-voice"
+	cfg.Defaults.Resolution = "720x1280"
+	cfg.Defaults.FPS = 24
+	wantPaths := cfg.Paths
+	cfg.AutoDetect()
+	if cfg.Paths.Bundle != wantPaths.Bundle || cfg.Paths.RemotionComposer != wantPaths.RemotionComposer || cfg.Paths.FFmpeg != wantPaths.FFmpeg || cfg.Paths.Node != wantPaths.Node || cfg.Paths.OpenCode != wantPaths.OpenCode {
+		t.Fatalf("pinned paths overwritten: %+v", cfg.Paths)
+	}
+	if got := findPackSource("explainer", cfg); got != filepath.Join(bundle, "packs", "explainer") {
+		t.Fatalf("configured pack not preferred: %s", got)
+	}
+	project := t.TempDir()
+	if err := cfg.Save(filepath.Join(project, ".facet.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RunInitWithOptions(InitOptions{ProjectDir: project, Engine: "opencode"}, DefaultConfig(), nil); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(filepath.Join(project, ".facet.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Paths != cfg.Paths || loaded.Defaults.Voice != "custom-voice" || loaded.Defaults.Resolution != "720x1280" || loaded.Defaults.FPS != 24 || loaded.Defaults.Engine != "opencode" {
+		t.Fatalf("custom project configuration lost: %+v", loaded)
+	}
+}

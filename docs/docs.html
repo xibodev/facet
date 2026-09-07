@@ -1,387 +1,222 @@
 <!DOCTYPE html>
-<html lang="en" class="scroll-smooth">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Documentation & Technical Manual — Facet Video Engine</title>
-  <meta name="description" content="Complete documentation, API reference, Remotion schema specifications, and agent contracts for Facet.">
+  <title>Facet Docs | Install, Create, and Review</title>
+  <meta name="description" content="Source installation, Studio and terminal workflows, provider prerequisites, limitations, and source-linked technical reference for Facet.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['Inter', 'sans-serif'],
-            display: ['Space Grotesk', 'sans-serif'],
-            mono: ['JetBrains Mono', 'monospace'],
-          },
-          colors: {
-            brand: {
-              cyan: '#0284c7',
-              purple: '#7c3aed',
-              amber: '#d97706',
-              emerald: '#059669',
-            }
-          }
-        }
-      }
-    }
-  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
   <style>
-    body {
-      background-color: #f8fafc;
-      color: #0f172a;
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 6rem; }
+    body { margin: 0; background: #f8fafc; color: #0f172a; font: 16px/1.7 Inter, sans-serif; }
+    a { color: #0369a1; text-underline-offset: .2em; overflow-wrap: anywhere; }
+    a:hover { color: #6d28d9; }
+    a:focus-visible, summary:focus-visible { outline: 3px solid #0284c7; outline-offset: 4px; }
+    h1, h2, h3, .brand { font-family: 'Space Grotesk', sans-serif; line-height: 1.2; color: #0f172a; }
+    h1 { font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -.025em; margin: 0 0 1rem; }
+    h2 { font-size: 1.8rem; margin: 0 0 1.25rem; }
+    h3 { font-size: 1.2rem; margin: 2rem 0 .75rem; }
+    p { margin: 0 0 1rem; }
+    code, pre { font-family: 'JetBrains Mono', monospace; font-size: .85em; }
+    code { overflow-wrap: anywhere; }
+    pre { background: #0f172a; color: #e2e8f0; padding: 1.25rem; border-radius: .75rem; overflow-x: auto; line-height: 1.9; }
+    pre code { overflow-wrap: normal; font-size: inherit; }
+    header { background: #ffffffed; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 10; }
+    .wrap { max-width: 1200px; margin: auto; padding-inline: 1.5rem; }
+    .topbar { min-height: 4.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem 1rem; padding-block: .5rem; }
+    .brand { display: inline-flex; align-items: center; gap: .65rem; text-decoration: none; font-size: 1.4rem; font-weight: 700; }
+    .mark { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .5rem; background: linear-gradient(135deg, #0284c7, #7c3aed); color: white; }
+    .topnav { display: flex; gap: 1.25rem; }
+    .topnav a { font-size: .875rem; padding-block: .6rem; }
+    .layout { display: grid; grid-template-columns: 235px minmax(0, 1fr); gap: 3rem; padding-top: 2.5rem; padding-bottom: 4rem; }
+    aside nav { position: sticky; top: 6rem; background: white; padding: 1rem; border: 1px solid #e2e8f0; border-radius: .75rem; }
+    aside a { display: block; padding: .55rem .25rem; text-decoration: none; font-size: .875rem; }
+    main { min-width: 0; max-width: 76ch; color: #475569; }
+    section + section { margin-top: 4rem; padding-top: 2rem; border-top: 1px solid #e2e8f0; }
+    .card { background: white; padding: 1.5rem; border: 1px solid #e2e8f0; border-radius: .75rem; box-shadow: 0 2px 5px #0f172a08; margin-block: 1.25rem; }
+    .card h3 { margin-top: 0; }
+    .notice { padding: .25rem 0 .25rem 1.25rem; border-left: 3px solid #7c3aed; margin: 1.5rem 0; }
+    ul, ol { padding-left: 1.4rem; }
+    li { margin-bottom: .75rem; }
+    strong { color: #0f172a; }
+    details { background: white; border: 1px solid #cbd5e1; border-radius: .75rem; padding: 1.25rem; }
+    summary { cursor: pointer; font-weight: 600; color: #0f172a; }
+    details[open] summary { margin-bottom: 1.25rem; }
+    dt { font-weight: 600; color: #0f172a; margin-top: 1.25rem; }
+    dd { margin: .4rem 0 1rem; }
+    footer { background: white; border-top: 1px solid #e2e8f0; padding-block: 2rem; color: #475569; font-size: .875rem; }
+    @media (max-width: 800px) {
+      .wrap { padding-inline: 1.1rem; }
+      .layout { grid-template-columns: minmax(0, 1fr); gap: 2rem; }
+      aside nav { position: static; display: flex; flex-wrap: wrap; gap: 0 1rem; }
+      aside a { min-height: 44px; }
+      .card { padding: 1.1rem; }
+      html { scroll-padding-top: 8rem; }
     }
-    .light-card {
-      background: #ffffff;
-      border: 1px solid #e2e8f0;
-      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
-    }
-    /* Custom scrollbar */
-    ::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-    ::-webkit-scrollbar-track {
-      background: #f1f5f9;
-    }
-    ::-webkit-scrollbar-thumb {
-      background: #cbd5e1;
-      border-radius: 3px;
-    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   </style>
 </head>
-<body class="min-h-screen flex flex-col font-sans selection:bg-cyan-500/20 selection:text-cyan-900 bg-slate-50 text-slate-900">
-
-  <!-- Header -->
-  <header class="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200/80 shadow-sm">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-      <div class="flex items-center space-x-3">
-        <a href="index.html" class="flex items-center space-x-2.5">
-          <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-600 to-purple-600 flex items-center justify-center font-display font-bold text-white text-lg shadow-md">
-            F
-          </div>
-          <span class="font-display font-bold text-xl tracking-tight text-slate-900 hover:text-cyan-600 transition-colors">
-            Facet Docs
-          </span>
-        </a>
-        <span class="text-xs font-mono text-slate-500">/ v1.0.1 Manual</span>
-      </div>
-
-      <div class="flex items-center space-x-4">
-        <a href="index.html" class="text-xs font-medium text-slate-600 hover:text-slate-900 transition-colors">← Back to Overview</a>
-        <a href="https://github.com/xibodev/facet" target="_blank" rel="noopener" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 shadow-sm transition-colors">
-          GitHub Repo
-        </a>
-      </div>
-    </div>
-  </header>
-
-  <!-- Main Docs Layout with Sidebar -->
-  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow flex flex-col md:flex-row gap-8">
-    
-    <!-- Sidebar Navigation -->
-    <aside class="w-full md:w-64 flex-shrink-0">
-      <div class="sticky top-24 space-y-6 text-sm font-medium bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-        <div>
-          <div class="text-xs font-mono font-bold text-cyan-700 uppercase tracking-wider mb-2">Core Concepts</div>
-          <ul class="space-y-1 text-slate-600 text-xs font-mono">
-            <li><a href="#operating-model" class="block py-1 hover:text-cyan-600">The 3-Tier Model</a></li>
-            <li><a href="#two-workflows" class="block py-1 hover:text-cyan-600">CLI & Studio Workflows</a></li>
-            <li><a href="#quickstart" class="block py-1 hover:text-cyan-600">Installation Guide</a></li>
-            <li><a href="#doctor" class="block py-1 hover:text-cyan-600">Host Doctor Diagnostics</a></li>
-          </ul>
-        </div>
-
-        <div>
-          <div class="text-xs font-mono font-bold text-purple-700 uppercase tracking-wider mb-2">Workspace & Schemas</div>
-          <ul class="space-y-1 text-slate-600 text-xs font-mono">
-            <li><a href="#workspace" class="block py-1 hover:text-purple-600">Workspace File Structure</a></li>
-            <li><a href="#explainer-props" class="block py-1 hover:text-purple-600">Remotion Scene Schema</a></li>
-            <li><a href="#scene-components" class="block py-1 hover:text-purple-600">Scene Component Library</a></li>
-            <li><a href="#themes" class="block py-1 hover:text-purple-600">Visual Themes</a></li>
-          </ul>
-        </div>
-
-        <div>
-          <div class="text-xs font-mono font-bold text-emerald-700 uppercase tracking-wider mb-2">Engine & Quality Gates</div>
-          <ul class="space-y-1 text-slate-600 text-xs font-mono">
-            <li><a href="#agent-engine" class="block py-1 hover:text-emerald-600">Agent Tool Execution</a></li>
-            <li><a href="#output-review" class="block py-1 hover:text-emerald-600">output_review Quality QA</a></li>
-            <li><a href="#release-harness" class="block py-1 hover:text-emerald-600">Release-Harness Local UAT</a></li>
-          </ul>
-        </div>
-      </div>
-    </aside>
-
-    <!-- Main Content Area -->
-    <main class="flex-grow max-w-4xl space-y-16 text-slate-700 leading-relaxed text-sm">
-      
-      <!-- Section 1: The 3-Tier Operating Model -->
-      <section id="operating-model" class="space-y-4">
-        <h1 class="font-display font-bold text-3xl text-slate-950">How Facet Works: The 3-Tier Model</h1>
-        <p>
-          Facet is designed around a clean separation of concerns so human creators never have to memorize complex media commands or manually splice video clips.
-        </p>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs text-slate-800 pt-2">
-          <div class="p-4 rounded-xl bg-cyan-50 border border-cyan-200">
-            <div class="font-bold text-cyan-900 mb-1">1. You (The Director)</div>
-            <p class="text-slate-600 text-[11px]">You prompt in plain English or open the Studio UI. You make creative choices and describe what you want.</p>
-          </div>
-          <div class="p-4 rounded-xl bg-purple-50 border border-purple-200">
-            <div class="font-bold text-purple-900 mb-1">2. AI Agent (The Producer)</div>
-            <p class="text-slate-600 text-[11px]">Claude Code, OpenCode, or Copilot drafts scripts, plans scenes, and calls the Facet engine under the hood.</p>
-          </div>
-          <div class="p-4 rounded-xl bg-emerald-50 border border-emerald-200">
-            <div class="font-bold text-emerald-900 mb-1">3. Facet Engine (The Render)</div>
-            <p class="text-slate-600 text-[11px]">Stateless Go toolbox + Remotion React renderers compile code and neural audio into broadcast-quality <code class="text-emerald-800 font-bold">.mp4</code>.</p>
-          </div>
-        </div>
+<body>
+  <header><div class="wrap topbar"><a href="index.html" class="brand"><span class="mark" aria-hidden="true">F</span>Facet Docs</a><nav class="topnav" aria-label="Main navigation"><a href="index.html">Overview</a><a href="https://github.com/xibodev/facet">GitHub</a></nav></div></header>
+  <div class="wrap layout">
+    <aside><nav aria-label="On this page"><a href="#start">Start Here</a><a href="#install">Source Installation</a><a href="#doctor">Diagnostics</a><a href="#studio">Studio Walkthrough</a><a href="#terminal">Terminal Workflow</a><a href="#packs">Production Packs</a><a href="#gflow">Google Flow Setup</a><a href="#workspace">Project Files</a><a href="#limitations">Known Limitations</a><a href="#reference">Technical Reference</a></nav></aside>
+    <main>
+      <section id="start">
+        <h1>Make a Video With Your Agent</h1>
+        <p>Facet combines production instructions, a Go media toolbox, and a local browser Studio. Your coding agent plans the work and invokes tools. You supply the idea or footage, approve consequential choices, and review the result.</p>
+        <p>Start with a simple request such as <strong>"Make a short explainer about how rain forms"</strong> or <strong>"Turn my screen recording into a concise walkthrough."</strong> You do not need to specify JSON, tool names, or a rigid production sequence.</p>
+        <p>Install the source bundle and authenticate an agent before trying either workflow. Tool configuration, completed media generation, and editorial acceptance are separate checks.</p>
       </section>
-
-      <!-- Section 2: The Two Workflows -->
-      <section id="two-workflows" class="space-y-4">
-        <h2 class="font-display font-bold text-2xl text-slate-950">The Two Ways to Use Facet</h2>
-        
-        <div class="space-y-4">
-          <div class="light-card p-5 rounded-xl border-l-4 border-l-cyan-600">
-            <h3 class="font-bold text-slate-900 text-base mb-1">Workflow A: The Headless AI CLI</h3>
-            <p class="text-slate-600 text-xs mb-3">
-              Run <code class="font-mono text-cyan-800 bg-cyan-50 px-1 py-0.5 rounded font-semibold">facet init my-video --engine claude</code>. Your AI coding agent starts up, and you simply prompt:
-            </p>
-            <div class="bg-slate-950 p-3 rounded-lg font-mono text-xs text-slate-200 border border-slate-800">
-              <span class="text-amber-400 font-bold">&gt; You:</span> "Make a 30s explainer about how neural networks learn with animated bar charts."<br>
-              <span class="text-purple-400 font-bold">&gt; Agent:</span> "Drafting script, synthesizing voiceover, compiling Remotion charts, rendering to renders/final.mp4..."
-            </div>
-          </div>
-
-          <div class="light-card p-5 rounded-xl border-l-4 border-l-purple-600">
-            <h3 class="font-bold text-slate-900 text-base mb-1">Workflow B: The Web Studio (`facet ui`)</h3>
-            <p class="text-slate-600 text-xs mb-3">
-              Run <code class="font-mono text-purple-800 bg-purple-50 px-1 py-0.5 rounded font-semibold">facet ui</code> in your project folder. Open <code class="font-mono text-slate-900 font-bold">http://localhost:8787</code> in your browser:
-            </p>
-            <ul class="list-disc list-inside text-xs text-slate-600 space-y-1">
-              <li>Track stage progress: <code class="font-mono text-[11px]">Brief → Script → Audio → Scene Plan → Compose → Review → Deliver</code></li>
-              <li>Inspect audio waveforms, volume meters, and voice ducking curves.</li>
-              <li>Scrub video frames and examine extracted QA stills.</li>
-            </ul>
-          </div>
-        </div>
-      </section>
-
-      <!-- Section 3: Installation & Doctor -->
-      <section id="quickstart" class="space-y-4">
-        <h2 class="font-display font-bold text-2xl text-slate-950">Installation & System Doctor</h2>
-        
-        <div class="bg-slate-950 rounded-xl p-4 font-mono text-xs text-slate-200 space-y-2 border border-slate-800 shadow-md">
-          <div class="text-slate-500"># Install with Go</div>
-          <div class="text-cyan-400 select-all">go install github.com/xibodev/facet/cmd/facet@latest</div>
-          
-          <div class="text-slate-500 pt-2"># Install with PowerShell (Windows)</div>
-          <div class="text-cyan-400 select-all">irm https://raw.githubusercontent.com/xibodev/facet/main/install.ps1 | iex</div>
-
-          <div class="text-slate-500 pt-2"># Install with Bash (macOS & Linux)</div>
-          <div class="text-cyan-400 select-all">curl -fsSL https://raw.githubusercontent.com/xibodev/facet/main/install.sh | bash</div>
-        </div>
-
-        <div id="doctor" class="pt-4">
-          <h3 class="font-bold text-slate-900 text-base mb-2">Host Diagnostics (`facet doctor`)</h3>
-          <p class="text-xs text-slate-600 mb-3">
-            Facet verifies your local media dependencies (FFmpeg, FFprobe, Node.js, and Remotion):
-          </p>
-          <div class="bg-slate-950 rounded-xl p-4 font-mono text-xs text-slate-200 border border-slate-800">
-            <div class="text-cyan-400">$ facet doctor</div>
-            <pre class="mt-2 text-slate-400 overflow-x-auto text-[11px]">
-=== Facet System Doctor ===
-
-[System Runtimes]
-  ✔ FFmpeg             : OK (ffmpeg version 8.1.1)
-  ✔ FFprobe            : OK (ffprobe version 8.1.1)
-  ✔ Node               : OK (v24.18.0)
-  ✔ Remotion Composer  : OK (remotion-composer/package.json)
-  ✔ Edge-TTS           : OK (built-in keyless neural TTS runtime ready)
-
-[Agent CLIs]
-  ✔ Claude Code        : Found
-  ✔ OpenCode           : Found
-  ✔ GitHub Copilot     : Found
-
-[Toolbox Tools (35 tools)]
-  ✔ 35 / 35 tools ready and configured
-            </pre>
-          </div>
-        </div>
-      </section>
-
-      <!-- Section 4: Workspace Anatomy -->
-      <section id="workspace" class="space-y-4">
-        <h2 class="font-display font-bold text-2xl text-slate-950">Workspace Structure & Artifacts</h2>
-        <p>
-          Running <code class="font-mono text-cyan-800 bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 font-semibold">facet init &lt;project-slug&gt;</code> sets up a clean, version-controlled workspace:
-        </p>
-
-        <div class="bg-white rounded-xl p-4 font-mono text-xs overflow-x-auto border border-slate-200 shadow-sm text-slate-800">
-          <pre>
-my-project/
-├── artifacts/
-│   ├── brief.md              # Project concept and metadata
-│   ├── script.json           # Timed narrative sections written by the AI agent
-│   ├── scene_plan.json       # Visual shot breakdown and cinematography intents
-│   └── explainer_props.json  # Remotion scene cut parameters and theme settings
-├── narration/
-│   └── voice.mp3             # Synthesized neural voiceover audio from Edge TTS
-├── assets/                   # User-provided raw footage, audio tracks, or brand logos
-├── renders/
-│   ├── final.mp4             # Broadcast-ready rendered H.264 video file
-│   └── review_frames/        # Sampled QA stills extracted by output_review
-├── .claude/skills/           # Junctions to active capability packs (e.g. explainer)
-├── .facet/
-│   └── ownership.json        # Ownership ledger preventing clobbering of user files
-├── .facet.yaml               # Pinned resolution, FPS (30), and voice
-├── facet.lock.json           # Lockfile recording active packs and engine version
-└── CLAUDE.md                 # Lean, action-biased prompt contract (&lt;50 lines)
-          </pre>
-        </div>
-      </section>
-
-      <!-- Section 5: Remotion Scene Components -->
-      <section id="scene-components" class="space-y-4">
-        <h2 class="font-display font-bold text-2xl text-slate-950">Remotion Scene Component Library</h2>
-        <p>
-          The Explainer pack (<code class="font-mono text-cyan-800 bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 font-semibold">@xibodev/facet-pack-explainer</code>) provides declarative visual scene components:
-        </p>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
-          <div class="light-card p-3 rounded-lg">
-            <span class="text-cyan-800 font-bold">hero_title</span>
-            <p class="text-slate-600 mt-1">Cinematic title card with subtitle, spring physics, and animated light scrim.</p>
-          </div>
-          <div class="light-card p-3 rounded-lg">
-            <span class="text-cyan-800 font-bold">text_card</span>
-            <p class="text-slate-600 mt-1">Centered punchy typography with customizable font size, color, and background.</p>
-          </div>
-          <div class="light-card p-3 rounded-lg">
-            <span class="text-cyan-800 font-bold">stat_card / stat_reveal</span>
-            <p class="text-slate-600 mt-1">Large animated metric callout (e.g., "8.1B", "99.9%") with descriptive subtitle.</p>
-          </div>
-          <div class="light-card p-3 rounded-lg">
-            <span class="text-cyan-800 font-bold">comparison</span>
-            <p class="text-slate-600 mt-1">Two-column comparison card contrasting concepts (e.g., Classical Bit vs Quantum Qubit).</p>
-          </div>
-          <div class="light-card p-3 rounded-lg">
-            <span class="text-cyan-800 font-bold">callout</span>
-            <p class="text-slate-600 mt-1">Framed callout box with border accent (<code class="text-slate-800">info</code>, <code class="text-slate-800">warning</code>, <code class="text-slate-800">tip</code>, <code class="text-slate-800">quote</code>).</p>
-          </div>
-          <div class="light-card p-3 rounded-lg">
-            <span class="text-cyan-800 font-bold">terminal_scene</span>
-            <p class="text-slate-600 mt-1">Simulated developer terminal with syntax-highlighted typing and command execution.</p>
-          </div>
-          <div class="light-card p-3 rounded-lg">
-            <span class="text-cyan-800 font-bold">bar_chart / line_chart / pie_chart</span>
-            <p class="text-slate-600 mt-1">Animated charts with count-up values, legends, customizable series, and donut modes.</p>
-          </div>
-          <div class="light-card p-3 rounded-lg">
-            <span class="text-cyan-800 font-bold">kpi_grid</span>
-            <p class="text-slate-600 mt-1">Multi-column dashboard KPI matrix (2, 3, or 4 columns) with count-up animations.</p>
-          </div>
-        </div>
-      </section>
-
-      <!-- Section 6: explainer_props.json payload example -->
-      <section id="explainer-props" class="space-y-4">
-        <h2 class="font-display font-bold text-2xl text-slate-950">explainer_props.json Example Payload</h2>
-        <p class="text-xs text-slate-600">
-          Your AI agent generates this JSON specification automatically during Turn 2:
-        </p>
-
-        <div class="bg-slate-950 rounded-xl p-4 font-mono text-xs overflow-x-auto border border-slate-800 shadow-md">
-          <pre class="text-slate-200">
-{
-  "theme": "flat-motion-graphics",
-  "cuts": [
-    {
-      "id": "sc1",
-      "type": "hero_title",
-      "in_seconds": 0.0,
-      "out_seconds": 4.0,
-      "text": "Why Quantum Computing?",
-      "heroSubtitle": "Some problems break every classical computer"
-    },
-    {
-      "id": "sc2",
-      "type": "comparison",
-      "in_seconds": 4.0,
-      "out_seconds": 8.0,
-      "title": "Bit vs Qubit",
-      "leftLabel": "CLASSICAL BIT",
-      "leftValue": "0 OR 1",
-      "rightLabel": "QUANTUM QUBIT",
-      "rightValue": "0 AND 1 (Superposition)"
-    },
-    {
-      "id": "sc3",
-      "type": "stat_card",
-      "in_seconds": 8.0,
-      "out_seconds": 12.0,
-      "stat": "2^N States",
-      "subtitle": "Simultaneous state space exploration"
-    }
-  ],
-  "overlays": [
-    {
-      "type": "section_title",
-      "in_seconds": 4.0,
-      "out_seconds": 8.0,
-      "text": "FUNDAMENTALS",
-      "position": "top-left"
-    }
-  ],
-  "audio": {
-    "narration": {
-      "src": "narration/voice.mp3",
-      "volume": 1.0
-    }
-  },
-  "output": "renders/final.mp4"
-}
-          </pre>
-        </div>
-      </section>
-
-      <!-- Section 7: Output Review Quality Gates -->
-      <section id="output-review" class="space-y-4">
-        <h2 class="font-display font-bold text-2xl text-slate-950">output_review Quality Gates</h2>
-        <p class="text-xs text-slate-600">
-          Before finalizing, the agent calls <code class="font-mono text-cyan-800 bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 font-semibold">output_review</code> to evaluate five automated technical gates:
-        </p>
-
-        <ul class="space-y-2 text-xs font-mono text-slate-800 list-disc list-inside">
-          <li><strong>Container & Codec Gate:</strong> Validates H.264 video codec (<code class="text-cyan-700 font-bold">libx264</code>), YUV420p pixel format, AAC 48kHz audio, and faststart MP4 flags.</li>
-          <li><strong>Loudness & Audio Curve Gate:</strong> Evaluates Integrated LUFS (-14 to -23 LUFS) and prevents clipping (peak &lt; 0 dBFS).</li>
-          <li><strong>Silence & Dead-Air Gate:</strong> Asserts that audio silence intervals do not exceed the editorial limit (default: 2.5s).</li>
-          <li><strong>Freeze & Black Frame Gate:</strong> Detects rendering glitches, stuck frame sequences, or unintentional black screens.</li>
-          <li><strong>Frame Inspection Samples:</strong> Extracts high-resolution JPEG stills for visual verification.</li>
+      <section id="install">
+        <h2>Install From a Complete Checkout</h2>
+        <p>Install Git, <strong>Go 1.25+</strong>, <strong>Node.js 18+ with npm</strong>, and <strong>FFmpeg and FFprobe</strong> on PATH. Linux/macOS also require Bash and tar. Browser-based rendering requires a supported Chromium browser, system libraries, and fonts.</p>
+        <p>The source scripts build both <code>facet</code> and <code>facet-ui</code>, copy the production bundle, and run <code>npm ci</code> for the installed Remotion composer. Go modules and npm dependencies may need network access.</p>
+        <h3>Windows</h3>
+        <pre><code>git clone https://github.com/xibodev/facet.git
+pwsh -File ./facet/install.ps1 -NonInteractive</code></pre>
+        <p>Default locations are <code>%USERPROFILE%/.facet/bin</code> and <code>%USERPROFILE%/.facet/bundle</code>. The installer updates the user PATH; reopen your terminal because the child <code>pwsh</code> process cannot update its parent's environment.</p>
+        <ul>
+          <li><code>-NonInteractive</code> suppresses prompts, not side effects. Desktop and Start Menu shortcuts are still created by default.</li>
+          <li><code>-NoShortcuts</code> skips shortcuts; <code>-NoPath</code> leaves PATH unchanged. With <code>-NoPath</code>, invoke the installed executable by its full path.</li>
+          <li>Existing shortcuts are preserved by default. Add <code>-UpdateShortcuts</code> when installing into a fresh destination to retarget only recognized Facet links (the current home default, legacy LocalAppData default, or selected install directory, with no arguments). Custom targets or arguments are always preserved and must be edited manually. This flag cannot be combined with <code>-NoShortcuts</code> or <code>-Isolated</code>. After a side-by-side install, launch the new Studio directly with <code>&amp; 'C:\path\to\new\bin\facet-ui.exe'</code> if the old shortcut was preserved; rerunning into the occupied destination is still refused.</li>
+          <li><code>-Scope on-demand</code> is the default: no global agent skills are changed. <code>-Scope global</code> registers the core skill for Claude Code and OpenCode only, preserving existing skills. Packs stay project-local.</li>
+          <li><code>-InstallDir</code> selects the binary directory, with a sibling <code>bundle</code> directory. The installer refuses to overwrite existing binaries or a bundle; use a fresh destination rather than deleting a working installation.</li>
+          <li><code>-Isolated</code> is for isolated installs/tests and requires explicit <code>-HomeDir</code>, <code>-InstallDir</code>, <code>-NoPath</code>, <code>-NoShortcuts</code>, and on-demand scope. The home must differ from your real profile.</li>
         </ul>
+        <p>For the complete flag contract, read <a href="https://github.com/xibodev/facet/blob/main/install.ps1">install.ps1</a>.</p>
+        <h3>Linux / macOS</h3>
+        <pre><code>git clone https://github.com/xibodev/facet.git
+bash ./facet/install.sh
+export PATH="$HOME/.facet/bin:$PATH"</code></pre>
+        <p><a href="https://github.com/xibodev/facet/blob/main/install.sh">install.sh</a> installs under <code>~/.facet</code> without changing shell profiles, global agent skills, or custom Facet configuration. Add the PATH export to your shell profile for future terminals. The Bash installer writes into its fixed install location; it is not the Windows fresh-destination installer.</p>
+        <h3>What Is Installed</h3>
+        <pre><code>.facet/
+  bin/                 # facet and facet-ui (Windows: .exe)
+  bundle/
+    skills/
+    packs/
+    pipeline_defs/
+    schemas/
+    styles/
+    remotion-composer/  # source, lockfile, installed npm dependencies</code></pre>
+        <p>Both scripts resolve source relative to their own file and can be called by absolute path from another directory. They do not download or clone source for you.</p>
+        <p class="notice"><strong>Not supported as full installs:</strong> piping a remote script into a shell, installing the Go CLI alone with <code>go install</code>, or assuming npm/npx will deliver native binaries. npm provides launchers and content; install native Facet from source first. There is no zero-install guarantee.</p>
+        <p>npm launchers check an existing <code>FACET_BIN</code> executable override first, then package-local binaries, then <code>~/.facet/bin</code>. On Windows, the legacy <code>%LOCALAPPDATA%/Programs/Facet/bin</code> location is a final fallback. Set <code>FACET_BIN</code> to the full native executable path for the command being launched (CLI or Studio), not a directory; a missing override falls back to normal discovery. Launchers never search PATH for themselves.</p>
       </section>
-
+      <section id="doctor">
+        <h2>Check the Host, Then Test the Work</h2>
+        <pre><code>facet version
+facet doctor</code></pre>
+        <p>Read the diagnostic results from your own machine. Resolve missing FFmpeg, FFprobe, Node, composer, or agent dependencies before producing. There is deliberately no sample "all ready" output here.</p>
+        <p>Install and authenticate Claude Code, OpenCode, Codex, or GitHub Copilot separately. An executable on PATH is not proof that the account, selected model, or provider is usable. Facet does not supply model access.</p>
+        <p><code>doctor</code> does not produce a video or certify a release. Verify a real render from your intended production directory, inspect the file, and review it visually and audibly.</p>
+      </section>
+      <section id="studio">
+        <h2>Use Facet Studio</h2>
+        <pre><code>facet ui</code></pre>
+        <p>Open <code>http://localhost:8787</code> if the browser does not open automatically. Use <code>facet ui --port 8788 --no-open</code> to choose another port without opening a browser. Use <code>--dir /absolute/path/to/productions</code> to set the working/project root.</p>
+        <ol>
+          <li><strong>Create a production or open an existing folder.</strong> The new-production form asks for a Production Name, Folder Slug, Agent Engine, and Production Packs. Check the location preview before selecting <strong>Create &amp; Launch</strong>.</li>
+          <li><strong>Select a usable engine.</strong> Studio checks which CLIs are available. Install and authenticate your choice outside Studio; a listed engine can still fail on login, quota, or model access.</li>
+          <li><strong>Send your request in chat.</strong> For example: "Make a short introduction to our project using the logo in assets." The agent's activity appears while it works. Read errors instead of treating an idle chat as success.</li>
+          <li><strong>Review actual artifacts.</strong> As project files appear, inspect the script, narration, review images/report, and available video. Play the video and use its download action when a render exists. A newly created project has no finished video.</li>
+          <li><strong>Ask for a revision.</strong> Keep the same project selected and say what should change. Switching projects or engines separates the conversation context.</li>
+        </ol>
+        <div class="card"><h3>Reload and Session Boundaries</h3><p>Reselecting the same project retains its active session. Reloading the same browser tab can restore a <strong>completed conversation within the current Studio process lifetime</strong>.</p><p>It does not restore an in-flight turn, replay earlier activity, or recover a chat after restarting Studio. A different project or engine starts separate context. Project files remain on disk; a new conversation can inspect those files to reconstruct the work.</p><p>If the connection fails, check the agent error, restart the session as directed by Studio, and inspect existing outputs before retrying. A provider job may still be running after a timeout.</p></div>
+        <p>Studio binds to loopback. It is not a public or multi-user deployment; ordinary Docker <code>-p</code> publishing is insufficient to expose that listener.</p>
+      </section>
+      <section id="terminal">
+        <h2>Use Your Agent in the Terminal</h2>
+        <pre><code>facet init my-video --engine opencode</code></pre>
+        <p>This initializes a production folder, projects the core and Explainer skills, and launches OpenCode there. Replace <code>opencode</code> with <code>claude</code>, <code>codex</code>, or <code>copilot</code>. Without an engine flag, the CLI defaults to Claude Code.</p>
+        <p>To create the files without launching an agent:</p>
+        <pre><code>facet init my-video --engine opencode --no-launch</code></pre>
+        <p>Use a separate directory for each production. In your agent conversation, try "Add captions to my recording" or "Make the narration slower and leave more time on the diagram." Give it the actual source file location when editing existing media.</p>
+        <p>Ask the agent to explain provider choices and costs before paid work, and to report errors without substituting placeholders. Number of turns, render duration, and final quality depend on the request and environment.</p>
+      </section>
+      <section id="packs">
+        <h2>Choose a Production Pack</h2>
+        <p>The source bundle contains the following packs. Studio's form lists installed packs; basic <code>facet init</code> selects Explainer. A pack supplies guidance and content, not proof that every referenced tool or provider is installed.</p>
+        <dl>
+          <dt data-pack="explainer">Explainer / <code>@xibodev/facet-pack-explainer</code></dt><dd><a href="https://github.com/xibodev/facet/blob/main/packs/explainer/facet-pack.json">Manifest</a>: animated explainers, diagrams, charts, and text cards. Requires the Remotion runtime, browser, and usable narration route when speech is requested.</dd>
+          <dt data-pack="cinematic">Cinematic / <code>@xibodev/facet-pack-cinematic</code></dt><dd><a href="https://github.com/xibodev/facet/blob/main/packs/cinematic/facet-pack.json">Manifest</a>: cinematic and documentary montages. Needs supplied or accessible source media with suitable rights; generated clips need configured providers.</dd>
+          <dt data-pack="screen-demo">Screen Demo / <code>@xibodev/facet-pack-screendemo</code></dt><dd><a href="https://github.com/xibodev/facet/blob/main/packs/screen-demo/facet-pack.json">Manifest</a>: software walkthroughs and terminal scenes. Actual capture requires app access and recording/browser tooling; synthetic terminals must not be presented as real execution evidence.</dd>
+          <dt data-pack="talking-head">Talking Head / <code>@xibodev/facet-pack-talkinghead</code></dt><dd><a href="https://github.com/xibodev/facet/blob/main/packs/talking-head/facet-pack.json">Manifest</a>: presenter edits and avatar workflows. Requires presenter footage or a separate avatar/lip-sync provider and consent. TTS alone does not generate a presenter.</dd>
+          <dt data-pack="social">Social / <code>@xibodev/facet-pack-social</code></dt><dd><a href="https://github.com/xibodev/facet/blob/main/packs/social/facet-pack.json">Manifest</a>: vertical clips and podcast repurposing. Needs source media and accurate transcript/timing data for captions. Framing and moment selection need review; audience performance is not guaranteed.</dd>
+          <dt data-pack="character-animation">Character Animation / <code>@xibodev/facet-pack-animation</code></dt><dd><a href="https://github.com/xibodev/facet/blob/main/packs/character-animation/facet-pack.json">Manifest</a>: rigs, pose libraries, and action timelines. Requires character assets, authoring, and a working renderer; no character-generation model is bundled by the pack.</dd>
+          <dt data-pack="localization">Localization / <code>@xibodev/facet-pack-localization</code></dt><dd><a href="https://github.com/xibodev/facet/blob/main/packs/localization/facet-pack.json">Manifest</a>: translated voiceovers, subtitles, and dubbing. Requires source media, transcription/translation, and a target-language voice. Voice cloning or lip-sync needs separate provider support and consent; check translation and timing.</dd>
+        </dl>
+      </section>
+      <section id="gflow">
+        <h2>Google Flow Is a Separate Prerequisite</h2>
+        <p>Facet's <code>gflow_image</code> and <code>gflow_video</code> tools call the standalone <a href="https://github.com/xibodev/gflow-cli">gflow CLI</a>. Facet does not install or authenticate that tool, its extension, or a Google account.</p>
+        <ol>
+          <li>Follow the gflow project's installation instructions and put the standalone <code>gflow</code> executable on PATH.</li>
+          <li>Install its Chrome extension and grant the extension the required site permissions for <code>labs.google</code>.</li>
+          <li>Open <a href="https://labs.google/fx/tools/flow">Google Flow</a> in that Chrome profile and log in with an account that has access. Keep the browser/extension connection available as required by gflow.</li>
+          <li>Use the CLI's setup/status diagnostics to check the connection. Then, only with approval for any account credits or charges, test real generation and inspect the returned local file.</li>
+        </ol>
+        <p class="notice">Setup or status success is <strong>not generation evidence</strong>. Quotas, credits, account eligibility, models, and service availability still apply. Facet does not promise zero-cost generation; unknown estimates or zero-valued generic metadata are not a billing guarantee.</p>
+        <p>Dependency, authentication, provider, timeout, and invalid-response errors should be investigated, not hidden by mock output. An explicit <code>mock: true</code> request creates test media; it is never proof of provider generation. A timed-out request may still be running remotely, so check before retrying.</p>
+      </section>
+      <section id="workspace">
+        <h2>Project Files Are the Durable Record</h2>
+        <p>Initialization creates project directories and configuration. Scripts, scene plans, narration, renders, and review outputs appear only when the corresponding work runs. Their existence is not a verdict on quality.</p>
+        <pre><code>my-video/
+  assets/             # supplied or acquired media
+  artifacts/          # initial brief, later scripts/plans/reports
+  narration/          # generated or supplied voice tracks
+  renders/            # video and review outputs when produced
+  .facet/             # local ownership metadata
+  .facet.yaml         # project configuration
+  facet.lock.json     # engine and selected pack record</code></pre>
+        <p>Agent-specific skill projections are also created, for example <code>.opencode/skills/</code>. Paths such as <code>renders/final.mp4</code> are conventions, not a promise that initialization creates a video.</p>
+        <p>Configuration can pin runtime paths in <code>.facet.yaml</code> or <code>~/.config/facet/config.yaml</code>. Unpinned discovery looks near the working directory and executable, then in the user bundle. Reopening a project preserves pinned configuration. Verify rendering from that production folder rather than relying on a successful run inside the source checkout.</p>
+      </section>
+      <section id="limitations">
+        <h2>Known Limitations</h2>
+        <ul>
+          <li><strong>Installation is not acceptance.</strong> The installers do not verify a completed render. Browser dependencies, fonts, pinned runtime paths, and provider access can still fail.</li>
+          <li><strong>Pack guidance is broader than the executable registry.</strong> Some routes reference optional tools, models, transcription, or browser integrations not supplied by the native CLI. Check the installed tool and its actual implementation before relying on it.</li>
+          <li><strong>Network services are conditional.</strong> Edge TTS is keyless but network-dependent. Other providers may need credentials and payment; model availability and account limits can change.</li>
+          <li><strong>Studio is not durable workflow hosting.</strong> Completed-session reload is limited to the same tab and current server lifetime. No in-flight recovery, transcript replay, or server-restart continuation is provided.</li>
+          <li><strong>Automated review is partial.</strong> Technical media checks and sampled frames do not establish factual accuracy, language quality, consent, asset rights, or creative quality. Watch and listen to the output.</li>
+        </ul>
+        <p>These pages do not certify a release or promise a finished video in a fixed number of turns or minutes.</p>
+      </section>
+      <section id="reference">
+        <h2>Technical Reference</h2>
+        <p>Most users can stay with natural-language prompts. Integrators should inspect the installed CLI and source contracts rather than copy an assumed universal scene payload.</p>
+        <details>
+          <summary>Expand CLI Commands and Source Schemas</summary>
+          <pre><code>facet help
+facet init --help
+facet ui --help
+facet tools list
+facet tools describe video_compose
+facet tools describe output_review
+facet tools estimate &lt;tool-name&gt; --input request.json
+facet tools run &lt;tool-name&gt; --input request.json</code></pre>
+          <p><code>request.json</code> must contain the fields accepted by the selected tool and operation. Discover the tool catalog from the installed build rather than trusting a fixed count. Registry descriptions and standalone schemas cover different surfaces and can lag implementations.</p>
+          <ul>
+            <li><a href="https://github.com/xibodev/facet/blob/main/cmd/facet/main.go">CLI commands and flags</a></li>
+            <li><a href="https://github.com/xibodev/facet/blob/main/internal/toolbox/toolbox.go">Tool registry, aliases, and request descriptions</a></li>
+            <li><a href="https://github.com/xibodev/facet/blob/main/internal/toolbox/compose.go">Composition request handling and renderer invocation</a></li>
+            <li><a href="https://github.com/xibodev/facet/blob/main/remotion-composer/src/Root.tsx">Remotion composition registration, default props, and themes</a></li>
+            <li><a href="https://github.com/xibodev/facet/blob/main/remotion-composer/src/Explainer.tsx">Explainer scene types and rendering</a></li>
+            <li><a href="https://github.com/xibodev/facet/tree/main/schemas/artifacts">Artifact JSON schemas</a> and <a href="https://github.com/xibodev/facet/tree/main/schemas/tools">standalone tool JSON schemas</a></li>
+            <li><a href="https://github.com/xibodev/facet/blob/main/internal/toolbox/visual_qa.go">Technical output review implementation</a></li>
+            <li><a href="https://github.com/xibodev/facet/blob/main/internal/toolbox/gflow.go">Google Flow request validation and error handling</a></li>
+            <li><a href="https://github.com/xibodev/facet/blob/main/skills/facet/SKILL.md">Core producer guidance</a> and <a href="https://github.com/xibodev/facet/tree/main/pipeline_defs">pipeline definitions</a></li>
+          </ul>
+          <p>Links point to the source branch, which may differ from your installation. Use the matching checkout revision when debugging. No single page here claims complete API coverage.</p>
+        </details>
+      </section>
     </main>
-
   </div>
-
-  <!-- Footer -->
-  <footer class="bg-white border-t border-slate-200 py-8 text-xs font-mono text-slate-500 mt-12">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0">
-      <div>Facet Video Engine • Apache-2.0 License • Copyright © 2026 XiboDev.</div>
-      <div class="flex items-center space-x-6 text-slate-600">
-        <a href="index.html" class="hover:text-cyan-700 font-medium">Overview</a>
-        <a href="https://github.com/xibodev/facet" class="hover:text-cyan-700 font-medium">GitHub</a>
-      </div>
-    </div>
-  </footer>
-
+  <footer><div class="wrap">Facet &middot; <a href="https://github.com/xibodev/facet/blob/main/LICENSE">AGPL-3.0-or-later</a> &middot; <a href="index.html">Overview</a></div></footer>
 </body>
 </html>

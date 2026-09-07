@@ -76,6 +76,15 @@ func RunInitWithWriter(projectSlug string, engine string, cfg *Config, w io.Writ
 
 // RunInitWithOptions initializes a workspace with custom options.
 func RunInitWithOptions(opts InitOptions, cfg *Config, w io.Writer) (*InitResult, error) {
+	// Reopening a project must not replace its pinned paths with Studio defaults.
+	projectConfig := filepath.Join(opts.ProjectDir, ".facet.yaml")
+	if _, err := os.Stat(projectConfig); err == nil {
+		var err error
+		cfg, err = Load(projectConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if cfg == nil {
 		var err error
 		cfg, err = Load()
@@ -272,7 +281,7 @@ func scaffoldAgentInstructions(targetDir, engine string, packs []string, ownersh
 		packLines.WriteString("- Core Source-Edit (No additional packs active)\n")
 	} else {
 		for _, p := range packs {
-			packLines.WriteString(fmt.Sprintf("- `%s` (`.%s/skills/%s/SKILL.md`)\n", p, engine, p))
+			packLines.WriteString(fmt.Sprintf("- `%s` (`%s/SKILL.md`)\n", p, filepath.ToSlash(getSkillsTargetPath(".", engine, p))))
 		}
 	}
 
@@ -280,26 +289,34 @@ func scaffoldAgentInstructions(targetDir, engine string, packs []string, ownersh
 
 You are the **Facet Video Producer**. You autonomously create, assemble, and render finished videos directly inside this workspace.
 
-## 🛑 Zero-Ceremony Operating Directives
-1. **Never Suggest External Manual Tools:** Do NOT tell the user to use CapCut, Canva, Premiere Pro, After Effects, DaVinci Resolve, or hire freelancers. You produce, code, and render the video here.
-2. **Immediate Action on Turn 1:** When asked to create or edit a video, IMMEDIATELY draft `+"`artifacts/script.json`"+` and synthesize voiceover audio on Turn 1. Do NOT explore directories (`+"`ls`"+`, `+"`find`"+`), do NOT read empty scaffolded `+"`brief.md`"+` files, and do NOT run discovery commands (`+"`facet tools list`"+`).
-3. **No 20-Questions Loops:** Make sensible editorial choices from the user's prompt and execute.
+## Guidance Precedence
+Read the core skill at `+"`%s/SKILL.md`"+` (workspace-relative). The core skill and active pack entry SKILL.md files are authoritative for normal production and take precedence over deep legacy references.
+Use deep legacy references only for a relevant specialized need or an actual error, never as a preflight requirement. Start simple tasks from supplied intent and documented core tools, not source archaeology or persona/pipeline ceremony.
+
+## Working Agreement
+- The user's selected agent orchestrates; Facet is a stateless toolbox, not an autonomous workflow controller.
+- Understand the request and supplied assets; briefly explain the plan, renderer, providers, and meaningful tradeoffs. Ask only consequential questions.
+- Ask for explicit consent before paid generation or external publication. Unknown cost is not free; estimates do not verify credentials or perform generation.
+- Preserve silent-video intent: narration, music, and captions are optional. Do not impose turn numbers or mandatory artifact stages.
+- Produce and review the requested video here. Never substitute mock media in production; `+"`mock:true`"+` is only for explicitly requested tests.
 
 ## Active Capability Packs
 %s
 ## Tool Commands
-Run tools directly with JSON files or inline JSON without querying the toolbox:
-- **Voiceover:** `+"`facet tools run edgetts --input artifacts/req_tts.json`"+`
-- **Probe Audio:** `+"`facet tools run media_probe --input '{\"file_path\": \"narration/beat1.mp3\"}'`"+`
-- **Compose / Remotion Render:** `+"`facet tools run video_compose --input artifacts/explainer_props.json`"+`
-- **Edit / Assemble:** `+"`facet tools run edit --input artifacts/edit.json`"+`
-- **Quality Review:** `+"`facet tools run output_review --input '{\"rendered_file\": \"renders/final.mp4\"}'`"+`
+Use `+"`facet tools describe <tool>`"+` for schemas and `+"`facet tools estimate <tool> --input request.json`"+` before consequential work. JSON files avoid shell quoting differences.
+- Optional narration: `+"`"+`facet tools run edge_tts --input '{"text":"Hello","output_path":"narration/voice.mp3"}'`+"`"+`
+- Inspect: `+"`"+`facet tools run media_probe --input '{"input":"assets/source.mp4"}'`+"`"+` (also accepts input_path, not file_path).
+- Sample: `+"`"+`facet tools run frame_sample --input '{"input":"renders/final.mp4","output_dir":"artifacts/frames","strategy":{"type":"uniform","count":4}}'`+"`"+`
+- Render: `+"`facet tools run video_compose --input artifacts/explainer_props.json`"+`
+- Review: `+"`"+`facet tools run output_review --input '{"rendered_file":"renders/final.mp4"}'`+"`"+`; configure expected profile/audio for the brief and visually inspect samples.
 
-## Production Execution Order
-1. **Turn 1 (Script & Narration):** Write `+"`artifacts/script.json`"+` & call `+"`facet tools run edgetts --input artifacts/req_tts.json`"+`.
-2. **Turn 2 (Scene Plan & Composition):** Probe narration durations & generate `+"`artifacts/scene_plan.json`"+` / `+"`artifacts/explainer_props.json`"+`.
-3. **Turn 3 (Render & QA):** Render to `+"`renders/final.mp4`"+` & run `+"`facet tools run output_review --input '{\"rendered_file\": \"renders/final.mp4\"}'`"+`.
-`, packLines.String())
+## Renderer And Provider Contract
+- Direct Remotion props: nonempty cuts with id, type, source, in_seconds, out_seconds; optional theme and audio.narration.src. Set width, height, fps and duration_seconds for an explicit export profile; cuts must fit the duration and whole frames. Defaults remain 1920x1080/30fps with one second after the last cut. Omit audio for silence.
+- Set output to renders/final.mp4; direct cuts select Remotion regardless of operation. The explainer pack has a complete request example. An estimate is not proof the renderer or media works.
+- Use `+"`gflow_image`"+` or `+"`gflow_video`"+`, never a generic gflow tool. Both need the gflow binary on PATH and authenticated provider access; configured only checks the binary.
+- Real gflow estimates have null estimated_cost (unknown). Explain provider/model and obtain paid consent; missing dependencies or credentials are errors, not permission to use mocks.
+- Read returned output/outputs paths, warnings, and review evidence; deliver the verified file with concise provenance and limitations.
+`, filepath.ToSlash(getSkillsTargetPath(".", engine, "facet")), packLines.String())
 
 	// 1. CLAUDE.md
 	claudePath := filepath.Join(targetDir, "CLAUDE.md")
@@ -350,14 +367,9 @@ func findCoreSkillSource(cfg *Config) string {
 		)
 	}
 
-	candidates = append(candidates,
-		filepath.Join("skills", "facet"),
-		filepath.Join(".claude", "skills", "facet"),
-		filepath.Join("..", "skills", "facet"),
-		filepath.Join("..", ".claude", "skills", "facet"),
-		filepath.Join("..", "..", "skills", "facet"),
-		filepath.Join("..", "..", ".claude", "skills", "facet"),
-	)
+	for _, root := range bundleCandidates() {
+		candidates = append(candidates, filepath.Join(root, "skills", "facet"), filepath.Join(root, ".claude", "skills", "facet"))
+	}
 
 	// Check local app data
 	if appData := os.Getenv("LOCALAPPDATA"); appData != "" {
@@ -384,11 +396,9 @@ func findSkillsSource(cfg *Config) string {
 	if cfg != nil && cfg.Paths.Bundle != "" {
 		candidates = append(candidates, filepath.Join(cfg.Paths.Bundle, "skills"))
 	}
-	candidates = append(candidates,
-		"skills",
-		filepath.Join("..", "skills"),
-		filepath.Join("..", "..", "skills"),
-	)
+	for _, root := range bundleCandidates() {
+		candidates = append(candidates, filepath.Join(root, "skills"))
+	}
 
 	for _, cand := range candidates {
 		if fi, err := os.Stat(cand); err == nil && fi.IsDir() {
@@ -409,11 +419,12 @@ func findPackSource(packName string, cfg *Config) string {
 	}
 	shortName = strings.TrimPrefix(shortName, "facet-pack-")
 
-	candidates := []string{
-		filepath.Join("packs", shortName),
-		filepath.Join("packs", packName),
-		filepath.Join("..", "packs", shortName),
-		filepath.Join("..", "..", "packs", shortName),
+	candidates := []string{}
+	if cfg != nil && cfg.Paths.Bundle != "" {
+		candidates = append(candidates, filepath.Join(cfg.Paths.Bundle, "packs", shortName))
+	}
+	for _, root := range bundleCandidates() {
+		candidates = append(candidates, filepath.Join(root, "packs", shortName))
 	}
 
 	if appData := os.Getenv("LOCALAPPDATA"); appData != "" {

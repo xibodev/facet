@@ -57,11 +57,11 @@ var names = []string{
 }
 
 type Execution struct {
-	Provider      string  `json:"provider"`
-	Network       bool    `json:"network"`
-	ExternalWrite bool    `json:"external_write"`
-	EstimatedCost float64 `json:"estimated_cost"`
-	ActualCost    float64 `json:"actual_cost"`
+	Provider      string   `json:"provider"`
+	Network       bool     `json:"network"`
+	ExternalWrite bool     `json:"external_write"`
+	EstimatedCost *float64 `json:"estimated_cost"`
+	ActualCost    *float64 `json:"actual_cost"`
 }
 
 type Envelope struct {
@@ -149,7 +149,13 @@ func executionFor(tool string) Execution {
 		provider = "google_flow"
 		network = true
 	}
-	return Execution{Provider: provider, Network: network}
+	zero := 0.0
+	e := Execution{Provider: provider, Network: network, EstimatedCost: &zero, ActualCost: &zero}
+	switch tool {
+	case "gflow_video", "gflow_image", "openai_image", "flux_image", "kling_video", "sora_video", "openai_tts", "elevenlabs_tts":
+		e.EstimatedCost, e.ActualCost = nil, nil
+	}
+	return e
 }
 
 func canonicalToolName(tool string) string {
@@ -283,7 +289,21 @@ func success(tool, op string, result any, warnings []string) Envelope {
 	if warnings == nil {
 		warnings = []string{}
 	}
-	return Envelope{OK: true, Tool: tool, Operation: op, Result: result, Warnings: warnings, Execution: executionFor(tool)}
+	e := executionFor(tool)
+	if facts, ok := result.(map[string]any); ok {
+		if cost, ok := facts["estimated_cost"].(float64); ok {
+			e.EstimatedCost = &cost
+		}
+		if mock, _ := facts["mock"].(bool); mock {
+			zero := 0.0
+			e.EstimatedCost, e.ActualCost, e.Network = &zero, &zero, false
+		}
+	}
+	if op == "estimate" {
+		zero := 0.0
+		e.ActualCost = &zero // Estimation does not generate or bill media.
+	}
+	return Envelope{OK: true, Tool: tool, Operation: op, Result: result, Warnings: warnings, Execution: e}
 }
 
 func errorEnvelope(tool, op string, err error) Envelope {
@@ -343,8 +363,10 @@ func summary(name string) map[string]any {
 		deps = append(deps, envDependency("FAL_KEY"))
 	case "piper_tts":
 		deps = append(deps, dependency("piper"))
-	case "edge_tts", "subtitle_gen", "wikimedia", "image_selector", "video_selector", "gflow_video", "gflow_image":
-		// pure go / public api / selector logic / local gflow bridge
+	case "gflow_video", "gflow_image":
+		deps = append(deps, dependency("gflow"))
+	case "edge_tts", "subtitle_gen", "wikimedia", "image_selector", "video_selector":
+		// pure go / public api / selector logic
 	}
 
 	configured := dependenciesAvailable(deps)
@@ -352,7 +374,7 @@ func summary(name string) map[string]any {
 		configured = true
 	} else if name == "direct_clip_search" {
 		configured = true // Wikimedia always available
-	} else if name == "image_selector" || name == "video_selector" || name == "gflow_video" || name == "gflow_image" {
+	} else if name == "image_selector" || name == "video_selector" {
 		configured = true
 	}
 
@@ -420,22 +442,26 @@ func description(name string) map[string]any {
 	d["provider"] = exec.Provider
 	d["request_schema"] = schemas[name]
 	d["result_schema"] = resultSchemas[name]
-	d["cost"] = map[string]any{"currency": "USD", "amount": 0.0}
+	d["cost"] = map[string]any{"currency": "USD", "amount": exec.EstimatedCost, "known": exec.EstimatedCost != nil}
 	d["network"] = exec.Network
 	d["external_write"] = false
 	return d
 }
 
 var schemas = map[string]any{
-	"media_probe": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"input"}, "properties": map[string]any{
-		"input": map[string]any{"type": "string", "minLength": 1}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 30},
+	"media_probe": map[string]any{"type": "object", "additionalProperties": false, "anyOf": []any{map[string]any{"required": []string{"input"}}, map[string]any{"required": []string{"input_path"}}}, "properties": map[string]any{
+		"input": map[string]any{"type": "string", "minLength": 1}, "input_path": map[string]any{"type": "string", "minLength": 1}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 30},
 	}},
 	"audio_probe": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"input_path"}, "properties": map[string]any{
 		"input_path": map[string]any{"type": "string", "minLength": 1}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 15},
 	}},
-	"frame_sample": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"input", "output_dir", "strategy"}, "properties": map[string]any{
-		"input": map[string]any{"type": "string", "minLength": 1}, "output_dir": map[string]any{"type": "string", "minLength": 1},
-		"strategy":     map[string]any{"type": "object", "additionalProperties": false, "required": []string{"type"}, "properties": map[string]any{"type": map[string]any{"enum": []string{"timestamps", "uniform", "scenes"}}, "timestamps": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "number", "minimum": 0}}, "count": map[string]any{"type": "integer", "minimum": 1}, "threshold": map[string]any{"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1}}},
+	"frame_sample": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"output_dir", "strategy"}, "anyOf": []any{map[string]any{"required": []string{"input"}}, map[string]any{"required": []string{"input_path"}}}, "properties": map[string]any{
+		"input": map[string]any{"type": "string", "minLength": 1}, "input_path": map[string]any{"type": "string", "minLength": 1}, "output_dir": map[string]any{"type": "string", "minLength": 1}, "format": map[string]any{"enum": []string{"jpg", "png"}},
+		"strategy": map[string]any{"oneOf": []any{
+			objectSchema([]string{"type", "timestamps"}, map[string]any{"type": map[string]any{"const": "timestamps"}, "timestamps": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "number", "minimum": 0}}}),
+			objectSchema([]string{"type", "count"}, map[string]any{"type": map[string]any{"const": "uniform"}, "count": map[string]any{"type": "integer", "minimum": 1}}),
+			objectSchema([]string{"type", "count"}, map[string]any{"type": map[string]any{"const": "scenes"}, "count": map[string]any{"type": "integer", "minimum": 1}, "threshold": map[string]any{"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1}}),
+		}},
 		"image_format": map[string]any{"enum": []string{"jpg", "png"}, "default": "jpg"}, "overwrite": map[string]any{"type": "boolean", "default": false}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 60},
 	}},
 	"frame_sampler": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"input_path", "strategy"}, "properties": map[string]any{
@@ -454,7 +480,7 @@ var schemas = map[string]any{
 	"output_review": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{
 		"input": map[string]any{"type": "string", "minLength": 1}, "rendered_file": map[string]any{"type": "string", "minLength": 1}, "input_path": map[string]any{"type": "string", "minLength": 1}, "sample_count": map[string]any{"type": "integer", "minimum": 1},
 		"profile": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"width", "height", "fps"}, "properties": map[string]any{"width": map[string]any{"type": "integer", "minimum": 1}, "height": map[string]any{"type": "integer", "minimum": 1}, "fps": map[string]any{"type": "number", "exclusiveMinimum": 0}}},
-		"checks": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"duration", "video_codec", "pixel_format", "audio"}, "properties": map[string]any{"duration": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"expected", "tolerance"}, "properties": map[string]any{"expected": map[string]any{"type": "number", "exclusiveMinimum": 0}, "tolerance": map[string]any{"type": "number", "minimum": 0}}}, "video_codec": map[string]any{"type": "string", "minLength": 1}, "pixel_format": map[string]any{"type": "string", "minLength": 1}, "audio": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"required", "codec", "sample_rate", "channels"}, "properties": map[string]any{"required": map[string]any{"type": "boolean"}, "codec": map[string]any{"type": "string", "minLength": 1}, "sample_rate": map[string]any{"type": "integer", "minimum": 1}, "channels": map[string]any{"type": "integer", "minimum": 1}}}}},
+		"checks":  map[string]any{"type": "object", "additionalProperties": false, "required": []string{"duration", "video_codec", "pixel_format", "audio"}, "properties": map[string]any{"duration": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"expected", "tolerance"}, "properties": map[string]any{"expected": map[string]any{"type": "number", "exclusiveMinimum": 0}, "tolerance": map[string]any{"type": "number", "minimum": 0}}}, "video_codec": map[string]any{"type": "string", "minLength": 1}, "pixel_format": map[string]any{"type": "string", "minLength": 1}, "audio": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"required", "codec", "sample_rate", "channels"}, "properties": map[string]any{"required": map[string]any{"type": "boolean"}, "codec": map[string]any{"type": "string", "minLength": 1}, "sample_rate": map[string]any{"type": "integer", "minimum": 1}, "channels": map[string]any{"type": "integer", "minimum": 1}}}}},
 		"samples": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{"type": map[string]any{"const": "uniform"}, "count": map[string]any{"type": "integer", "minimum": 1}}}, "evidence_dir": map[string]any{"type": "string", "minLength": 1}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 90},
 	}},
 	"source_edit": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"segments", "target", "output"}, "properties": map[string]any{
@@ -471,9 +497,18 @@ var schemas = map[string]any{
 		"output_path": map[string]any{"type": "string"}, "transition": map[string]any{"enum": []string{"cut", "crossfade", "fade"}, "default": "cut"}, "transition_duration": map[string]any{"type": "number", "default": 0.5},
 		"auto_normalize": map[string]any{"type": "boolean", "default": false}, "layout": map[string]any{"enum": []string{"side_by_side", "vertical_stack", "picture_in_picture"}},
 	}},
-	"video_compose": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"operation"}, "properties": map[string]any{
+	"video_compose": map[string]any{"type": "object", "additionalProperties": false, "description": "Accepts an operation envelope (default compose), direct Remotion props with nonempty cuts, or a scene plan with nonempty scenes. Direct cuts take precedence over scenes and operation. Direct Explainer props support width, height, fps and duration_seconds; defaults are 1920x1080 at 30 fps, with one second padding after the last cut only when duration_seconds is omitted. Metadata validation runs in Remotion, not in estimates; estimates do not deeply validate props or prove a render will succeed.", "properties": map[string]any{
 		"operation": map[string]any{"enum": []string{"compose", "render", "remotion_render", "burn_subtitles", "overlay", "encode"}}, "input_path": map[string]any{"type": "string"}, "output_path": map[string]any{"type": "string"},
 		"edit_decisions": map[string]any{"type": "object"}, "asset_manifest": map[string]any{"type": "object"}, "audio_path": map[string]any{"type": "string"}, "subtitle_path": map[string]any{"type": "string"},
+		"output": stringSchema(), "composition_id": stringSchema(), "composition": stringSchema(), "theme": stringSchema(), "playbook": stringSchema(), "themeConfig": map[string]any{"type": "object"}, "style_playbook": stringSchema(),
+		"width":            map[string]any{"type": "integer", "minimum": 2, "maximum": 9007199254740991, "multipleOf": 2, "default": 1920, "description": "Direct Explainer props: positive even safe integer pixels."},
+		"height":           map[string]any{"type": "integer", "minimum": 2, "maximum": 9007199254740991, "multipleOf": 2, "default": 1080, "description": "Direct Explainer props: positive even safe integer pixels."},
+		"fps":              map[string]any{"type": "number", "exclusiveMinimum": 0, "default": 30, "description": "Direct Explainer props: positive finite frame rate, used for metadata and scene timing."},
+		"duration_seconds": map[string]any{"type": "number", "exclusiveMinimum": 0, "description": "Direct Explainer props: exact duration; duration_seconds * fps must be a positive safe integer frame count. Cuts must fit within it and span at least one frame after boundary rounding. Omit for last cut out_seconds + 1 second (60 seconds with no cuts in Remotion)."},
+		"cuts":             map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "object", "required": []string{"in_seconds", "out_seconds"}, "properties": map[string]any{"in_seconds": map[string]any{"type": "number", "minimum": 0}, "out_seconds": map[string]any{"type": "number", "exclusiveMinimum": 0}}}},
+		"scenes":           map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "object", "required": []string{"start_seconds", "end_seconds"}}},
+		"overlays":         map[string]any{"type": "array", "items": map[string]any{"type": "object"}}, "captions": map[string]any{}, "audio": map[string]any{}, "subtitle_style": map[string]any{"type": "object"},
+		"codec": stringSchema(), "crf": map[string]any{"type": "integer"}, "preset": stringSchema(), "profile": stringSchema(), "remotion_timeout_ms": map[string]any{"type": "integer"}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1},
 	}},
 	"subtitle_gen": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"segments"}, "properties": map[string]any{
 		"segments": map[string]any{"type": "array"}, "format": map[string]any{"enum": []string{"srt", "vtt", "json"}, "default": "srt"},
@@ -490,7 +525,7 @@ var schemas = map[string]any{
 		"silence_threshold_db": map[string]any{"type": "number", "default": -35}, "min_silence_duration": map[string]any{"type": "number", "default": 0.5}, "padding_seconds": map[string]any{"type": "number", "default": 0.08},
 	}},
 	"hyperframes_compose": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"operation"}, "properties": map[string]any{
-		"operation": map[string]any{"enum": []string{"doctor", "scaffold_workspace", "lint", "validate", "inspect", "check", "render", "render_existing", "add_block"}},
+		"operation":      map[string]any{"enum": []string{"doctor", "scaffold_workspace", "lint", "validate", "inspect", "check", "render", "render_existing", "add_block"}},
 		"workspace_path": map[string]any{"type": "string"}, "output_path": map[string]any{"type": "string"}, "block_name": map[string]any{"type": "string"},
 	}},
 	"audio_mix": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"video", "duration", "output"}, "properties": map[string]any{
@@ -558,23 +593,23 @@ var schemas = map[string]any{
 	"sora_video": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"prompt"}, "properties": map[string]any{
 		"prompt": map[string]any{"type": "string", "minLength": 1}, "model": map[string]any{"type": "string", "default": "sora-2"},
 		"duration": map[string]any{"type": "number", "minimum": 1, "maximum": 20, "default": 5}, "aspect_ratio": map[string]any{"enum": []string{"16:9", "9:16", "1:1"}, "default": "16:9"},
-		"resolution": map[string]any{"enum": []string{"720p", "1080p"}, "default": "720p"},
+		"resolution":  map[string]any{"enum": []string{"720p", "1080p"}, "default": "720p"},
 		"output_path": map[string]any{"type": "string"}, "mock": map[string]any{"type": "boolean", "default": false}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 300},
 	}},
 	"gflow_video": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"prompt"}, "properties": map[string]any{
-		"prompt": map[string]any{"type": "string", "minLength": 1}, "model": map[string]any{"type": "string", "default": "veo-3.1"},
-		"duration": map[string]any{"type": "number", "default": 6}, "aspect_ratio": map[string]any{"type": "string", "default": "landscape"},
+		"prompt": map[string]any{"type": "string", "minLength": 1}, "model": map[string]any{"const": "veo-3.1", "default": "veo-3.1"},
+		"duration": map[string]any{"enum": []int{4, 6, 8, 10}, "default": 6}, "aspect_ratio": map[string]any{"enum": []string{"landscape", "portrait", "square"}, "default": "landscape"},
 		"resolution": map[string]any{"enum": []string{"720p", "1080p", "4k"}, "default": "1080p"}, "start_frame": map[string]any{"type": "string"}, "end_frame": map[string]any{"type": "string"},
 		"output_path": map[string]any{"type": "string"}, "mock": map[string]any{"type": "boolean", "default": false}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 300},
 	}},
 	"gflow_image": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"prompt"}, "properties": map[string]any{
-		"prompt": map[string]any{"type": "string", "minLength": 1}, "model": map[string]any{"type": "string", "default": "narwhal"},
-		"aspect_ratio": map[string]any{"type": "string", "default": "landscape"}, "count": map[string]any{"type": "integer", "default": 1},
+		"prompt": map[string]any{"type": "string", "minLength": 1}, "model": map[string]any{"enum": []string{"narwhal", "harbor_seal", "gem_pix_2"}, "default": "narwhal"},
+		"aspect_ratio": map[string]any{"enum": []string{"landscape", "portrait", "square", "4:3", "3:4"}, "default": "landscape"}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 4, "default": 1},
 		"reference_image": map[string]any{"type": "string"}, "output_path": map[string]any{"type": "string"}, "mock": map[string]any{"type": "boolean", "default": false}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 180},
 	}},
 	"color_grade": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"input_path", "output_path"}, "properties": map[string]any{
 		"input_path": map[string]any{"type": "string", "minLength": 1}, "output_path": map[string]any{"type": "string", "minLength": 1},
-		"profile": map[string]any{"enum": []string{"cinematic_warm", "cinematic_cool", "moody_dark", "bright_clean", "vintage_film", "high_contrast", "neutral", "custom"}, "default": "cinematic_warm"},
+		"profile":   map[string]any{"enum": []string{"cinematic_warm", "cinematic_cool", "moody_dark", "bright_clean", "vintage_film", "high_contrast", "neutral", "custom"}, "default": "cinematic_warm"},
 		"intensity": map[string]any{"type": "number", "minimum": 0, "maximum": 1, "default": 0.8}, "lut_path": map[string]any{"type": "string"}, "custom_vf": map[string]any{"type": "string"},
 		"temperature": map[string]any{"type": "number"}, "contrast": map[string]any{"type": "number"}, "saturation": map[string]any{"type": "number"}, "brightness": map[string]any{"type": "number"}, "gamma": map[string]any{"type": "number"},
 		"overwrite": map[string]any{"type": "boolean", "default": false}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 300},
@@ -618,7 +653,7 @@ var resultSchemas = map[string]any{
 	"source_edit":   mediaOutputResultSchema([]string{"realized_segments", "silent_inputs_filled"}),
 	"video_trimmer": objectSchema([]string{"operation", "output"}, map[string]any{"operation": stringSchema(), "output": stringSchema()}),
 	"video_stitch":  objectSchema([]string{"operation"}, map[string]any{"operation": stringSchema(), "output": stringSchema()}),
-	"video_compose": objectSchema([]string{"operation"}, map[string]any{"operation": stringSchema(), "output": stringSchema()}),
+	"video_compose": objectSchema([]string{"operation"}, map[string]any{"operation": stringSchema(), "composition_id": stringSchema(), "output": stringSchema(), "output_facts": map[string]any{"type": "object"}}),
 	"subtitle_gen": objectSchema([]string{"format", "cue_count", "output"}, map[string]any{
 		"format": stringSchema(), "cue_count": map[string]any{"type": "integer"}, "output": stringSchema(),
 	}),
@@ -633,22 +668,36 @@ var resultSchemas = map[string]any{
 	"direct_clip_search": objectSchema([]string{"output_dir", "clips_downloaded", "total_clips", "clips"}, map[string]any{
 		"output_dir": stringSchema(), "clips_downloaded": map[string]any{"type": "integer"}, "total_clips": map[string]any{"type": "integer"}, "clips": map[string]any{"type": "array"},
 	}),
-	"pexels_video":  objectSchema([]string{"provider", "video_id", "query", "output"}, map[string]any{"provider": stringSchema(), "video_id": map[string]any{"type": "integer"}, "query": stringSchema(), "output": stringSchema()}),
-	"pixabay_video": objectSchema([]string{"provider", "video_id", "query", "output"}, map[string]any{"provider": stringSchema(), "video_id": map[string]any{"type": "integer"}, "query": stringSchema(), "output": stringSchema()}),
-	"wikimedia":     objectSchema([]string{"provider", "source_id", "query", "output"}, map[string]any{"provider": stringSchema(), "source_id": stringSchema(), "query": stringSchema(), "output": stringSchema()}),
-	"edge_tts":      objectSchema([]string{"output", "voice", "format", "provider"}, map[string]any{"output": stringSchema(), "voice": stringSchema(), "format": stringSchema(), "provider": stringSchema(), "size_bytes": map[string]any{"type": "integer"}, "duration_seconds": map[string]any{"type": "number"}}),
-	"openai_tts":    objectSchema([]string{"provider", "model", "voice", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "voice": stringSchema(), "output": stringSchema()}),
+	"pexels_video":   objectSchema([]string{"provider", "video_id", "query", "output"}, map[string]any{"provider": stringSchema(), "video_id": map[string]any{"type": "integer"}, "query": stringSchema(), "output": stringSchema()}),
+	"pixabay_video":  objectSchema([]string{"provider", "video_id", "query", "output"}, map[string]any{"provider": stringSchema(), "video_id": map[string]any{"type": "integer"}, "query": stringSchema(), "output": stringSchema()}),
+	"wikimedia":      objectSchema([]string{"provider", "source_id", "query", "output"}, map[string]any{"provider": stringSchema(), "source_id": stringSchema(), "query": stringSchema(), "output": stringSchema()}),
+	"edge_tts":       objectSchema([]string{"output", "voice", "format", "provider"}, map[string]any{"output": stringSchema(), "voice": stringSchema(), "format": stringSchema(), "provider": stringSchema(), "size_bytes": map[string]any{"type": "integer"}, "duration_seconds": map[string]any{"type": "number"}}),
+	"openai_tts":     objectSchema([]string{"provider", "model", "voice", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "voice": stringSchema(), "output": stringSchema()}),
 	"elevenlabs_tts": objectSchema([]string{"provider", "model", "voice_id", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "voice_id": stringSchema(), "output": stringSchema()}),
-	"piper_tts":     objectSchema([]string{"provider", "model", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "output": stringSchema()}),
-	"openai_image":  objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "size": stringSchema(), "quality": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"}, "url": stringSchema()}),
-	"flux_image":    objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "aspect_ratio": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"}, "url": stringSchema(), "seed": map[string]any{"type": "integer"}}),
-	"kling_video":   objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "duration": map[string]any{"type": "number"}, "aspect_ratio": stringSchema(), "mode": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"}, "video_url": stringSchema()}),
-	"sora_video":    objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "duration": map[string]any{"type": "number"}, "aspect_ratio": stringSchema(), "resolution": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"}, "video_url": stringSchema()}),
-	"gflow_video":   objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "duration": map[string]any{"type": "number"}, "aspect_ratio": stringSchema(), "resolution": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"}}),
-	"gflow_image":   objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "aspect_ratio": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"}}),
-	"color_grade":   objectSchema([]string{"input", "output", "profile", "intensity", "filter_graph"}, map[string]any{"input": stringSchema(), "output": stringSchema(), "profile": stringSchema(), "intensity": map[string]any{"type": "number"}, "lut_path": stringSchema(), "filter_graph": stringSchema(), "duration": map[string]any{"type": "number"}, "output_facts": map[string]any{"type": "object"}}),
+	"piper_tts":      objectSchema([]string{"provider", "model", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "output": stringSchema()}),
+	"openai_image":   objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "size": stringSchema(), "quality": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"}, "url": stringSchema()}),
+	"flux_image":     objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "aspect_ratio": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"}, "url": stringSchema(), "seed": map[string]any{"type": "integer"}}),
+	"kling_video":    objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "duration": map[string]any{"type": "number"}, "aspect_ratio": stringSchema(), "mode": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"}, "video_url": stringSchema()}),
+	"sora_video":     objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "duration": map[string]any{"type": "number"}, "aspect_ratio": stringSchema(), "resolution": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"}, "video_url": stringSchema()}),
+	"gflow_video":    gflowResultSchema(true),
+	"gflow_image":    gflowResultSchema(false),
+	"color_grade":    objectSchema([]string{"input", "output", "profile", "intensity", "filter_graph"}, map[string]any{"input": stringSchema(), "output": stringSchema(), "profile": stringSchema(), "intensity": map[string]any{"type": "number"}, "lut_path": stringSchema(), "filter_graph": stringSchema(), "duration": map[string]any{"type": "number"}, "output_facts": map[string]any{"type": "object"}}),
 	"image_selector": objectSchema([]string{"selected_recommendation", "rationale", "candidates", "total_candidates", "configured_candidates"}, map[string]any{"selected_recommendation": stringSchema(), "rationale": stringSchema(), "candidates": map[string]any{"type": "array"}, "total_candidates": map[string]any{"type": "integer"}, "configured_candidates": map[string]any{"type": "integer"}, "requested_aspect_ratio": stringSchema(), "requested_style": stringSchema()}),
 	"video_selector": objectSchema([]string{"selected_recommendation", "rationale", "candidates", "total_candidates", "configured_candidates"}, map[string]any{"selected_recommendation": stringSchema(), "rationale": stringSchema(), "candidates": map[string]any{"type": "array"}, "total_candidates": map[string]any{"type": "integer"}, "configured_candidates": map[string]any{"type": "integer"}, "requested_duration": map[string]any{"type": "number"}, "requested_aspect_ratio": stringSchema()}),
+}
+
+func gflowResultSchema(video bool) map[string]any {
+	properties := map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "aspect_ratio": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"},
+		"outputs": map[string]any{"type": "array", "minItems": 1, "items": objectSchema([]string{"id", "type", "mime_type", "output", "source_file", "sha256"}, map[string]any{
+			"id": stringSchema(), "type": map[string]any{"enum": []string{"image", "video"}}, "mime_type": stringSchema(), "output": stringSchema(), "source_file": stringSchema(), "sha256": map[string]any{"type": "string", "pattern": "^[0-9a-f]{64}$"},
+		})}}
+	if video {
+		properties["duration"], properties["resolution"] = map[string]any{"type": "number"}, stringSchema()
+	}
+	schema := objectSchema([]string{"provider", "model", "prompt", "output", "mock"}, properties)
+	schema["if"] = map[string]any{"properties": map[string]any{"mock": map[string]any{"const": false}}}
+	schema["then"] = map[string]any{"required": []string{"outputs"}}
+	return schema
 }
 
 func objectSchema(required []string, properties map[string]any) map[string]any {
@@ -987,7 +1036,7 @@ func runCommandDir(timeout time.Duration, dir, program string, args ...string) (
 	cmd.Stderr = &stderr
 	err = cmd.Run()
 	if ctx.Err() != nil {
-		return nil, failure("command_timeout", program+" was cancelled or timed out", map[string]any{"stderr": bounded(stderr.String())})
+		return []byte(bounded(stdout.String())), failure("command_timeout", program+" was cancelled or timed out", map[string]any{"stderr": bounded(stderr.String())})
 	}
 	if err != nil {
 		return nil, failure("command_failed", program+" failed", map[string]any{"stderr": bounded(stderr.String()), "error": bounded(err.Error()), "output": bounded(stdout.String())})

@@ -2,12 +2,19 @@ package toolbox
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 type composeCut struct {
@@ -126,9 +133,9 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 			for _, s := range scenesRaw {
 				if sm, ok := s.(map[string]any); ok {
 					cut := map[string]any{
-						"id":         sm["id"],
-						"type":       sm["type"],
-						"in_seconds": sm["start_seconds"],
+						"id":          sm["id"],
+						"type":        sm["type"],
+						"in_seconds":  sm["start_seconds"],
 						"out_seconds": sm["end_seconds"],
 					}
 					if d, ok := sm["description"].(string); ok {
@@ -425,7 +432,38 @@ func doFFmpegCompose(r composeRequest, outPath string, tmo time.Duration) (any, 
 	}, nil, nil
 }
 
-func findComposerDir() string {
+func findComposerDir() (string, error) {
+	home, _ := os.UserHomeDir()
+	configPaths := []string{".facet.yaml"}
+	if home != "" {
+		configPaths = append(configPaths, filepath.Join(home, ".config", "facet", "config.yaml"))
+	}
+	// Read only runtime paths here: config imports toolbox, so importing it would cycle.
+	var cfg struct {
+		Paths struct {
+			RemotionComposer string `yaml:"remotion_composer"`
+			Bundle           string `yaml:"bundle"`
+		} `yaml:"paths"`
+	}
+	for _, path := range configPaths {
+		if !fileExists(path) {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return "", failure("invalid_request", "unable to read runtime config: "+err.Error(), nil)
+		}
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			return "", failure("invalid_request", "unable to parse runtime config: "+err.Error(), nil)
+		}
+		break
+	}
+	if cfg.Paths.RemotionComposer != "" {
+		if !fileExists(filepath.Join(cfg.Paths.RemotionComposer, "package.json")) {
+			return "", failure("dependency_missing", "configured Remotion Composer package.json not found", map[string]any{"path": cfg.Paths.RemotionComposer})
+		}
+		return filepath.Abs(cfg.Paths.RemotionComposer)
+	}
 	candidates := []string{
 		"remotion-composer",
 		filepath.Join("..", "remotion-composer"),
@@ -435,12 +473,12 @@ func findComposerDir() string {
 		filepath.Join("..", "packs", "explainer", "runtime"),
 		filepath.Join("..", "..", "packs", "explainer", "runtime"),
 	}
+	if cfg.Paths.Bundle != "" {
+		candidates = append([]string{filepath.Join(cfg.Paths.Bundle, "remotion-composer")}, candidates...)
+	}
 	for _, cand := range candidates {
-		if _, err := os.Stat(filepath.Join(cand, "package.json")); err == nil {
-			if abs, err := filepath.Abs(cand); err == nil {
-				return abs
-			}
-			return cand
+		if fileExists(filepath.Join(cand, "package.json")) {
+			return filepath.Abs(cand)
 		}
 	}
 
@@ -448,11 +486,8 @@ func findComposerDir() string {
 	if err == nil {
 		for {
 			cand := filepath.Join(curr, "remotion-composer")
-			if _, err := os.Stat(filepath.Join(cand, "package.json")); err == nil {
-				if abs, err := filepath.Abs(cand); err == nil {
-					return abs
-				}
-				return cand
+			if fileExists(filepath.Join(cand, "package.json")) {
+				return filepath.Abs(cand)
 			}
 			parent := filepath.Dir(curr)
 			if parent == curr || parent == "." {
@@ -463,34 +498,58 @@ func findComposerDir() string {
 	}
 
 	if localApp := os.Getenv("LOCALAPPDATA"); localApp != "" {
-		appCandidates := []string{
+		candidates = []string{
 			filepath.Join(localApp, "Facet", "runtimes", "remotion", "current"),
 			filepath.Join(localApp, "Facet", "runtimes", "remotion"),
 		}
-		for _, cand := range appCandidates {
-			if _, err := os.Stat(filepath.Join(cand, "package.json")); err == nil {
-				if abs, err := filepath.Abs(cand); err == nil {
-					return abs
-				}
-				return cand
-			}
+	} else {
+		candidates = nil
+	}
+	if executable, err := os.Executable(); err == nil {
+		if resolved, err := filepath.EvalSymlinks(executable); err == nil {
+			executable = resolved
+		}
+		root := filepath.Dir(filepath.Dir(executable))
+		candidates = append(candidates, filepath.Join(root, "bundle", "remotion-composer"), filepath.Join(root, "remotion-composer"))
+	}
+	if home != "" {
+		candidates = append(candidates, filepath.Join(home, ".facet", "bundle", "remotion-composer"))
+	}
+	for _, cand := range candidates {
+		if fileExists(filepath.Join(cand, "package.json")) {
+			return filepath.Abs(cand)
 		}
 	}
 
-	return "remotion-composer"
+	return "", failure("dependency_missing", "Remotion Composer runtime not found; install the Facet bundle or configure paths.remotion_composer", nil)
 }
 
 func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any, []string, error) {
-	outDir := filepath.Dir(outPath)
-	if outDir != "" && outDir != "." {
-		_ = os.MkdirAll(outDir, 0755)
-	}
-
-	composerDir := findComposerDir()
-	absComposer, err := filepath.Abs(composerDir)
+	absComposer, err := findComposerDir()
 	if err != nil {
-		absComposer = composerDir
+		return nil, nil, err
 	}
+	cliPath := filepath.Join(absComposer, "node_modules", "@remotion", "cli", "remotion-cli.js")
+	if !fileExists(cliPath) {
+		return nil, nil, failure("dependency_missing", "Remotion render CLI not found; install the composer dependencies with npm ci", map[string]any{"path": cliPath})
+	}
+	entryFile := filepath.Join(absComposer, "src", "index.tsx")
+	if !fileExists(entryFile) {
+		return nil, nil, failure("dependency_missing", "Remotion composition entry point not found", map[string]any{"path": entryFile})
+	}
+	if r.AudioPath != "" {
+		if err := inputPath(r.AudioPath); err != nil {
+			return nil, nil, err
+		}
+	}
+	if err := outputPath(outPath, true, false); err != nil {
+		return nil, nil, err
+	}
+	renderPath, cleanup, err := temporaryOutput(outPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer cleanup()
 
 	compositionID := "Explainer"
 	if r.CompositionID != "" {
@@ -508,47 +567,264 @@ func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any,
 
 	var propsJSON []byte
 	if r.RawProps != nil {
-		propsJSON, _ = json.Marshal(r.RawProps)
+		propsJSON, err = json.Marshal(r.RawProps)
 	} else if r.EditDecisions != nil {
-		propsJSON, _ = json.Marshal(r.EditDecisions)
+		propsJSON, err = json.Marshal(r.EditDecisions)
 	} else {
 		propsJSON = []byte("{}")
 	}
-
-	propsDir := filepath.Dir(outPath)
-	if propsDir == "" || propsDir == "." {
-		propsDir = "."
+	if err != nil {
+		return nil, nil, failure("invalid_request", "unable to encode remotion props", nil)
 	}
-	propsPath := filepath.Join(propsDir, ".remotion_props.json")
-	if err := os.WriteFile(propsPath, propsJSON, 0644); err != nil {
+	renderDir, err := os.MkdirTemp("", "facet-remotion-*")
+	if err != nil {
+		return nil, nil, failure("command_failed", "unable to create remotion staging directory", nil)
+	}
+	defer os.RemoveAll(renderDir)
+	publicDir := filepath.Join(renderDir, "public")
+	if err := os.Mkdir(publicDir, 0700); err != nil {
+		return nil, nil, err
+	}
+	propsJSON, err = stageRemotionMedia(propsJSON, absComposer, publicDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	propsPath := filepath.Join(renderDir, "props.json")
+	if err := os.WriteFile(propsPath, propsJSON, 0600); err != nil {
 		return nil, nil, failure("command_failed", "unable to write remotion props: "+err.Error(), nil)
 	}
-	defer os.Remove(propsPath)
 
-	absOut, _ := filepath.Abs(outPath)
+	absOut, _ := filepath.Abs(renderPath)
 	absProps, _ := filepath.Abs(propsPath)
-	entryFile := filepath.Join(absComposer, "src", "index.tsx")
 
-	args := []string{"--prefix", absComposer, "remotion", "render", entryFile, compositionID, absOut, "--props=" + absProps}
+	args := []string{cliPath, "render", entryFile, compositionID, absOut, "--props=" + absProps, "--public-dir=" + publicDir}
 	if browser := findBrowserExecutable(); browser != "" {
 		args = append(args, "--browser-executable="+browser)
 	}
-	if _, err := runCommand(tmo, "npx", args...); err != nil {
-		return renderExplainerWithFFmpeg(r, outPath, tmo)
+	if stdout, err := runCommandDir(tmo, absComposer, "node", args...); err != nil {
+		var failed *toolFailure
+		if errors.As(err, &failed) && failed.err.Code == "command_timeout" {
+			failed.err.Details["output"] = remotionTimeoutDiagnostic(string(stdout))
+			stderr, _ := failed.err.Details["stderr"].(string)
+			failed.err.Details["stderr"] = remotionTimeoutDiagnostic(stderr)
+		}
+		return nil, nil, err
 	}
 
-	if r.AudioPath != "" && fileExists(r.AudioPath) {
-		tempMux := filepath.Join(filepath.Dir(outPath), ".mux-"+filepath.Base(outPath))
-		if _, err := runCommand(tmo, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", outPath, "-i", r.AudioPath, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-shortest", tempMux); err == nil {
-			_ = os.Rename(tempMux, outPath)
+	if r.AudioPath != "" {
+		tempMux, cleanupMux, err := temporaryOutput(outPath)
+		if err != nil {
+			return nil, nil, err
 		}
+		defer cleanupMux()
+		if _, err := runCommand(tmo, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", renderPath, "-i", r.AudioPath, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-shortest", tempMux); err != nil {
+			return nil, nil, err
+		}
+		renderPath = tempMux
+	}
+
+	// Validate the completed artifact before replacing an existing delivery.
+	if _, _, err := probe(renderPath, tmo); err != nil {
+		return nil, nil, err
+	}
+	if err := os.Rename(renderPath, outPath); err != nil {
+		return nil, nil, failure("command_failed", "remotion output could not be published", map[string]any{"error": bounded(err.Error())})
+	}
+	// Bind evidence to the actual published bytes, including any post-render mux.
+	facts, warnings, err := probe(outPath, tmo)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	return map[string]any{
 		"operation":      "remotion_render",
 		"composition_id": compositionID,
 		"output":         outPath,
-	}, nil, nil
+		"output_facts":   facts,
+	}, warnings, nil
+}
+
+// Stage only explicit component media fields, never a project/public tree or arbitrary
+// strings in metadata. JSON decoding gives us a private copy of the caller's props.
+func stageRemotionMedia(data []byte, composer, publicDir string) ([]byte, error) {
+	var props map[string]any
+	if err := json.Unmarshal(data, &props); err != nil {
+		return nil, failure("invalid_request", "invalid remotion props", nil)
+	}
+	const maxFileSize int64 = 2 << 30
+	const maxTotalSize int64 = 8 << 30
+	var total int64
+	staged := map[string]string{}
+	stage := func(src string) (string, error) {
+		if src == "" || strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") || strings.HasPrefix(src, "data:") {
+			return src, nil // Match resolveAsset's existing URL semantics without fetching.
+		}
+		if name, ok := staged[src]; ok {
+			return name, nil
+		}
+		invalid := func(message string) (string, error) {
+			return "", failure("invalid_request", "remotion media: "+message, nil)
+		}
+		path := src
+		if strings.HasPrefix(strings.ToLower(path), "file:") {
+			u, err := url.Parse(path)
+			if err != nil || u.Opaque != "" || u.User != nil || (u.Host != "" && u.Host != "localhost") || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+				return invalid("file URL must identify a local file without query or fragment")
+			}
+			path = u.Path
+			if os.PathSeparator == '\\' && len(path) >= 3 && path[0] == '/' && path[2] == ':' {
+				path = path[1:]
+			}
+			if !filepath.IsAbs(path) {
+				return invalid("file URL must be absolute")
+			}
+		}
+		path = filepath.FromSlash(path)
+		if strings.HasPrefix(path, `\\`) || strings.HasPrefix(path, "//") || strings.Contains(strings.TrimPrefix(path, filepath.VolumeName(path)), ":") {
+			return invalid("unsupported scheme, network path or alternate stream")
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		switch ext {
+		case ".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".mp4", ".mov", ".webm", ".avi", ".mkv", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff":
+		default:
+			return invalid("unsupported media extension (active documents and non-media files are not public assets)")
+		}
+		var input *os.File
+		var err error
+		if filepath.IsAbs(path) {
+			// Explicit absolute paths may name media outside the project, but not devices.
+			info, statErr := os.Stat(path)
+			if statErr != nil || !info.Mode().IsRegular() {
+				return invalid("absolute source must be an accessible regular file")
+			}
+			input, err = os.Open(path)
+		} else {
+			if !filepath.IsLocal(path) {
+				return invalid("relative source must stay inside the project")
+			}
+			// Root.Open also confines symlinks, including during path resolution.
+			for _, rootPath := range []string{".", filepath.Join(composer, "public")} {
+				root, openErr := os.OpenRoot(rootPath)
+				if openErr != nil {
+					err = openErr
+				} else {
+					info, statErr := root.Stat(path)
+					if statErr == nil && !info.Mode().IsRegular() {
+						root.Close()
+						return invalid("source must be a regular file")
+					}
+					if statErr != nil {
+						err = statErr
+					} else {
+						input, err = root.Open(path)
+					}
+					root.Close()
+				}
+				if !errors.Is(err, os.ErrNotExist) {
+					break
+				}
+			}
+		}
+		if err != nil {
+			return invalid("source is missing, inaccessible or escapes its root")
+		}
+		defer input.Close()
+		info, err := input.Stat()
+		if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxFileSize || total+info.Size() > maxTotalSize || len(staged) >= 256 {
+			return invalid("source must be nonempty regular media within staging limits (256 files, 2 GiB each, 8 GiB total)")
+		}
+		var header [512]byte
+		n, err := input.ReadAt(header[:], 0)
+		if err != nil && err != io.EOF {
+			return invalid("cannot inspect source media")
+		}
+		mime := http.DetectContentType(header[:n])
+		media := strings.HasPrefix(mime, "audio/") || strings.HasPrefix(mime, "video/") || strings.HasPrefix(mime, "image/") || mime == "application/ogg"
+		// Containers not recognized by net/http's bounded signature table.
+		media = media || (n >= 12 && (string(header[4:8]) == "ftyp" || string(header[4:8]) == "moov" || string(header[4:8]) == "mdat")) ||
+			(n >= 4 && (string(header[:4]) == "fLaC" || string(header[:4]) == "\x1a\x45\xdf\xa3" || string(header[:4]) == "II*\x00" || string(header[:4]) == "MM\x00*")) ||
+			(n >= 2 && header[0] == 0xff && header[1]&0xf6 == 0xf0)
+		if !media {
+			return invalid("source does not have a supported media signature")
+		}
+		name := fmt.Sprintf("asset-%03d%s", len(staged), ext)
+		output, err := os.OpenFile(filepath.Join(publicDir, name), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			return "", err
+		}
+		written, copyErr := io.Copy(output, io.LimitReader(input, info.Size()+1))
+		closeErr := output.Close()
+		if copyErr != nil || closeErr != nil || written != info.Size() {
+			return invalid("source changed or could not be staged")
+		}
+		total += written
+		staged[src] = name
+		return name, nil
+	}
+	rewrite := func(object map[string]any, keys []string) error {
+		for _, key := range keys {
+			if src, ok := object[key].(string); ok {
+				value, err := stage(src)
+				if err != nil {
+					return err
+				}
+				object[key] = value
+			}
+		}
+		return nil
+	}
+	if err := rewrite(props, []string{"videoSrc", "backgroundSrc", "productImage"}); err != nil {
+		return nil, err
+	}
+	for _, key := range []string{"cuts", "scenes", "clips"} {
+		items, _ := props[key].([]any)
+		for _, item := range items {
+			object, _ := item.(map[string]any)
+			if err := rewrite(object, []string{"source", "src", "backgroundImage", "backgroundVideo", "backgroundSrc"}); err != nil {
+				return nil, err
+			}
+			images, _ := object["images"].([]any)
+			for i, image := range images {
+				if src, ok := image.(string); ok {
+					value, err := stage(src)
+					if err != nil {
+						return nil, err
+					}
+					images[i] = value
+				}
+			}
+		}
+	}
+	audio, _ := props["audio"].(map[string]any)
+	for _, layer := range []any{audio["narration"], audio["music"], props["soundtrack"], props["music"]} {
+		object, _ := layer.(map[string]any)
+		if err := rewrite(object, []string{"src"}); err != nil {
+			return nil, err
+		}
+	}
+	return json.Marshal(props)
+}
+
+// Only retain known progress lines: browser logs can echo props, source code,
+// credentials and signed media URLs. Free-form timeout output is not safe to expose.
+var remotionProgressLine = regexp.MustCompile(`^(Bundling [0-9]+%|Getting composition|Concurrency +[0-9]+x|Rendered [0-9]+/[0-9]+(, time remaining: [0-9hms .]+)?|Encoded [0-9]+/[0-9]+)$`)
+
+func remotionTimeoutDiagnostic(output string) string {
+	var progress strings.Builder
+	omitted := false
+	for _, line := range strings.Split(strings.ReplaceAll(output, "\r", "\n"), "\n") {
+		line = strings.TrimSpace(line)
+		if remotionProgressLine.MatchString(line) {
+			progress.WriteString(line + "\n")
+		} else if line != "" {
+			omitted = true
+		}
+	}
+	text := progress.String()
+	if omitted {
+		text += "[REDACTED non-progress renderer output]\n"
+	}
+	return bounded(text)
 }
 
 func findDefaultFontFile() string {
