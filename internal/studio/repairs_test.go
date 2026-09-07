@@ -137,6 +137,12 @@ func TestReviewToolDefaultFramesAndResolvedReportURL(t *testing.T) {
 func TestSessionRecoveryIsBoundToProjectAndEngine(t *testing.T) {
 	adapter := newStudioHelperAdapter(t, "success")
 	sess := newStudioHelperSession(t, adapter)
+	// Production newSession stores the canonical path, including Windows long names.
+	dir, err := canonicalExistingPath(sess.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess.Dir = dir
 	result := sess.runTurn(context.Background(), "first", func(turnEvent) error { return nil })
 	if !result.ok {
 		t.Fatal(result.reason)

@@ -276,6 +276,11 @@ func generateGFlow(args []string, prompt, kind, output string, count int, timeou
 			toolErr.err.Details["quarantined"] = true
 		}
 	}()
+	// Resolve both sides of containment, including Windows short-name ancestors.
+	canonicalStage, err := filepath.EvalSymlinks(stage)
+	if err != nil {
+		return nil, failure("command_failed", "could not resolve gflow staging directory", nil)
+	}
 	root, err := os.OpenRoot(stage)
 	if err != nil {
 		return nil, failure("command_failed", "could not open gflow staging directory", nil)
@@ -328,7 +333,7 @@ func generateGFlow(args []string, prompt, kind, output string, count int, timeou
 		if err != nil {
 			return nil, failure("provider_response_invalid", "gflow returned an inaccessible local_path", nil)
 		}
-		rel, err := filepath.Rel(stage, resolved)
+		rel, err := filepath.Rel(canonicalStage, resolved)
 		if err != nil || !filepath.IsLocal(rel) {
 			return nil, failure("provider_response_invalid", "gflow local_path escapes its staging directory", nil)
 		}

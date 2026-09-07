@@ -17,6 +17,7 @@ try {
 $root = Join-Path ([IO.Path]::GetTempPath()) ('facet-install-preflight-' + [guid]::NewGuid())
 $savedPath = $env:Path
 $savedOS = $env:OS
+$savedUserProfile = $env:USERPROFILE
 try {
     New-Item -ItemType Directory -Path $root | Out-Null
     $copy = Join-Path $root 'install.ps1'
@@ -28,6 +29,7 @@ try {
         if ($_.Exception.Message -notmatch 'complete source checkout') { throw }
     }
     $env:OS = 'Windows_NT'
+    $env:USERPROFILE = Join-Path $root 'user-profile'
     $homeDir = Join-Path $root 'home'
     $bin = Join-Path $root 'install/bin'
     $flags = @{ Quiet = $true; NonInteractive = $true; Isolated = $true; HomeDir = $homeDir; InstallDir = $bin; NoPath = $true; NoShortcuts = $true }
@@ -144,8 +146,11 @@ try {
         if ($case.Existing -and [IO.File]::ReadAllText($target) -cne 'user shortcut sentinel') { throw 'Fixture shortcut file mutated.' }
     }
     Write-Host 'PASS: 11 mocked COM shortcut cases; default preservation, approved migration, custom/unreadable link protection and actionable warnings. No user Desktop changes.'
+    # Expected failing prerequisite mocks must not become the CI shell's exit code.
+    $global:LASTEXITCODE = 0
 } finally {
     $env:Path = $savedPath
     $env:OS = $savedOS
+    $env:USERPROFILE = $savedUserProfile
     Remove-Item -LiteralPath $root -Recurse -Force
 }
