@@ -295,8 +295,25 @@ func generateGFlow(args []string, prompt, kind, output string, count int, timeou
 	cmd.WaitDelay = time.Second
 	var stdout gflowStdout
 	cmd.Stdout = &stdout
-	// Provider diagnostics may contain credentials or signed URLs.
-	cmd.Stderr = io.Discard
+	// Provider diagnostics may contain credentials or signed URLs, so stderr is
+	// NOT passed through — but the provider's own error line is the only thing
+	// that explains a failure, and discarding it entirely left every failure
+	// reading the same way.
+	//
+	// Verified: an auth problem in the gflow CLI reported
+	//
+	//	Error: generation failed (500): CAPTCHA_FAILED: Cannot access contents
+	//	of the page. Extension manifest must request permission...
+	//
+	// and Facet reported "gflow CLI failed; check provider authentication and
+	// availability" — true, unactionable, and identical to what a quota
+	// exhaustion or a network outage would say.
+	//
+	// Captured to a bounded buffer and mined for the CLI's own "Error:" line,
+	// which is prose the CLI prints for a human. Anything token-shaped is
+	// dropped rather than relayed.
+	var stderr boundedBuffer
+	cmd.Stderr = &stderr
 	quarantine = true
 	runErr := cmd.Run()
 	if stdout.overflow {
@@ -309,7 +326,11 @@ func generateGFlow(args []string, prompt, kind, output string, count int, timeou
 		if errors.Is(runErr, exec.ErrWaitDelay) {
 			return nil, failure("command_timeout", "gflow output pipes did not close after CLI exit; no retry was attempted", nil)
 		}
-		return nil, failure("command_failed", "gflow CLI failed; check provider authentication and availability; no retry was attempted", nil)
+		msg := "gflow CLI failed; check provider authentication and availability; no retry was attempted"
+		if reason := providerErrorLine(stderr.String()); reason != "" {
+			msg = "gflow CLI failed: " + reason + "; no retry was attempted"
+		}
+		return nil, failure("command_failed", msg, nil)
 	}
 	var media []gflowMedia
 	// gflow v1.0.0 prints polling dots on stdout during video upscaling, even --json.
@@ -410,4 +431,85 @@ func detectMediaType(path string) string {
 		return detected
 	}
 	return ""
+}
+
+// boundedBuffer keeps at most a small prefix of what is written to it.
+//
+// Provider stderr is untrusted in both size and content: it may be a firehose
+// of progress output, and it may carry credentials or signed URLs. Bounding it
+// means a chatty CLI cannot exhaust memory, and the extraction below is what
+// keeps secrets out of the envelope.
+type boundedBuffer struct {
+	data []byte
+}
+
+const providerStderrLimit = 8 << 10
+
+func (b *boundedBuffer) Write(p []byte) (int, error) {
+	if room := providerStderrLimit - len(b.data); room > 0 {
+		if len(p) < room {
+			room = len(p)
+		}
+		b.data = append(b.data, p[:room]...)
+	}
+	// Always report the full length: reporting less makes the writer retry.
+	return len(p), nil
+}
+
+func (b *boundedBuffer) String() string { return string(b.data) }
+
+// providerErrorLine extracts the CLI's own error sentence, or "" when there is
+// nothing safe to report.
+//
+// Only the line the CLI prints for a human — "Error: ..." — is considered.
+// That is prose describing what went wrong, not a dump of request state. A
+// line carrying anything token-shaped is dropped rather than relayed, because
+// a helpful message is not worth leaking a credential.
+func providerErrorLine(stderr string) string {
+	for _, line := range strings.Split(stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "Error:") {
+			continue
+		}
+		line = strings.TrimSpace(strings.TrimPrefix(line, "Error:"))
+		if line == "" || looksSecret(line) {
+			return ""
+		}
+		return bounded(line)
+	}
+	return ""
+}
+
+// looksSecret reports whether a line may carry a credential or signed URL.
+//
+// Deliberately broad: the cost of dropping a useful message is one generic
+// error, and the cost of relaying a token is a leaked credential in whatever
+// the host stores or displays.
+func looksSecret(line string) bool {
+	lower := strings.ToLower(line)
+	for _, marker := range []string{
+		"key=", "token=", "secret", "password", "authorization",
+		"bearer ", "signature=", "x-goog-", "sig=", "credential",
+		"api_key", "apikey", "access_token",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	// A long unbroken run of base64-ish characters is a token, not prose.
+	for _, field := range strings.Fields(line) {
+		if len(field) >= 40 && !strings.ContainsAny(field, " .,;:!?") {
+			alnum := 0
+			for _, r := range field {
+				if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') ||
+					r == '-' || r == '_' {
+					alnum++
+				}
+			}
+			if alnum*10 >= len(field)*9 {
+				return true
+			}
+		}
+	}
+	return false
 }
