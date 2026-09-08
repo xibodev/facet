@@ -108,6 +108,30 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 				f, w, h := renderShape(rawMap, last)
 				return estimateRender([]string{"video_compose_remotion_render"}, f, w, h), nil, nil
 			}
+			// A cuts plan states when it ends, exactly as a scene plan does.
+			//
+			// Without duration_seconds the composition falls back to
+			// `lastEnd + 1` — a second of tail padding. The scene path was
+			// fixed to say so; this one was not, so the same tool produced 2s
+			// from a scene plan and 3s from the equivalent cuts plan.
+			// Verified: 60 frames versus 90 for identical timings.
+			//
+			// A caller's explicit duration_seconds still wins; only an absent
+			// one is filled in.
+			if _, given := rawMap["duration_seconds"]; !given {
+				last := 0.0
+				for _, c := range cutsRaw {
+					if cm, ok := c.(map[string]any); ok {
+						if v, ok := cm["out_seconds"].(float64); ok && v > last {
+							last = v
+						}
+					}
+				}
+				if last > 0 {
+					rawMap["duration_seconds"] = last
+				}
+			}
+
 			r := composeRequest{
 				Operation:  "remotion_render",
 				OutputPath: outPath,
