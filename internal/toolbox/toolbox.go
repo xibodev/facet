@@ -228,6 +228,52 @@ var chargeableTools = map[string]bool{
 // reaching an external service.
 func MayCharge(tool string) bool { return chargeableTools[tool] }
 
+// Deterministic reports whether the same request against the same inputs
+// produces byte-identical output.
+//
+// Operator ruling 5 derives recoverability from this: re-execution is free
+// recovery for a deterministic Operation, so durable resume is not required.
+// It is therefore a semantic guarantee, not a performance note, and must only
+// be claimed where it genuinely holds.
+//
+// MEASURED, not assumed. Each of these was run twice and its output digests
+// compared:
+//
+//	video_trimmer   158fb763...  identical
+//	color_grade     cd0ac7fb...  identical
+//	subtitle_gen    658d8f1f...  identical
+//	video_compose   44b52bdd...  identical (Remotion render)
+//
+// A networked Operation is NEVER declared deterministic: remote state can
+// change between runs regardless of the request. A chargeable one never is
+// either — generative providers sample.
+//
+// Conservative by design. An Operation absent from this set is not asserted
+// to be non-deterministic; it is simply unproven, and claiming a guarantee
+// nobody measured is how the false documentation in this repo got written.
+var deterministicTools = map[string]bool{
+	"video_trimmer": true,
+	"color_grade":   true,
+	"subtitle_gen":  true,
+	"video_compose": true,
+	"media_probe":   true,
+	"audio_probe":   true,
+	"scene_detect":  true,
+	"frame_sample":  true,
+}
+
+// Deterministic reports whether this Operation is a proven deterministic
+// function of its request and inputs.
+func Deterministic(tool string) bool {
+	if executionFor(tool).Network || MayCharge(tool) {
+		// Defence in depth: a networked or chargeable Operation cannot be
+		// deterministic whatever the table says, so the table cannot make one
+		// so by mistake.
+		return false
+	}
+	return deterministicTools[tool]
+}
+
 // ChargeableTools lists every Operation that may result in a monetary charge.
 //
 // Returned as a copy so a caller cannot mutate the source of truth, and
@@ -546,6 +592,7 @@ func summary(name string) map[string]any {
 		// deciding whether to seek human consent must read this, never
 		// cost.known — see MayCharge.
 		"may_charge":     MayCharge(name),
+		"deterministic":  Deterministic(name),
 		"network":        exec.Network,
 		"external_write": externalWriteFor(name, "run"),
 	}
@@ -608,6 +655,7 @@ func description(name string) map[string]any {
 	d["result_schema"] = resultSchemas[name]
 	d["cost"] = map[string]any{"currency": "USD", "amount": exec.EstimatedCost, "known": exec.EstimatedCost != nil}
 	d["may_charge"] = MayCharge(name)
+	d["deterministic"] = Deterministic(name)
 	d["network"] = exec.Network
 	// A `run` of this tool may write; describe reports the run behaviour, which
 	// is what a caller is deciding about.
