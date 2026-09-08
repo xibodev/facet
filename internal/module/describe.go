@@ -102,12 +102,27 @@ func Describe(version string) Envelope {
 			// renderer depend on where the process happened to be launched.
 			FilesystemRead:  []string{"project_root", "facet_bundle"},
 			FilesystemWrite: []string{"project_root"},
-			// Named grants, not a blanket boolean: only these providers are
-			// ever contacted, and only these binaries are ever executed.
+			// Named grants, not a blanket boolean: only these hosts are ever
+			// contacted, and only these binaries are ever executed.
+			//
+			// The list is derived from the hosts the toolbox actually reaches,
+			// not from the providers it is thought to use. Three were missing:
+			// queue.fal.run (fal's async queue, a DIFFERENT host from fal.run
+			// and the one Kling polls for status), raw.githubusercontent.com
+			// (the Hyperframes registry), and cdn.jsdelivr.net (the GSAP
+			// runtime referenced by generated Hyperframes HTML). A host
+			// enforcing this allowlist would have blocked Kling video and
+			// Hyperframes with a network error that named no cause.
+			//
+			// A declaration that under-reports is worse than a broad one: the
+			// host grants exactly what is asked for, so a missing entry is a
+			// runtime failure and a wrong entry is a permission the operator
+			// never knowingly gave.
 			Network: []string{
 				"labs.google", "api.openai.com", "api.elevenlabs.io",
-				"fal.run", "api.pexels.com", "pixabay.com",
+				"fal.run", "queue.fal.run", "api.pexels.com", "pixabay.com",
 				"commons.wikimedia.org", "speech.platform.bing.com",
+				"raw.githubusercontent.com", "cdn.jsdelivr.net",
 			},
 			Credentials: []string{
 				"OPENAI_API_KEY", "ELEVENLABS_API_KEY", "FAL_KEY",
