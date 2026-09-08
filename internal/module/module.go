@@ -30,6 +30,7 @@ const (
 	CapToolsRun        = "creative.tools.run"
 	CapOutputReview    = "creative.output.review"
 	CapArtifactInspect = "creative.artifact.inspect"
+	CapJobsStatus      = "creative.jobs.status"
 )
 
 // Envelope is the only thing written to stdout. Field order matches the

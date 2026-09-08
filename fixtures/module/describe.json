@@ -2,7 +2,7 @@
   "protocol": "xibodev.module/v1",
   "module": "xibodev.facet",
   "operation": "describe",
-  "request_id": "req_843bfaae601e5679542d60b623967311",
+  "request_id": "req_94588061a4f396e84732722ead22706e",
   "ok": true,
   "result": {
     "module": "xibodev.facet",
@@ -89,7 +89,8 @@
         "skills": [
           "facet-core"
         ],
-        "long_running": false
+        "long_running": true,
+        "poll_capability": "creative.jobs.status"
       },
       {
         "id": "creative.output.review",
@@ -106,6 +107,25 @@
           "network": false,
           "external_writes": true,
           "provider": "ffmpeg",
+          "cost_known": true
+        },
+        "skills": [
+          "facet-core"
+        ],
+        "long_running": false
+      },
+      {
+        "id": "creative.jobs.status",
+        "title": "Poll a long-running job",
+        "summary": "Report the state of a long-running invocation. Deterministic, local, free, and never runs work or bills.",
+        "request_schema": "creative.jobs.status.request/v1",
+        "result_schema": "creative.jobs.status.result/v1",
+        "artifact_schemas": [],
+        "effects": {
+          "local": true,
+          "network": false,
+          "external_writes": false,
+          "provider": "local",
           "cost_known": true
         },
         "skills": [
@@ -510,6 +530,22 @@
         "required": [
           "tool",
           "input"
+        ],
+        "type": "object"
+      },
+      "creative.jobs.status.request/v1": {
+        "properties": {
+          "job_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
         ],
         "type": "object"
       },
@@ -2557,6 +2593,48 @@
           "capability",
           "tool",
           "output"
+        ],
+        "type": "object"
+      },
+      "creative.jobs.status.result/v1": {
+        "properties": {
+          "capability": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "job": {
+            "properties": {
+              "detail": {
+                "type": "string"
+              },
+              "job_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "percent": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "state": {
+                "enum": [
+                  "running",
+                  "succeeded",
+                  "failed"
+                ]
+              }
+            },
+            "required": [
+              "job_id",
+              "state"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "capability",
+          "job"
         ],
         "type": "object"
       },
@@ -7902,8 +7980,8 @@
         "title": "Facet video producer",
         "summary": "Canonical producer guidance: plan, estimate, render, review, disclose.",
         "path": "skills/facet/SKILL.md",
-        "digest": "sha256:bbd69a7b74bd2352a5da4e14c096871ae60fabd88b4cf91bddded644a55b4340",
-        "tokens": 1562
+        "digest": "sha256:b81d44c08e58f75cc12c52eb0b1382f0ff07cadce7e0371d3408c5274ced73cb",
+        "tokens": 1770
       }
     ],
     "permissions": {

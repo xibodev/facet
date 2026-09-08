@@ -101,6 +101,9 @@ func capabilityOp(capability string) (op string, pinnedTool string, ok bool) {
 		return "run", "output_review", true
 	case CapArtifactInspect:
 		return "run", "media_probe", true
+	case CapJobsStatus:
+		// Polling is answered directly; it never reaches the toolbox.
+		return "status", "", true
 	}
 	return "", "", false
 }
@@ -117,6 +120,9 @@ func capabilityOp(capability string) (op string, pinnedTool string, ok bool) {
 func Invoke(capability string, raw []byte) Envelope {
 	if capability == CapToolsEstimate {
 		return Estimate(capability, raw)
+	}
+	if capability == CapJobsStatus {
+		return JobStatus(raw)
 	}
 
 	var req Request

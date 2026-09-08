@@ -14,6 +14,7 @@ Regenerate with the commands in each entry below.
 | `error-consent-required.json` | `module invoke creative.tools.run` (gflow_image, no consent) | The consent gate refusing a paid tool |
 | `error-unknown-capability.json` | `module invoke creative.bogus` | Unknown capability rejection |
 | `error-input-not-found.json` | `module invoke creative.tools.run` (missing file) | Toolbox error code passed through unchanged |
+| `error-unknown-job.json` | `module invoke creative.jobs.status` (unknown id) | Job state does not survive the module process, and the poll says so |
 | `seed-explainer/` | hand-authored synthetic | A `xibodev.midden.seed/v1` bundle Facet can consume |
 
 ## Normalization

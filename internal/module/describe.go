@@ -183,6 +183,9 @@ func capabilitySchemas() (req map[string]any, res map[string]any) {
 	})
 
 	req = map[string]any{
+		"creative.jobs.status.request/v1": obj([]string{"job_id"}, map[string]any{
+			"request_id": str, "job_id": str,
+		}),
 		"creative.tools.list.request/v1": obj(nil, map[string]any{"request_id": str}),
 		"creative.tools.describe.request/v1": obj([]string{"tool"}, map[string]any{
 			"request_id": str, "tool": str,
@@ -193,6 +196,15 @@ func capabilitySchemas() (req map[string]any, res map[string]any) {
 		"creative.artifact.inspect.request/v1": toolCall,
 	}
 	res = map[string]any{
+		"creative.jobs.status.result/v1": obj([]string{"capability", "job"}, map[string]any{
+			"capability": str,
+			"job": obj([]string{"job_id", "state"}, map[string]any{
+				"job_id":  str,
+				"state":   map[string]any{"enum": []string{"running", "succeeded", "failed"}},
+				"percent": map[string]any{"type": []string{"number", "null"}},
+				"detail":  map[string]any{"type": "string"},
+			}),
+		}),
 		"creative.tools.list.result/v1":       passthrough,
 		"creative.tools.describe.result/v1":   passthrough,
 		"creative.tools.estimate.result/v1":   passthrough,
@@ -394,6 +406,11 @@ func capabilityList() []Capability {
 			// A run may produce any of these; the host validates what arrives.
 			ArtifactSchemas: []string{"render_report", "asset_manifest"},
 			Skills:          []string{"facet-core"},
+			// A render takes 30s at 720p and 83s at 1080p, so this capability
+			// may return a job handle rather than a finished result and the
+			// host polls it instead of showing a blank cockpit.
+			LongRunning:    true,
+			PollCapability: CapJobsStatus,
 			// Declared honestly and pessimistically: this capability dispatches
 			// any tool, including paid provider-backed ones, so it declares the
 			// worst case. CostKnown false forces host approval.
@@ -414,6 +431,20 @@ func capabilityList() []Capability {
 			Effects: Effects{
 				Local: true, Network: false, ExternalWrites: true,
 				Provider: "ffmpeg", CostKnown: true,
+			},
+		},
+		{
+			ID:    CapJobsStatus,
+			Title: "Poll a long-running job",
+			Summary: "Report the state of a long-running invocation. Deterministic, local, " +
+				"free, and never runs work or bills.",
+			RequestSchema:   "creative.jobs.status.request/v1",
+			ResultSchema:    "creative.jobs.status.result/v1",
+			ArtifactSchemas: []string{},
+			Skills:          []string{"facet-core"},
+			Effects: Effects{
+				Local: true, Network: false, ExternalWrites: false,
+				Provider: "local", CostKnown: true,
 			},
 		},
 		{
