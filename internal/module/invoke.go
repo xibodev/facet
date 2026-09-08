@@ -2,6 +2,8 @@ package module
 
 import (
 	"encoding/json"
+	"net/http"
+	"os"
 	"strings"
 
 	"github.com/xibodev/facet/internal/toolbox"
@@ -395,6 +397,18 @@ func artifactsFrom(result any) []Artifact {
 		if strings.TrimSpace(path) == "" {
 			return
 		}
+		// A host chooses how to present an artefact from its media type, so an
+		// artefact without one falls back to a download link instead of the
+		// player or viewer it deserves. Most tools report a mime_type; the
+		// renderer does not, so its mp4 arrived untyped and would have been
+		// offered as a file to save rather than a video to watch.
+		//
+		// Detect from the file's own bytes when the tool did not say. The
+		// bytes are evidence and a declared type is a claim — the same reason
+		// the provider's "image/png" for JPEG data is not trusted.
+		if strings.TrimSpace(media) == "" {
+			media = detectArtifactMediaType(path)
+		}
 		out = append(out, Artifact{
 			Kind:      "output",
 			Path:      path,
@@ -408,6 +422,13 @@ func artifactsFrom(result any) []Artifact {
 	}
 	if p, ok := m["output_path"].(string); ok {
 		add(p, stringField(m, "sha256"), stringField(m, "mime_type"))
+	}
+
+	// Frame extraction reports its files under `samples`, not `outputs`, so a
+	// QA frame set produced no artifacts at all and the host had nothing to
+	// build an image grid from.
+	for _, sm := range mapSlice(m["samples"]) {
+		add(stringField(sm, "path"), stringField(sm, "sha256"), stringField(sm, "mime_type"))
 	}
 
 	if raw, ok := m["outputs"].([]any); ok {
@@ -461,4 +482,79 @@ func bounded(s string) string {
 		return s[:limit] + "..."
 	}
 	return s
+}
+
+// detectArtifactMediaType reports the media type of a produced file from its
+// own bytes, or "" when it cannot be read or does not identify itself.
+//
+// It never guesses from the extension. An mp4 written with a .png name is an
+// mp4, and a host that trusted the name would offer the wrong viewer — the
+// same failure as trusting a provider's declared type.
+func detectArtifactMediaType(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	var header [512]byte
+	n, err := f.Read(header[:])
+	if err != nil && n == 0 {
+		return ""
+	}
+	detected := http.DetectContentType(header[:n])
+	switch {
+	case strings.HasPrefix(detected, "image/"),
+		strings.HasPrefix(detected, "video/"),
+		strings.HasPrefix(detected, "audio/"),
+		strings.HasPrefix(detected, "text/"),
+		detected == "application/pdf",
+		detected == "application/ogg":
+		return detected
+	}
+
+	// net/http's signature table is deliberately small and misses formats a
+	// media toolbox produces constantly. An MP3 without an ID3 tag — which is
+	// exactly what edge_tts emits — detects as application/octet-stream, so
+	// narration arrived untyped and a host would have offered it as a file to
+	// download rather than audio to play.
+	//
+	// These are signature checks on the bytes, not extension guesses.
+	if n >= 2 && header[0] == 0xff && header[1]&0xe0 == 0xe0 {
+		return "audio/mpeg" // MPEG audio frame sync
+	}
+	if n >= 12 && string(header[4:8]) == "ftyp" {
+		return "video/mp4"
+	}
+	if n >= 4 && string(header[:4]) == "fLaC" {
+		return "audio/flac"
+	}
+	if n >= 4 && string(header[:4]) == "\x1a\x45\xdf\xa3" {
+		return "video/webm" // Matroska/WebM
+	}
+
+	// A generic octet-stream tells the host nothing it did not already know,
+	// so report nothing rather than something meaningless.
+	return ""
+}
+
+// mapSlice normalizes a result field that may be []any or []map[string]any.
+//
+// A tool builds its result with a concrete slice type, so a single []any type
+// assertion silently yields nothing for half of them — the field is present,
+// the assertion fails, and the artefacts vanish without an error. frame_sample
+// returns []map[string]any and produced zero artifacts for exactly that reason.
+func mapSlice(v any) []map[string]any {
+	switch t := v.(type) {
+	case []map[string]any:
+		return t
+	case []any:
+		out := make([]map[string]any, 0, len(t))
+		for _, item := range t {
+			if m, ok := item.(map[string]any); ok {
+				out = append(out, m)
+			}
+		}
+		return out
+	}
+	return nil
 }
