@@ -58,28 +58,18 @@ func Describe(version string) Envelope {
 		resSchemas[id] = doc
 	}
 
-	// Per-tool request/result schemas come from the toolbox's own describe, the
-	// single source of truth. schemas/tools/*.json is deliberately NOT consulted:
-	// that directory holds legacy surfaces that do not track the implementation.
-	for _, t := range tools {
-		name, _ := t["name"].(string)
-		if name == "" {
-			continue
-		}
-		env, ok := toolbox.CLI([]string{"tools", "describe", name})
-		if !ok {
-			warnings = append(warnings, "describe unavailable for tool: "+name)
-			continue
-		}
-		d, _ := env.Result.(map[string]any)
-		if s, present := d["request_schema"]; present && s != nil {
-			reqSchemas[name] = s
-		}
-		if s, present := d["result_schema"]; present && s != nil {
-			resSchemas[name] = s
-		}
-	}
-
+	// Per-tool request/result schemas are NOT inlined here. They are served by
+	// creative.tools.describe, which returns one tool's schemas for ~1.7KB on
+	// demand — and it is the same toolbox describe this loop used to call, so
+	// there is no second source to drift.
+	//
+	// Inlining all of them cost 27KB of a 107KB descriptor that every agent
+	// pays at session start to learn about tools it will mostly not call. The
+	// host confirmed nothing reads them from the descriptor.
+	//
+	// Capability-level schemas above STAY: the host validates requests and
+	// results against those, and a capability referencing a schema the host
+	// does not have means it can validate nothing.
 	artifacts := artifactSchemas(&warnings)
 	declaredOverlays := overlays(&warnings)
 	declaredSkills := skills(&warnings)
@@ -519,7 +509,18 @@ func artifactSchemas(warnings *[]string) map[string]any {
 			*warnings = append(*warnings, "artifact schema is not valid JSON: "+id)
 			continue
 		}
-		out[id] = doc
+		// The schema BODY is deliberately not inlined. It was 67KB of a 107KB
+		// descriptor — 58% — that every agent paid at session start, and the
+		// host confirmed nothing reads it: the cockpit renders from the
+		// host-resolved primitive, computed from media type plus the
+		// artifact's own presentation hint.
+		//
+		// What stays is an index entry: the ID a capability references, so
+		// every reference still resolves, plus a digest and size so a host
+		// that DOES want a schema can verify the file it reads is the one this
+		// descriptor described. An index of IDs alone would make the reference
+		// checkable but the content unverifiable.
+		out[id] = artifactSchemaRef(doc, raw)
 
 		if unreferencedArtifactSchemas[id] {
 			*warnings = append(*warnings,
@@ -528,6 +529,32 @@ func artifactSchemas(warnings *[]string) map[string]any {
 		}
 	}
 	return out
+}
+
+// digestOfBytes renders a sha256 digest in the module-boundary form.
+func digestOfBytes(raw []byte) string {
+	sum := sha256.Sum256(raw)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// artifactSchemaRef describes an artifact schema without carrying it.
+//
+// The description and title come from the schema itself, so an agent can tell
+// what an artifact IS without fetching the document — which is what the
+// summary was actually used for. The digest identifies the exact bytes.
+func artifactSchemaRef(doc any, raw []byte) map[string]any {
+	ref := map[string]any{
+		"digest": digestOfBytes(raw),
+		"bytes":  len(raw),
+	}
+	if m, ok := doc.(map[string]any); ok {
+		for _, k := range []string{"title", "description"} {
+			if v, present := m[k]; present {
+				ref[k] = v
+			}
+		}
+	}
+	return ref
 }
 
 func overlays(warnings *[]string) []Overlay {
