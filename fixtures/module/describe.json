@@ -2,7 +2,7 @@
   "protocol": "xibodev.module/v1",
   "module": "xibodev.facet",
   "operation": "describe",
-  "request_id": "req_25d759c8c63a1d7cab1a4eca7ce1d23a",
+  "request_id": "req_eecff0e1201f82ef469f1c6a90668ef6",
   "ok": true,
   "result": {
     "module": "xibodev.facet",
@@ -7992,8 +7992,24 @@
         "title": "Facet video producer",
         "summary": "Canonical producer guidance: plan, estimate, render, review, disclose.",
         "path": "skills/facet/SKILL.md",
-        "digest": "sha256:b81d44c08e58f75cc12c52eb0b1382f0ff07cadce7e0371d3408c5274ced73cb",
-        "tokens": 1770
+        "digest": "sha256:9d4149c2d2f458318bdf930df4379d913d8568dcd5618c682e541976b60d22bc",
+        "tokens": 1836
+      },
+      {
+        "id": "facet-explainer-walkthrough",
+        "title": "Narrated explainer, end to end",
+        "summary": "The order a narrated video is produced in: narration first because the audio decides the length, then cuts matched to it, render, verify.",
+        "path": "packs/explainer/NARRATED-WALKTHROUGH.md",
+        "digest": "sha256:e776a83677ce4f608f61e10534a74433695ec6939bd4dd74b16f2528e9aadf01",
+        "tokens": 962
+      },
+      {
+        "id": "facet-explainer-scene-types",
+        "title": "Explainer scene types",
+        "summary": "Every scene type the Explainer composition renders and the field each one requires; a missing field renders an empty frame.",
+        "path": "packs/explainer/SCENE-TYPES.md",
+        "digest": "sha256:c368173ad4609123635ae3c31935ae1938d84053fdb4d39b51ca87f99f30d6fd",
+        "tokens": 719
       }
     ],
     "permissions": {

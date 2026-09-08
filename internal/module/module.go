@@ -85,6 +85,13 @@ type Artifact struct {
 	Bytes     int64  `json:"bytes,omitempty"`
 	Digest    string `json:"digest,omitempty"`
 	Title     string `json:"title,omitempty"`
+	// Presentation names the host rendering primitive for this artefact.
+	//
+	// It exists for what a media type cannot express: a scene plan is
+	// application/json and also a timeline, and only the module knows that.
+	// The host honours a known value and ignores an unknown one, so a module
+	// names a primitive the host owns rather than inventing one.
+	Presentation string `json:"presentation,omitempty"`
 }
 
 // Descriptor declares exactly the twelve agreed fields, in order.

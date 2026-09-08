@@ -540,22 +540,53 @@ func overlays(warnings *[]string) []Overlay {
 	}}
 }
 
+// skills declares the progressively loadable knowledge the host may fold into
+// agent context when Facet is selected.
+//
+// Every file the core skill REFERENCES must be declared here. The host installs
+// exactly what the descriptor declares and verifies each digest, so an
+// undeclared file does not travel with the module: an agent then reads "the
+// path is in NARRATED-WALKTHROUGH.md", finds nothing, and sequences by guess.
+// Documenting knowledge and failing to declare it is worse than not writing it,
+// because the reference implies the content is available.
 func skills(warnings *[]string) []Skill {
-	const rel = "skills/facet/SKILL.md"
-	path := modulePath("skills", "facet", "SKILL.md")
-	digest, tokens, err := fileDigest(path)
-	if err != nil {
-		*warnings = append(*warnings, "core skill unreadable, not declared: "+rel)
-		return []Skill{}
+	declared := []struct {
+		id, title, summary string
+		parts              []string
+	}{
+		{
+			id: "facet-core", title: "Facet video producer",
+			summary: "Canonical producer guidance: plan, estimate, render, review, disclose.",
+			parts:   []string{"skills", "facet", "SKILL.md"},
+		},
+		{
+			id: "facet-explainer-walkthrough", title: "Narrated explainer, end to end",
+			summary: "The order a narrated video is produced in: narration first because " +
+				"the audio decides the length, then cuts matched to it, render, verify.",
+			parts: []string{"packs", "explainer", "NARRATED-WALKTHROUGH.md"},
+		},
+		{
+			id: "facet-explainer-scene-types", title: "Explainer scene types",
+			summary: "Every scene type the Explainer composition renders and the field " +
+				"each one requires; a missing field renders an empty frame.",
+			parts: []string{"packs", "explainer", "SCENE-TYPES.md"},
+		},
 	}
-	return []Skill{{
-		ID:      "facet-core",
-		Title:   "Facet video producer",
-		Summary: "Canonical producer guidance: plan, estimate, render, review, disclose.",
-		Path:    rel,
-		Digest:  digest,
-		Tokens:  tokens,
-	}}
+
+	out := make([]Skill, 0, len(declared))
+	for _, d := range declared {
+		rel := strings.Join(d.parts, "/")
+		digest, tokens, err := fileDigest(modulePath(d.parts...))
+		if err != nil {
+			*warnings = append(*warnings, "skill unreadable, not declared: "+rel)
+			continue
+		}
+		out = append(out, Skill{
+			ID: d.id, Title: d.title, Summary: d.summary,
+			Path: rel, Digest: digest, Tokens: tokens,
+		})
+	}
+	return out
 }
 
 // requirements reports external dependencies derived from the toolbox's own
