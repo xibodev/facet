@@ -174,9 +174,27 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 			// 640x360 rendered at the composition's 1920x1080 default and
 			// reported success. Verified — the same scene at 640x360 and at
 			// the default produced BYTE-IDENTICAL files.
-			for _, k := range []string{"width", "height", "fps"} {
+			for _, k := range []string{"width", "height", "fps", "duration_seconds"} {
 				if v, ok := rawMap[k].(float64); ok && v > 0 {
 					remotionProps[k] = v
+				}
+			}
+
+			// A scene plan states when it ends. Say so explicitly, or the
+			// composition falls back to `lastEnd + 1` — a full second of tail
+			// padding — and a 2s request renders as 3s.
+			//
+			// Measured: 90 frames at 30fps for a request ending at 2s. The
+			// padding exists for a final fade that is 8 frames long, so 22 of
+			// those 30 frames serve nothing.
+			//
+			// The composition already honours duration_seconds exactly; the
+			// caller's intent simply was never passed. Only set when the
+			// caller did not, so an explicit duration still wins and the
+			// composition's own default is untouched for anyone relying on it.
+			if _, given := remotionProps["duration_seconds"]; !given {
+				if end := lastCutEnd(cuts); end > 0 {
+					remotionProps["duration_seconds"] = end
 				}
 			}
 			r := composeRequest{
@@ -573,6 +591,21 @@ func findComposerDir() (string, error) {
 	}
 
 	return "", failure("dependency_missing", "Remotion Composer runtime not found; install the Facet bundle or configure paths.remotion_composer", nil)
+}
+
+// lastCutEnd reports when the final cut ends, which is when the video should.
+//
+// Returns 0 when no cut names a usable end, so the caller leaves
+// duration_seconds unset and the composition keeps its own default rather than
+// receiving a fabricated zero.
+func lastCutEnd(cuts []map[string]any) float64 {
+	last := 0.0
+	for _, cut := range cuts {
+		if v, ok := cut["out_seconds"].(float64); ok && v > last {
+			last = v
+		}
+	}
+	return last
 }
 
 // mapSceneToCut turns one scene-plan scene into a Remotion cut.
