@@ -838,12 +838,38 @@ func decode(data []byte, dst any) error {
 	d := json.NewDecoder(bytes.NewReader(data))
 	d.DisallowUnknownFields()
 	if err := d.Decode(dst); err != nil {
-		return failure("invalid_request", "invalid request JSON", map[string]any{"error": bounded(err.Error())})
+		return failure("invalid_request", decodeMessage(err),
+			map[string]any{"error": bounded(err.Error())})
 	}
 	if err := d.Decode(&struct{}{}); err != io.EOF {
 		return failure("invalid_request", "request must contain one JSON object", nil)
 	}
 	return nil
+}
+
+// decodeMessage says which of three different problems occurred.
+//
+// "invalid request JSON" covered all of them, and for two it was actively
+// wrong: a request with an unknown field is perfectly valid JSON that this tool
+// does not accept, and a type mismatch is valid JSON with a wrong value. An
+// agent told its JSON is invalid re-serializes correct JSON, fails again, and
+// concludes the module is broken — which was observed: one abandoned Facet
+// after this error and fell back to raw ffmpeg, producing a blank video it
+// reported as a success.
+func decodeMessage(err error) string {
+	text := err.Error()
+	switch {
+	case strings.Contains(text, "unknown field"):
+		field := text
+		if i := strings.Index(text, "unknown field "); i >= 0 {
+			field = strings.TrimSpace(text[i+len("unknown field "):])
+		}
+		return "this tool does not accept the field " + field +
+			"; run `facet tools describe <tool>` for its request schema"
+	case strings.Contains(text, "cannot unmarshal"):
+		return "a field has the wrong type: " + bounded(text)
+	}
+	return "request body is not valid JSON"
 }
 
 func positiveTimeout(v int, fallback int) (time.Duration, error) {

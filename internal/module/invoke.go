@@ -1,6 +1,7 @@
 package module
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -146,9 +147,9 @@ func Invoke(capability string, raw []byte) Envelope {
 
 	var req Request
 	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &req); err != nil {
+		if err := decodeRequest(raw, &req); err != nil {
 			return fail(OpInvoke, newRequestID(), "invalid_request",
-				"request body is not valid JSON",
+				requestDecodeMessage(err),
 				map[string]any{"error": bounded(err.Error())}, false)
 		}
 	}
@@ -251,9 +252,9 @@ func isLongRunning(capability string) bool {
 func Estimate(capability string, raw []byte) Envelope {
 	var req Request
 	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &req); err != nil {
+		if err := decodeRequest(raw, &req); err != nil {
 			return fail(OpInvoke, newRequestID(), "invalid_request",
-				"request body is not valid JSON",
+				requestDecodeMessage(err),
 				map[string]any{"error": bounded(err.Error())}, false)
 		}
 	}
@@ -603,4 +604,42 @@ func presentationFor(path, mediaType string) string {
 	}
 	// Media types speak for themselves; do not second-guess them.
 	return ""
+}
+
+// requestDecodeMessage distinguishes a malformed request from a well-formed one
+// this module does not accept.
+//
+// The protocol request is the first thing a host constructs, and telling it the
+// JSON is invalid when the JSON is fine sends it to re-serialize rather than to
+// the schema. The same conflation inside the toolbox led an agent to abandon
+// the module entirely.
+func requestDecodeMessage(err error) string {
+	text := err.Error()
+	if strings.Contains(text, "unknown field") {
+		field := text
+		if i := strings.Index(text, "unknown field "); i >= 0 {
+			field = strings.TrimSpace(text[i+len("unknown field "):])
+		}
+		return "the request carries the field " + field +
+			" which this capability does not accept; see request_schemas in `module describe`"
+	}
+	if strings.Contains(text, "cannot unmarshal") {
+		return "a request field has the wrong type: " + bounded(text)
+	}
+	return "request body is not valid JSON"
+}
+
+// decodeRequest rejects a request field this module does not know.
+//
+// json.Unmarshal ignores unknown fields, so a host typo was silently dropped: a
+// request carrying "binarys" ran with no binaries granted and failed later as a
+// missing dependency, and a misspelled "consent" would have been ignored while
+// the run proceeded. Both look like a module fault and neither is.
+//
+// The consent case is the reason this is strict rather than lenient. A field
+// that gates spending must never be silently discarded.
+func decodeRequest(raw []byte, dst any) error {
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.DisallowUnknownFields()
+	return d.Decode(dst)
 }

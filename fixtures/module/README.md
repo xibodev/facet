@@ -15,6 +15,7 @@ Regenerate with the commands in each entry below.
 | `error-unknown-capability.json` | `module invoke creative.bogus` | Unknown capability rejection |
 | `error-input-not-found.json` | `module invoke creative.tools.run` (missing file) | Toolbox error code passed through unchanged |
 | `error-unknown-job.json` | `module invoke creative.jobs.status` (unknown id) | Job state does not survive the module process, and the poll says so |
+| `error-unknown-field.json` | `module invoke creative.tools.run` (mock on a local tool) | A well-formed request a tool does not accept, named as such rather than called invalid JSON |
 | `seed-explainer/` | hand-authored synthetic | A `xibodev.midden.seed/v1` bundle Facet can consume |
 
 ## Normalization

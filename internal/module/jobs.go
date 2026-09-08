@@ -3,7 +3,6 @@ package module
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -178,9 +177,9 @@ type JobStatusRequest struct {
 func JobStatus(raw []byte) Envelope {
 	var req JobStatusRequest
 	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &req); err != nil {
+		if err := decodeRequest(raw, &req); err != nil {
 			return fail(OpInvoke, newRequestID(), "invalid_request",
-				"request body is not valid JSON",
+				requestDecodeMessage(err),
 				map[string]any{"error": bounded(err.Error())}, false)
 		}
 	}
