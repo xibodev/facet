@@ -75,6 +75,29 @@ func gate(name string, pass bool, message string) map[string]any {
 	return g
 }
 
+// assumed marks a gate whose expectation was taken FROM THE FILE because the
+// caller supplied none.
+//
+// Four checks — profile, duration, video_codec, pixel_format — default their
+// expected value to whatever the rendered file happens to report, so the
+// comparison is the file against itself and cannot fail. Verified: a 2s
+// request that rendered 3s passed the duration gate, because Expected had been
+// set to the measured 3s.
+//
+// The defaults are not wrong; without a stated expectation there is nothing
+// else to compare against. What was wrong is that such a gate reported "pass"
+// indistinguishably from one that verified a real expectation, so "6/6 pass"
+// read as far stronger evidence than it was — and it is exactly the evidence
+// used to judge a render.
+func assumed(g map[string]any) map[string]any {
+	if g["status"] == "pass" {
+		g["status"] = "assumed"
+		g["message"] = "no expectation supplied; the file was compared against " +
+			"its own measured value and this gate verified nothing"
+	}
+	return g
+}
+
 func firstVideo(p map[string]any) map[string]any {
 	v, _ := p["video"].(map[string]any)
 	return v
@@ -129,6 +152,17 @@ func doOutputReview(op string, data []byte) (any, []string, error) {
 	}
 	dur := p["format"].(map[string]any)["duration"].(float64)
 	audios, _ := p["audio_streams"].([]map[string]any)
+
+	// Recorded BEFORE the defaults below overwrite them. A gate whose
+	// expectation is taken from the file compares the file against itself and
+	// cannot fail, so it must not report "pass" as though it verified
+	// something. The first version of this read the flags AFTER defaulting and
+	// so always saw a stated profile — the same silent self-agreement one
+	// level up.
+	statedProfile := r.Profile.Width > 0 && r.Profile.Height > 0
+	statedDuration := r.Checks.Duration != nil
+	statedCodec := r.Checks.VideoCodec != ""
+	statedPixFmt := r.Checks.PixelFormat != ""
 
 	// If profile or checks were omitted, populate defaults from the probed media
 	if r.Profile.Width <= 0 && v != nil {
@@ -219,10 +253,23 @@ func doOutputReview(op string, data []byte) (any, []string, error) {
 		return nil, nil, failure("invalid_request", "evidence_dir is required", nil)
 	}
 	gates := []map[string]any{}
-	gates = append(gates, gate("profile", v["width"].(int) == r.Profile.Width && v["height"].(int) == r.Profile.Height && math.Abs(v["fps"].(float64)-r.Profile.FPS) < .02, "dimensions or fps differ"))
-	gates = append(gates, gate("duration", math.Abs(dur-r.Checks.Duration.Expected) <= r.Checks.Duration.Tolerance, "duration outside tolerance"))
-	gates = append(gates, gate("video_codec", v["codec"] == r.Checks.VideoCodec, "video codec differs"))
-	gates = append(gates, gate("pixel_format", v["pixel_format"] == r.Checks.PixelFormat, "pixel format differs"))
+	profileGate := gate("profile", v["width"].(int) == r.Profile.Width && v["height"].(int) == r.Profile.Height && math.Abs(v["fps"].(float64)-r.Profile.FPS) < .02, "dimensions or fps differ")
+	durationGate := gate("duration", math.Abs(dur-r.Checks.Duration.Expected) <= r.Checks.Duration.Tolerance, "duration outside tolerance")
+	codecGate := gate("video_codec", v["codec"] == r.Checks.VideoCodec, "video codec differs")
+	pixFmtGate := gate("pixel_format", v["pixel_format"] == r.Checks.PixelFormat, "pixel format differs")
+	if !statedProfile {
+		profileGate = assumed(profileGate)
+	}
+	if !statedDuration {
+		durationGate = assumed(durationGate)
+	}
+	if !statedCodec {
+		codecGate = assumed(codecGate)
+	}
+	if !statedPixFmt {
+		pixFmtGate = assumed(pixFmtGate)
+	}
+	gates = append(gates, profileGate, durationGate, codecGate, pixFmtGate)
 	audioPass := !r.Checks.Audio.Required
 	if len(audios) > 0 {
 		a := audios[0]
