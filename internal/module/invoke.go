@@ -803,6 +803,12 @@ func presentationFor(path, mediaType string) string {
 		return "timeline"
 	case strings.HasSuffix(path, ".md"):
 		return "markdown"
+	case strings.HasSuffix(path, ".srt"), strings.HasSuffix(path, ".vtt"):
+		// Captions arrive as text/plain, which tells a host to render prose.
+		// They are timed cues: shown as a paragraph the timings become noise,
+		// and the one question a reviewer has — does this line up with the
+		// video — cannot be answered.
+		return "timeline"
 	}
 	// Media types speak for themselves; do not second-guess them.
 	return ""
