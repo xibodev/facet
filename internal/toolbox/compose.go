@@ -635,6 +635,46 @@ func findComposerDir() (string, error) {
 	return "", failure("dependency_missing", "Remotion Composer runtime not found; install the Facet bundle or configure paths.remotion_composer", nil)
 }
 
+// truncatedAudioWarning reports narration that will not fit the timeline.
+//
+// The renderer trims audio to the composition length, so a script longer than
+// the video is cut mid-sentence. That is a silent loss of content the caller
+// wrote, and the only way to notice it is to listen to the finished file.
+//
+// Warning rather than refusing: trimming is legitimate when the audio is a
+// music bed meant to fade out, and refusing a render for it would block a
+// reasonable request. The number is what the caller needs — how much was lost.
+func truncatedAudioWarning(props map[string]any, tmo time.Duration) string {
+	audio, ok := props["audio"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	path, _ := audio["path"].(string)
+	if strings.TrimSpace(path) == "" || !fileExists(path) {
+		return ""
+	}
+	duration, ok := props["duration_seconds"].(float64)
+	if !ok || duration <= 0 {
+		return ""
+	}
+	facts, _, err := probe(path, tmo)
+	if err != nil {
+		return ""
+	}
+	format, ok := facts["format"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	audioSeconds, ok := format["duration"].(float64)
+	if !ok || audioSeconds <= duration+0.05 {
+		return ""
+	}
+	return fmt.Sprintf(
+		"audio is %.2fs but the timeline is %.2fs, so %.2fs will be cut off; "+
+			"raise duration_seconds or extend the last cut to keep it",
+		audioSeconds, duration, audioSeconds-duration)
+}
+
 // renderShape reads the frame count and dimensions a render will use, so an
 // estimate can say how long it is likely to take.
 //
@@ -822,6 +862,16 @@ func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any,
 				}
 			}
 			blankWarnings = blankCutWarnings(cuts)
+		}
+
+		// Narration longer than the video is silently CUT OFF.
+		//
+		// Verified: 8.16s of narration against a 4s timeline produced a 4s
+		// file with no warning at all — half the script gone, and the run
+		// reported success. The walkthrough documents this hazard; the tool
+		// said nothing, so a caller learns it only by listening to the result.
+		if msg := truncatedAudioWarning(r.RawProps, tmo); msg != "" {
+			blankWarnings = append(blankWarnings, msg)
 		}
 	}
 

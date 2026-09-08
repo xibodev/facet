@@ -75,9 +75,15 @@ Measured: 28 seconds at 720p and 83 seconds at 1080p. Under a module host, send
 `"async": true` to get a job handle immediately and poll
 `creative.jobs.status` rather than blocking.
 
-The finished file here is 10.05 seconds, not the 9 requested. Remotion rounds
-the composition out past the last cut, so treat `duration_seconds` as a floor
-and check the delivered duration rather than assuming it.
+The finished file here is 9.000 seconds, matching the last cut exactly. That
+was not always true: the composition pads to `lastEnd + 1` when no duration is
+stated, so this step used to deliver 10.05 seconds. Facet now sends the plan's
+own end, and an explicit `duration_seconds` still wins when you want a tail
+past the last cut.
+
+Check the delivered duration anyway. The container reads slightly longer than
+the video stream — a silent AAC track rounds up to whole audio frames — so read
+the video stream's duration, which is the figure that matches the request.
 
 ## 6. Verify the file, not the exit code
 
