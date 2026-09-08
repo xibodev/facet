@@ -20,3 +20,11 @@ bin/facet
 bin/facet-ui
 bin/videokit
 !bin/*.js
+
+# Media produced by tests or ad-hoc runs. Two paid-generation images were
+# committed accidentally because a test invoked a provider for real; the tests
+# no longer bill, and generated media never belongs in the tree.
+/internal/module/*.png
+/internal/module/*.jpg
+/internal/module/*.mp4
+/internal/module/*.mp3
