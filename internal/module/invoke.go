@@ -33,6 +33,19 @@ type Request struct {
 	// rather than blocking until the work completes. Opt-in: existing
 	// consumers, including the human-facing CLI, expect a finished result.
 	Async bool `json:"async,omitempty"`
+	// Roots maps a logical root name declared in permissions.filesystem_* to a
+	// canonicalized absolute path the host supplies per invocation. A module
+	// resolves nothing itself: `facet_bundle` is how the Remotion composer is
+	// found, and resolving it from the working directory made the renderer
+	// depend on where the process happened to be launched.
+	Roots map[string]Root `json:"roots,omitempty"`
+}
+
+// Root is one host-supplied filesystem grant.
+type Root struct {
+	Path string `json:"path"`
+	// Mode is "ro" or "rw"; facet_bundle is always read-only.
+	Mode string `json:"mode"`
 }
 
 // Consent records that a human approved a paid or billable operation. The
@@ -163,6 +176,13 @@ func Invoke(capability string, raw []byte) Envelope {
 	}
 	restore := useBinaries(req.Binaries)
 	defer restore()
+
+	// A host-supplied bundle root is authoritative over discovery: the host
+	// knows where it installed the module's content, and cwd does not.
+	if b, ok := req.Roots["facet_bundle"]; ok && strings.TrimSpace(b.Path) != "" {
+		restoreBundle := useBundleRoot(b.Path)
+		defer restoreBundle()
+	}
 
 	tool := strings.TrimSpace(req.Tool)
 	if pinned != "" {

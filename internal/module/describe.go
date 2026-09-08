@@ -103,7 +103,14 @@ func Describe(version string) Envelope {
 		AgentOverlays:    declaredOverlays,
 		Skills:           declaredSkills,
 		Permissions: Permissions{
-			FilesystemRead:  []string{"project_root"},
+			// project_root is the production workspace Facet reads and writes.
+			// facet_bundle is READ-ONLY and holds the content that ships with
+			// the module: the Remotion composer and its installed npm
+			// dependencies, packs, schemas and styles. It is declared
+			// separately because a host cannot otherwise supply it, and
+			// resolving the composer from the working directory made the
+			// renderer depend on where the process happened to be launched.
+			FilesystemRead:  []string{"project_root", "facet_bundle"},
 			FilesystemWrite: []string{"project_root"},
 			// Named grants, not a blanket boolean: only these providers are
 			// ever contacted, and only these binaries are ever executed.

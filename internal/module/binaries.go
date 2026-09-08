@@ -107,3 +107,13 @@ func useBinaries(bins map[string]string) (restore func()) {
 	toolbox.SetBinaryPaths(bins)
 	return func() { toolbox.SetBinaryPaths(nil) }
 }
+
+// useBundleRoot installs a host-supplied read-only bundle location for one
+// invocation and returns a function restoring discovery.
+//
+// Scoped per call for the same reason binary grants are: authority is granted
+// per invocation and must not outlive the call it was granted for.
+func useBundleRoot(path string) (restore func()) {
+	toolbox.SetBundleRoot(path)
+	return func() { toolbox.SetBundleRoot("") }
+}

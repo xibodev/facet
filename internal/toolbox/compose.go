@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -432,7 +433,37 @@ func doFFmpegCompose(r composeRequest, outPath string, tmo time.Duration) (any, 
 	}, nil, nil
 }
 
+// bundleRoot is a host-supplied read-only bundle location. When set it wins
+// over discovery: the host knows where it installed the module's content, and
+// the working directory does not. Under a module host cwd is not promised at
+// all, which made composer discovery depend on where the process was launched.
+var (
+	bundleMu   sync.RWMutex
+	bundleRoot string
+)
+
+// SetBundleRoot installs the host-supplied bundle location for one invocation.
+// An empty value restores ordinary discovery, which is what the CLI uses.
+func SetBundleRoot(path string) {
+	bundleMu.Lock()
+	bundleRoot = strings.TrimSpace(path)
+	bundleMu.Unlock()
+}
+
+func hostBundleRoot() string {
+	bundleMu.RLock()
+	defer bundleMu.RUnlock()
+	return bundleRoot
+}
+
 func findComposerDir() (string, error) {
+	// A host-supplied bundle is authoritative and checked before anything else.
+	if root := hostBundleRoot(); root != "" {
+		candidate := filepath.Join(root, "remotion-composer")
+		if fileExists(filepath.Join(candidate, "package.json")) {
+			return filepath.Abs(candidate)
+		}
+	}
 	home, _ := os.UserHomeDir()
 	configPaths := []string{".facet.yaml"}
 	if home != "" {
@@ -625,10 +656,23 @@ func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any,
 	}
 	if stdout, err := runCommandDir(tmo, absComposer, "node", args...); err != nil {
 		var failed *toolFailure
-		if errors.As(err, &failed) && failed.err.Code == "command_timeout" {
-			failed.err.Details["output"] = remotionTimeoutDiagnostic(string(stdout))
-			stderr, _ := failed.err.Details["stderr"].(string)
-			failed.err.Details["stderr"] = remotionTimeoutDiagnostic(stderr)
+		if errors.As(err, &failed) {
+			if failed.err.Code == "command_timeout" {
+				failed.err.Details["output"] = remotionTimeoutDiagnostic(string(stdout))
+				stderr, _ := failed.err.Details["stderr"].(string)
+				failed.err.Details["stderr"] = remotionTimeoutDiagnostic(stderr)
+			} else {
+				// "node failed" names the binary, not the cause, and an agent
+				// that cannot tell whether the module is broken or its request
+				// was wrong abandons the module and works around it. Lift the
+				// renderer's own first error line into the message so the
+				// failure is diagnosable without digging through details.
+				stderr, _ := failed.err.Details["stderr"].(string)
+				if reason := remotionFailureReason(stderr, string(stdout)); reason != "" {
+					failed.err.Message = "remotion render failed: " + reason
+				}
+				failed.err.Details["composer_dir"] = absComposer
+			}
 		}
 		return nil, nil, err
 	}
@@ -1078,4 +1122,56 @@ func findBrowserExecutable() string {
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+// ansiEscape strips terminal colouring so a renderer's own error text is
+// readable in a JSON envelope and in a cockpit.
+var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+// remotionFailureReason extracts the renderer's own first error line.
+//
+// A message naming only the binary — "node failed" — leaves a caller unable to
+// tell whether the module is broken or its request was wrong, and an agent that
+// cannot tell abandons the module and works around it. That was observed: a
+// render failure led an agent to fall back to raw ffmpeg and report a blank
+// video as a success.
+//
+// Only lines the renderer itself emitted are lifted, bounded, and stripped of
+// colour codes. Everything else stays in details rather than being guessed at.
+func remotionFailureReason(stderr, stdout string) string {
+	for _, source := range []string{stderr, stdout} {
+		for _, line := range strings.Split(strings.ReplaceAll(source, "\r", "\n"), "\n") {
+			line = strings.TrimSpace(ansiEscape.ReplaceAllString(line, ""))
+			if line == "" {
+				continue
+			}
+			// Remotion labels its errors and then repeats the type, so a real
+			// line reads "Error  Error: Could not find composition with ID X".
+			// Match on the embedded type rather than a prefix, which is what
+			// the actual output looks like once colour codes are stripped.
+			for _, marker := range []string{
+				"Error:", "TypeError:", "ReferenceError:", "SyntaxError:",
+				"Cannot find module", "ENOENT",
+			} {
+				if i := strings.Index(line, marker); i >= 0 {
+					// Puppeteer teardown noise is a symptom of the real
+					// failure, not the failure, and naming it would send a
+					// caller after the wrong thing.
+					if strings.Contains(line, "Was not able to close puppeteer page") {
+						break
+					}
+					return boundedReason(strings.TrimSpace(line[i:]))
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func boundedReason(s string) string {
+	const limit = 300
+	if len(s) > limit {
+		return s[:limit] + "..."
+	}
+	return s
 }
