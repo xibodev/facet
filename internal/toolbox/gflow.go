@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -342,7 +343,17 @@ func generateGFlow(args []string, prompt, kind, output string, count int, timeou
 			return nil, failure("provider_response_invalid", "gflow local_path must name a nonempty regular file", nil)
 		}
 		media[i].LocalPath = rel
-		outputs[i] = gflowOutput{ID: item.ID, Type: item.Type, MIMEType: item.MIMEType, Output: targets[i], SourceFile: filepath.ToSlash(rel)}
+		// Report the media type of the BYTES, not the provider's claim about
+		// them. Google Flow returns JPEG data while declaring "image/png", so
+		// passing its value through published a false content type to any host
+		// that trusts it — and the host validates artifact metadata. Detection
+		// reads the file's own signature; the provider's value is kept only
+		// when the bytes do not identify themselves.
+		mime := item.MIMEType
+		if detected := detectMediaType(resolved); detected != "" {
+			mime = detected
+		}
+		outputs[i] = gflowOutput{ID: item.ID, Type: item.Type, MIMEType: mime, Output: targets[i], SourceFile: filepath.ToSlash(rel)}
 	}
 	copies := make([]string, count)
 	for i, item := range media {
@@ -374,4 +385,29 @@ func generateGFlow(args []string, prompt, kind, output string, count int, timeou
 	}
 	quarantine = false
 	return outputs, nil
+}
+
+// detectMediaType reports the media type implied by a file's own signature, or
+// "" when the bytes do not identify themselves.
+//
+// A provider's declared content type is a claim; the bytes are evidence. Google
+// Flow declares "image/png" for JPEG data, so relaying its value published a
+// content type contradicted by the file itself.
+func detectMediaType(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	var header [512]byte
+	n, err := f.Read(header[:])
+	if err != nil && n == 0 {
+		return ""
+	}
+	switch detected := http.DetectContentType(header[:n]); {
+	case strings.HasPrefix(detected, "image/"), strings.HasPrefix(detected, "video/"),
+		strings.HasPrefix(detected, "audio/"):
+		return detected
+	}
+	return ""
 }
