@@ -613,6 +613,64 @@ func mapSceneToCut(scene map[string]any) map[string]any {
 	return cut
 }
 
+// cutRequirements mirrors the composition's own guard conditions: a cut whose
+// type is recognised renders NOTHING unless the named field is present.
+//
+// Kept as data rather than prose because the failure it prevents is silent —
+// a well-formed mp4 with an empty frame, reported as a success. Source of
+// truth is remotion-composer/src/Explainer.tsx, where each of these appears as
+// `cut.type === "x" && cut.y`.
+var cutRequirements = map[string][]string{
+	"text_card":        {"text"},
+	"hero_title":       {"text"},
+	"callout":          {"text"},
+	"stat_card":        {"stat"},
+	"terminal_scene":   {"steps"},
+	"bar_chart":        {"chartData"},
+	"pie_chart":        {"chartData"},
+	"kpi_grid":         {"chartData"},
+	"line_chart":       {"chartSeries"},
+	"progress_bar":     {"progress"},
+	"comparison":       {"leftLabel", "rightLabel", "leftValue", "rightValue"},
+	"screenshot_scene": {"backgroundImage", "screenshotSteps"},
+}
+
+// blankCutWarnings names cuts that will render empty.
+//
+// A render costs 12s at 640x360 and 83s at 1080p, and the result is a valid
+// file the caller has no reason to doubt: `ok:true`, an artifact on disk, a
+// plausible byte count. Verified — a scene with `txt` instead of `text`
+// rendered blank and reported success, and only output_review's content gate
+// disagreed. That gate is a separate opt-in step, so nothing on the render
+// path itself said a word.
+//
+// Warning rather than refusing: the composition may gain a type this map does
+// not know, and refusing an unknown-but-valid cut would be worse than a
+// warning the caller can read. The names come from the request, so a typo is
+// visible in the message.
+func blankCutWarnings(cuts []map[string]any) []string {
+	var out []string
+	for i, cut := range cuts {
+		kind, _ := cut["type"].(string)
+		required, known := cutRequirements[kind]
+		if !known {
+			continue
+		}
+		var missing []string
+		for _, field := range required {
+			if v, present := cut[field]; !present || v == nil || v == "" {
+				missing = append(missing, field)
+			}
+		}
+		if len(missing) > 0 {
+			out = append(out, fmt.Sprintf(
+				"cut %d (type %q) is missing %s and will render blank; "+
+					"check for a misspelled field", i, kind, strings.Join(missing, ", ")))
+		}
+	}
+	return out
+}
+
 func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any, []string, error) {
 	absComposer, err := findComposerDir()
 	if err != nil {
@@ -651,6 +709,27 @@ func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any,
 			compositionID = "TalkingHead"
 		default:
 			compositionID = "Explainer"
+		}
+	}
+
+	// Warn about cuts that will render blank BEFORE spending the render.
+	//
+	// A blank render is a valid file the caller has no reason to doubt, and
+	// the only thing that disagrees is output_review's content gate — a
+	// separate opt-in step. So the render path itself stays silent about its
+	// own most expensive silent failure unless this says something.
+	var blankWarnings []string
+	if r.RawProps != nil {
+		if raw, ok := r.RawProps["cuts"].([]map[string]any); ok {
+			blankWarnings = blankCutWarnings(raw)
+		} else if anyCuts, ok := r.RawProps["cuts"].([]any); ok {
+			cuts := make([]map[string]any, 0, len(anyCuts))
+			for _, c := range anyCuts {
+				if cm, ok := c.(map[string]any); ok {
+					cuts = append(cuts, cm)
+				}
+			}
+			blankWarnings = blankCutWarnings(cuts)
 		}
 	}
 
@@ -772,6 +851,10 @@ func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any,
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// A blank-cut warning must survive to the caller: it is the only signal on
+	// the render path that the file just produced may contain nothing.
+	warnings = append(blankWarnings, warnings...)
 
 	return map[string]any{
 		"operation":      "remotion_render",
