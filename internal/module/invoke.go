@@ -227,53 +227,11 @@ func Invoke(capability string, raw []byte) Envelope {
 		return fail(OpInvoke, reqID, "invalid_request", err.Error(),
 			map[string]any{"capability": capability}, false)
 	}
-	restore := useBinaries(req.Binaries)
-	defer restore()
-
-	// A host-supplied bundle root is authoritative over discovery: the host
-	// knows where it installed the module's content, and cwd does not.
-	if b, ok := req.Roots["facet_bundle"]; ok && strings.TrimSpace(b.Path) != "" {
-		restoreBundle := useBundleRoot(b.Path)
-		defer restoreBundle()
+	projectRoot, releaseGrants, grantFailure := applyGrants(&req, reqID)
+	if grantFailure != nil {
+		return *grantFailure
 	}
-
-	// Relative paths are measured from the project root the host granted.
-	//
-	// project_root was declared, used to label artifacts, and never resolved
-	// against: the host sets the working directory to the module's install
-	// directory, so a user-supplied "source.mp4" named nothing findable and
-	// every relative path failed input_not_found. Working inside the granted
-	// root is what makes a caller's relative path mean what they wrote.
-	var projectRoot string
-	if pr, ok := req.Roots["project_root"]; ok && strings.TrimSpace(pr.Path) != "" {
-		restoreDir, err := useWorkingRoot(pr.Path)
-		if err != nil {
-			return fail(OpInvoke, reqID, "invalid_request",
-				"the granted project_root could not be entered",
-				map[string]any{"root": "project_root", "error": bounded(err.Error())}, false)
-		}
-		defer restoreDir()
-		// The resolved root, captured while it is current, so async work can
-		// be made independent of the working directory below.
-		if abs, err := os.Getwd(); err == nil {
-			projectRoot = abs
-		}
-
-		// A granted root is a CONFINEMENT, not just a base for resolution.
-		// Verified before this check: output_path "../escaped.mp4" wrote a
-		// real file outside the granted root and reported it back as the
-		// relative path "../escaped.mp4", which the host validator accepts
-		// because it is not absolute. Resolving against the root without
-		// enforcing it turns the grant into a suggestion.
-		//
-		// Refused before the tool runs: after the write the file already
-		// exists outside the root, and no envelope can undo that.
-		if bad, ok := requestEscapesRoot(req.Input); ok {
-			return fail(OpInvoke, reqID, "invalid_request",
-				"a request path leaves the granted project_root: "+bad,
-				map[string]any{"root": "project_root", "path": bad}, false)
-		}
-	}
+	defer releaseGrants()
 
 	tool := strings.TrimSpace(req.Tool)
 	if pinned != "" {
@@ -425,6 +383,79 @@ func isLongRunning(capability string) bool {
 
 // Estimate validates a request and reports expected effects and cost. It never
 // generates media and never bills.
+// applyGrants installs every per-invocation grant the host supplied and
+// returns the resolved project root plus a restore function.
+//
+// It exists because Estimate had NONE of this. It is a separate entry point
+// that never entered the granted project_root, so an identical request
+// succeeded through run and failed through estimate with input_not_found:
+//
+//	creative.tools.run      -> ok
+//	creative.tools.estimate -> input_not_found
+//
+// The skill instructs an agent to estimate before anything consequential, so
+// the check meant to prevent a wasted call was the one that could not resolve
+// the caller's paths. Binary grants and the bundle root were missing there
+// too, which would make an estimate report a dependency as absent when the
+// host had supplied it.
+//
+// Sharing one implementation is the point: two paths that must agree about
+// grants will not stay in agreement if each installs its own.
+func applyGrants(req *Request, reqID string) (projectRoot string, restore func(), failure *Envelope) {
+	var undo []func()
+	release := func() {
+		for i := len(undo) - 1; i >= 0; i-- {
+			undo[i]()
+		}
+	}
+
+	undo = append(undo, useBinaries(req.Binaries))
+
+	// A host-supplied bundle root is authoritative over discovery: the host
+	// knows where it installed the module's content, and cwd does not.
+	if b, ok := req.Roots["facet_bundle"]; ok && strings.TrimSpace(b.Path) != "" {
+		undo = append(undo, useBundleRoot(b.Path))
+	}
+
+	// Relative paths are measured from the project root the host granted.
+	//
+	// project_root was declared, used to label artifacts, and never resolved
+	// against: the host sets the working directory to the module's install
+	// directory, so a user-supplied "source.mp4" named nothing findable and
+	// every relative path failed input_not_found.
+	if pr, ok := req.Roots["project_root"]; ok && strings.TrimSpace(pr.Path) != "" {
+		restoreDir, err := useWorkingRoot(pr.Path)
+		if err != nil {
+			release()
+			env := fail(OpInvoke, reqID, "invalid_request",
+				"the granted project_root could not be entered",
+				map[string]any{"root": "project_root", "error": bounded(err.Error())}, false)
+			return "", func() {}, &env
+		}
+		undo = append(undo, restoreDir)
+		if abs, err := os.Getwd(); err == nil {
+			projectRoot = abs
+		}
+
+		// A granted root is a CONFINEMENT, not just a base for resolution.
+		// Verified: output_path "../escaped.mp4" wrote a real file outside the
+		// granted root and reported it back as a relative path, which the host
+		// validator accepts because it is not absolute.
+		//
+		// Refused before the tool runs: after the write the file already
+		// exists outside the root, and no envelope can undo that.
+		if bad, ok := requestEscapesRoot(req.Input); ok {
+			release()
+			env := fail(OpInvoke, reqID, "invalid_request",
+				"a request path leaves the granted project_root: "+bad,
+				map[string]any{"root": "project_root", "path": bad}, false)
+			return "", func() {}, &env
+		}
+	}
+
+	return projectRoot, release, nil
+}
+
 func Estimate(capability string, raw []byte) Envelope {
 	var req Request
 	if len(raw) > 0 {
@@ -446,6 +477,16 @@ func Estimate(capability string, raw []byte) Envelope {
 			"capability is not provided by this module",
 			map[string]any{"capability": capability}, false)
 	}
+
+	if err := ValidateBinaries(req.Binaries); err != nil {
+		return fail(OpInvoke, reqID, "invalid_request", err.Error(),
+			map[string]any{"capability": capability}, false)
+	}
+	_, releaseGrants, grantFailure := applyGrants(&req, reqID)
+	if grantFailure != nil {
+		return *grantFailure
+	}
+	defer releaseGrants()
 
 	tool := strings.TrimSpace(req.Tool)
 	if pinned != "" {
