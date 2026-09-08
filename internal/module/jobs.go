@@ -236,11 +236,27 @@ func jobHandleEnvelope(reqID, capability, tool string, job *Job) Envelope {
 		RequestID: reqID,
 		OK:        true,
 		Result: map[string]any{
-			"capability":      capability,
-			"tool":            tool,
-			"job_id":          job.JobID,
-			"state":           string(JobRunning),
-			"poll_capability": CapJobsStatus,
+			"capability": capability,
+			"tool":       tool,
+			"job_id":     job.JobID,
+			"state":      string(JobRunning),
+			// Polling only works INSIDE the process that created the job:
+			// state lives in memory and a per-invocation host starts a new
+			// process for every call, where the id is unknown.
+			//
+			// Declaring poll_capability unconditionally promised a poll that
+			// returns unknown_job to any host that spawns per invocation, and
+			// a host trusting it would report a completed render as lost.
+			//
+			// What IS guaranteed: this handle is written to stdout
+			// immediately (measured: 0.0s against a 12.8s render) and the
+			// process then blocks until the work finishes, so the render is
+			// complete when the process exits. A host that spawns per
+			// invocation should wait for exit and read the artifacts, not
+			// poll.
+			"poll_capability":   CapJobsStatus,
+			"poll_scope":        "same_process",
+			"completed_on_exit": true,
 		},
 		Warnings: []string{},
 		Execution: Execution{

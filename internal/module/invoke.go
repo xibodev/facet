@@ -244,6 +244,7 @@ func Invoke(capability string, raw []byte) Envelope {
 	// directory, so a user-supplied "source.mp4" named nothing findable and
 	// every relative path failed input_not_found. Working inside the granted
 	// root is what makes a caller's relative path mean what they wrote.
+	var projectRoot string
 	if pr, ok := req.Roots["project_root"]; ok && strings.TrimSpace(pr.Path) != "" {
 		restoreDir, err := useWorkingRoot(pr.Path)
 		if err != nil {
@@ -252,6 +253,11 @@ func Invoke(capability string, raw []byte) Envelope {
 				map[string]any{"root": "project_root", "error": bounded(err.Error())}, false)
 		}
 		defer restoreDir()
+		// The resolved root, captured while it is current, so async work can
+		// be made independent of the working directory below.
+		if abs, err := os.Getwd(); err == nil {
+			projectRoot = abs
+		}
 
 		// A granted root is a CONFINEMENT, not just a base for resolution.
 		// Verified before this check: output_path "../escaped.mp4" wrote a
@@ -345,6 +351,18 @@ func Invoke(capability string, raw []byte) Envelope {
 	// error inside the budget instead.
 	input := applyDeadline(req.Input, req.DeadlineMS)
 
+	// Async work cannot depend on the working directory: it is process-global
+	// and restored when Invoke returns, which is BEFORE a job finishes. So the
+	// caller's relative paths are resolved against the granted root here,
+	// while that root is still current, and the job runs on absolute paths.
+	//
+	// Refusing the combination (the previous behaviour) would have left the
+	// cockpit unable to poll a render, which is the whole reason async exists:
+	// an 83s 1080p render otherwise shows nothing until it completes.
+	if req.Async && isLongRunning(capability) && projectRoot != "" {
+		input = absolutizeRequestPaths(input, projectRoot)
+	}
+
 	args, err := toolboxArgs(op, tool, input)
 	if err != nil {
 		return fail(OpInvoke, reqID, "invalid_request", err.Error(),
@@ -364,23 +382,6 @@ func Invoke(capability string, raw []byte) Envelope {
 	// that the async path would resolve against an empty PATH — the same
 	// declared-but-not-wired failure the grant itself was added to fix.
 	if req.Async && isLongRunning(capability) {
-		// A granted project_root cannot travel into a goroutine: the working
-		// directory is process-global, and `restore` runs when this function
-		// returns — before the job finishes. The job would resolve the
-		// caller's relative paths wherever the process happened to be, and a
-		// concurrent request entering its own root would move this one
-		// mid-render.
-		//
-		// Refusing is better than a race that silently reads the wrong files.
-		// The caller can pass absolute paths for async work, or run it
-		// synchronously; both are correct, and neither is a coin flip.
-		if pr, ok := req.Roots["project_root"]; ok && strings.TrimSpace(pr.Path) != "" {
-			return fail(OpInvoke, reqID, "invalid_request",
-				"async work cannot resolve paths against a granted project_root; "+
-					"pass absolute paths or invoke synchronously",
-				map[string]any{"root": "project_root", "capability": capability}, false)
-		}
-
 		job := startJob(capability, tool)
 		grants := req.Binaries
 		go func() {
@@ -1029,6 +1030,54 @@ func requestEscapesRoot(raw json.RawMessage) (string, bool) {
 		return "", false
 	}
 	return walk("", input)
+}
+
+// absolutizeRequestPaths rewrites every path-bearing field to an absolute path
+// under root, so the work no longer depends on a working directory.
+//
+// This is what lets async work honour a granted project_root. The working
+// directory is process-global and restored when Invoke returns — before a job
+// finishes — so a goroutine could not safely rely on it. Resolving the paths
+// while still inside the root removes the dependency entirely rather than
+// racing on it.
+//
+// Confinement is checked before this runs, so a path that escapes the root is
+// already refused and never reaches here.
+func absolutizeRequestPaths(raw json.RawMessage, root string) json.RawMessage {
+	var input any
+	if len(raw) == 0 || json.Unmarshal(raw, &input) != nil {
+		return raw
+	}
+
+	var walk func(key string, v any) any
+	walk = func(key string, v any) any {
+		switch t := v.(type) {
+		case string:
+			if !isPathKey(key) || t == "" || isAbsolutePath(t) {
+				return t
+			}
+			return filepath.ToSlash(filepath.Join(root, filepath.FromSlash(t)))
+		case []any:
+			out := make([]any, len(t))
+			for i, e := range t {
+				out[i] = walk(key, e)
+			}
+			return out
+		case map[string]any:
+			out := make(map[string]any, len(t))
+			for k, e := range t {
+				out[k] = walk(k, e)
+			}
+			return out
+		}
+		return v
+	}
+
+	rewritten, err := json.Marshal(walk("", input))
+	if err != nil {
+		return raw
+	}
+	return rewritten
 }
 
 // isPathKey reports whether a request field carries a filesystem path.

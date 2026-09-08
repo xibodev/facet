@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -138,49 +137,5 @@ func TestGrantedProjectRootIsEnteredAndRestored(t *testing.T) {
 func TestUnenterableRootIsRefused(t *testing.T) {
 	if _, err := useWorkingRoot(filepath.Join(t.TempDir(), "does-not-exist")); err == nil {
 		t.Error("a nonexistent root was entered")
-	}
-}
-
-// The working directory is process-global, and an async job outlives the call
-// that started it: `restore` runs when Invoke returns, before the job finishes.
-// A job would resolve the caller's relative paths wherever the process happened
-// to be, and a concurrent request entering its own root would move a running
-// render mid-flight.
-//
-// Refusing beats a race that silently reads the wrong files.
-func TestAsyncWithProjectRootIsRefused(t *testing.T) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	root, err := json.Marshal(cwd)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := []byte(`{
-	  "tool":"video_compose",
-	  "input":{"spec":{}},
-	  "async":true,
-	  "roots":{"project_root":{"path":` + string(root) + `,"mode":"rw"}}
-	}`)
-
-	env := Invoke(CapToolsRun, body)
-	if env.OK {
-		t.Fatal("async work was accepted with a project_root it cannot honour")
-	}
-	if env.Error.Code != "invalid_request" {
-		t.Errorf("code = %q, want invalid_request", env.Error.Code)
-	}
-	if !strings.Contains(env.Error.Message, "project_root") {
-		t.Errorf("the refusal does not say what is wrong: %q", env.Error.Message)
-	}
-
-	// The working directory must not be left moved by a refused request.
-	after, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after != cwd {
-		t.Errorf("a refused request left the process in %q, want %q", after, cwd)
 	}
 }
