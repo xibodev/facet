@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"os"
@@ -90,7 +91,37 @@ func failure(code, message string, details map[string]any) error {
 	if details == nil {
 		details = map[string]any{}
 	}
-	return &toolFailure{&ToolError{Code: code, Message: message, Details: details}}
+	return &toolFailure{&ToolError{
+		Code: code, Message: message, Retryable: retryableCode(code), Details: details,
+	}}
+}
+
+// retryableCode says whether the SAME request could succeed if tried again.
+//
+// ToolError.Retryable was declared and never set anywhere, so every error told
+// the host "do not retry" — including a timeout, which is the one failure a
+// larger budget reliably fixes. A host that honours the flag would give up on
+// a render that needed nothing but more time.
+//
+// Decided by code rather than per call site: there are 116 command_failed
+// constructions alone, and a judgement repeated at every one of them is a
+// judgement that drifts.
+//
+// Retryable means TRANSIENT, not "worth a second attempt by a human":
+//   - a timeout may fit in a larger budget
+//   - a provider returning something unusable is usually a transient upstream
+//     fault rather than a wrong request
+//
+// Everything else is deliberately false. A malformed request, a missing
+// credential, an absent dependency and an input that does not exist all fail
+// identically on a retry, and telling a host otherwise invites a loop that
+// burns time and, for a paid provider, money.
+func retryableCode(code string) bool {
+	switch code {
+	case "command_timeout", "provider_response_invalid":
+		return true
+	}
+	return false
 }
 
 func executionFor(tool string) Execution {
@@ -1093,10 +1124,32 @@ func runCommand(timeout time.Duration, program string, args ...string) ([]byte, 
 	return runCommandContext(ctx, program, args...)
 }
 
+// timeoutMessage says what ran out of time and what to do about it.
+//
+// "node was cancelled or timed out" names the binary rather than the work and
+// suggests nothing. An agent reading it cannot tell whether the render was
+// impossible or merely given four seconds too few — and the honest answer is
+// usually the latter, because the module clamps a tool's timeout to the host's
+// remaining budget.
+func timeoutMessage(program string, budget time.Duration) string {
+	if budget > 0 {
+		return fmt.Sprintf(
+			"%s did not finish within %s; raise timeout_seconds, or the host's "+
+				"deadline_ms if that is the smaller budget", program, budget)
+	}
+	return program + " did not finish in the time allowed; raise timeout_seconds, " +
+		"or the host's deadline_ms if that is the smaller budget"
+}
+
 func runCommandContext(ctx context.Context, program string, args ...string) ([]byte, error) {
 	resolved, err := lookPath(program)
 	if err != nil {
 		return nil, failure("dependency_missing", program+" is not available", nil)
+	}
+	// Recorded before the run so the message can name the budget that expired.
+	var budget time.Duration
+	if deadline, ok := ctx.Deadline(); ok {
+		budget = time.Until(deadline)
 	}
 	cmd := exec.CommandContext(ctx, resolved, args...)
 	var stdout, stderr bytes.Buffer
@@ -1104,7 +1157,7 @@ func runCommandContext(ctx context.Context, program string, args ...string) ([]b
 	cmd.Stderr = &stderr
 	err = cmd.Run()
 	if ctx.Err() != nil {
-		return nil, failure("command_timeout", program+" was cancelled or timed out", map[string]any{"stderr": bounded(stderr.String())})
+		return nil, failure("command_timeout", timeoutMessage(program, budget.Round(time.Second)), map[string]any{"stderr": bounded(stderr.String())})
 	}
 	if err != nil {
 		return nil, failure("command_failed", program+" failed", map[string]any{"stderr": bounded(stderr.String()), "error": bounded(err.Error())})
@@ -1128,7 +1181,7 @@ func runCommandDir(timeout time.Duration, dir, program string, args ...string) (
 	cmd.Stderr = &stderr
 	err = cmd.Run()
 	if ctx.Err() != nil {
-		return []byte(bounded(stdout.String())), failure("command_timeout", program+" was cancelled or timed out", map[string]any{"stderr": bounded(stderr.String())})
+		return []byte(bounded(stdout.String())), failure("command_timeout", timeoutMessage(program, timeout), map[string]any{"stderr": bounded(stderr.String())})
 	}
 	if err != nil {
 		return nil, failure("command_failed", program+" failed", map[string]any{"stderr": bounded(stderr.String()), "error": bounded(err.Error()), "output": bounded(stdout.String())})
