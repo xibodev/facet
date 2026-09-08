@@ -40,6 +40,32 @@ type Request struct {
 	// found, and resolving it from the working directory made the renderer
 	// depend on where the process happened to be launched.
 	Roots map[string]Root `json:"roots,omitempty"`
+
+	// The host sets these on every invocation. They are modelled so a strict
+	// decoder accepts a real host request: rejecting a field the host always
+	// sends would refuse every genuine call, and tolerating unknown fields
+	// would silently discard a misspelled `consent`. Both are unacceptable, so
+	// the protocol's own fields are named explicitly.
+	Protocol   string `json:"protocol,omitempty"`
+	Capability string `json:"capability,omitempty"`
+	// Grants are the permissions actually authorized for THIS invocation. A
+	// module must assume it has nothing that is not listed.
+	Grants *Grants `json:"grants,omitempty"`
+	// DeadlineMS is the host's wall-clock budget; it enforces it by killing the
+	// process tree regardless, so this is a courtesy rather than a promise.
+	DeadlineMS int `json:"deadline_ms,omitempty"`
+	// MaxOutputBytes is the stdout ceiling. Facet returns artifact pointers
+	// rather than inline payloads, so it is recorded rather than acted on.
+	MaxOutputBytes int `json:"max_output_bytes,omitempty"`
+}
+
+// Grants is what the host authorized for one invocation.
+type Grants struct {
+	Network       []string `json:"network"`
+	Credentials   []string `json:"credentials"`
+	PaidProviders []string `json:"paid_providers"`
+	Publish       bool     `json:"publish"`
+	Subprocess    []string `json:"subprocess"`
 }
 
 // Root is one host-supplied filesystem grant.
@@ -188,6 +214,25 @@ func Invoke(capability string, raw []byte) Envelope {
 	tool := strings.TrimSpace(req.Tool)
 	if pinned != "" {
 		tool = pinned
+	}
+
+	// Grant gate, checked BEFORE consent.
+	//
+	// Grants are what the host authorized for THIS invocation, and a module
+	// must assume it has nothing that is not listed. Consent and a grant are
+	// different things: a human approving the spend does not mean the host
+	// authorized the provider, and running on consent alone would let a module
+	// reach a provider the host deliberately withheld.
+	if op == "run" && paidTools[tool] && req.Grants != nil {
+		provider := paidProviderFor(tool)
+		if !contains(req.Grants.PaidProviders, provider) {
+			return fail(OpInvoke, reqID, "permission_denied",
+				"the host did not grant the paid provider this tool requires",
+				map[string]any{
+					"tool": tool, "provider": provider,
+					"granted_paid_providers": req.Grants.PaidProviders,
+				}, false)
+		}
 	}
 
 	// Consent gate. Paid generation requires explicit human approval, and an
@@ -642,4 +687,33 @@ func decodeRequest(raw []byte, dst any) error {
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.DisallowUnknownFields()
 	return d.Decode(dst)
+}
+
+// paidProviderFor names the billing provider behind a paid tool, matching the
+// names declared in permissions.paid_providers.
+func paidProviderFor(tool string) string {
+	switch tool {
+	case "gflow_video", "gflow_image":
+		return "google_flow"
+	case "openai_image", "openai_tts", "sora_video":
+		return "openai"
+	case "elevenlabs_tts":
+		return "elevenlabs"
+	case "flux_image":
+		return "fal"
+	case "kling_video":
+		return "kling"
+	}
+	// An unrecognised paid tool fails closed: an empty provider matches no
+	// grant, so it is refused rather than allowed by omission.
+	return ""
+}
+
+func contains(list []string, want string) bool {
+	for _, v := range list {
+		if v == want {
+			return true
+		}
+	}
+	return false
 }
