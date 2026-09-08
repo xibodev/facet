@@ -282,10 +282,18 @@ func jobHandleEnvelope(reqID, capability, tool string, job *Job) Envelope {
 			Local:          false,
 			Network:        false,
 			ExternalWrites: false,
-			Provider:       "facet",
-			EstimatedCost:  nil,
-			ActualCost:     nil,
-			Artifacts:      []Artifact{},
+			// The work has not run, so its provider is not known yet. Report
+			// the capability's DECLARED provider rather than inventing one.
+			//
+			// This said "facet", which is not a provider at all — it is this
+			// module's name — and it contradicted the capability's declared
+			// "varies" on every async call. The host showed the reported value
+			// to the operator, so a handle claimed a provider the declaration
+			// said could be anything, before anything had been dispatched.
+			Provider:      ProviderVaries,
+			EstimatedCost: nil,
+			ActualCost:    nil,
+			Artifacts:     []Artifact{},
 		},
 	}
 }

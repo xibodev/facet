@@ -470,7 +470,7 @@ func capabilityList() []Capability {
 			// worst case. CostKnown false forces host approval.
 			Effects: Effects{
 				Local: false, Network: true, ExternalWrites: true,
-				Provider: "varies", CostKnown: false,
+				Provider: ProviderVaries, CostKnown: false,
 			},
 		},
 		{

@@ -99,3 +99,41 @@ func TestJobStatusGeneratesAnIDWhenNoneIsSupplied(t *testing.T) {
 		t.Errorf("the polling envelope is invalid: %v", err)
 	}
 }
+
+// A job handle reports the work's provider before the work has run, so the
+// only honest value is the capability's DECLARED one.
+//
+// It reported "facet", which is not a provider — it is this module's name —
+// and it contradicted the declared "varies" on every async call. The host
+// warned on each one and showed the reported value to the operator:
+//
+//	capability "creative.tools.run" declared provider "varies" but the
+//	invocation reported "facet"
+func TestJobHandleReportsTheDeclaredProvider(t *testing.T) {
+	env := jobHandleEnvelope("req_test", CapToolsRun, "video_compose",
+		&Job{JobID: "job_test", State: JobRunning})
+
+	if env.Execution.Provider != ProviderVaries {
+		t.Errorf("handle provider = %q, want the declared %q",
+			env.Execution.Provider, ProviderVaries)
+	}
+
+	// It must match what describe declares for the capability, or the host
+	// warns again with a different pair of values.
+	desc, ok := Describe("test").Result.(Descriptor)
+	if !ok {
+		t.Fatal("describe did not return a Descriptor")
+	}
+	for _, c := range desc.Capabilities {
+		if c.ID == CapToolsRun && c.Effects.Provider != env.Execution.Provider {
+			t.Errorf("declared %q but a handle reports %q",
+				c.Effects.Provider, env.Execution.Provider)
+		}
+	}
+
+	// A handle is not a completed run: cost stays null rather than claiming
+	// zero for work that has not happened.
+	if env.Execution.EstimatedCost != nil || env.Execution.ActualCost != nil {
+		t.Error("a job handle reported a cost for work that has not run")
+	}
+}

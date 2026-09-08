@@ -22,6 +22,11 @@ const (
 	OpInvoke   = "invoke"
 )
 
+// ProviderVaries is declared by a capability that dispatches any tool, so the
+// provider is not knowable until one is selected. It is a DECLARATION value,
+// and an invocation replaces it with the provider actually used.
+const ProviderVaries = "varies"
+
 // ArtifactKindOutput is the kind every Facet artifact carries.
 //
 // Facet emits ONE kind: a file a tool wrote. The host validates an artifact's
