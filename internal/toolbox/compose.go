@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -128,7 +129,11 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 					}
 				}
 				if last > 0 {
-					rawMap["duration_seconds"] = last
+					fps := 30.0
+					if v, ok := rawMap["fps"].(float64); ok && v > 0 {
+						fps = v
+					}
+					rawMap["duration_seconds"] = frameAlignedDuration(last, fps)
 				}
 			}
 
@@ -236,7 +241,11 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 			// composition's own default is untouched for anyone relying on it.
 			if _, given := remotionProps["duration_seconds"]; !given {
 				if end := lastCutEnd(cuts); end > 0 {
-					remotionProps["duration_seconds"] = end
+					fps := 30.0
+					if v, ok := remotionProps["fps"].(float64); ok && v > 0 {
+						fps = v
+					}
+					remotionProps["duration_seconds"] = frameAlignedDuration(end, fps)
 				}
 			}
 			r := composeRequest{
@@ -690,6 +699,28 @@ func renderShape(rawMap map[string]any, lastEnd float64) (frames, width, height 
 	fps := num("fps", 30)
 	seconds := num("duration_seconds", lastEnd)
 	return int(seconds * fps), int(num("width", 1920)), int(num("height", 1080))
+}
+
+// frameAlignedDuration rounds a duration UP to a whole frame boundary.
+//
+// The composition requires duration_seconds * fps to be a whole frame count
+// and refuses anything else outright. Cuts matched to narration land on
+// arbitrary boundaries — 8.16 seconds of speech at 30fps is 244.8 frames — so
+// sending the plan's raw end failed the render entirely:
+//
+//	Explainer duration_seconds * fps must be a positive safe integer frame count
+//
+// Found by running the narrated walkthrough end to end. Every earlier test
+// used whole-second timings, where the problem cannot appear.
+//
+// Rounds UP so the last cut is never clipped: a frame short would cut the
+// final moment of the video the caller asked for.
+func frameAlignedDuration(seconds, fps float64) float64 {
+	if seconds <= 0 || fps <= 0 {
+		return seconds
+	}
+	frames := math.Ceil(seconds*fps - 1e-9)
+	return frames / fps
 }
 
 // lastCutEnd reports when the final cut ends, which is when the video should.

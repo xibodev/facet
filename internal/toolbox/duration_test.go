@@ -1,6 +1,9 @@
 package toolbox
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 // A scene plan states when it ends, and the rendered video should end there.
 //
@@ -77,5 +80,53 @@ func TestCutsAndScenesAgreeOnDuration(t *testing.T) {
 	}
 	if fromCuts != 4.5 {
 		t.Errorf("end = %v, want 4.5 — the last cut's out_seconds", fromCuts)
+	}
+}
+
+// A derived duration must land on a whole frame boundary.
+//
+// The composition requires duration_seconds * fps to be a whole frame count
+// and refuses anything else outright. Cuts matched to narration land on
+// arbitrary boundaries — 8.16s of speech at 30fps is 244.8 frames — so sending
+// the plan's raw end failed the render entirely:
+//
+//	Explainer duration_seconds * fps must be a positive safe integer frame count
+//
+// I introduced this with the padding fix and did not see it, because every
+// test I had written used whole-second timings. It surfaced only on running
+// the narrated walkthrough end to end, where the timings come from speech.
+func TestDerivedDurationLandsOnAFrame(t *testing.T) {
+	for _, c := range []struct {
+		seconds, fps, want float64
+	}{
+		// The real case: 8.16s of narration at 30fps.
+		{8.16, 30, 245.0 / 30},
+		{4.5, 30, 4.5},          // already whole (135 frames)
+		{2.0, 30, 2.0},          // already whole
+		{1.0 / 3, 24, 8.0 / 24}, // 8 frames exactly
+		{3.999, 25, 100.0 / 25}, // rounds up to 100 frames
+	} {
+		got := frameAlignedDuration(c.seconds, c.fps)
+		frames := got * c.fps
+		if math.Abs(frames-math.Round(frames)) > 1e-6 {
+			t.Errorf("%vs at %vfps gave %v frames, not a whole count", c.seconds, c.fps, frames)
+		}
+		if math.Abs(got-c.want) > 1e-9 {
+			t.Errorf("%vs at %vfps = %v, want %v", c.seconds, c.fps, got, c.want)
+		}
+		// Rounding UP matters: a frame short clips the end of the video the
+		// caller asked for.
+		if got < c.seconds-1e-9 {
+			t.Errorf("%vs was rounded DOWN to %v, clipping the last moment", c.seconds, got)
+		}
+	}
+}
+
+// Nothing usable in, nothing invented out.
+func TestFrameAlignmentLeavesNonsenseAlone(t *testing.T) {
+	for _, c := range [][2]float64{{0, 30}, {-1, 30}, {5, 0}, {5, -30}} {
+		if got := frameAlignedDuration(c[0], c[1]); got != c[0] {
+			t.Errorf("frameAlignedDuration(%v, %v) = %v, want it untouched", c[0], c[1], got)
+		}
 	}
 }
