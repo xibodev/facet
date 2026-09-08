@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
 type reviewRequest struct {
@@ -415,12 +416,69 @@ func doVisualQA(op string, data []byte) (any, []string, error) {
 	}
 }
 
-// blankFrameBytes is the encoded size below which a sampled JPEG is treated as
-// carrying no content. Measured on real output at 640x360: blank frames encode
-// to roughly 2.9-4.8KB while frames with text or imagery reach 10-17KB. The
-// threshold is deliberately low so a legitimately sparse frame — a title card
-// on a plain background — is not called empty.
+// blankFrameBytes is a FALLBACK used only when a frame cannot be decoded.
+//
+// Encoded size is a poor proxy for content and produced a false negative on
+// exactly the case it was meant to protect. Measured at 640x360:
+//
+//	"Fix check"      3179 bytes   0.247% bright pixels   REAL TEXT
+//	"Made from chat" 9464 bytes   3.331% bright pixels   real text
+//	no text at all   2267 bytes   0.035% bright pixels   genuinely blank
+//
+// A short caption on a plain background encodes smaller than the 6000-byte
+// threshold, so a correct render was reported as "every sampled frame is
+// blank". The comment here claimed the threshold was low enough for a title
+// card; it was not, and nothing measured it.
 const blankFrameBytes = 6000
+
+// blankPixelRatio is the share of pixels differing sharply from the dominant
+// background below which a frame carries nothing.
+//
+// Text on a plain background is a small bright minority, so the signal is the
+// PRESENCE of contrasting pixels rather than how many. The three measurements
+// above separate by roughly 7x between no text and the shortest real text,
+// which is where this sits.
+const blankPixelRatio = 0.001
+
+// brightnessGap is how far a pixel must sit from the dominant value to count
+// as drawn. JPEG ringing around glyph edges produces near-background values,
+// so a small gap would count compression noise as content.
+const brightnessGap = 40
+
+// frameHasContent reports whether a sampled frame shows anything.
+//
+// Text on a plain background is a small bright minority of pixels, so the
+// question is whether contrasting pixels EXIST, not how many. Decoding to
+// grayscale answers that directly; encoded size only guesses at it, and the
+// guess was wrong for short captions.
+//
+// If the frame cannot be decoded — ffmpeg missing, an unreadable file — the
+// encoded-size fallback is used rather than manufacturing a verdict.
+func frameHasContent(path string, encodedBytes int) bool {
+	out, err := runCommand(10*time.Second, "ffmpeg", "-v", "error", "-i", path,
+		"-f", "rawvideo", "-pix_fmt", "gray", "-")
+	if err != nil || len(out) == 0 {
+		return encodedBytes >= blankFrameBytes
+	}
+
+	var counts [256]int
+	for _, px := range out {
+		counts[px]++
+	}
+	dominant := 0
+	for v, n := range counts {
+		if n > counts[dominant] {
+			dominant = v
+		}
+	}
+	contrasting := 0
+	for v, n := range counts {
+		if v-dominant > brightnessGap || dominant-v > brightnessGap {
+			contrasting += n
+		}
+	}
+	return float64(contrasting)/float64(len(out)) >= blankPixelRatio
+}
 
 // contentGate reports whether the sampled frames show any content at all.
 //
@@ -445,7 +503,10 @@ func contentGate(samples any) map[string]any {
 			continue
 		}
 		readable++
-		if len(raw) >= blankFrameBytes {
+		// Decode and measure actual pixels. Encoded size alone reported a
+		// correct short-text render as blank, which is the failure this gate
+		// exists to catch — a false alarm here teaches callers to ignore it.
+		if frameHasContent(path, len(raw)) {
 			drawn++
 		}
 		sum := sha256.Sum256(raw)
