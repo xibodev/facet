@@ -34,6 +34,13 @@ func TestDecodeSaysWhatIsActuallyWrong(t *testing.T) {
 		if !strings.Contains(msg, "describe") {
 			t.Errorf("no route to the real schema: %q", msg)
 		}
+		// The accepted names are the likely fix and cost no round trip. The
+		// input field is spelled differently across tools (input / input_path
+		// / source), so a caller that learned one tool guesses wrong on the
+		// next and only learns the right name by asking again.
+		if !strings.Contains(msg, "input") {
+			t.Errorf("the accepted fields are not named: %q", msg)
+		}
 	})
 
 	t.Run("a wrong type says so rather than blaming the JSON", func(t *testing.T) {

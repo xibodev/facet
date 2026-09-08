@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -838,7 +839,7 @@ func decode(data []byte, dst any) error {
 	d := json.NewDecoder(bytes.NewReader(data))
 	d.DisallowUnknownFields()
 	if err := d.Decode(dst); err != nil {
-		return failure("invalid_request", decodeMessage(err),
+		return failure("invalid_request", decodeMessage(err, dst),
 			map[string]any{"error": bounded(err.Error())})
 	}
 	if err := d.Decode(&struct{}{}); err != io.EOF {
@@ -856,7 +857,14 @@ func decode(data []byte, dst any) error {
 // concludes the module is broken — which was observed: one abandoned Facet
 // after this error and fell back to raw ffmpeg, producing a blank video it
 // reported as a success.
-func decodeMessage(err error) string {
+// It also NAMES the fields the tool does accept. Telling a caller to go run
+// `tools describe` costs a round trip and assumes it can; the accepted names
+// are already in the destination struct, and one of them is usually the one
+// meant. This matters because the input field is not spelled the same across
+// tools — media_probe takes `input`, video_trimmer takes `input_path`,
+// audio_mix takes `source` — so a caller that learned one tool guesses wrong
+// on the next. Observed: two consecutive wrong guesses on a tool I own.
+func decodeMessage(err error, dst any) string {
 	text := err.Error()
 	switch {
 	case strings.Contains(text, "unknown field"):
@@ -864,12 +872,43 @@ func decodeMessage(err error) string {
 		if i := strings.Index(text, "unknown field "); i >= 0 {
 			field = strings.TrimSpace(text[i+len("unknown field "):])
 		}
-		return "this tool does not accept the field " + field +
-			"; run `facet tools describe <tool>` for its request schema"
+		msg := "this tool does not accept the field " + field
+		if accepted := acceptedFields(dst); accepted != "" {
+			msg += "; it accepts " + accepted
+		}
+		// The field list is the likely fix; describe stays as the authority
+		// on types, enums and which combinations are valid.
+		return msg + " (see `facet tools describe <tool>` for the full schema)"
 	case strings.Contains(text, "cannot unmarshal"):
 		return "a field has the wrong type: " + bounded(text)
 	}
 	return "request body is not valid JSON"
+}
+
+// acceptedFields lists the JSON names a request struct accepts, so a rejection
+// carries the answer rather than only the complaint.
+func acceptedFields(dst any) string {
+	t := reflect.TypeOf(dst)
+	for t != nil && t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t == nil || t.Kind() != reflect.Struct {
+		return ""
+	}
+	var names []string
+	for i := 0; i < t.NumField(); i++ {
+		tag := t.Field(i).Tag.Get("json")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		if name, _, _ := strings.Cut(tag, ","); name != "" {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return strings.Join(names, ", ")
 }
 
 func positiveTimeout(v int, fallback int) (time.Duration, error) {
