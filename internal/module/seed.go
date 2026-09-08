@@ -76,6 +76,29 @@ type SeedResolution struct {
 	DigestActual   string `json:"digest_actual"`
 	EvidenceDigest string `json:"evidence_digest,omitempty"`
 	Verified       bool   `json:"verified"`
+	// Attachments the seed named and Facet actually resolved, each with the
+	// digest of the bytes on disk.
+	//
+	// The manifest names attachments relative to the bundle, and the field was
+	// parsed and never read: Midden's video_brief — the document written
+	// specifically to brief this render — was dropped, and nothing downstream
+	// could tell it had existed. An artifact claiming provenance from a seed
+	// should say which of the seed's documents it actually had.
+	Attachments []SeedAttachment `json:"attachments,omitempty"`
+}
+
+// SeedAttachment is one file the seed named, resolved against the bundle.
+//
+// Path stays RELATIVE to the seed bundle for the same reason SeedResolution's
+// does: the staged location is the host's and differs between machines.
+// Missing is set rather than failing the load — a seed naming a file that did
+// not survive staging is worth reporting, not worth refusing, because the
+// evidence and manifest may still be exactly what the caller wanted.
+type SeedAttachment struct {
+	Path    string `json:"path"`
+	Digest  string `json:"digest,omitempty"`
+	Bytes   int    `json:"bytes,omitempty"`
+	Missing bool   `json:"missing,omitempty"`
 }
 
 // LoadSeed reads a seed and verifies its digest.
@@ -145,7 +168,6 @@ func LoadSeed(ref *SeedRef) (*Seed, *SeedResolution, error) {
 		DigestActual:   actual,
 		Verified:       expected != "" && expected == actual,
 	}
-
 	if expected != "" && !res.Verified {
 		return nil, res, fmt.Errorf("seed digest mismatch: expected %s, computed %s", expected, actual)
 	}
@@ -155,6 +177,10 @@ func LoadSeed(ref *SeedRef) (*Seed, *SeedResolution, error) {
 		return nil, res, fmt.Errorf("seed is not valid JSON: %w", err)
 	}
 	res.EvidenceDigest = strings.TrimSpace(seed.EvidenceDigest)
+	// Resolved only AFTER the digest verifies: reading files named by a seed
+	// whose manifest failed verification would be acting on bytes Facet has
+	// just refused to trust.
+	res.Attachments = resolveAttachments(filepath.Dir(path), seed.Attachments)
 	return &seed, res, nil
 }
 
@@ -185,6 +211,43 @@ type ReviewState struct {
 
 // ManifestSchemaID identifies Facet's render/artifact manifest contract.
 const ManifestSchemaID = "xibodev.facet.artifact/v1"
+
+// resolveAttachments reads each file the seed named and records its digest.
+//
+// The names are relative to the bundle and are treated as such: an absolute
+// path or one escaping the bundle is refused rather than followed, because a
+// seed is data from another module and a path in it must not be able to reach
+// arbitrary files.
+func resolveAttachments(bundle string, names []string) []SeedAttachment {
+	if len(names) == 0 {
+		return nil
+	}
+	out := make([]SeedAttachment, 0, len(names))
+	for _, name := range names {
+		clean := filepath.ToSlash(strings.TrimSpace(name))
+		if clean == "" {
+			continue
+		}
+		att := SeedAttachment{Path: clean}
+		if isAbsolutePath(clean) || escapesRoot(clean) {
+			// Not resolved, and deliberately not read.
+			att.Missing = true
+			out = append(out, att)
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(bundle, filepath.FromSlash(clean)))
+		if err != nil {
+			att.Missing = true
+			out = append(out, att)
+			continue
+		}
+		sum := sha256.Sum256(raw)
+		att.Digest = "sha256:" + hex.EncodeToString(sum[:])
+		att.Bytes = len(raw)
+		out = append(out, att)
+	}
+	return out
+}
 
 // NewManifest builds a manifest from a completed module envelope.
 func NewManifest(capability string, env Envelope, source *SeedResolution) ArtifactManifest {
