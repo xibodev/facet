@@ -48,8 +48,21 @@ func TestDecodeSaysWhatIsActuallyWrong(t *testing.T) {
 		if err == nil {
 			t.Fatal("a wrong type was accepted")
 		}
-		if !strings.Contains(err.Error(), "wrong type") {
-			t.Errorf("a type mismatch was not named: %q", err.Error())
+		msg := err.Error()
+		// The concern is that valid JSON with a wrong VALUE is not reported as
+		// malformed JSON, which sends a caller re-serialising correct output.
+		if strings.Contains(msg, "not valid JSON") {
+			t.Errorf("a type mismatch was blamed on the JSON: %q", msg)
+		}
+		// Asserted by intent rather than by the phrase "wrong type": the
+		// message now names the field and the type it wants, which is strictly
+		// more useful, and a test pinned to old wording fails for the wrong
+		// reason when the message improves.
+		if !strings.Contains(msg, `"input"`) {
+			t.Errorf("the offending field is not named: %q", msg)
+		}
+		if !strings.Contains(msg, "string") {
+			t.Errorf("the expected type is not named: %q", msg)
 		}
 	})
 

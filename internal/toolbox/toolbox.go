@@ -911,9 +911,82 @@ func decodeMessage(err error, dst any) string {
 		// on types, enums and which combinations are valid.
 		return msg + " (see `facet tools describe <tool>` for the full schema)"
 	case strings.Contains(text, "cannot unmarshal"):
-		return "a field has the wrong type: " + bounded(text)
+		return wrongTypeMessage(text)
 	}
 	return "request body is not valid JSON"
+}
+
+// wrongTypeMessage names the FIELD and the type it wants.
+//
+// Go's own error carries both but wraps them in internal struct naming:
+//
+//	json: cannot unmarshal object into Go struct field
+//	stitchRequest.clips of type string
+//
+// A caller does not know what a stitchRequest is, and the sentence reads as
+// implementation noise around the two words that matter — "clips" and
+// "string". Verified across five tools whose requests I got wrong: every one
+// reported "a field has the wrong type" and left the caller to parse the rest.
+//
+// Falls back to the raw text when the shape is unfamiliar rather than
+// discarding information it cannot parse.
+func wrongTypeMessage(text string) string {
+	const fieldMarker = "Go struct field "
+	const typeMarker = " of type "
+	i := strings.Index(text, fieldMarker)
+	j := strings.Index(text, typeMarker)
+	if i < 0 || j < 0 || j < i {
+		return "a field has the wrong type: " + bounded(text)
+	}
+	field := text[i+len(fieldMarker) : j]
+	// Strip the internal struct name: "stitchRequest.clips" -> "clips".
+	if dot := strings.LastIndex(field, "."); dot >= 0 {
+		field = field[dot+1:]
+	}
+	want := describeType(strings.TrimSpace(text[j+len(typeMarker):]))
+
+	got := ""
+	if k := strings.Index(text, "cannot unmarshal "); k >= 0 {
+		rest := text[k+len("cannot unmarshal "):]
+		if sp := strings.Index(rest, " "); sp > 0 {
+			got = rest[:sp]
+		}
+	}
+	if field == "" || want == "" {
+		return "a field has the wrong type: " + bounded(text)
+	}
+	if got != "" {
+		return fmt.Sprintf("field %q must be %s, but %s was given; "+
+			"run `facet tools describe <tool>` for its request schema", field, want, got)
+	}
+	return fmt.Sprintf("field %q must be %s; "+
+		"run `facet tools describe <tool>` for its request schema", field, want)
+}
+
+// describeType turns a Go type name into something a caller can act on.
+//
+// "toolbox.stockQueryItem" names an internal struct and tells a caller
+// nothing; "an object" at least says what shape to send, and the describe
+// pointer beside it carries the detail. Primitive names pass through, because
+// "string" and "number" mean exactly what they say.
+func describeType(goType string) string {
+	switch goType {
+	case "string", "bool":
+		return goType
+	case "int", "int64", "float64":
+		return "number"
+	}
+	if strings.HasPrefix(goType, "[]") {
+		return "an array of " + describeType(strings.TrimPrefix(goType, "[]"))
+	}
+	if strings.HasPrefix(goType, "map[") {
+		return "an object"
+	}
+	// A package-qualified name is an internal struct; say what shape it is.
+	if strings.Contains(goType, ".") {
+		return "an object"
+	}
+	return goType
 }
 
 // acceptedFields lists the JSON names a request struct accepts, so a rejection
