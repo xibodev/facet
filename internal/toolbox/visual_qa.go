@@ -1,6 +1,8 @@
 package toolbox
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -40,14 +42,14 @@ type reviewRequest struct {
 }
 
 type visualQARequest struct {
-	Operation      string                 `json:"operation,omitempty"`
-	InputPath      string                 `json:"input_path,omitempty"`
-	Input          string                 `json:"input,omitempty"`
-	Timestamps     []float64              `json:"timestamps,omitempty"`
-	OutputDir      string                 `json:"output_dir,omitempty"`
-	Checks         []string               `json:"checks,omitempty"`
-	Expected       map[string]any         `json:"expected,omitempty"`
-	TimeoutSeconds int                    `json:"timeout_seconds,omitempty"`
+	Operation      string         `json:"operation,omitempty"`
+	InputPath      string         `json:"input_path,omitempty"`
+	Input          string         `json:"input,omitempty"`
+	Timestamps     []float64      `json:"timestamps,omitempty"`
+	OutputDir      string         `json:"output_dir,omitempty"`
+	Checks         []string       `json:"checks,omitempty"`
+	Expected       map[string]any `json:"expected,omitempty"`
+	TimeoutSeconds int            `json:"timeout_seconds,omitempty"`
 }
 
 var volumeRE = regexp.MustCompile(`(?m)(mean_volume|max_volume):\s*([-+\w.]+)\s*dB`)
@@ -232,6 +234,24 @@ func doOutputReview(op string, data []byte) (any, []string, error) {
 		return nil, nil, failure("partial_result", "technical review completed but evidence extraction failed", map[string]any{"execution_status": "partial", "review_status": "revise", "completed_artifacts": map[string]any{"gates": gates, "output_facts": p}, "failures": []map[string]any{{"operation": "sample_extraction", "error": errorEnvelope("frame_sample", "run", err).Error}}})
 	}
 	w = append(w, sw...)
+
+	// Content gate: do the sampled frames actually contain anything?
+	//
+	// Every other gate reads metadata — dimensions, duration, codec, pixel
+	// format, audio. A video of entirely blank frames satisfies all of them,
+	// so `review_status: pass` was reachable for output with nothing drawn in
+	// it. That is not hypothetical: a cut whose required field is missing or
+	// misspelled renders an empty frame and the run still succeeds, which is
+	// the most likely way an agent-authored production fails while appearing
+	// to work.
+	//
+	// The test is deliberately weak and cheap: encoded frame size. A blank or
+	// flat frame compresses to a fraction of a frame carrying text or imagery
+	// (measured: ~2.9KB blank against 10-17KB rendered at the same profile),
+	// and identical frames across distinct timestamps mean nothing changed.
+	// It cannot judge whether the content is GOOD — that is human review — it
+	// only refuses to call an empty video a pass.
+	gates = append(gates, contentGate(samples))
 	vol, verr := runCommand(tmo, "ffmpeg", "-hide_banner", "-i", r.Input, "-map", "0:a:0", "-af", "volumedetect", "-f", "null", "-")
 	volume := map[string]any{}
 	if verr != nil {
@@ -393,4 +413,55 @@ func doVisualQA(op string, data []byte) (any, []string, error) {
 	default:
 		return nil, nil, failure("invalid_request", "unknown operation: "+operation, nil)
 	}
+}
+
+// blankFrameBytes is the encoded size below which a sampled JPEG is treated as
+// carrying no content. Measured on real output at 640x360: blank frames encode
+// to roughly 2.9-4.8KB while frames with text or imagery reach 10-17KB. The
+// threshold is deliberately low so a legitimately sparse frame — a title card
+// on a plain background — is not called empty.
+const blankFrameBytes = 6000
+
+// contentGate reports whether the sampled frames show any content at all.
+//
+// Two failures are detectable without decoding: every frame being tiny, which
+// means nothing was drawn, and every frame being byte-identical, which means
+// nothing changed across the timeline even though the scenes differ.
+func contentGate(samples any) map[string]any {
+	list, _ := samples.(map[string]any)["samples"].([]map[string]any)
+	if len(list) == 0 {
+		return gate("content", true, "")
+	}
+
+	digests := map[string]bool{}
+	drawn, readable := 0, 0
+	for _, s := range list {
+		path, _ := s["path"].(string)
+		if path == "" {
+			continue
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		readable++
+		if len(raw) >= blankFrameBytes {
+			drawn++
+		}
+		sum := sha256.Sum256(raw)
+		digests[hex.EncodeToString(sum[:])] = true
+	}
+	if readable == 0 {
+		// Nothing to judge; do not manufacture a verdict either way.
+		return gate("content", true, "")
+	}
+	if drawn == 0 {
+		return gate("content", false,
+			"every sampled frame is blank; a cut's required field is likely missing or misspelled")
+	}
+	if readable > 1 && len(digests) == 1 {
+		return gate("content", false,
+			"every sampled frame is identical; the timeline rendered a single static image")
+	}
+	return gate("content", true, "")
 }
