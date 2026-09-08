@@ -36,8 +36,19 @@ func TestDeadlineClamping(t *testing.T) {
 		}
 		// A margin is reserved so the envelope can still be written after the
 		// tool gives up; returning exactly at the deadline is still a kill.
-		if got > 55 {
-			t.Errorf("timeout %v leaves no margin to report the failure", got)
+		//
+		// Expressed against the constant rather than a hardcoded 55: the
+		// margin is a measured value that may change, and a test restating it
+		// as a literal fails for the wrong reason when it does. What must hold
+		// is that SOME margin is left and no more than the margin is taken.
+		reserved := 60 - got
+		if reserved < deadlineSafetyMargin.Seconds() {
+			t.Errorf("timeout %v leaves %.0fs, less than the %v margin needed to report the failure",
+				got, reserved, deadlineSafetyMargin)
+		}
+		if reserved > deadlineSafetyMargin.Seconds()+1 {
+			t.Errorf("timeout %v reserves %.0fs, far more than the %v margin; "+
+				"the tool is losing budget it could have used", got, reserved, deadlineSafetyMargin)
 		}
 	})
 

@@ -905,7 +905,23 @@ func fileBytes(path string) int64 {
 // deadlineSafetyMargin is how much of the host's budget is reserved for Facet
 // to write its envelope after the tool gives up. A tool that returns exactly at
 // the deadline is still killed before its error can be reported.
-const deadlineSafetyMargin = 5 * time.Second
+//
+// Measured rather than guessed: a whole invocation — process start, ffprobe,
+// artifact digest and envelope — completes in ~0.1s, and sha256 over a 200MB
+// artifact takes 0.15s. One second is roughly 5x the worst case observed.
+//
+// The previous 5s was fine on a large budget and expensive on a small one: it
+// reserved 1% of a 600s budget but 42% of a 12s one, so a short-deadline
+// render lost nearly half its time to a margin covering work that takes a
+// tenth of a second.
+const deadlineSafetyMargin = time.Second
+
+// minimumToolBudget is the least time worth handing a tool.
+//
+// Below this the clamp is not protecting work, it is guaranteeing a timeout
+// with extra steps. Leaving the request untouched lets the host's own kill be
+// the thing that stops it, which at least reports the caller's real intent.
+const minimumToolBudget = 2 * time.Second
 
 // applyDeadline clamps a tool's own timeout to the host's remaining budget.
 //
@@ -920,6 +936,9 @@ func applyDeadline(input json.RawMessage, deadlineMS int) json.RawMessage {
 	if budget <= 0 {
 		// Too small to reserve a margin from; leave the request untouched
 		// rather than fabricate a timeout the caller did not ask for.
+		return input
+	}
+	if budget < minimumToolBudget {
 		return input
 	}
 	seconds := int(budget.Seconds())
