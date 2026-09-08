@@ -121,6 +121,50 @@ func lookupJob(id string) (Job, bool) {
 	return *j, true
 }
 
+// AwaitJobs blocks until every started job reaches a terminal state, or the
+// deadline passes.
+//
+// A one-shot CLI writes its envelope and exits, which would abandon async work
+// mid-render: the handle would be returned, the goroutine killed, and the
+// render silently discarded. A handle that loses the work it represents is
+// worse than blocking, so the process waits for its own jobs before leaving.
+//
+// It reports whether everything finished, so a caller can say plainly that
+// work was abandoned rather than implying success.
+func AwaitJobs(timeout time.Duration) (finished bool) {
+	deadline := time.Now().Add(timeout)
+	for {
+		jobsMu.RLock()
+		running := 0
+		for _, j := range jobs {
+			if j.State == JobRunning {
+				running++
+			}
+		}
+		jobsMu.RUnlock()
+		if running == 0 {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+}
+
+// HasRunningJobs reports whether this process started work that has not
+// finished.
+func HasRunningJobs() bool {
+	jobsMu.RLock()
+	defer jobsMu.RUnlock()
+	for _, j := range jobs {
+		if j.State == JobRunning {
+			return true
+		}
+	}
+	return false
+}
+
 // JobStatusRequest is the body of a poll.
 type JobStatusRequest struct {
 	RequestID string `json:"request_id"`
@@ -177,4 +221,37 @@ func JobStatus(raw []byte) Envelope {
 		env.Execution = *job.Execution
 	}
 	return env
+}
+
+// jobHandleEnvelope is the response to an accepted long-running invocation.
+//
+// Its execution is PROVISIONAL by contract: the work has not run, so
+// actual_cost is null and artifacts is empty. Reporting a cost here would
+// claim a charge that has not happened; reporting artifacts would name files
+// that do not exist. The terminal poll carries the authoritative execution.
+func jobHandleEnvelope(reqID, capability, tool string, job *Job) Envelope {
+	return Envelope{
+		Protocol:  Protocol,
+		Module:    ModuleID,
+		Operation: OpInvoke,
+		RequestID: reqID,
+		OK:        true,
+		Result: map[string]any{
+			"capability":      capability,
+			"tool":            tool,
+			"job_id":          job.JobID,
+			"state":           string(JobRunning),
+			"poll_capability": CapJobsStatus,
+		},
+		Warnings: []string{},
+		Execution: Execution{
+			Local:          false,
+			Network:        false,
+			ExternalWrites: false,
+			Provider:       "facet",
+			EstimatedCost:  nil,
+			ActualCost:     nil,
+			Artifacts:      []Artifact{},
+		},
+	}
 }

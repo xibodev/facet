@@ -27,6 +27,10 @@ type Request struct {
 	// not resolve must be ABSENT rather than empty, so "not supplied" and
 	// "supplied as nothing" stay distinguishable.
 	Binaries map[string]string `json:"binaries,omitempty"`
+	// Async asks a long-running capability to return a job handle immediately
+	// rather than blocking until the work completes. Opt-in: existing
+	// consumers, including the human-facing CLI, expect a finished result.
+	Async bool `json:"async,omitempty"`
 }
 
 // Consent records that a human approved a paid or billable operation. The
@@ -184,8 +188,40 @@ func Invoke(capability string, raw []byte) Envelope {
 			map[string]any{"capability": capability, "tool": tool}, false)
 	}
 
+	// Long-running work may return a handle instead of blocking.
+	//
+	// This is OPT-IN via `async`, deliberately. A render takes 30s at 720p and
+	// 83s at 1080p, which leaves a cockpit with nothing to show; but the
+	// human-facing CLI and every existing consumer expect a finished result,
+	// and silently changing that for everyone would break them. The host asks
+	// for a handle when it wants one.
+	//
+	// The binary grant is captured for the goroutine because `restore` runs
+	// when this function returns, which is BEFORE the work finishes. Without
+	// that the async path would resolve against an empty PATH — the same
+	// declared-but-not-wired failure the grant itself was added to fix.
+	if req.Async && isLongRunning(capability) {
+		job := startJob(capability, tool)
+		grants := req.Binaries
+		go func() {
+			restore := useBinaries(grants)
+			defer restore()
+			env, ok := toolbox.CLI(args)
+			finishJob(job.JobID, project(OpInvoke, op, job.JobID, capability, tool, env, ok))
+		}()
+		return jobHandleEnvelope(reqID, capability, tool, job)
+	}
+
 	env, ok := toolbox.CLI(args)
 	return project(OpInvoke, op, reqID, capability, tool, env, ok)
+}
+
+// isLongRunning reports whether a capability may return a job handle. It must
+// agree with the descriptor: a capability that declares long_running but
+// refuses to produce a handle would be a contract violation the host cannot
+// see until it asks.
+func isLongRunning(capability string) bool {
+	return capability == CapToolsRun
 }
 
 // Estimate validates a request and reports expected effects and cost. It never

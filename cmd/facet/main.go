@@ -9,8 +9,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/xibodev/facet/internal/config"
+	"github.com/xibodev/facet/internal/module"
 	"github.com/xibodev/facet/internal/studio"
 	"github.com/xibodev/facet/internal/toolbox"
 )
@@ -167,6 +169,17 @@ func main() {
 		if err := encoder.Encode(env); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
+		}
+		// An async invocation returns a job handle immediately, but this is a
+		// one-shot process: exiting here would kill the goroutine and discard
+		// the render it represents. A handle that loses its work is worse than
+		// blocking, so wait for jobs this process started. The envelope is
+		// already written, so the host has its handle while the work finishes.
+		if module.HasRunningJobs() {
+			if !module.AwaitJobs(30 * time.Minute) {
+				fmt.Fprintln(os.Stderr,
+					"facet: exiting with unfinished jobs; their output was not completed")
+			}
 		}
 		if !ok {
 			os.Exit(1)
