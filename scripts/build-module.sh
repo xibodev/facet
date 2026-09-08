@@ -34,12 +34,18 @@ cp -r schemas/artifacts "$out/schemas/"
 # node_modules is NOT copied: it is ~130 packages the install already has, and
 # package.json is compared instead so a dependency change is visible rather
 # than silently reused.
-if [ -d "$out/remotion-composer/node_modules" ]; then
-  cp -r remotion-composer/src "$out/remotion-composer/"
-  cp remotion-composer/package.json remotion-composer/tsconfig.json "$out/remotion-composer/" 2>/dev/null || true
-  if ! cmp -s remotion-composer/package-lock.json "$out/remotion-composer/package-lock.json"; then
-    echo "WARNING: composer dependencies differ; run npm ci in $out/remotion-composer"
-  fi
+# Copied ALWAYS, not only when node_modules is already present. The previous
+# condition meant a FRESH package never received the composer at all — only an
+# existing install did — so the first install of a new target had no renderer
+# source and the check that should have caught it was skipped for the same
+# reason.
+mkdir -p "$out/remotion-composer"
+cp -r remotion-composer/src "$out/remotion-composer/"
+cp remotion-composer/package.json remotion-composer/package-lock.json    remotion-composer/tsconfig.json "$out/remotion-composer/" 2>/dev/null || true
+cp -r remotion-composer/public "$out/remotion-composer/" 2>/dev/null || true
+
+if [ ! -d "$out/remotion-composer/node_modules" ]; then
+  echo "NOTE: $out/remotion-composer has no node_modules; run npm ci there before rendering"
 fi
 
 # A module that cannot describe itself is not installable, so fail here rather
