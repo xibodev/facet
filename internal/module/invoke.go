@@ -252,6 +252,21 @@ func Invoke(capability string, raw []byte) Envelope {
 				map[string]any{"root": "project_root", "error": bounded(err.Error())}, false)
 		}
 		defer restoreDir()
+
+		// A granted root is a CONFINEMENT, not just a base for resolution.
+		// Verified before this check: output_path "../escaped.mp4" wrote a
+		// real file outside the granted root and reported it back as the
+		// relative path "../escaped.mp4", which the host validator accepts
+		// because it is not absolute. Resolving against the root without
+		// enforcing it turns the grant into a suggestion.
+		//
+		// Refused before the tool runs: after the write the file already
+		// exists outside the root, and no envelope can undo that.
+		if bad, ok := requestEscapesRoot(req.Input); ok {
+			return fail(OpInvoke, reqID, "invalid_request",
+				"a request path leaves the granted project_root: "+bad,
+				map[string]any{"root": "project_root", "path": bad}, false)
+		}
 	}
 
 	tool := strings.TrimSpace(req.Tool)
@@ -912,8 +927,76 @@ func relativeArtifactPath(path string) string {
 	}
 	rel = filepath.ToSlash(rel)
 	// A path outside the root is not made to look like one inside it.
-	if strings.HasPrefix(rel, "../") || rel == ".." {
+	if escapesRoot(rel) {
 		return slashed
 	}
 	return rel
+}
+
+// requestEscapesRoot finds the first path in a tool request that leaves the
+// granted root, so the write can be refused rather than described afterwards.
+//
+// It walks the request generically instead of naming output_path: every tool
+// spells its paths differently (input/input_path/source/output_path/segments),
+// and a confinement check that has to be remembered per tool is one a new tool
+// will be added without.
+func requestEscapesRoot(raw json.RawMessage) (string, bool) {
+	var input any
+	if len(raw) == 0 || json.Unmarshal(raw, &input) != nil {
+		// A body that does not decode is refused later by the tool's own
+		// strict decoding, which reports the problem far better than this can.
+		return "", false
+	}
+
+	var walk func(any) (string, bool)
+	walk = func(v any) (string, bool) {
+		switch t := v.(type) {
+		case string:
+			if t == "" || isAbsolutePath(t) {
+				// Absolute paths are a separate concern: they are visible to
+				// the host validator, which refuses them outright.
+				return "", false
+			}
+			if escapesRoot(filepath.ToSlash(t)) {
+				return t, true
+			}
+		case []any:
+			for _, e := range t {
+				if bad, ok := walk(e); ok {
+					return bad, true
+				}
+			}
+		case map[string]any:
+			for _, e := range t {
+				if bad, ok := walk(e); ok {
+					return bad, true
+				}
+			}
+		}
+		return "", false
+	}
+	return walk(input)
+}
+
+// escapesRoot reports whether a slash-separated relative path leaves the root
+// it is measured from.
+//
+// A leading "../" is the obvious case; a later one matters just as much,
+// because "renders/../../x" lands outside too. Checked segment by segment
+// rather than by prefix so the deeper form cannot slip through.
+func escapesRoot(rel string) bool {
+	depth := 0
+	for _, seg := range strings.Split(rel, "/") {
+		switch seg {
+		case "", ".":
+		case "..":
+			depth--
+			if depth < 0 {
+				return true
+			}
+		default:
+			depth++
+		}
+	}
+	return false
 }

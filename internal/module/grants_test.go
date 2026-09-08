@@ -3,6 +3,7 @@ package module
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -16,15 +17,18 @@ import (
 // making the request strict without modelling protocol/capability/grants/
 // deadline_ms/max_output_bytes rejected every real host invocation.
 func TestRealHostRequestIsAccepted(t *testing.T) {
-	// A real host grants a root that EXISTS; the module enters it so a
-	// caller's relative path resolves there. An unenterable root is refused
-	// on purpose, so the fixture must name a real directory to exercise the
-	// field-modelling this test is actually about.
-	cwd, err := os.Getwd()
+	// A real host grants a root that EXISTS and that CONTAINS the media the
+	// request names — paths leaving the granted root are refused, for reads as
+	// well as writes. Granting the package directory while reading fixtures
+	// from the repository root would be a request no real host would send.
+	//
+	// So the fixture grants the repository root and names the media relative
+	// to it, which is what a host does.
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := json.Marshal(cwd)
+	root, err := json.Marshal(repoRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +38,7 @@ func TestRealHostRequestIsAccepted(t *testing.T) {
 	  "capability":"creative.tools.run",
 	  "request_id":"req_host",
 	  "tool":"media_probe",
-	  "input":{"input":"../../projects/cinematic-documentary/assets/video/shot1_raw.mp4"},
+	  "input":{"input":"projects/cinematic-documentary/assets/video/shot1_raw.mp4"},
 	  "roots":{"project_root":{"path":` + string(root) + `,"mode":"rw"}},
 	  "grants":{"network":[],"credentials":[],"paid_providers":[],"publish":false,"subprocess":["ffprobe"]},
 	  "deadline_ms":600000,
