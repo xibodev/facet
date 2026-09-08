@@ -989,11 +989,22 @@ func requestEscapesRoot(raw json.RawMessage) (string, bool) {
 		return "", false
 	}
 
-	var walk func(any) (string, bool)
-	walk = func(v any) (string, bool) {
+	// Only values under a path-BEARING key are treated as paths.
+	//
+	// The first version checked every string in the request, which refused
+	// narration: `{"title":"../../ explained"}` had the whole render rejected
+	// because a caption mentioned a parent directory. A confinement check that
+	// fires on prose teaches callers to work around it, which is worse than
+	// the hole it closes.
+	//
+	// Keying on the field name is sound because a path only reaches the
+	// filesystem through a field the tool reads AS a path; a string in a
+	// caption is never opened.
+	var walk func(key string, v any) (string, bool)
+	walk = func(key string, v any) (string, bool) {
 		switch t := v.(type) {
 		case string:
-			if t == "" || isAbsolutePath(t) {
+			if !isPathKey(key) || t == "" || isAbsolutePath(t) {
 				// Absolute paths are a separate concern: they are visible to
 				// the host validator, which refuses them outright.
 				return "", false
@@ -1002,21 +1013,48 @@ func requestEscapesRoot(raw json.RawMessage) (string, bool) {
 				return t, true
 			}
 		case []any:
+			// An array inherits its key: `segments: ["a.mp4", "../b.mp4"]`.
 			for _, e := range t {
-				if bad, ok := walk(e); ok {
+				if bad, ok := walk(key, e); ok {
 					return bad, true
 				}
 			}
 		case map[string]any:
-			for _, e := range t {
-				if bad, ok := walk(e); ok {
+			for k, e := range t {
+				if bad, ok := walk(k, e); ok {
 					return bad, true
 				}
 			}
 		}
 		return "", false
 	}
-	return walk(input)
+	return walk("", input)
+}
+
+// isPathKey reports whether a request field carries a filesystem path.
+//
+// Derived from the tools' own schemas rather than guessed: the substrings
+// cover every path-bearing field across the toolbox (input_path, output_dir,
+// audio_path, srt_path, lut_path, library_dir, evidence_dir, source,
+// rendered_file, workspace_path, and the bare input/output pair).
+func isPathKey(key string) bool {
+	if key == "" {
+		return false
+	}
+	k := strings.ToLower(key)
+	switch k {
+	case "input", "output", "source", "segments":
+		return true
+	// output_format and source_type name a codec and a kind, not a location.
+	case "output_format", "source_type", "profile":
+		return false
+	}
+	for _, frag := range []string{"_path", "path_", "_dir", "_file", "filename"} {
+		if strings.Contains(k, frag) {
+			return true
+		}
+	}
+	return strings.HasSuffix(k, "path") || strings.HasSuffix(k, "dir")
 }
 
 // escapesRoot reports whether a slash-separated relative path leaves the root

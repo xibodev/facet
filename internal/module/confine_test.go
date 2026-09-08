@@ -24,6 +24,8 @@ func TestRequestPathsCannotLeaveTheGrantedRoot(t *testing.T) {
 		{"a parent segment deeper in", `{"output_path":"renders/../../deep.mp4"}`},
 		{"a nested value", `{"spec":{"clips":[{"path":"../../x.mp4"}]}}`},
 		{"a value inside an array", `{"segments":["ok.mp4","../../evil.mp4"]}`},
+		{"an audio path", `{"audio_path":"../../steal.mp3"}`},
+		{"an output directory", `{"output_dir":"../../elsewhere"}`},
 	}
 	for _, c := range escaping {
 		t.Run(c.name, func(t *testing.T) {
@@ -47,6 +49,16 @@ func TestRequestPathsCannotLeaveTheGrantedRoot(t *testing.T) {
 		`{"output_path":"/tmp/x.mp4"}`,
 		// Non-path values must not be mistaken for paths.
 		`{"operation":"cut","start_seconds":0}`,
+		// PROSE. A caption mentioning a parent directory is not a path, and
+		// the first version of this check refused the whole render for one.
+		// A confinement check that fires on narration teaches callers to work
+		// around it, which is worse than the hole it closes.
+		`{"text":"../ is the parent directory"}`,
+		`{"title":"../../ explained"}`,
+		`{"narration":"navigate to ../.. and run it"}`,
+		`{"scenes":[{"elements":[{"type":"text","text":"cd ../.."}]}]}`,
+		// A codec and a kind are named by path-ish keys but hold neither.
+		`{"output_format":"mp4","source_type":"stock"}`,
 	}
 	for _, body := range confined {
 		if bad, ok := requestEscapesRoot(json.RawMessage(body)); ok {
