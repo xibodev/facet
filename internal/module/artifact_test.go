@@ -2,6 +2,8 @@ package module
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -88,5 +90,46 @@ func TestReadOnlyToolReportsNoArtifacts(t *testing.T) {
 	if len(env.Execution.Artifacts) != 0 {
 		raw, _ := json.Marshal(env.Execution.Artifacts)
 		t.Errorf("a read-only tool reported artifacts: %s", raw)
+	}
+}
+
+// A tool handed an absolute output_path reports it back verbatim, so the
+// artifact carried the host's own filesystem layout. The host refuses an
+// absolute path because confinement cannot be checked against a root, and an
+// id like "E:/.../.local/state/xibodev.facet/project_root/tb.mp4" leaks that
+// layout into anything that stores or displays it.
+//
+// Fixed in the shared artifact helper rather than per tool: video_compose
+// happened to be correct only because it was usually given a relative path.
+func TestAbsoluteOutputPathIsMadeRelative(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	inside := filepath.Join(cwd, "renders", "out.mp4")
+	if got := relativeArtifactPath(inside); got != "renders/out.mp4" {
+		t.Errorf("path under the root became %q, want renders/out.mp4", got)
+	}
+
+	if got := relativeArtifactPath("renders/out.mp4"); got != "renders/out.mp4" {
+		t.Errorf("an already-relative path was altered: %q", got)
+	}
+
+	// Backslashes cannot be checked against a forward-slash root.
+	if got := relativeArtifactPath(filepath.Join("renders", "out.mp4")); got != "renders/out.mp4" {
+		t.Errorf("separators not normalized: %q", got)
+	}
+
+	// A path outside the root must NOT be dressed up as one inside it. The
+	// host should refuse it visibly rather than receive something plausible
+	// and wrong.
+	outside := filepath.Join(filepath.Dir(cwd), "elsewhere", "x.mp4")
+	got := relativeArtifactPath(outside)
+	if strings.HasPrefix(got, "../") {
+		t.Errorf("a path outside the root was returned as a traversal: %q", got)
+	}
+	if !isAbsolutePath(got) {
+		t.Errorf("a path outside the root was made to look relative: %q", got)
 	}
 }

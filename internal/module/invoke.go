@@ -525,7 +525,7 @@ func artifactsFrom(result any) []Artifact {
 		// Separators are normalized because a Windows path with backslashes
 		// cannot be checked against a root the host declared with forward
 		// slashes: confinement would be uncheckable rather than merely ugly.
-		rel := filepath.ToSlash(path)
+		rel := relativeArtifactPath(path)
 
 		// A digest the tool did not report is computed from the bytes on disk.
 		// The host uses it as provenance for anything it shows or stores, and
@@ -847,4 +847,39 @@ func applyDeadline(input json.RawMessage, deadlineMS int) json.RawMessage {
 		return input
 	}
 	return clamped
+}
+
+// relativeArtifactPath makes an artifact path relative to the root it is
+// declared under.
+//
+// A tool that is handed an absolute output_path reports it back verbatim, so
+// the artifact carried the host's own filesystem layout: the host refuses an
+// absolute path because confinement cannot be checked against a root, and an
+// id like "E:/.../.local/state/xibodev.facet/project_root/tb.mp4" leaks that
+// layout into anything that stores or displays it.
+//
+// The working directory is the project root under a host, which is what a
+// relative path is measured against. A path that cannot be made relative — one
+// on another volume, say — is returned as given rather than mangled, so the
+// host still refuses it visibly instead of receiving something plausible and
+// wrong.
+func relativeArtifactPath(path string) string {
+	slashed := filepath.ToSlash(path)
+	if !isAbsolutePath(slashed) {
+		return slashed
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return slashed
+	}
+	rel, err := filepath.Rel(cwd, filepath.FromSlash(path))
+	if err != nil {
+		return slashed
+	}
+	rel = filepath.ToSlash(rel)
+	// A path outside the root is not made to look like one inside it.
+	if strings.HasPrefix(rel, "../") || rel == ".." {
+		return slashed
+	}
+	return rel
 }
