@@ -67,9 +67,16 @@ func Describe(version string) Envelope {
 	// pays at session start to learn about tools it will mostly not call. The
 	// host confirmed nothing reads them from the descriptor.
 	//
-	// Capability-level schemas above STAY: the host validates requests and
-	// results against those, and a capability referencing a schema the host
-	// does not have means it can validate nothing.
+	// Capability-level schemas above STAY. They are the schemas a host would
+	// validate against, and a capability referencing one that is absent leaves
+	// nothing to validate.
+	//
+	// NOT a claim that validation happens. facet-studio confirmed the
+	// equivalent sentence about artifact_schemas in their own protocol doc is
+	// fiction — nothing reads them — and I never verified the request/result
+	// case either. Under operator ruling 6 an unenforced guarantee must be
+	// described as it is, not as it was hoped: these are declared so a host
+	// CAN validate, and whether any host does is that host's to state.
 	artifacts := artifactSchemas(&warnings)
 
 	// "output" is the KIND every Facet artifact carries, and the host
@@ -465,9 +472,22 @@ func capabilityList() []Capability {
 			// host polls it instead of showing a blank cockpit.
 			LongRunning:    true,
 			PollCapability: CapJobsStatus,
-			// Declared honestly and pessimistically: this capability dispatches
-			// any tool, including paid provider-backed ones, so it declares the
-			// worst case. CostKnown false forces host approval.
+			// Declared pessimistically: this capability dispatches any tool,
+			// including chargeable ones, so it declares the worst case.
+			//
+			// CostKnown here means what Facet defines it to mean — whether a
+			// numeric amount is known — and across 35 tools it is not. It does
+			// NOT mean "may spend money", and approval must not be inferred
+			// from it: edge_tts reaches an external service with a known cost
+			// of zero and correctly needs no consent.
+			//
+			// An earlier comment claimed "CostKnown false forces host
+			// approval". That describes facet-studio's current gate, not this
+			// field's meaning, and facet-studio has confirmed the gate is
+			// theirs to correct. Chargeability is declared separately per
+			// Operation (toolbox.MayCharge) and is what a gate should read.
+			// It is not projected here: that needs the successor contract,
+			// and xibodev.module/v1 is frozen.
 			Effects: Effects{
 				Local: false, Network: true, ExternalWrites: true,
 				Provider: ProviderVaries, CostKnown: false,
