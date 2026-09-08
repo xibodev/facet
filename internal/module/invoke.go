@@ -95,19 +95,14 @@ type SeedRef struct {
 	Digest string `json:"digest"`
 }
 
-// paidTools are the tools whose cost is genuinely unknown before a run. They
-// must never be reported as free, and must never run without explicit human
-// consent. This mirrors the nil-cost set in toolbox.executionFor.
-var paidTools = map[string]bool{
-	"gflow_video":    true,
-	"gflow_image":    true,
-	"openai_image":   true,
-	"flux_image":     true,
-	"kling_video":    true,
-	"sora_video":     true,
-	"openai_tts":     true,
-	"elevenlabs_tts": true,
-}
+// paidTools is DERIVED from the Operation layer, never restated here.
+//
+// It previously enumerated the same eight tools as toolbox.executionFor, by
+// hand, in two layers. Chargeability is a property of the Operation; this
+// layer is a Projection and must not hold a second opinion about it.
+//
+// Kept as a function rather than a map so there is no copy to drift.
+func paidTool(tool string) bool { return toolbox.MayCharge(tool) }
 
 // writesOutput reports whether a run of this tool can write files outside the
 // module's own process state.
@@ -245,7 +240,7 @@ func Invoke(capability string, raw []byte) Envelope {
 	// different things: a human approving the spend does not mean the host
 	// authorized the provider, and running on consent alone would let a module
 	// reach a provider the host deliberately withheld.
-	if op == "run" && paidTools[tool] && req.Grants != nil {
+	if op == "run" && paidTool(tool) && req.Grants != nil {
 		provider := paidProviderFor(tool)
 		if !contains(req.Grants.PaidProviders, provider) {
 			return fail(OpInvoke, reqID, "permission_denied",
@@ -260,7 +255,7 @@ func Invoke(capability string, raw []byte) Envelope {
 	// Consent gate. Paid generation requires explicit human approval, and an
 	// unknown cost is never treated as free. A cross-agent agreement is not
 	// consent; only a person can grant this.
-	if op == "run" && paidTools[tool] {
+	if op == "run" && paidTool(tool) {
 		if req.Consent == nil || !req.Consent.PaidGenerationApproved {
 			return fail(OpInvoke, reqID, "consent_required",
 				"tool may incur real cost and requires explicit human consent before execution",

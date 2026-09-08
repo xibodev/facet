@@ -2,6 +2,7 @@ package module
 
 import (
 	"encoding/json"
+	"github.com/xibodev/facet/internal/toolbox"
 	"os"
 	"path/filepath"
 	"strings"
@@ -124,7 +125,7 @@ func TestEveryPaidToolMapsToADeclaredProvider(t *testing.T) {
 	if !ok {
 		t.Fatalf("result is not a Descriptor: %T", env.Result)
 	}
-	for tool := range paidTools {
+	for _, tool := range toolbox.ChargeableTools() {
 		provider := paidProviderFor(tool)
 		if provider == "" {
 			t.Errorf("paid tool %q maps to no provider; it would be denied always", tool)
@@ -228,7 +229,7 @@ func TestNoTestInvokesAPaidToolForReal(t *testing.T) {
 				!strings.Contains(window, "PaidGenerationApproved") {
 				continue
 			}
-			for tool := range paidTools {
+			for _, tool := range toolbox.ChargeableTools() {
 				if strings.Contains(window, `"`+tool+`"`) {
 					t.Errorf("%s invokes paid tool %q through CapToolsRun WITH consent; "+
 						"use CapToolsEstimate — a test must never bill", e.Name(), tool)

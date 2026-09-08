@@ -2,18 +2,20 @@ package module
 
 import (
 	"encoding/json"
+	"github.com/xibodev/facet/internal/toolbox"
 	"testing"
 )
 
-// The module's paidTools set and the toolbox's cost reporting must agree.
+// The Projection's chargeability view and the Operation layer must agree.
 //
 // They are two hand-maintained lists of the same fact — which tools can bill —
-// and the comment on paidTools says only that it "mirrors" the toolbox. Every
+// They were two hand-maintained lists of one fact until Phase A collapsed them.
+// Every
 // other pair of lists in this repo that had to agree eventually did not: the
 // network hosts, the credentials, the scene-to-cut fields, the two duration
 // paths, the estimate and run grant handling.
 //
-// The consequence here is not a wrong duration. A tool missing from paidTools
+// The consequence here is not a wrong duration. A tool missing from the set
 // runs without consent and spends someone's money; a tool wrongly in it is
 // gated forever and can never run.
 func TestPaidToolsMatchesReportedCost(t *testing.T) {
@@ -47,7 +49,7 @@ func TestPaidToolsMatchesReportedCost(t *testing.T) {
 			continue
 		}
 		costUnknown := !tool.Cost.Known
-		gated := paidTools[tool.Name]
+		gated := paidTool(tool.Name)
 
 		if costUnknown && !gated {
 			t.Errorf("%s reports an unknown cost but is not in paidTools; "+
@@ -64,7 +66,7 @@ func TestPaidToolsMatchesReportedCost(t *testing.T) {
 // tool yields an empty provider, which matches no grant — so it fails closed,
 // but silently and permanently.
 func TestEveryPaidToolNamesAGrantableProvider(t *testing.T) {
-	for tool := range paidTools {
+	for _, tool := range toolbox.ChargeableTools() {
 		if provider := paidProviderFor(tool); provider == "" {
 			t.Errorf("%s is gated as paid but names no provider; no grant can ever "+
 				"authorise it, so it is refused forever rather than gated", tool)

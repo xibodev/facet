@@ -183,11 +183,63 @@ func executionFor(tool string) Execution {
 	}
 	zero := 0.0
 	e := Execution{Provider: provider, Network: network, EstimatedCost: &zero, ActualCost: &zero}
-	switch tool {
-	case "gflow_video", "gflow_image", "openai_image", "flux_image", "kling_video", "sora_video", "openai_tts", "elevenlabs_tts":
+	if MayCharge(tool) {
+		// A chargeable Operation's price is not knowable before it runs, so
+		// the amount is null rather than zero. That is cost_known=false, a
+		// SEPARATE fact from chargeability — see MayCharge.
 		e.EstimatedCost, e.ActualCost = nil, nil
 	}
 	return e
+}
+
+// chargeableTools is the single source of truth for which Operations can
+// result in a monetary charge to the operator.
+//
+// It lived in two places: this file (as the set given a nil cost) and
+// internal/module (as `paidTools`, the consent gate). Both enumerated the same
+// eight tools, maintained by hand, in two layers. Chargeability is a property
+// of the Operation, so it belongs here — the module layer is a Projection and
+// now derives it rather than restating it.
+//
+// Operator ruling 4 and facet-studio's R1 both require this: chargeability is
+// a per-Operation semantic effect, independent of whether an amount is known.
+var chargeableTools = map[string]bool{
+	"gflow_video":    true,
+	"gflow_image":    true,
+	"openai_image":   true,
+	"flux_image":     true,
+	"kling_video":    true,
+	"sora_video":     true,
+	"openai_tts":     true,
+	"elevenlabs_tts": true,
+}
+
+// MayCharge reports whether invoking this Operation may result in a monetary
+// charge to the operator.
+//
+// Independent of cost_known, which answers a different question: whether a
+// numeric amount is known. Both combinations are legal and both occur here —
+// every chargeable Operation has an unknown amount (may_charge=true,
+// cost_known=false), and edge_tts reaches the network with a known amount of
+// zero (may_charge=false, cost_known=true).
+//
+// Approval policy must key on THIS, never on cost_known. Verified before this
+// existed: edge_tts declared cost_known=true and ran without consent while
+// reaching an external service.
+func MayCharge(tool string) bool { return chargeableTools[tool] }
+
+// ChargeableTools lists every Operation that may result in a monetary charge.
+//
+// Returned as a copy so a caller cannot mutate the source of truth, and
+// exported so conformance tests can assert over the whole set rather than
+// spot-checking names they happen to remember.
+func ChargeableTools() []string {
+	out := make([]string, 0, len(chargeableTools))
+	for tool := range chargeableTools {
+		out = append(out, tool)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // readOnlyTools inspect existing files and report facts about them. Everything
@@ -490,6 +542,10 @@ func summary(name string) map[string]any {
 			"amount":   exec.EstimatedCost,
 			"known":    exec.EstimatedCost != nil,
 		},
+		// Chargeability is a SEPARATE fact from cost knowledge. A caller
+		// deciding whether to seek human consent must read this, never
+		// cost.known — see MayCharge.
+		"may_charge":     MayCharge(name),
 		"network":        exec.Network,
 		"external_write": externalWriteFor(name, "run"),
 	}
@@ -551,6 +607,7 @@ func description(name string) map[string]any {
 	d["request_schema"] = schemas[name]
 	d["result_schema"] = resultSchemas[name]
 	d["cost"] = map[string]any{"currency": "USD", "amount": exec.EstimatedCost, "known": exec.EstimatedCost != nil}
+	d["may_charge"] = MayCharge(name)
 	d["network"] = exec.Network
 	// A `run` of this tool may write; describe reports the run behaviour, which
 	// is what a caller is deciding about.

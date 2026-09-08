@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/xibodev/facet/internal/toolbox"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,7 +87,7 @@ func TestHostRequestIDEchoedVerbatim(t *testing.T) {
 // The consent gate is the safety property that matters most: a tool that can
 // spend real money must refuse to run without explicit human approval.
 func TestPaidToolRefusesWithoutConsent(t *testing.T) {
-	for tool := range paidTools {
+	for _, tool := range toolbox.ChargeableTools() {
 		t.Run(tool, func(t *testing.T) {
 			body := `{"tool":"` + tool + `","input":{"prompt":"x"}}`
 			env := Invoke(CapToolsRun, []byte(body))
