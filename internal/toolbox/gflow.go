@@ -248,7 +248,7 @@ func generateGFlow(args []string, prompt, kind, output string, count int, timeou
 			return nil, err
 		}
 	}
-	bin, err := exec.LookPath("gflow")
+	bin, err := lookPath("gflow")
 	if err != nil {
 		return nil, failure("dependency_missing", "gflow CLI is required; install and authenticate it or explicitly set mock=true", nil)
 	}

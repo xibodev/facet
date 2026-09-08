@@ -157,6 +157,21 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "module":
+		// Host module protocol surface. Additive: `facet tools` is unchanged and
+		// remains the documented human-facing contract. stdout carries exactly
+		// one JSON envelope; diagnostics go to stderr.
+		env, ok := moduleCLI(os.Args[2:])
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(env); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		if !ok {
+			os.Exit(1)
+		}
+
 	case "ui", "studio":
 		fs := flag.NewFlagSet("ui", flag.ExitOnError)
 		port := fs.Int("port", 8787, "Port to listen on")

@@ -1,0 +1,532 @@
+package module
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/xibodev/facet/internal/toolbox"
+)
+
+// toolCatalog asks the live toolbox for its catalog. The module keeps no second
+// list, so drift between the `module` and `tools` surfaces is structurally
+// impossible: both read the same registry.
+func toolCatalog() ([]map[string]any, error) {
+	env, ok := toolbox.CLI([]string{"tools", "list"})
+	if !ok {
+		return nil, errFromToolbox(env)
+	}
+	res, _ := env.Result.(map[string]any)
+	raw, _ := res["tools"].([]any)
+	out := make([]map[string]any, 0, len(raw))
+	for _, item := range raw {
+		if m, ok := item.(map[string]any); ok {
+			out = append(out, m)
+		}
+	}
+	return out, nil
+}
+
+// Describe builds the descriptor from live toolbox state.
+func Describe(version string) Envelope {
+	reqID := newRequestID()
+	tools, err := toolCatalog()
+	if err != nil {
+		return fail(OpDescribe, reqID, "toolbox_unavailable",
+			"tool catalog could not be read",
+			map[string]any{"error": err.Error()}, true)
+	}
+
+	reqSchemas := map[string]any{}
+	resSchemas := map[string]any{}
+	warnings := []string{}
+
+	// Capability-level schemas first: every ID a capability references must
+	// resolve to a present key, or the host cannot validate a single request or
+	// result. Tool-keyed schemas are added alongside them below and describe
+	// the `input` payload rather than the capability envelope.
+	capReq, capRes := capabilitySchemas()
+	for id, doc := range capReq {
+		reqSchemas[id] = doc
+	}
+	for id, doc := range capRes {
+		resSchemas[id] = doc
+	}
+
+	// Per-tool request/result schemas come from the toolbox's own describe, the
+	// single source of truth. schemas/tools/*.json is deliberately NOT consulted:
+	// that directory holds legacy surfaces that do not track the implementation.
+	for _, t := range tools {
+		name, _ := t["name"].(string)
+		if name == "" {
+			continue
+		}
+		env, ok := toolbox.CLI([]string{"tools", "describe", name})
+		if !ok {
+			warnings = append(warnings, "describe unavailable for tool: "+name)
+			continue
+		}
+		d, _ := env.Result.(map[string]any)
+		if s, present := d["request_schema"]; present && s != nil {
+			reqSchemas[name] = s
+		}
+		if s, present := d["result_schema"]; present && s != nil {
+			resSchemas[name] = s
+		}
+	}
+
+	artifacts := artifactSchemas(&warnings)
+	declaredOverlays := overlays(&warnings)
+	declaredSkills := skills(&warnings)
+
+	// A capability must never reference content that is not declared. When a
+	// file cannot be read the reference is DROPPED rather than left dangling:
+	// a reference resolving to nothing looks like a contract and is worse than
+	// an absent one, because the host cannot tell the difference until it
+	// tries to load it.
+	capabilities := pruneReferences(capabilityList(), artifacts, declaredSkills, &warnings)
+
+	desc := Descriptor{
+		Module:           ModuleID,
+		Name:             ModuleName,
+		Version:          version,
+		ProtocolVersions: []string{Protocol},
+		Capabilities:     capabilities,
+		RequestSchemas:   reqSchemas,
+		ResultSchemas:    resSchemas,
+		ArtifactSchemas:  artifacts,
+		AgentOverlays:    declaredOverlays,
+		Skills:           declaredSkills,
+		Permissions: Permissions{
+			FilesystemRead:  []string{"project_root"},
+			FilesystemWrite: []string{"project_root"},
+			// Named grants, not a blanket boolean: only these providers are
+			// ever contacted, and only these binaries are ever executed.
+			Network: []string{
+				"labs.google", "api.openai.com", "api.elevenlabs.io",
+				"fal.run", "api.pexels.com", "pixabay.com",
+				"commons.wikimedia.org", "speech.platform.bing.com",
+			},
+			Credentials: []string{
+				"OPENAI_API_KEY", "ELEVENLABS_API_KEY", "FAL_KEY",
+				"PEXELS_API_KEY", "PIXABAY_API_KEY",
+			},
+			// Every provider here can bill. Each requires explicit human
+			// consent per invocation; unknown cost is never treated as free.
+			PaidProviders: []string{
+				"google_flow", "openai", "elevenlabs", "fal", "kling",
+			},
+			// Facet renders and reviews; it never publishes.
+			Publish: false,
+			// Derived from actual invocation sites, NOT from the dependency
+			// probe table. `node` is invoked directly (compose.go runs
+			// remotion-cli.js through it) but is never probed as a dependency,
+			// so a probe-derived list omitted it and would have starved the
+			// renderer under a host that grants only declared binaries.
+			Subprocess: []string{"ffmpeg", "ffprobe", "gflow", "node", "npx", "piper"},
+		},
+		Requirements: requirements(tools),
+	}
+
+	return Envelope{
+		Protocol:  Protocol,
+		Module:    ModuleID,
+		Operation: OpDescribe,
+		RequestID: reqID,
+		OK:        true,
+		Result:    desc,
+		Warnings:  warnings,
+		Execution: localExec("facet"),
+	}
+}
+
+// capabilitySchemas are the schema documents the CAPABILITIES reference.
+//
+// These are distinct from the per-tool schemas: a capability is the host's
+// addressable unit, and every ID a capability names must resolve to a present
+// key or the host cannot validate anything it sends or receives. The per-tool
+// schemas remain in the same maps, keyed by tool name, because they describe
+// the `input` payload a run carries.
+func capabilitySchemas() (req map[string]any, res map[string]any) {
+	str := map[string]any{"type": "string", "minLength": 1}
+	obj := func(required []string, props map[string]any) map[string]any {
+		return map[string]any{
+			"type": "object", "required": required, "properties": props,
+		}
+	}
+	// Every capability request shares this envelope; `input` is the
+	// tool-specific body validated by the per-tool schema for `tool`.
+	toolCall := obj([]string{"tool", "input"}, map[string]any{
+		"request_id": str,
+		"tool":       str,
+		"input":      map[string]any{"type": "object"},
+		"consent": obj([]string{"paid_generation_approved", "approved_by"}, map[string]any{
+			"paid_generation_approved": map[string]any{"type": "boolean"},
+			"approved_by":              str,
+			"note":                     map[string]any{"type": "string"},
+		}),
+		"seed": obj([]string{"schema", "path", "digest"}, map[string]any{
+			"schema": str, "path": str, "digest": str,
+		}),
+		"binaries": map[string]any{
+			"type": "object", "additionalProperties": str,
+		},
+	})
+	passthrough := obj([]string{"capability", "tool", "output"}, map[string]any{
+		"capability": str, "tool": map[string]any{"type": "string"},
+		"output": map[string]any{},
+	})
+
+	req = map[string]any{
+		"creative.tools.list.request/v1": obj(nil, map[string]any{"request_id": str}),
+		"creative.tools.describe.request/v1": obj([]string{"tool"}, map[string]any{
+			"request_id": str, "tool": str,
+		}),
+		"creative.tools.estimate.request/v1":   toolCall,
+		"creative.tools.run.request/v1":        toolCall,
+		"creative.output.review.request/v1":    toolCall,
+		"creative.artifact.inspect.request/v1": toolCall,
+	}
+	res = map[string]any{
+		"creative.tools.list.result/v1":       passthrough,
+		"creative.tools.describe.result/v1":   passthrough,
+		"creative.tools.estimate.result/v1":   passthrough,
+		"creative.tools.run.result/v1":        passthrough,
+		"creative.output.review.result/v1":    passthrough,
+		"creative.artifact.inspect.result/v1": passthrough,
+	}
+	return req, res
+}
+
+// moduleRoot resolves paths relative to the module's own installation rather
+// than the process working directory.
+//
+// The host runs a module as a detached process and does not promise any
+// particular cwd. Resolving `schemas/artifacts` or `skills/facet/SKILL.md`
+// against cwd made the descriptor silently depend on where it was launched: run
+// from the repo root it declared 20 artifact schemas, one overlay and one
+// skill; run from anywhere else it returned ok:true with all three EMPTY while
+// capabilities still referenced them — dangling references that look like a
+// contract. Anchoring to the executable makes the descriptor the same wherever
+// it is invoked.
+//
+// Falls back to cwd only when the executable path cannot be determined, and the
+// caller reports a missing directory as a warning either way.
+func moduleRoot() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	dir := filepath.Dir(exe)
+	// Walk up looking for the module's content. A built binary sits in the
+	// repository root during development and beside its bundle once installed.
+	for i := 0; i < 4; i++ {
+		if _, err := os.Stat(filepath.Join(dir, "skills", "facet", "SKILL.md")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return ""
+}
+
+// modulePath joins a module-relative path onto the module root. An empty root
+// yields the original relative path, preserving the previous behaviour.
+func modulePath(rel ...string) string {
+	root := moduleRoot()
+	if root == "" {
+		return filepath.Join(rel...)
+	}
+	return filepath.Join(append([]string{root}, rel...)...)
+}
+
+// fileDigest returns "sha256:<lowercase-hex>" over a file's contents, plus a
+// rough token estimate so the host can budget context before loading it.
+//
+// A file that cannot be read yields an empty digest and is reported by the
+// caller as a warning rather than declared: the host hard-rejects content with
+// no verifiable provenance, so declaring an unverifiable path would only
+// produce a rejection later.
+func fileDigest(path string) (digest string, tokens int, err error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", 0, err
+	}
+	sum := sha256.Sum256(raw)
+	// ~4 bytes per token is the usual rough estimate for English prose.
+	return "sha256:" + hex.EncodeToString(sum[:]), len(raw) / 4, nil
+}
+
+// pruneReferences drops capability references to content that is not declared,
+// so the descriptor is internally consistent wherever it is invoked.
+func pruneReferences(caps []Capability, artifacts map[string]any,
+	declared []Skill, warnings *[]string) []Capability {
+
+	haveSkill := map[string]bool{}
+	for _, s := range declared {
+		haveSkill[s.ID] = true
+	}
+
+	out := make([]Capability, 0, len(caps))
+	for _, c := range caps {
+		kept := make([]string, 0, len(c.ArtifactSchemas))
+		for _, id := range c.ArtifactSchemas {
+			if _, present := artifacts[id]; present {
+				kept = append(kept, id)
+				continue
+			}
+			*warnings = append(*warnings,
+				"capability "+c.ID+" no longer references undeclared artifact schema "+id)
+		}
+		c.ArtifactSchemas = kept
+
+		keptSkills := make([]string, 0, len(c.Skills))
+		for _, id := range c.Skills {
+			if haveSkill[id] {
+				keptSkills = append(keptSkills, id)
+				continue
+			}
+			*warnings = append(*warnings,
+				"capability "+c.ID+" no longer references undeclared skill "+id)
+		}
+		c.Skills = keptSkills
+
+		out = append(out, c)
+	}
+	return out
+}
+
+func capabilityList() []Capability {
+	return []Capability{
+		{
+			ID:              CapToolsList,
+			Title:           "List creative tools",
+			Summary:         "Enumerate installed creative tools with dependency and configuration state.",
+			RequestSchema:   "creative.tools.list.request/v1",
+			ResultSchema:    "creative.tools.list.result/v1",
+			ArtifactSchemas: []string{},
+			Skills:          []string{"facet-core"},
+			Effects: Effects{
+				Local: true, Network: false, ExternalWrites: false,
+				Provider: "local", CostKnown: true,
+			},
+		},
+		{
+			ID:              CapToolsDescribe,
+			Title:           "Describe a creative tool",
+			Summary:         "Return the request/result schema, provider, effects, and cost behavior of one tool.",
+			RequestSchema:   "creative.tools.describe.request/v1",
+			ResultSchema:    "creative.tools.describe.result/v1",
+			ArtifactSchemas: []string{},
+			Skills:          []string{"facet-core"},
+			Effects: Effects{
+				Local: true, Network: false, ExternalWrites: false,
+				Provider: "local", CostKnown: true,
+			},
+		},
+		{
+			ID:    CapToolsEstimate,
+			Title: "Estimate a creative tool call",
+			Summary: "Validate a concrete request and report expected effects and cost. " +
+				"Never generates media, never bills, and never writes output.",
+			RequestSchema:   "creative.tools.estimate.request/v1",
+			ResultSchema:    "creative.tools.estimate.result/v1",
+			ArtifactSchemas: []string{},
+			Skills:          []string{"facet-core"},
+			// Estimation never writes and never bills. CostKnown is false
+			// because the estimate may legitimately return an unknown cost,
+			// which the host must treat as unpriced rather than free.
+			Effects: Effects{
+				Local: true, Network: false, ExternalWrites: false,
+				Provider: "local", CostKnown: false,
+			},
+		},
+		{
+			ID:    CapToolsRun,
+			Title: "Run a creative tool",
+			Summary: "Execute one tool. May reach the network, write files, and incur real cost " +
+				"depending on the selected tool.",
+			RequestSchema: "creative.tools.run.request/v1",
+			ResultSchema:  "creative.tools.run.result/v1",
+			// A run may produce any of these; the host validates what arrives.
+			ArtifactSchemas: []string{"render_report", "asset_manifest"},
+			Skills:          []string{"facet-core"},
+			// Declared honestly and pessimistically: this capability dispatches
+			// any tool, including paid provider-backed ones, so it declares the
+			// worst case. CostKnown false forces host approval.
+			Effects: Effects{
+				Local: false, Network: true, ExternalWrites: true,
+				Provider: "varies", CostKnown: false,
+			},
+		},
+		{
+			ID:    CapOutputReview,
+			Title: "Review rendered output",
+			Summary: "Technical QA of a rendered file. This is not creative acceptance and never " +
+				"substitutes for human review.",
+			RequestSchema:   "creative.output.review.request/v1",
+			ResultSchema:    "creative.output.review.result/v1",
+			ArtifactSchemas: []string{"review", "final_review"},
+			Skills:          []string{"facet-core"},
+			Effects: Effects{
+				Local: true, Network: false, ExternalWrites: true,
+				Provider: "ffmpeg", CostKnown: true,
+			},
+		},
+		{
+			ID:              CapArtifactInspect,
+			Title:           "Inspect a Facet artifact",
+			Summary:         "Read a Facet artifact manifest and report its schema, provenance, and source references.",
+			RequestSchema:   "creative.artifact.inspect.request/v1",
+			ResultSchema:    "creative.artifact.inspect.result/v1",
+			ArtifactSchemas: []string{},
+			Skills:          []string{"facet-core"},
+			Effects: Effects{
+				Local: true, Network: false, ExternalWrites: false,
+				Provider: "ffprobe", CostKnown: true,
+			},
+		},
+	}
+}
+
+// unreferencedArtifactSchemas are schema files present on disk that no tool,
+// pack, pipeline, or skill references. They are still declared — the host may
+// legitimately read an existing artifact written against one — but they are
+// flagged so the host does not present them as current output contracts.
+//
+// Verified by reference count across tracked files at commit e476bc3.
+var unreferencedArtifactSchemas = map[string]bool{
+	"cost_log": true,
+}
+
+// artifactSchemas loads the real JSON Schema documents from disk, keyed by
+// schema ID.
+//
+// The host receives schemas through `describe`, not by reading a module's files
+// off disk, so the documents are inlined rather than referenced by path: a path
+// would only be resolvable if the host could see into this repository.
+//
+// A missing directory or unreadable file is reported as a warning rather than
+// declared, so the host is never promised a schema that is not there. Files
+// with no known producer or consumer are declared but warned about.
+func artifactSchemas(warnings *[]string) map[string]any {
+	out := map[string]any{}
+	dir := modulePath("schemas", "artifacts")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		*warnings = append(*warnings, "artifact schema directory unavailable: "+filepath.ToSlash(dir))
+		return out
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".schema.json") {
+			continue
+		}
+		id := strings.TrimSuffix(name, ".schema.json")
+
+		raw, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			*warnings = append(*warnings, "artifact schema unreadable: "+id)
+			continue
+		}
+		var doc any
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			*warnings = append(*warnings, "artifact schema is not valid JSON: "+id)
+			continue
+		}
+		out[id] = doc
+
+		if unreferencedArtifactSchemas[id] {
+			*warnings = append(*warnings,
+				"artifact schema '"+id+"' has no known producer or consumer; "+
+					"readable for existing artifacts, not a current output contract")
+		}
+	}
+	return out
+}
+
+func overlays(warnings *[]string) []Overlay {
+	const rel = "agents/facet-creative.md"
+	path := modulePath("agents", "facet-creative.md")
+	digest, tokens, err := fileDigest(path)
+	if err != nil {
+		*warnings = append(*warnings, "agent overlay unreadable, not declared: "+rel)
+		return []Overlay{}
+	}
+	return []Overlay{{
+		ID:     "facet.creative",
+		Title:  "Facet creative overlay",
+		Path:   rel,
+		Digest: digest,
+		Tokens: tokens,
+	}}
+}
+
+func skills(warnings *[]string) []Skill {
+	const rel = "skills/facet/SKILL.md"
+	path := modulePath("skills", "facet", "SKILL.md")
+	digest, tokens, err := fileDigest(path)
+	if err != nil {
+		*warnings = append(*warnings, "core skill unreadable, not declared: "+rel)
+		return []Skill{}
+	}
+	return []Skill{{
+		ID:      "facet-core",
+		Title:   "Facet video producer",
+		Summary: "Canonical producer guidance: plan, estimate, render, review, disclose.",
+		Path:    rel,
+		Digest:  digest,
+		Tokens:  tokens,
+	}}
+}
+
+// requirements reports external dependencies derived from the toolbox's own
+// dependency probes rather than a static list.
+func requirements(tools []map[string]any) []Requirement {
+	seen := map[string]Requirement{}
+	for _, t := range tools {
+		name, _ := t["name"].(string)
+		deps, _ := t["dependencies"].([]any)
+		for _, d := range deps {
+			m, ok := d.(map[string]any)
+			if !ok {
+				continue
+			}
+			dn, _ := m["name"].(string)
+			dk, _ := m["type"].(string)
+			if dn == "" {
+				continue
+			}
+			if _, exists := seen[dn]; !exists {
+				seen[dn] = Requirement{Name: dn, Kind: dk, Required: false, For: name}
+			}
+		}
+	}
+	out := make([]Requirement, 0, len(seen))
+	for _, r := range seen {
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func errFromToolbox(env toolbox.Envelope) error {
+	if env.Error != nil {
+		return &toolboxErr{env.Error.Message}
+	}
+	return &toolboxErr{"toolbox returned an unsuccessful envelope"}
+}
+
+type toolboxErr struct{ msg string }
+
+func (e *toolboxErr) Error() string { return e.msg }

@@ -1,0 +1,61 @@
+{
+  "protocol": "xibodev.module/v1",
+  "module": "xibodev.facet",
+  "operation": "invoke",
+  "request_id": "req_fixture_probe",
+  "ok": true,
+  "result": {
+    "capability": "creative.tools.run",
+    "output": {
+      "audio": null,
+      "audio_streams": null,
+      "format": {
+        "bit_rate": 1908800,
+        "duration": 4.5,
+        "format_long_name": "QuickTime / MOV",
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "size": 1073700
+      },
+      "input": "projects/cinematic-documentary/assets/video/shot1_raw.mp4",
+      "sha256": "8f612e6db25d7ee58024a51af18b76a2ecaefafc94a506ec7d000f6c47153ada",
+      "video": {
+        "codec": "h264",
+        "fps": 30,
+        "height": 1080,
+        "index": 0,
+        "pixel_format": "yuvj420p",
+        "reported_frame_rate": 30,
+        "rotation": 0,
+        "width": 1920
+      },
+      "video_streams": [
+        {
+          "codec": "h264",
+          "fps": 30,
+          "height": 1080,
+          "index": 0,
+          "pixel_format": "yuvj420p",
+          "reported_frame_rate": 30,
+          "rotation": 0,
+          "width": 1920
+        }
+      ],
+      "warnings": [
+        "no audio stream found"
+      ]
+    },
+    "tool": "media_probe"
+  },
+  "warnings": [
+    "no audio stream found"
+  ],
+  "execution": {
+    "local": true,
+    "network": false,
+    "external_writes": false,
+    "provider": "ffprobe",
+    "estimated_cost": 0,
+    "actual_cost": 0,
+    "artifacts": []
+  }
+}

@@ -158,6 +158,28 @@ func executionFor(tool string) Execution {
 	return e
 }
 
+// readOnlyTools inspect existing files and report facts about them. Everything
+// else may write, and an unrecognised tool is assumed to write.
+//
+// This exists because Execution.ExternalWrite was declared and never assigned,
+// so every tool — including ones that demonstrably write media — reported
+// external_write=false. A module host uses declared effects to decide whether
+// approval is required, so a constant false routes write-performing tools
+// around approval. It fails OPEN, which is why the unknown case here is true.
+var readOnlyTools = map[string]bool{
+	"media_probe": true, "audio_probe": true, "music_library": true,
+	"image_selector": true, "video_selector": true,
+}
+
+// externalWriteFor reports whether an operation can write outside the process.
+// Estimation validates a request and never writes output, by contract.
+func externalWriteFor(tool, op string) bool {
+	if op != "run" {
+		return false
+	}
+	return !readOnlyTools[tool]
+}
+
 func canonicalToolName(tool string) string {
 	tool = strings.ToLower(strings.TrimSpace(tool))
 	for _, n := range names {
@@ -303,6 +325,7 @@ func success(tool, op string, result any, warnings []string) Envelope {
 		zero := 0.0
 		e.ActualCost = &zero // Estimation does not generate or bill media.
 	}
+	e.ExternalWrite = externalWriteFor(tool, op)
 	return Envelope{OK: true, Tool: tool, Operation: op, Result: result, Warnings: warnings, Execution: e}
 }
 
@@ -312,7 +335,9 @@ func errorEnvelope(tool, op string, err error) Envelope {
 	if errors.As(err, &tf) {
 		te = tf.err
 	}
-	return Envelope{OK: false, Tool: tool, Operation: op, Error: te, Warnings: []string{}, Execution: executionFor(tool)}
+	e := executionFor(tool)
+	e.ExternalWrite = externalWriteFor(tool, op)
+	return Envelope{OK: false, Tool: tool, Operation: op, Error: te, Warnings: []string{}, Execution: e}
 }
 
 func known(name string) bool {
@@ -326,7 +351,7 @@ func known(name string) bool {
 }
 
 func dependency(name string) map[string]any {
-	path, err := exec.LookPath(name)
+	path, err := lookPath(name)
 	return map[string]any{"name": name, "available": err == nil, "path": path, "type": "binary"}
 }
 
@@ -444,7 +469,9 @@ func description(name string) map[string]any {
 	d["result_schema"] = resultSchemas[name]
 	d["cost"] = map[string]any{"currency": "USD", "amount": exec.EstimatedCost, "known": exec.EstimatedCost != nil}
 	d["network"] = exec.Network
-	d["external_write"] = false
+	// A `run` of this tool may write; describe reports the run behaviour, which
+	// is what a caller is deciding about.
+	d["external_write"] = externalWriteFor(name, "run")
 	return d
 }
 
@@ -1002,7 +1029,7 @@ func runCommand(timeout time.Duration, program string, args ...string) ([]byte, 
 }
 
 func runCommandContext(ctx context.Context, program string, args ...string) ([]byte, error) {
-	resolved, err := exec.LookPath(program)
+	resolved, err := lookPath(program)
 	if err != nil {
 		return nil, failure("dependency_missing", program+" is not available", nil)
 	}
@@ -1023,7 +1050,7 @@ func runCommandContext(ctx context.Context, program string, args ...string) ([]b
 func runCommandDir(timeout time.Duration, dir, program string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	resolved, err := exec.LookPath(program)
+	resolved, err := lookPath(program)
 	if err != nil {
 		return nil, failure("dependency_missing", program+" is not available", nil)
 	}

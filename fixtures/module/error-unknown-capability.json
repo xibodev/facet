@@ -1,0 +1,25 @@
+{
+  "protocol": "xibodev.module/v1",
+  "module": "xibodev.facet",
+  "operation": "invoke",
+  "request_id": "req_fixture_unknown",
+  "ok": false,
+  "error": {
+    "code": "unknown_capability",
+    "message": "capability is not provided by this module",
+    "retryable": false,
+    "details": {
+      "capability": "creative.bogus"
+    }
+  },
+  "warnings": [],
+  "execution": {
+    "local": true,
+    "network": false,
+    "external_writes": false,
+    "provider": "facet",
+    "estimated_cost": 0,
+    "actual_cost": 0,
+    "artifacts": []
+  }
+}

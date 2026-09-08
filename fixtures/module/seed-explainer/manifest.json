@@ -1,0 +1,14 @@
+{
+  "schema": "xibodev.midden.seed/v1",
+  "goal": "Explain how rain forms",
+  "title": "How Rain Forms",
+  "summary": "A short explainer covering evaporation, condensation, and precipitation.",
+  "key_points": [
+    "Sunlight evaporates water from oceans and lakes",
+    "Rising vapour cools and condenses into droplets",
+    "Droplets merge until they fall as rain"
+  ],
+  "attachments": [],
+  "suggested_output_types": ["explainer"],
+  "evidence_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

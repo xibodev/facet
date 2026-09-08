@@ -1,0 +1,12 @@
+{
+  "request_id": "req_0000000000000000000000000000fake",
+  "tool": "media_probe",
+  "input": {
+    "input": "assets/source.mp4"
+  },
+  "seed": {
+    "schema": "xibodev.midden.seed/v1",
+    "path": "<host-staged-seed-root>",
+    "digest": "sha256:e4a37c683730c1c6a156013ad9381ae2f33f359ded3a97135cf8239657fb93ce"
+  }
+}

@@ -3,7 +3,6 @@ package toolbox
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 )
@@ -45,8 +44,8 @@ func doHyperFramesCompose(op string, data []byte) (any, []string, error) {
 	}
 
 	// Check if npx and ffmpeg are on PATH
-	npxPath, npxErr := exec.LookPath("npx")
-	ffmpegPath, ffmpegErr := exec.LookPath("ffmpeg")
+	npxPath, npxErr := lookPath("npx")
+	ffmpegPath, ffmpegErr := lookPath("ffmpeg")
 
 	if operation == "doctor" {
 		return map[string]any{

@@ -294,7 +294,7 @@ func doPiperTTS(op string, data []byte) (any, []string, error) {
 		return estimateResult([]string{"piper_tts_generate"}), nil, nil
 	}
 
-	piperPath, err := exec.LookPath("piper")
+	piperPath, err := lookPath("piper")
 	if err != nil {
 		return nil, nil, failure("unconfigured", "piper binary is not available on PATH", nil)
 	}

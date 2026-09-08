@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -489,7 +488,7 @@ func createMockVideo(path string, width, height int, duration float64) error {
 		}
 	}
 
-	if _, err := exec.LookPath("ffmpeg"); err == nil {
+	if _, err := lookPath("ffmpeg"); err == nil {
 		durStr := fmt.Sprintf("%.2f", duration)
 		sizeStr := fmt.Sprintf("%dx%d", width, height)
 		args := []string{
