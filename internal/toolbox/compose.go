@@ -159,6 +159,17 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 			if ov, ok := rawMap["overlays"]; ok {
 				remotionProps["overlays"] = ov
 			}
+			// Output dimensions and frame rate are the caller's, not the
+			// composition's. This branch rebuilds props from scratch, so
+			// anything not copied here is silently discarded: a request for
+			// 640x360 rendered at the composition's 1920x1080 default and
+			// reported success. Verified — the same scene at 640x360 and at
+			// the default produced BYTE-IDENTICAL files.
+			for _, k := range []string{"width", "height", "fps"} {
+				if v, ok := rawMap[k].(float64); ok && v > 0 {
+					remotionProps[k] = v
+				}
+			}
 			r := composeRequest{
 				Operation:  "remotion_render",
 				OutputPath: outPath,
@@ -637,6 +648,14 @@ func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any,
 	// dimensions as CLI overrides, not props — so a caller asking for 1280x720
 	// silently received the composition's 1920x1080 default. The render
 	// succeeded and quietly ignored the request, which is worse than failing.
+	//
+	// The earlier version of this only read RawProps, so a request built from
+	// `scenes` — the documented shape — still rendered at the composition
+	// default. Verified: the same scene requested at 640x360 and at the
+	// default produced BYTE-IDENTICAL 1080p files, because the fields were
+	// parsed into r.Width/r.Height and then never used. Fixing it for one
+	// input shape left the field declared-and-ignored for the other.
+	var w, h int
 	if r.RawProps != nil {
 		dim := func(key string) int {
 			v, ok := r.RawProps[key].(float64)
@@ -645,10 +664,15 @@ func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any,
 			}
 			return int(v)
 		}
-		w, h := dim("width"), dim("height")
-		if w > 0 && h > 0 {
-			args = append(args, "--width="+strconv.Itoa(w), "--height="+strconv.Itoa(h))
+		if v := dim("width"); v > 0 {
+			w = v
 		}
+		if v := dim("height"); v > 0 {
+			h = v
+		}
+	}
+	if w > 0 && h > 0 {
+		args = append(args, "--width="+strconv.Itoa(w), "--height="+strconv.Itoa(h))
 	}
 
 	if browser := findBrowserExecutable(); browser != "" {
