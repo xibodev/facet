@@ -29,6 +29,7 @@ Available Commands:
   doctor           Inspect system dependencies, runtimes, CLIs, and 33 tools
   init [slug]      Initialize a project workspace and link agent skills
   tools <op> ...   Run toolbox operations (list, describe, estimate, run)
+  module <op>      Module protocol surface for a host (describe, invoke)
   ui               Start the Facet Studio web interface
   version          Print Facet version information
   help             Show help for Facet commands
