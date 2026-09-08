@@ -37,6 +37,15 @@ func TestInstalledBundleGuidanceIsCurrent(t *testing.T) {
 		filepath.Join("skills", "facet", "SKILL.md"),
 		filepath.Join("packs", "explainer", "SCENE-TYPES.md"),
 		filepath.Join("packs", "explainer", "NARRATED-WALKTHROUGH.md"),
+		// The Remotion composer drifted worse than the guidance: the installed
+		// copy hardcoded `(lastEnd + 1) * 30` and ignored duration_seconds, so
+		// a 2-second plan rendered 3.000s through the installed path while the
+		// same request through a fresh build rendered 2.000s. Identical
+		// binaries, identical request, different videos.
+		filepath.Join("remotion-composer", "src", "Root.tsx"),
+		filepath.Join("remotion-composer", "src", "Explainer.tsx"),
+		filepath.Join("remotion-composer", "src", "explainerMetadata.ts"),
+		filepath.Join("remotion-composer", "package.json"),
 	} {
 		want, err := os.ReadFile(filepath.Join(repo, rel))
 		if err != nil {

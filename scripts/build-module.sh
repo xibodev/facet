@@ -22,6 +22,26 @@ cp -r skills/facet "$out/skills/"
 cp -r packs/explainer "$out/packs/"
 cp -r schemas/artifacts "$out/schemas/"
 
+# The Remotion composer SOURCE, which the descriptor declares facet_bundle as
+# holding. Omitting it left an installed bundle running a composer from a week
+# earlier: it hardcoded `(lastEnd + 1) * 30` and ignored duration_seconds
+# entirely, so a 2-second plan rendered 3.000s through the installed path while
+# the same request through this build rendered 2.000s.
+#
+# Identical binaries, identical request, different videos — the difference was
+# a composer nothing kept current.
+#
+# node_modules is NOT copied: it is ~130 packages the install already has, and
+# package.json is compared instead so a dependency change is visible rather
+# than silently reused.
+if [ -d "$out/remotion-composer/node_modules" ]; then
+  cp -r remotion-composer/src "$out/remotion-composer/"
+  cp remotion-composer/package.json remotion-composer/tsconfig.json "$out/remotion-composer/" 2>/dev/null || true
+  if ! cmp -s remotion-composer/package-lock.json "$out/remotion-composer/package-lock.json"; then
+    echo "WARNING: composer dependencies differ; run npm ci in $out/remotion-composer"
+  fi
+fi
+
 # A module that cannot describe itself is not installable, so fail here rather
 # than let the host discover it.
 "$out/xibodev.facet.exe" module describe --json > /dev/null

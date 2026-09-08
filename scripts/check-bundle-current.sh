@@ -11,6 +11,12 @@
 # Nothing detected that. The digests matched what was installed, so every check
 # passed while an agent read stale instructions.
 #
+# The Remotion composer is checked too, and it drifted worse than the guidance:
+# the installed copy hardcoded `(lastEnd + 1) * 30` and ignored duration_seconds
+# entirely, so a 2-second plan rendered 3.000s through the installed path while
+# the same request through a fresh build rendered 2.000s. Identical binaries,
+# identical request, different videos.
+#
 # Exits non-zero when they differ, so this can gate a release rather than being
 # something a person has to remember to look at.
 set -e
@@ -25,7 +31,7 @@ for rel in \
   agents/facet-creative.md \
   skills/facet/SKILL.md \
   packs/explainer/SCENE-TYPES.md \
-  packs/explainer/NARRATED-WALKTHROUGH.md
+  packs/explainer/NARRATED-WALKTHROUGH.md   remotion-composer/src/Root.tsx   remotion-composer/src/Explainer.tsx   remotion-composer/src/explainerMetadata.ts   remotion-composer/package.json
 do
   if [ ! -f "$bundle/$rel" ]; then
     echo "MISSING in bundle: $rel"
