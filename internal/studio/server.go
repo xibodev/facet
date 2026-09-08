@@ -1,3 +1,12 @@
+// Package studio serves Facet's standalone browser Studio.
+//
+// FROZEN: working and supported, but not under development. Bug and security
+// fixes only; no new UI features. Facet is a headless creative toolbox, and
+// presentation of its artefacts is moving to the agentic host that invokes the
+// module surface. See web/FROZEN.md.
+//
+// This package shares nothing with internal/module; the module protocol is
+// unaffected by the freeze.
 package studio
 
 import (

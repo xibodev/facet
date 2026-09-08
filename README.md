@@ -73,6 +73,12 @@ facet doctor
 facet ui
 ```
 
+**Studio is frozen.** It works and is supported, but it is not under
+development: bug and security fixes only, no new features. Facet's direction is
+a headless creative toolbox driven by your agent, with artefact presentation
+handled by the agentic host that invokes it. Nothing here is being removed, and
+the frozen UI does not affect the toolbox or the module surface.
+
 The default address is `http://localhost:8787`. Use `--port 8788` for another port, `--no-open` to skip browser launch, and `--dir /absolute/path/to/productions` to select a working/project root.
 
 1. Create a production or open an existing folder. The new-production form asks for its name, folder slug, engine, and packs. Check the location before choosing **Create & Launch**.

@@ -1,5 +1,10 @@
 # Facet Studio Design System
 
+> **FROZEN.** This design system describes the standalone Studio UI, which is
+> working and supported but no longer under development. It is retained as the
+> reference for what Facet's artefacts need in order to be shown. See
+> `FROZEN.md`.
+
 ## Direction
 
 Facet Studio is a calm production instrument centered on the real video output.
