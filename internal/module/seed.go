@@ -72,7 +72,6 @@ func (s *Seed) OutputTypes() (accepted []string, warnings []string) {
 type SeedResolution struct {
 	Schema         string `json:"schema"`
 	Path           string `json:"path"`
-	Root           string `json:"root,omitempty"`
 	DigestExpected string `json:"digest_expected"`
 	DigestActual   string `json:"digest_actual"`
 	EvidenceDigest string `json:"evidence_digest,omitempty"`
@@ -116,9 +115,7 @@ func LoadSeed(ref *SeedRef) (*Seed, *SeedResolution, error) {
 
 	// Resolve a seed root to its entry file. The host stages the seed and names
 	// the path; Facet never reconstructs a path of its own.
-	root := ""
 	if info, err := os.Stat(path); err == nil && info.IsDir() {
-		root = path
 		path = filepath.Join(path, SeedManifestFile)
 	}
 
@@ -133,9 +130,17 @@ func LoadSeed(ref *SeedRef) (*Seed, *SeedResolution, error) {
 	expected = strings.TrimPrefix(expected, "sha256:")
 
 	res := &SeedResolution{
-		Schema:         SeedSchemaID,
-		Path:           filepath.ToSlash(path),
-		Root:           filepath.ToSlash(root),
+		Schema: SeedSchemaID,
+		// The seed's location is the HOST's, and it is staged — the path Facet
+		// receives is not the path Midden wrote, and it differs between
+		// machines. Recording it verbatim put an absolute host path into every
+		// artifact manifest, which leaks the host's filesystem layout and is a
+		// protocol violation on any artefact field.
+		//
+		// Provenance keys on the DIGEST, which is stable across staging; the
+		// location is recorded only as the entry file's name inside the bundle,
+		// which is all a reader needs to know what was read.
+		Path:           SeedManifestFile,
 		DigestExpected: expected,
 		DigestActual:   actual,
 		Verified:       expected != "" && expected == actual,
