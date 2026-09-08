@@ -99,6 +99,12 @@ facet init my-video --engine opencode
 
 This creates a production workspace, projects the core and Explainer skills, and launches the selected agent there. Engine choices are `claude`, `opencode`, `codex`, and `copilot`; the CLI defaults to `claude`. Use `--no-launch` to initialize without launching an agent. Use a separate folder for each production, and provide the real source file location when asking to edit existing footage.
 
+`init` exits with the agent CLI's exit code, so a launch that fails reports a
+non-zero status even though the workspace was created. Scripts and
+non-interactive callers should pass `--no-launch`: an agent CLI given no
+terminal reads EOF on stdin and exits non-zero, which otherwise looks like the
+initialization itself failed.
+
 ## Production Packs
 
 Packs supply guidance, pipeline definitions, and supporting content. They do not install every referenced tool or provider. Studio lists installed packs for selection; basic CLI initialization selects Explainer.
