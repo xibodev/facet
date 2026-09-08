@@ -360,7 +360,17 @@ func Invoke(capability string, raw []byte) Envelope {
 	// Facet reads it, and the resulting artifact carries no trace of what it
 	// was made from. The manifest keys provenance on the seed DIGEST rather
 	// than its staged path, which differs between machines.
-	if seedRes != nil && out.OK && len(out.Execution.Artifacts) > 0 {
+	// Reported whenever a seed was consumed, ARTIFACTS OR NOT.
+	//
+	// This required artifacts, so a seeded run that produced none — a probe, a
+	// review, a listing — returned no manifest at all. The seed had been read
+	// and its digest verified, and that fact vanished silently: a caller
+	// asking "did Facet actually use my seed?" got no answer.
+	//
+	// A manifest with an empty artifact list is the honest answer. It says the
+	// seed was consumed and verified, and that this particular run produced
+	// nothing to attribute.
+	if seedRes != nil && out.OK {
 		out.Result = map[string]any{
 			"output":   out.Result,
 			"manifest": NewManifest(capability, out, seedRes),
