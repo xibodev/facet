@@ -480,9 +480,51 @@ func known(name string) bool {
 	return false
 }
 
+// Resolution states. Operator ruling 7: Resolution is not Boolean, and the
+// existence of a key, binary or process is not proof a provider is operational.
+//
+// Measured, which is why the third state exists:
+//
+//	elevenlabs_tts  ELEVENLABS_API_KEY present -> HTTP 402 paid_plan_required
+//	gflow_image     binary present, `gflow status` reports HEALTHY -> CAPTCHA_FAILED
+//
+// Both would have been reported SATISFIED by a Boolean check, and both fail at
+// the provider. UNKNOWN is the honest answer for a requirement that is present
+// but unproven.
+const (
+	// ResolutionSatisfied: present and provably usable.
+	ResolutionSatisfied = "satisfied"
+	// ResolutionUnsatisfied: absent. Refusing locally is possible and names a
+	// remedy the caller can act on.
+	ResolutionUnsatisfied = "unsatisfied"
+	// ResolutionUnknown: present, but existence does not prove operability.
+	// Must NOT be reported as satisfied; execution may still proceed under
+	// product or target policy, and the provider becomes the authority.
+	ResolutionUnknown = "unknown"
+)
+
+// resolutionOf reports a requirement's state without claiming more than was
+// checked.
+//
+// A binary or file whose absence is decisive resolves to satisfied or
+// unsatisfied. A credential resolves to unknown when present, because holding
+// a string is not holding a working account.
+func resolutionOf(present bool, kind string) string {
+	if !present {
+		return ResolutionUnsatisfied
+	}
+	if kind == "env" {
+		return ResolutionUnknown
+	}
+	return ResolutionSatisfied
+}
+
 func dependency(name string) map[string]any {
 	path, err := lookPath(name)
-	return map[string]any{"name": name, "available": err == nil, "path": path, "type": "binary"}
+	return map[string]any{
+		"name": name, "available": err == nil, "path": path, "type": "binary",
+		"resolution": resolutionOf(err == nil, "binary"),
+	}
 }
 
 // composerDependency reports whether the Remotion composer can actually
@@ -502,12 +544,22 @@ func composerDependency() map[string]any {
 	}
 	return map[string]any{
 		"name": "remotion-composer", "available": usable, "path": dir, "type": "runtime",
+		// Satisfied or unsatisfied, never unknown: usability is decided by the
+		// render CLI existing on disk, which is a fact this process can check
+		// rather than a credential it can only hold.
+		"resolution": resolutionOf(usable, "runtime"),
 	}
 }
 
 func envDependency(name string) map[string]any {
 	val := os.Getenv(name)
-	return map[string]any{"name": name, "available": val != "", "path": "", "type": "env"}
+	return map[string]any{
+		"name": name, "available": val != "", "path": "", "type": "env",
+		// Present means UNKNOWN, never satisfied: a key that exists may still
+		// be unfunded, expired or wrong. Verified — ELEVENLABS_API_KEY is
+		// present here and the provider returns 402.
+		"resolution": resolutionOf(val != "", "env"),
+	}
 }
 
 func summary(name string) map[string]any {
