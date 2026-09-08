@@ -1,6 +1,9 @@
 package module
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -11,6 +14,30 @@ const (
 	seedBundle = "../../fixtures/module/seed-explainer"
 	seedDigest = "e4a37c683730c1c6a156013ad9381ae2f33f359ded3a97135cf8239657fb93ce"
 )
+
+// A digest-bearing fixture must survive checkout on any platform.
+//
+// Git's autocrlf rewrites newlines on checkout by default, which changes the
+// BYTES of a file whose digest was computed over those bytes. The seed manifest
+// went from 526 to 540 bytes on a Windows checkout and its sha256 stopped
+// matching — so the fixture was valid in the tree it was authored in and broken
+// everywhere else. `.gitattributes` marks fixtures `-text` to prevent it; this
+// test fails if that protection is ever removed.
+func TestSeedFixtureBytesSurviveCheckout(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(seedBundle, SeedManifestFile))
+	if err != nil {
+		t.Skipf("seed fixture unavailable: %v", err)
+	}
+	if bytes.Contains(raw, []byte("\r\n")) {
+		t.Error("seed manifest contains CRLF; its digest was computed over LF bytes " +
+			"and newline translation has corrupted it (check .gitattributes)")
+	}
+	sum := sha256.Sum256(raw)
+	if got := hex.EncodeToString(sum[:]); got != seedDigest {
+		t.Errorf("seed manifest digest = %s, want %s; the fixture bytes changed",
+			got, seedDigest)
+	}
+}
 
 // The end-to-end proof named in the session prompt:
 //
