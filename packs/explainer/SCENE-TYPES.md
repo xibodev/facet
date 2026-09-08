@@ -82,3 +82,18 @@ facet tools run frame_sample --input '{"input":"renders/final.mp4","output_dir":
 
 Identical frames mean the scenes did not render — usually a wrong `type`, or a
 required field that is absent or misspelled.
+
+## Output profile
+
+A Remotion render produces **h264 / yuvj420p** with `color_range=pc` — the
+full-range variant, correctly tagged, so players show the intended black and
+white levels. The ffmpeg-based tools in Facet end their filter chains with
+`format=yuv420p` and produce the studio-range variant instead.
+
+Both are correct; they are simply different renderers. When reviewing a
+Remotion render with `output_review`, expect `yuvj420p`, not `yuv420p` — a
+`pixel_format` failure against `yuv420p` means the expectation is wrong, not
+the render.
+
+Remotion's `--pixel-format` flag does not change this for h264 output;
+verified against the CLI directly.
