@@ -220,3 +220,45 @@ func TestNoTestInvokesAPaidToolForReal(t *testing.T) {
 		}
 	}
 }
+
+// The request states which protocol it speaks and which capability it
+// addresses. Both were accepted and ignored, which is how a confident wrong
+// answer gets produced: a future protocol may mean something different by the
+// same field names, and a capability disagreeing with the verb argument means
+// host and module attribute one result to different capabilities.
+func TestProtocolAndCapabilityMustAgree(t *testing.T) {
+	t.Run("a protocol the module does not speak is refused", func(t *testing.T) {
+		env := Invoke(CapToolsList, []byte(`{"protocol":"xibodev.module/v99"}`))
+		if env.OK {
+			t.Fatal("a future protocol was answered as if it were v1")
+		}
+		if env.Error.Code != "unsupported_protocol" {
+			t.Errorf("code = %q, want unsupported_protocol", env.Error.Code)
+		}
+	})
+
+	t.Run("a capability disagreeing with the invocation is refused", func(t *testing.T) {
+		env := Invoke(CapToolsList, []byte(`{"capability":"creative.tools.run"}`))
+		if env.OK {
+			t.Fatal("a mismatched capability was silently resolved")
+		}
+		if env.Error.Code != "invalid_request" {
+			t.Errorf("code = %q, want invalid_request", env.Error.Code)
+		}
+	})
+
+	t.Run("agreement passes", func(t *testing.T) {
+		env := Invoke(CapToolsList,
+			[]byte(`{"protocol":"xibodev.module/v1","capability":"creative.tools.list"}`))
+		if !env.OK {
+			t.Errorf("an agreeing request was refused: %+v", env.Error)
+		}
+	})
+
+	t.Run("absent fields are not required", func(t *testing.T) {
+		// The CLI sends neither.
+		if env := Invoke(CapToolsList, []byte(`{}`)); !env.OK {
+			t.Errorf("a request without protocol or capability was refused: %+v", env.Error)
+		}
+	})
+}

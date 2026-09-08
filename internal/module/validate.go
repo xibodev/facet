@@ -250,3 +250,57 @@ func boundedBytes(b []byte) string {
 	}
 	return string(b)
 }
+
+// EnforceOutputBudget replaces a response too large for the host with an error
+// that fits.
+//
+// The host truncates at max_output_bytes and treats a truncated envelope as
+// unusable, because a partial JSON document cannot be trusted even when it
+// happens to parse. A module that ignores the budget therefore turns a
+// successful call into a corrupt response, and the host cannot tell whether
+// the work succeeded.
+//
+// Refusing is strictly better: the caller learns the response was too large,
+// which is actionable, rather than receiving JSON that stops mid-object. The
+// replacement is deliberately small — no result, bounded details — so it
+// cannot itself exceed the budget.
+//
+// A zero or absent budget means the caller set none, and the envelope passes
+// through untouched.
+func EnforceOutputBudget(env Envelope, maxBytes int) Envelope {
+	if maxBytes <= 0 {
+		return env
+	}
+	raw, err := json.Marshal(env)
+	if err != nil || len(raw) <= maxBytes {
+		return env
+	}
+
+	// A failure envelope already carries no result; if THAT is over budget the
+	// caller's limit is smaller than any answer, and truncation is the host's
+	// to handle.
+	if !env.OK {
+		return env
+	}
+
+	return Envelope{
+		Protocol:  env.Protocol,
+		Module:    env.Module,
+		Operation: env.Operation,
+		RequestID: env.RequestID,
+		OK:        false,
+		Error: &Error{
+			Code: "output_too_large",
+			Message: fmt.Sprintf(
+				"the response is %d bytes against a %d-byte budget; request a narrower "+
+					"capability or raise max_output_bytes", len(raw), maxBytes),
+			Retryable: false,
+			Details: map[string]any{
+				"response_bytes":   len(raw),
+				"max_output_bytes": maxBytes,
+			},
+		},
+		Warnings:  []string{},
+		Execution: env.Execution,
+	}
+}

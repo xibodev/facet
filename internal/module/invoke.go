@@ -189,6 +189,28 @@ func Invoke(capability string, raw []byte) Envelope {
 		reqID = newRequestID()
 	}
 
+	// The request states which protocol it speaks and which capability it
+	// addresses. Both were accepted and ignored.
+	//
+	// A protocol Facet does not speak is refused rather than guessed at: a
+	// future version may mean something different by the same field names, and
+	// answering it as if it were v1 produces a confident wrong result.
+	if v := strings.TrimSpace(req.Protocol); v != "" && v != Protocol {
+		return fail(OpInvoke, reqID, "unsupported_protocol",
+			"this module speaks "+Protocol+" and cannot answer a request in "+v,
+			map[string]any{"requested": v, "supported": []string{Protocol}}, false)
+	}
+
+	// A capability disagreeing with the verb argument means the host and the
+	// module would attribute the same result to different capabilities. Facet
+	// ran the argument and reported it, so a mismatch was silently resolved in
+	// favour of one side.
+	if c := strings.TrimSpace(req.Capability); c != "" && c != capability {
+		return fail(OpInvoke, reqID, "invalid_request",
+			"the request addresses "+c+" but the invocation names "+capability,
+			map[string]any{"request_capability": c, "invoked": capability}, false)
+	}
+
 	op, pinned, known := capabilityOp(capability)
 	if !known {
 		return fail(OpInvoke, reqID, "unknown_capability",
@@ -295,7 +317,11 @@ func Invoke(capability string, raw []byte) Envelope {
 	}
 
 	env, ok := toolbox.CLI(args)
-	return project(OpInvoke, op, reqID, capability, tool, env, ok)
+	// The host truncates past its budget and a truncated envelope is unusable,
+	// so an oversized success is replaced by an error that fits rather than
+	// left to become corrupt JSON.
+	return EnforceOutputBudget(
+		project(OpInvoke, op, reqID, capability, tool, env, ok), req.MaxOutputBytes)
 }
 
 // isLongRunning reports whether a capability may return a job handle. It must
@@ -342,7 +368,8 @@ func Estimate(capability string, raw []byte) Envelope {
 	}
 
 	env, ok := toolbox.CLI(args)
-	return project(OpInvoke, "estimate", reqID, capability, tool, env, ok)
+	return EnforceOutputBudget(
+		project(OpInvoke, "estimate", reqID, capability, tool, env, ok), req.MaxOutputBytes)
 }
 
 func toolboxArgs(op, tool string, input json.RawMessage) ([]string, error) {
