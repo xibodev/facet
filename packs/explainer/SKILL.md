@@ -11,6 +11,9 @@ Supporting legacy skills under this pack (including compose-director, runtime-se
 Understand the thesis, audience, duration, format, and visual direction. Explain the plan and provider choices; ask for explicit consent before paid generation. Narration, music, and captions are optional: honor silent-video requests. No forced turn sequencing.
 Choose clean-professional, flat-motion-graphics, or minimalist-diagram as a theme identifier (no .yaml suffix). Plan meaningful visuals rather than filling every scene with a text card.
 
+## Narrated Production
+For a video that speaks, follow `NARRATED-WALKTHROUGH.md`: narration first because it sets the timing, then cuts matched to it, then render and verify. Scene types and their required fields are in `SCENE-TYPES.md`.
+
 ## Direct Renderer Request
 Write `artifacts/explainer_props.json` with a nonempty cuts array, then estimate and run video_compose. This minimal example is silent:
 ```json
