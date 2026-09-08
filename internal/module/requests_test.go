@@ -23,11 +23,16 @@ func TestRequestFixturesAreAccepted(t *testing.T) {
 	// Capability each example is written for, and whether it should run here.
 	// Paid and binary-dependent examples are shape-checked only: running them
 	// would contact a provider or need a real binary path.
+	// A poll carries a job_id, not a tool. Treating it as a tool call would
+	// assert a field the capability does not have.
+	pollOnly := map[string]bool{"jobs-status.json": true}
+
 	shapeOnly := map[string]bool{
 		"estimate-paid.json":           true,
 		"run-paid-with-consent.json":   true,
 		"run-local-deterministic.json": true,
 		"run-from-seed.json":           true,
+		"run-async-handle.json":        true,
 	}
 	capability := map[string]string{
 		"describe-tool.json":           CapToolsDescribe,
@@ -35,6 +40,8 @@ func TestRequestFixturesAreAccepted(t *testing.T) {
 		"estimate-paid.json":           CapToolsEstimate,
 		"run-paid-with-consent.json":   CapToolsRun,
 		"run-from-seed.json":           CapToolsRun,
+		"run-async-handle.json":        CapToolsRun,
+		"jobs-status.json":             CapJobsStatus,
 	}
 
 	for _, e := range entries {
@@ -46,6 +53,17 @@ func TestRequestFixturesAreAccepted(t *testing.T) {
 			raw, err := os.ReadFile(filepath.Join(dir, name))
 			if err != nil {
 				t.Fatal(err)
+			}
+
+			if pollOnly[name] {
+				var poll JobStatusRequest
+				if err := json.Unmarshal(raw, &poll); err != nil {
+					t.Fatalf("example does not parse as a poll request: %v", err)
+				}
+				if poll.JobID == "" {
+					t.Error("poll example carries no job_id")
+				}
+				return
 			}
 
 			var req Request

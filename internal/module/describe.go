@@ -176,6 +176,10 @@ func capabilitySchemas() (req map[string]any, res map[string]any) {
 		"binaries": map[string]any{
 			"type": "object", "additionalProperties": str,
 		},
+		// Opt-in handle for long-running work. Absent or false means block
+		// until the work completes, which is what every existing consumer
+		// expects.
+		"async": map[string]any{"type": "boolean"},
 	})
 	passthrough := obj([]string{"capability", "tool", "output"}, map[string]any{
 		"capability": str, "tool": map[string]any{"type": "string"},

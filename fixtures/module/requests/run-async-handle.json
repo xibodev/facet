@@ -1,0 +1,25 @@
+{
+  "request_id": "req_0000000000000000000000000000fake",
+  "tool": "video_compose",
+  "async": true,
+  "input": {
+    "width": 1280,
+    "height": 720,
+    "fps": 30,
+    "duration_seconds": 4,
+    "cuts": [
+      {
+        "id": "c1",
+        "type": "hero_title",
+        "text": "Rendered asynchronously",
+        "heroSubtitle": "the handle returns immediately",
+        "in_seconds": 0,
+        "out_seconds": 4
+      }
+    ]
+  },
+  "binaries": {
+    "node": "/absolute/path/to/node",
+    "ffmpeg": "/absolute/path/to/ffmpeg"
+  }
+}

@@ -2,7 +2,7 @@
   "protocol": "xibodev.module/v1",
   "module": "xibodev.facet",
   "operation": "describe",
-  "request_id": "req_94588061a4f396e84732722ead22706e",
+  "request_id": "req_25d759c8c63a1d7cab1a4eca7ce1d23a",
   "ok": true,
   "result": {
     "module": "xibodev.facet",
@@ -467,6 +467,9 @@
       },
       "creative.artifact.inspect.request/v1": {
         "properties": {
+          "async": {
+            "type": "boolean"
+          },
           "binaries": {
             "additionalProperties": {
               "minLength": 1,
@@ -551,6 +554,9 @@
       },
       "creative.output.review.request/v1": {
         "properties": {
+          "async": {
+            "type": "boolean"
+          },
           "binaries": {
             "additionalProperties": {
               "minLength": 1,
@@ -635,6 +641,9 @@
       },
       "creative.tools.estimate.request/v1": {
         "properties": {
+          "async": {
+            "type": "boolean"
+          },
           "binaries": {
             "additionalProperties": {
               "minLength": 1,
@@ -713,6 +722,9 @@
       },
       "creative.tools.run.request/v1": {
         "properties": {
+          "async": {
+            "type": "boolean"
+          },
           "binaries": {
             "additionalProperties": {
               "minLength": 1,
