@@ -322,6 +322,23 @@ func Invoke(capability string, raw []byte) Envelope {
 	// that the async path would resolve against an empty PATH — the same
 	// declared-but-not-wired failure the grant itself was added to fix.
 	if req.Async && isLongRunning(capability) {
+		// A granted project_root cannot travel into a goroutine: the working
+		// directory is process-global, and `restore` runs when this function
+		// returns — before the job finishes. The job would resolve the
+		// caller's relative paths wherever the process happened to be, and a
+		// concurrent request entering its own root would move this one
+		// mid-render.
+		//
+		// Refusing is better than a race that silently reads the wrong files.
+		// The caller can pass absolute paths for async work, or run it
+		// synchronously; both are correct, and neither is a coin flip.
+		if pr, ok := req.Roots["project_root"]; ok && strings.TrimSpace(pr.Path) != "" {
+			return fail(OpInvoke, reqID, "invalid_request",
+				"async work cannot resolve paths against a granted project_root; "+
+					"pass absolute paths or invoke synchronously",
+				map[string]any{"root": "project_root", "capability": capability}, false)
+		}
+
 		job := startJob(capability, tool)
 		grants := req.Binaries
 		go func() {
