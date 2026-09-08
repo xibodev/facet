@@ -403,7 +403,10 @@ func TestDeclaredDigestsMatchFileContents(t *testing.T) {
 	desc, _ := env.Result.(Descriptor)
 
 	check := func(id, path, declared string) {
-		raw, err := os.ReadFile(path)
+		// Declared paths are MODULE-relative by contract — a module never hands
+		// the host an absolute path — so they must be resolved against the
+		// module root, not the test's working directory.
+		raw, err := os.ReadFile(filepath.Join(moduleRoot(), path))
 		if err != nil {
 			t.Errorf("%s declares path %q which cannot be read: %v", id, path, err)
 			return

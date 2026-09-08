@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/xibodev/facet/internal/config"
 	"github.com/xibodev/facet/internal/toolbox"
 )
 
@@ -202,21 +203,42 @@ func capabilitySchemas() (req map[string]any, res map[string]any) {
 	return req, res
 }
 
-// moduleRoot resolves paths relative to the module's own installation rather
-// than the process working directory.
+// moduleRoot resolves the directory holding the module's own content.
 //
-// The host runs a module as a detached process and does not promise any
-// particular cwd. Resolving `schemas/artifacts` or `skills/facet/SKILL.md`
-// against cwd made the descriptor silently depend on where it was launched: run
-// from the repo root it declared 20 artifact schemas, one overlay and one
-// skill; run from anywhere else it returned ok:true with all three EMPTY while
-// capabilities still referenced them — dangling references that look like a
-// contract. Anchoring to the executable makes the descriptor the same wherever
-// it is invoked.
+// The host runs a module as a detached process and promises no particular cwd,
+// so content must never be resolved against the working directory: run from the
+// repo root the descriptor declared 20 artifact schemas, one overlay and one
+// skill; run from anywhere else it returned ok:true with all three EMPTY.
 //
-// Falls back to cwd only when the executable path cannot be determined, and the
-// caller reports a missing directory as a warning either way.
+// It must also work from a real INSTALL, where the layout is not the repo
+// layout: the binary lives in ~/.facet/bin/ and its content in the sibling
+// ~/.facet/bundle/. Walking up from the executable finds a repo checkout but
+// never a bundle, so an installed Facet declared no skills at all — the exact
+// failure a host would hit after `install.ps1`.
+//
+// Discovery is delegated to internal/config, which already resolves both
+// layouts (executable-relative ../bundle, ~/.facet/bundle, cwd and two parents)
+// and honours a pinned paths.bundle. Duplicating that here is what produced the
+// install-layout gap in the first place.
 func moduleRoot() string {
+	// A candidate only counts if it actually holds Facet's content. Config's
+	// own bundle discovery treats any directory containing a `skills` folder as
+	// a bundle root, which matched the user's HOME because an unrelated
+	// ~/skills existed there — so a loose heuristic silently won over the real
+	// bundle. Every candidate here is verified by the file the module needs.
+	holdsContent := func(dir string) bool {
+		if strings.TrimSpace(dir) == "" {
+			return false
+		}
+		_, err := os.Stat(filepath.Join(dir, "skills", "facet", "SKILL.md"))
+		return err == nil
+	}
+
+	// A pinned or discovered bundle wins when it is genuinely one.
+	if cfg, err := config.Load(); err == nil && holdsContent(cfg.Paths.Bundle) {
+		return cfg.Paths.Bundle
+	}
+
 	exe, err := os.Executable()
 	if err != nil {
 		return ""
@@ -224,11 +246,22 @@ func moduleRoot() string {
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = resolved
 	}
-	dir := filepath.Dir(exe)
-	// Walk up looking for the module's content. A built binary sits in the
-	// repository root during development and beside its bundle once installed.
+
+	// Installed layout first: the binary is in <root>/bin and content in the
+	// sibling <root>/bundle. Then a source checkout, where content sits beside
+	// the binary or a few directories above it.
+	binDir := filepath.Dir(exe)
+	if root := filepath.Dir(binDir); holdsContent(filepath.Join(root, "bundle")) {
+		return filepath.Join(root, "bundle")
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		if b := filepath.Join(home, ".facet", "bundle"); holdsContent(b) {
+			return b
+		}
+	}
+	dir := binDir
 	for i := 0; i < 4; i++ {
-		if _, err := os.Stat(filepath.Join(dir, "skills", "facet", "SKILL.md")); err == nil {
+		if holdsContent(dir) {
 			return dir
 		}
 		parent := filepath.Dir(dir)

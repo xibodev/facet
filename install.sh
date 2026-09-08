@@ -24,7 +24,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 for file in go.mod cmd/facet/main.go cmd/facet-ui/main.go skills/facet/SKILL.md remotion-composer/package-lock.json; do
     [ -f "${SCRIPT_DIR}/${file}" ] || source_help
 done
-for folder in skills packs pipeline_defs schemas styles remotion-composer; do
+for folder in skills packs pipeline_defs schemas styles remotion-composer agents; do
     [ -d "${SCRIPT_DIR}/${folder}" ] || source_help
 done
 
@@ -57,7 +57,7 @@ printf '%s\n' 'Installing skills, packs and Remotion source (excluding local dep
 (
     cd "$SCRIPT_DIR"
     tar --exclude=node_modules --exclude=.git --exclude=out --exclude=dist --exclude=.cache \
-        -cf - skills packs pipeline_defs schemas styles remotion-composer
+        -cf - skills packs pipeline_defs schemas styles remotion-composer agents
 ) | tar -xf - -C "$USER_BUNDLE_DIR"
 
 printf '%s\n' 'Installing locked Remotion dependencies with npm ci (network access may be required)...'

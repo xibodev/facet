@@ -598,6 +598,28 @@ func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any,
 	absProps, _ := filepath.Abs(propsPath)
 
 	args := []string{cliPath, "render", entryFile, compositionID, absOut, "--props=" + absProps, "--public-dir=" + publicDir}
+
+	// Honour an explicitly requested output profile.
+	//
+	// Direct Remotion props carry width/height at the top level, but they were
+	// only ever written into the props file — Remotion takes the output
+	// dimensions as CLI overrides, not props — so a caller asking for 1280x720
+	// silently received the composition's 1920x1080 default. The render
+	// succeeded and quietly ignored the request, which is worse than failing.
+	if r.RawProps != nil {
+		dim := func(key string) int {
+			v, ok := r.RawProps[key].(float64)
+			if !ok || v <= 0 {
+				return 0
+			}
+			return int(v)
+		}
+		w, h := dim("width"), dim("height")
+		if w > 0 && h > 0 {
+			args = append(args, "--width="+strconv.Itoa(w), "--height="+strconv.Itoa(h))
+		}
+	}
+
 	if browser := findBrowserExecutable(); browser != "" {
 		args = append(args, "--browser-executable="+browser)
 	}
@@ -741,9 +763,16 @@ func stageRemotionMedia(data []byte, composer, publicDir string) ([]byte, error)
 		mime := http.DetectContentType(header[:n])
 		media := strings.HasPrefix(mime, "audio/") || strings.HasPrefix(mime, "video/") || strings.HasPrefix(mime, "image/") || mime == "application/ogg"
 		// Containers not recognized by net/http's bounded signature table.
+		//
+		// The MPEG audio check matches an 11-bit frame sync (0xFF followed by
+		// three set bits), which is what the spec actually defines. A tighter
+		// mask of 0xf6==0xf0 rejected the most common real headers — 0xf3 and
+		// 0xfb, MPEG-1 Layer III — so Facet refused MP3s that its own edge_tts
+		// tool had just produced. Verified against a generated narration file
+		// whose header is ff f3.
 		media = media || (n >= 12 && (string(header[4:8]) == "ftyp" || string(header[4:8]) == "moov" || string(header[4:8]) == "mdat")) ||
 			(n >= 4 && (string(header[:4]) == "fLaC" || string(header[:4]) == "\x1a\x45\xdf\xa3" || string(header[:4]) == "II*\x00" || string(header[:4]) == "MM\x00*")) ||
-			(n >= 2 && header[0] == 0xff && header[1]&0xf6 == 0xf0)
+			(n >= 2 && header[0] == 0xff && header[1]&0xe0 == 0xe0)
 		if !media {
 			return invalid("source does not have a supported media signature")
 		}

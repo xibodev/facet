@@ -20,7 +20,7 @@ $ScriptDir = Split-Path -Parent $PSCommandPath
 foreach ($file in @('go.mod', 'cmd/facet/main.go', 'cmd/facet-ui/main.go', 'skills/facet/SKILL.md', 'packs/explainer/SKILL.md', 'remotion-composer/package.json', 'remotion-composer/package-lock.json', 'remotion-composer/src/index.tsx')) {
     if (-not (Test-Path -LiteralPath (Join-Path $ScriptDir $file) -PathType Leaf)) { throw $sourceHelp }
 }
-$BundleFolders = @('skills', 'packs', 'pipeline_defs', 'schemas', 'styles', 'remotion-composer')
+$BundleFolders = @('skills', 'packs', 'pipeline_defs', 'schemas', 'styles', 'remotion-composer', 'agents')
 foreach ($folder in $BundleFolders) {
     if (-not (Test-Path -LiteralPath (Join-Path $ScriptDir $folder) -PathType Container)) { throw $sourceHelp }
 }
@@ -140,6 +140,20 @@ try {
         # Only these two global skill conventions are supported. Never replace user skills.
         foreach ($agentDir in @('.claude/skills', '.config/opencode/skills')) {
             $target = Join-Path $HomeDir "$agentDir/facet"
+
+            # A link left by a previous install can outlive its target: renaming
+            # this project left ~/.claude/skills/facet pointing at a directory
+            # that no longer existed, so the skill was silently dead in the
+            # agent CLI. Test-Path reports $false for a broken link, so the old
+            # check neither preserved it nor replaced it -- it skipped, and the
+            # dangling link stayed dead across every reinstall. Repair a stale
+            # link we own; still never touch real user content.
+            $link = Get-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
+            if ($null -ne $link -and $null -ne $link.LinkType -and -not (Test-Path -LiteralPath $target)) {
+                Write-Host "Repairing stale Facet skill link: $target"
+                Remove-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
+            }
+
             if (Test-Path -LiteralPath $target) { Write-Warning "Preserving existing global skill: $target"; continue }
             Copy-BundleTree (Join-Path $BundleDir 'skills/facet') $target
         }
