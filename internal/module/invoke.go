@@ -308,6 +308,33 @@ func Invoke(capability string, raw []byte) Envelope {
 		}
 	}
 
+	// A supplied seed is LOADED and VERIFIED before any work begins.
+	//
+	// SeedRef was declared on the request, documented, and read by nothing:
+	// LoadSeed existed and was tested, but no invocation ever called it, so a
+	// host staging a Midden seed got a silent no-op — journey C's Facet half
+	// was a library function no caller could reach. The eighth instance of a
+	// field accepted and ignored.
+	//
+	// Verified first so a bad digest fails before spending a render, and so a
+	// Facet artifact can never claim provenance from bytes it did not read.
+	var seedRes *SeedResolution
+	if req.Seed != nil {
+		seed, res, err := LoadSeed(req.Seed)
+		if err != nil {
+			return fail(OpInvoke, reqID, "invalid_request",
+				"seed could not be loaded: "+bounded(err.Error()),
+				map[string]any{"schema": SeedSchemaID}, false)
+		}
+		if !res.Verified && strings.TrimSpace(req.Seed.Digest) != "" {
+			return fail(OpInvoke, reqID, "invalid_request",
+				"seed digest did not verify; refusing to consume unverified evidence",
+				map[string]any{"expected": req.Seed.Digest, "actual": res.DigestActual}, false)
+		}
+		seedRes = res
+		_ = seed
+	}
+
 	// Finish inside the host's budget rather than being killed by it.
 	//
 	// The host enforces deadline_ms by killing the process tree, and its
@@ -366,11 +393,25 @@ func Invoke(capability string, raw []byte) Envelope {
 	}
 
 	env, ok := toolbox.CLI(args)
+	out := project(OpInvoke, op, reqID, capability, tool, env, ok)
+
+	// A run that consumed a seed reports where its content came from.
+	//
+	// This is the point of loading one: without it the host stages evidence,
+	// Facet reads it, and the resulting artifact carries no trace of what it
+	// was made from. The manifest keys provenance on the seed DIGEST rather
+	// than its staged path, which differs between machines.
+	if seedRes != nil && out.OK && len(out.Execution.Artifacts) > 0 {
+		out.Result = map[string]any{
+			"output":   out.Result,
+			"manifest": NewManifest(capability, out, seedRes),
+		}
+	}
+
 	// The host truncates past its budget and a truncated envelope is unusable,
 	// so an oversized success is replaced by an error that fits rather than
 	// left to become corrupt JSON.
-	return EnforceOutputBudget(
-		project(OpInvoke, op, reqID, capability, tool, env, ok), req.MaxOutputBytes)
+	return EnforceOutputBudget(out, req.MaxOutputBytes)
 }
 
 // isLongRunning reports whether a capability may return a job handle. It must
