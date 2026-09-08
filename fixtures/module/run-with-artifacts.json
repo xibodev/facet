@@ -1,0 +1,62 @@
+{
+  "protocol": "xibodev.module/v1",
+  "module": "xibodev.facet",
+  "operation": "invoke",
+  "request_id": "req_fixture_artifacts",
+  "ok": true,
+  "result": {
+    "capability": "creative.tools.run",
+    "output": {
+      "input": "renders/final.mp4",
+      "resolved_timestamps": [
+        2.512,
+        7.536
+      ],
+      "samples": [
+        {
+          "height": 720,
+          "path": "artifacts\\fx\\frame-0001.jpg",
+          "timestamp": 2.512,
+          "width": 1280
+        },
+        {
+          "height": 720,
+          "path": "artifacts\\fx\\frame-0002.jpg",
+          "timestamp": 7.536,
+          "width": 1280
+        }
+      ],
+      "strategy": "uniform"
+    },
+    "tool": "frame_sample"
+  },
+  "warnings": [],
+  "execution": {
+    "local": true,
+    "network": false,
+    "external_writes": true,
+    "provider": "local",
+    "estimated_cost": 0,
+    "actual_cost": 0,
+    "artifacts": [
+      {
+        "id": "artifacts/fx/frame-0001.jpg",
+        "kind": "output",
+        "path": "artifacts/fx/frame-0001.jpg",
+        "root": "project_root",
+        "media_type": "image/jpeg",
+        "bytes": 26351,
+        "digest": "sha256:bda4352db9f8e5571c37e2b3a48d1ae8a16f423d1f8a5f4198e4d98cba631a51"
+      },
+      {
+        "id": "artifacts/fx/frame-0002.jpg",
+        "kind": "output",
+        "path": "artifacts/fx/frame-0002.jpg",
+        "root": "project_root",
+        "media_type": "image/jpeg",
+        "bytes": 30814,
+        "digest": "sha256:b189ae37431b82bcec92ba8c609793f190cc87b60dae782bd7e0967e9ce1e93e"
+      }
+    ]
+  }
+}

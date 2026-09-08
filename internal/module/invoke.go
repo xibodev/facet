@@ -2,9 +2,12 @@ package module
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/xibodev/facet/internal/toolbox"
@@ -475,12 +478,37 @@ func artifactsFrom(result any) []Artifact {
 		if strings.TrimSpace(media) == "" {
 			media = detectArtifactMediaType(path)
 		}
+
+		// The host validates every artifact and REJECTS one missing an id, a
+		// root, a relative path or a valid digest. Facet emitted none of them,
+		// so every artifact-producing run would have been refused with the
+		// envelope otherwise correct.
+		//
+		// Separators are normalized because a Windows path with backslashes
+		// cannot be checked against a root the host declared with forward
+		// slashes: confinement would be uncheckable rather than merely ugly.
+		rel := filepath.ToSlash(path)
+
+		// A digest the tool did not report is computed from the bytes on disk.
+		// The host uses it as provenance for anything it shows or stores, and
+		// an artifact it cannot verify is one it will not accept.
+		digest := protocolDigest(sha)
+		if digest == "" || !ValidDigest(digest) {
+			digest = fileDigestOf(path)
+		}
+
 		out = append(out, Artifact{
-			Kind:         "output",
-			Path:         path,
+			// The id identifies this artifact within the response. The path is
+			// already unique per run and is what a reader recognises.
+			ID:   rel,
+			Kind: "output",
+			// project_root is where every tool writes; the bundle is read-only.
+			Root:         "project_root",
+			Path:         rel,
+			Bytes:        fileBytes(path),
 			MediaType:    media,
-			Digest:       protocolDigest(sha),
-			Presentation: presentationFor(path, media),
+			Digest:       digest,
+			Presentation: presentationFor(rel, media),
 		})
 	}
 
@@ -716,4 +744,25 @@ func contains(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// fileDigestOf returns "sha256:<lowercase hex>" over a produced file, or "" if
+// it cannot be read. A digest is provenance the host relies on, so it is
+// computed rather than omitted when a tool did not report one.
+func fileDigestOf(path string) string {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(raw)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// fileBytes reports a produced file's size, or 0 when it cannot be read.
+func fileBytes(path string) int64 {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return 0
+	}
+	return info.Size()
 }
