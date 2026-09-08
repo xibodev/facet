@@ -435,12 +435,35 @@ func summary(name string) map[string]any {
 		configured = true
 	}
 
+	// Cost, network and write behaviour belong in the LISTING, not only in
+	// describe.
+	//
+	// The agent overlay tells an agent "unknown cost is not free" and to get
+	// human consent before paid generation. Choosing which tool to use is the
+	// moment that decision is made, and the listing omitted cost entirely — so
+	// telling a free tool from a billing one meant 35 separate describe calls,
+	// or guessing.
+	//
+	// Verified: `tools list` reported no cost field at all while `tools
+	// describe media_probe` correctly reported amount 0, known true. The two
+	// surfaces disagreed about the same tool.
+	//
+	// Taken from executionFor, the same source describe uses, so the two
+	// cannot drift into disagreeing again.
+	exec := executionFor(name)
 	return map[string]any{
 		"name":         name,
 		"capability":   capabilities[name],
 		"implemented":  true,
 		"configured":   configured,
 		"dependencies": deps,
+		"cost": map[string]any{
+			"currency": "USD",
+			"amount":   exec.EstimatedCost,
+			"known":    exec.EstimatedCost != nil,
+		},
+		"network":        exec.Network,
+		"external_write": externalWriteFor(name, "run"),
 	}
 }
 
