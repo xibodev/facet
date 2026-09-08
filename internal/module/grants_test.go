@@ -2,6 +2,8 @@ package module
 
 import (
 	"encoding/json"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -88,7 +90,10 @@ func TestAbsentGrantsDoNotDenyTheCLI(t *testing.T) {
 		Input:   json.RawMessage(`{"prompt":"x","model":"narwhal","aspect_ratio":"landscape","count":1,"output_path":"a.png"}`),
 		Consent: &Consent{PaidGenerationApproved: true, ApprovedBy: "operator"},
 	})
-	env := Invoke(CapToolsRun, body)
+	// ESTIMATE rather than run: the grant path is identical and estimation
+	// never contacts a provider. Using run here generated a real image and
+	// spent real money on every suite run.
+	env := Invoke(CapToolsEstimate, body)
 	if !env.OK && env.Error.Code == "permission_denied" {
 		t.Error("absent grants were treated as an empty grant list, denying the CLI")
 	}
@@ -111,6 +116,107 @@ func TestEveryPaidToolMapsToADeclaredProvider(t *testing.T) {
 		if !contains(desc.Permissions.PaidProviders, provider) {
 			t.Errorf("paid tool %q needs provider %q which is not declared in permissions",
 				tool, provider)
+		}
+	}
+}
+
+// The host's Grants is a value type with no omitempty, so `grants` is present
+// on EVERY request it sends. These are the two shapes it actually produces,
+// pinned so the gate is tested against the wire rather than against Facet's
+// idea of it.
+//
+// The first shape was a real host bug: Grants was never populated, so it
+// marshalled as present-with-null-fields. Present means host-mediated, null
+// means nothing authorized, so it denied every paid call regardless of what a
+// human approved. Denying it is correct — the module cannot tell an empty
+// grant from a deliberate one, and must not assume authority it was not given.
+func TestGateAgainstRealHostWireShapes(t *testing.T) {
+	paid := `"tool":"gflow_image","input":{"prompt":"x","model":"narwhal","aspect_ratio":"landscape","count":1,"output_path":"a.png"},` +
+		`"consent":{"paid_generation_approved":true,"approved_by":"operator"},`
+
+	t.Run("present with null fields is denied", func(t *testing.T) {
+		env := Invoke(CapToolsRun, []byte(`{`+paid+
+			`"grants":{"network":null,"credentials":null,"paid_providers":null,"publish":false,"subprocess":null}}`))
+		if env.OK {
+			t.Fatal("an all-null grant authorized a paid provider")
+		}
+		if env.Error.Code != "permission_denied" {
+			t.Errorf("code = %q, want permission_denied", env.Error.Code)
+		}
+	})
+
+	t.Run("declared providers granted pass the gate", func(t *testing.T) {
+		// ESTIMATE, not run. The gate is what is under test, and estimation
+		// exercises the same grant path without contacting a provider.
+		//
+		// An earlier version of this test used `run` with consent and a full
+		// grant, and it worked: it generated a real image and spent real money
+		// every time the suite ran. A test that bills is a bug however well
+		// authorized the spending is.
+		env := Invoke(CapToolsEstimate, []byte(`{`+paid+
+			`"grants":{"network":["labs.google"],"credentials":null,`+
+			`"paid_providers":["google_flow","openai","elevenlabs","fal","kling"],`+
+			`"publish":false,"subprocess":null}}`))
+		if !env.OK && env.Error.Code == "permission_denied" {
+			t.Errorf("a granted provider was denied: %s", env.Error.Message)
+		}
+	})
+
+	// Binaries are granted as resolved absolute paths, not via Grants.Subprocess,
+	// so an empty subprocess list must never deny a local tool.
+	t.Run("empty subprocess does not deny a local tool", func(t *testing.T) {
+		env := Invoke(CapToolsRun, []byte(`{"tool":"media_probe",`+
+			`"input":{"input":"../../projects/cinematic-documentary/assets/video/shot1_raw.mp4"},`+
+			`"grants":{"network":null,"credentials":null,"paid_providers":null,"publish":false,"subprocess":null}}`))
+		if !env.OK && env.Error.Code == "permission_denied" {
+			t.Error("a local tool was denied by an empty subprocess grant")
+		}
+	})
+}
+
+// No test may invoke a paid tool through creative.tools.run.
+//
+// Two did, and both worked: they carried consent, reached the provider, and
+// generated real images on every suite run. Authorized spending is still
+// spending, and a test suite that bills is a bug — it also made the suite
+// 15x slower and its result depend on a provider being reachable.
+//
+// creative.tools.estimate exercises the same validation and grant path without
+// contacting anyone, so there is no reason for a test to use run for a paid
+// tool. This reads the test sources rather than trusting the rule to be
+// remembered.
+func TestNoTestInvokesAPaidToolForReal(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		body, err := os.ReadFile(e.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, block := range strings.Split(string(body), "Invoke(CapToolsRun") {
+			// Look only at the request that follows each run invocation.
+			window := block
+			if len(window) > 400 {
+				window = window[:400]
+			}
+			// Consent is what makes a paid run actually reach the provider.
+			// Without it the gate refuses before anything is contacted, which
+			// is exactly what a consent test should assert.
+			if !strings.Contains(window, "paid_generation_approved") &&
+				!strings.Contains(window, "PaidGenerationApproved") {
+				continue
+			}
+			for tool := range paidTools {
+				if strings.Contains(window, `"`+tool+`"`) {
+					t.Errorf("%s invokes paid tool %q through CapToolsRun WITH consent; "+
+						"use CapToolsEstimate — a test must never bill", e.Name(), tool)
+				}
+			}
 		}
 	}
 }
