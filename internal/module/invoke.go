@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/xibodev/facet/internal/toolbox"
 )
@@ -253,7 +254,17 @@ func Invoke(capability string, raw []byte) Envelope {
 		}
 	}
 
-	args, err := toolboxArgs(op, tool, req.Input)
+	// Finish inside the host's budget rather than being killed by it.
+	//
+	// The host enforces deadline_ms by killing the process tree, and its
+	// default is 60s while a render's own timeout is 600s. Verified: a 30s
+	// 1080p render exceeded 60s, the process was killed, and the work was lost
+	// with no envelope — the host saw a dead process rather than a failure it
+	// could report. Clamping the tool's timeout means Facet returns a real
+	// error inside the budget instead.
+	input := applyDeadline(req.Input, req.DeadlineMS)
+
+	args, err := toolboxArgs(op, tool, input)
 	if err != nil {
 		return fail(OpInvoke, reqID, "invalid_request", err.Error(),
 			map[string]any{"capability": capability, "tool": tool}, false)
@@ -765,4 +776,48 @@ func fileBytes(path string) int64 {
 		return 0
 	}
 	return info.Size()
+}
+
+// deadlineSafetyMargin is how much of the host's budget is reserved for Facet
+// to write its envelope after the tool gives up. A tool that returns exactly at
+// the deadline is still killed before its error can be reported.
+const deadlineSafetyMargin = 5 * time.Second
+
+// applyDeadline clamps a tool's own timeout to the host's remaining budget.
+//
+// It never EXTENDS a timeout: a caller asking for 30 seconds gets 30 seconds
+// even when the host allows 600. It only prevents a tool from outliving the
+// budget its caller has, which is the case that loses work.
+func applyDeadline(input json.RawMessage, deadlineMS int) json.RawMessage {
+	if deadlineMS <= 0 || len(input) == 0 {
+		return input
+	}
+	budget := time.Duration(deadlineMS)*time.Millisecond - deadlineSafetyMargin
+	if budget <= 0 {
+		// Too small to reserve a margin from; leave the request untouched
+		// rather than fabricate a timeout the caller did not ask for.
+		return input
+	}
+	seconds := int(budget.Seconds())
+	if seconds <= 0 {
+		return input
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(input, &body); err != nil {
+		// Not an object; the tool will reject it with its own message.
+		return input
+	}
+	if existing, ok := body["timeout_seconds"].(float64); ok && existing > 0 {
+		if int(existing) <= seconds {
+			return input // the caller already asked for less
+		}
+	}
+	body["timeout_seconds"] = seconds
+
+	clamped, err := json.Marshal(body)
+	if err != nil {
+		return input
+	}
+	return clamped
 }
