@@ -124,9 +124,16 @@ func Describe(version string) Envelope {
 				"commons.wikimedia.org", "speech.platform.bing.com",
 				"raw.githubusercontent.com", "cdn.jsdelivr.net",
 			},
+			// Every credential the toolbox reads, derived from the source
+			// rather than from the provider list. Three were missing —
+			// FLUX_API_KEY, KLING_API_KEY and GOOGLE_API_KEY — all read by
+			// providers already declared as paid, so a host granting exactly
+			// what was declared would leave those tools unable to
+			// authenticate while appearing fully configured.
 			Credentials: []string{
 				"OPENAI_API_KEY", "ELEVENLABS_API_KEY", "FAL_KEY",
 				"PEXELS_API_KEY", "PIXABAY_API_KEY",
+				"FLUX_API_KEY", "KLING_API_KEY", "GOOGLE_API_KEY",
 			},
 			// Every provider here can bill. Each requires explicit human
 			// consent per invocation; unknown cost is never treated as free.

@@ -73,3 +73,60 @@ func TestDeclaredNetworkCoversEveryContactedHost(t *testing.T) {
 		t.Errorf("host is contacted but not declared in permissions.network: %s", m)
 	}
 }
+
+// The declared credential list must cover every API key the toolbox reads.
+//
+// A host grants exactly what the descriptor declares, so an undeclared key is
+// never supplied: the tool reports itself configured, then fails to
+// authenticate. Three were missing when this was written — FLUX_API_KEY,
+// KLING_API_KEY and GOOGLE_API_KEY — all belonging to providers already
+// declared as paid, which is what made the gap easy to miss.
+//
+// Only *_API_KEY and *_KEY names are treated as credentials; FACET_* and
+// path-like variables are configuration, not secrets.
+func TestDeclaredCredentialsCoverEveryKeyRead(t *testing.T) {
+	env := Describe("test")
+	if !env.OK {
+		t.Fatalf("describe failed: %+v", env.Error)
+	}
+	desc, ok := env.Result.(Descriptor)
+	if !ok {
+		t.Fatalf("result is %T, not a Descriptor", env.Result)
+	}
+	declared := map[string]bool{}
+	for _, c := range desc.Permissions.Credentials {
+		declared[c] = true
+	}
+
+	dir := filepath.Join("..", "toolbox")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Skipf("toolbox sources unavailable: %v", err)
+	}
+
+	getenv := regexp.MustCompile(`os\.Getenv\("([A-Z_0-9]+)"\)`)
+	var missing []string
+	seen := map[string]bool{}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			continue
+		}
+		for _, m := range getenv.FindAllStringSubmatch(string(raw), -1) {
+			key := m[1]
+			if !strings.HasSuffix(key, "_KEY") || declared[key] || seen[key] {
+				continue
+			}
+			seen[key] = true
+			missing = append(missing, key+" ("+name+")")
+		}
+	}
+	sort.Strings(missing)
+	for _, m := range missing {
+		t.Errorf("credential is read but not declared in permissions.credentials: %s", m)
+	}
+}
