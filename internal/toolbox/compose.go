@@ -130,19 +130,28 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 			if op == "estimate" {
 				return estimateResult([]string{"video_compose_remotion_render"}), nil, nil
 			}
+			// A scene becomes a cut by RENAMING its timings and carrying
+			// everything else through.
+			//
+			// The previous mapping copied five fields — id, type, the two
+			// timings and description->text — and silently dropped the rest.
+			// The composition reads 63 distinct cut fields, so any scene
+			// describing its content through them rendered as an empty cut:
+			// a valid mp4 with nothing in it, reported as a success.
+			//
+			// Verified: four renders with different text and different
+			// backgrounds produced BYTE-IDENTICAL files (sha256 6d1487ed...,
+			// 167833 bytes each), and output_review's content gate failed
+			// with "every sampled frame is blank".
+			//
+			// The scenes schema names only start_seconds and end_seconds and
+			// accepts any other property, so a caller has no way to learn
+			// which fields survive. Carrying them through is the only
+			// behaviour consistent with what the schema accepts.
 			cuts := make([]map[string]any, 0, len(scenesRaw))
 			for _, s := range scenesRaw {
 				if sm, ok := s.(map[string]any); ok {
-					cut := map[string]any{
-						"id":          sm["id"],
-						"type":        sm["type"],
-						"in_seconds":  sm["start_seconds"],
-						"out_seconds": sm["end_seconds"],
-					}
-					if d, ok := sm["description"].(string); ok {
-						cut["text"] = d
-					}
-					cuts = append(cuts, cut)
+					cuts = append(cuts, mapSceneToCut(sm))
 				}
 			}
 			theme := "flat-motion-graphics"
@@ -564,6 +573,44 @@ func findComposerDir() (string, error) {
 	}
 
 	return "", failure("dependency_missing", "Remotion Composer runtime not found; install the Facet bundle or configure paths.remotion_composer", nil)
+}
+
+// mapSceneToCut turns one scene-plan scene into a Remotion cut.
+//
+// Timings are RENAMED and everything else is carried through. The previous
+// version copied five fields and dropped the rest, so a scene describing its
+// content through any of the 63 cut fields the composition reads rendered as
+// an EMPTY cut — a valid mp4 with nothing in it, reported as a success.
+//
+// Verified before the fix: four renders with different text and backgrounds
+// produced byte-identical output and the content QA gate reported every frame
+// blank.
+//
+// The scenes schema names only start_seconds and end_seconds and accepts any
+// other property, so a caller cannot learn which fields survive. Carrying them
+// through is the only behaviour consistent with what the schema accepts.
+func mapSceneToCut(scene map[string]any) map[string]any {
+	cut := make(map[string]any, len(scene)+2)
+	for k, v := range scene {
+		switch k {
+		case "start_seconds", "end_seconds":
+			// Renamed below; the composition reads the in_/out_ pair.
+			continue
+		case "description":
+			// The scene-plan name for a cut's text. An explicit text wins, so
+			// a caller supplying both is not overridden by the prose field.
+			if _, present := scene["text"]; !present {
+				if d, ok := v.(string); ok && d != "" {
+					cut["text"] = d
+				}
+			}
+		default:
+			cut[k] = v
+		}
+	}
+	cut["in_seconds"] = scene["start_seconds"]
+	cut["out_seconds"] = scene["end_seconds"]
+	return cut
 }
 
 func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any, []string, error) {
