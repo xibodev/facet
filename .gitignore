@@ -38,3 +38,7 @@ bin/videokit
 # a capture is impossible rather than merely unlikely.
 zz_*_test.go
 zz_*.go
+
+# Built module package. Reproduced by scripts/build-module.sh; the binary and
+# copied content are build output, not source.
+/dist/

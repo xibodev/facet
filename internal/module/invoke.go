@@ -630,7 +630,7 @@ func artifactsFrom(result any) []Artifact {
 			// The id identifies this artifact within the response. The path is
 			// already unique per run and is what a reader recognises.
 			ID:   rel,
-			Kind: "output",
+			Kind: ArtifactKindOutput,
 			// project_root is where every tool writes; the bundle is read-only.
 			Root:         "project_root",
 			Path:         rel,
@@ -1084,6 +1084,26 @@ func absolutizeRequestPaths(raw json.RawMessage, root string) json.RawMessage {
 		return raw
 	}
 	return rewritten
+}
+
+// requestIDFrom recovers the host's request_id from a body that failed strict
+// decoding.
+//
+// A refusal must still be correlatable: minting a fresh id on the failure path
+// leaves the host unable to match the error to the call that caused it, which
+// is exactly when it needs to. Decoded loosely on purpose — the body is
+// already known to be unacceptable, and the id is the one thing worth
+// salvaging from it.
+func requestIDFrom(raw []byte) string {
+	var probe struct {
+		RequestID string `json:"request_id"`
+	}
+	if json.Unmarshal(raw, &probe) == nil {
+		if id := strings.TrimSpace(probe.RequestID); id != "" {
+			return id
+		}
+	}
+	return newRequestID()
 }
 
 // isPathKey reports whether a request field carries a filesystem path.

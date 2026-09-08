@@ -22,6 +22,13 @@ const (
 	OpInvoke   = "invoke"
 )
 
+// ArtifactKindOutput is the kind every Facet artifact carries.
+//
+// Facet emits ONE kind: a file a tool wrote. The host validates an artifact's
+// kind against the producing capability's artifact_schemas, so this must
+// appear there or every artifact-producing run is refused.
+const ArtifactKindOutput = "output"
+
 // Capability IDs. The host addresses these; it never names a Facet tool.
 const (
 	CapToolsList       = "creative.tools.list"

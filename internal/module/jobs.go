@@ -168,6 +168,21 @@ func HasRunningJobs() bool {
 type JobStatusRequest struct {
 	RequestID string `json:"request_id"`
 	JobID     string `json:"job_id"`
+
+	// Protocol fields the host sends on EVERY invocation. They are modelled
+	// rather than acted on here, because decoding is strict: an unmodelled
+	// field fails the decode, and the failure path minted a fresh request_id —
+	// so the host's id was never echoed and it could not correlate the
+	// response.
+	//
+	// Verified: {"request_id":"req_host_abc","job_id":...} echoed correctly,
+	// but the same request carrying protocol and capability did not. This is
+	// the identical mistake already fixed on the main request path; polling
+	// has its own decoder and never got the fix.
+	Protocol       string `json:"protocol,omitempty"`
+	Capability     string `json:"capability,omitempty"`
+	DeadlineMS     int    `json:"deadline_ms,omitempty"`
+	MaxOutputBytes int    `json:"max_output_bytes,omitempty"`
 }
 
 // JobStatus implements creative.jobs.status.
@@ -178,7 +193,11 @@ func JobStatus(raw []byte) Envelope {
 	var req JobStatusRequest
 	if len(raw) > 0 {
 		if err := decodeRequest(raw, &req); err != nil {
-			return fail(OpInvoke, newRequestID(), "invalid_request",
+			// Echo the id from the RAW request even though decoding failed.
+			// Minting a fresh one leaves the host unable to correlate the
+			// refusal with the call that caused it — the failure path is
+			// exactly when correlation matters most.
+			return fail(OpInvoke, requestIDFrom(raw), "invalid_request",
 				requestDecodeMessage(err),
 				map[string]any{"error": bounded(err.Error())}, false)
 		}

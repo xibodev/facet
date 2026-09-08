@@ -71,6 +71,23 @@ func Describe(version string) Envelope {
 	// results against those, and a capability referencing a schema the host
 	// does not have means it can validate nothing.
 	artifacts := artifactSchemas(&warnings)
+
+	// "output" is the KIND every Facet artifact carries, and the host
+	// validates an artifact's kind against the capability's artifact_schemas.
+	// The twenty document schemas describe things an agent AUTHORS — a brief,
+	// a scene plan, a review — not the media a tool writes, so none of them
+	// could ever describe a rendered mp4.
+	//
+	// Without an entry here, declaring the kind a capability really emits gets
+	// pruned as a dangling reference, and the host refuses every
+	// artifact-producing run. This makes the kind a first-class entry so the
+	// declaration and the emitted artifact finally agree.
+	artifacts[ArtifactKindOutput] = map[string]any{
+		"title": "Rendered output",
+		"description": "A file a tool wrote: rendered video or audio, a sampled frame, " +
+			"a generated image. Described by its media_type and digest rather than " +
+			"by a JSON schema, because the bytes are the artifact.",
+	}
 	declaredOverlays := overlays(&warnings)
 	declaredSkills := skills(&warnings)
 
@@ -426,8 +443,22 @@ func capabilityList() []Capability {
 				"depending on the selected tool.",
 			RequestSchema: "creative.tools.run.request/v1",
 			ResultSchema:  "creative.tools.run.result/v1",
-			// A run may produce any of these; the host validates what arrives.
-			ArtifactSchemas: []string{"render_report", "asset_manifest"},
+			// The KINDS this capability emits, which is what the host
+			// validates each artifact's `kind` against.
+			//
+			// This declared "render_report" and "asset_manifest" — names of
+			// JSON schema documents in schemas/artifacts/, not kinds. Every
+			// artifact Facet emits carries kind "output" (a rendered file: an
+			// mp4, an mp3, a frame), so the host refused every artifact-
+			// producing run with "produced artifact kind \"output\", which it
+			// does not declare in artifact_schemas".
+			//
+			// The two vocabularies were never the same: the schemas describe
+			// documents an agent authors, while the artifacts are the media a
+			// tool writes. Declaring the kind actually emitted is the honest
+			// half of that fix; the document schemas remain available through
+			// the descriptor's index for anything that authors them.
+			ArtifactSchemas: []string{ArtifactKindOutput},
 			Skills:          []string{"facet-core"},
 			// A render takes 30s at 720p and 83s at 1080p, so this capability
 			// may return a job handle rather than a finished result and the
@@ -447,9 +478,12 @@ func capabilityList() []Capability {
 			Title: "Review rendered output",
 			Summary: "Technical QA of a rendered file. This is not creative acceptance and never " +
 				"substitutes for human review.",
-			RequestSchema:   "creative.output.review.request/v1",
-			ResultSchema:    "creative.output.review.result/v1",
-			ArtifactSchemas: []string{"review", "final_review"},
+			RequestSchema: "creative.output.review.request/v1",
+			ResultSchema:  "creative.output.review.result/v1",
+			// Review samples frames to disk, and each is emitted as kind
+			// "output" like every other artifact. "review"/"final_review" name
+			// document schemas, not kinds.
+			ArtifactSchemas: []string{ArtifactKindOutput},
 			Skills:          []string{"facet-core"},
 			Effects: Effects{
 				Local: true, Network: false, ExternalWrites: true,

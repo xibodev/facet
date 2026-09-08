@@ -47,6 +47,16 @@ func TestArtifactSchemaReferencesStayResolvableAndVerifiable(t *testing.T) {
 			t.Errorf("artifact schema %q is %T, not a reference object", id, ref)
 			continue
 		}
+		// The emitted KIND is an entry with no file behind it: it names what a
+		// capability produces so the host can validate an artifact's kind, and
+		// the bytes ARE the artifact. Requiring a digest of a document that
+		// does not exist would force a fabricated one.
+		if id == ArtifactKindOutput {
+			if _, present := m["description"]; !present {
+				t.Errorf("%q carries no description; a host reading it learns nothing", id)
+			}
+			continue
+		}
 		digest, _ := m["digest"].(string)
 		if !ValidDigest(digest) {
 			t.Errorf("artifact schema %q digest %q is not sha256 hex", id, digest)
