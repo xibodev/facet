@@ -97,7 +97,16 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 				tmo = time.Duration(t) * time.Second
 			}
 			if op == "estimate" {
-				return estimateResult([]string{"video_compose_remotion_render"}), nil, nil
+				last := 0.0
+				for _, c := range cutsRaw {
+					if cm, ok := c.(map[string]any); ok {
+						if v, ok := cm["out_seconds"].(float64); ok && v > last {
+							last = v
+						}
+					}
+				}
+				f, w, h := renderShape(rawMap, last)
+				return estimateRender([]string{"video_compose_remotion_render"}, f, w, h), nil, nil
 			}
 			r := composeRequest{
 				Operation:  "remotion_render",
@@ -128,7 +137,16 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 				tmo = time.Duration(t) * time.Second
 			}
 			if op == "estimate" {
-				return estimateResult([]string{"video_compose_remotion_render"}), nil, nil
+				last := 0.0
+				for _, sc := range scenesRaw {
+					if sm, ok := sc.(map[string]any); ok {
+						if v, ok := sm["end_seconds"].(float64); ok && v > last {
+							last = v
+						}
+					}
+				}
+				f, w, h := renderShape(rawMap, last)
+				return estimateRender([]string{"video_compose_remotion_render"}, f, w, h), nil, nil
 			}
 			// A scene becomes a cut by RENAMING its timings and carrying
 			// everything else through.
@@ -591,6 +609,23 @@ func findComposerDir() (string, error) {
 	}
 
 	return "", failure("dependency_missing", "Remotion Composer runtime not found; install the Facet bundle or configure paths.remotion_composer", nil)
+}
+
+// renderShape reads the frame count and dimensions a render will use, so an
+// estimate can say how long it is likely to take.
+//
+// Falls back to the composition's own defaults, because that is what the
+// render itself will use when the caller names none.
+func renderShape(rawMap map[string]any, lastEnd float64) (frames, width, height int) {
+	num := func(key string, fallback float64) float64 {
+		if v, ok := rawMap[key].(float64); ok && v > 0 {
+			return v
+		}
+		return fallback
+	}
+	fps := num("fps", 30)
+	seconds := num("duration_seconds", lastEnd)
+	return int(seconds * fps), int(num("width", 1920)), int(num("height", 1080))
 }
 
 // lastCutEnd reports when the final cut ends, which is when the video should.

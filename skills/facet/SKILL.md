@@ -16,7 +16,7 @@ Consult deep legacy references (such as compose-director, runtime-selection guid
 - Briefly explain the plan, renderer, provider/model choices, and quality/time/cost tradeoffs. Ask for explicit consent before paid generation, publication, or material creative downgrades. Unknown cost is not free.
 - Preserve the user's intent: silent videos need no narration or music; captions and scripts are optional. Work naturally without forced turn sequencing or unwanted narration.
 - Prefer supplied/local assets when they meet the brief. Use source_edit for footage, the explainer pack for 2D motion, or another appropriate installed pack.
-- Use `facet tools describe <tool>` when the contract is uncertain and `facet tools estimate <tool> --input request.json` before consequential calls. Estimates perform tool-specific checks, not deep renderer validation or proof of live availability or successful rendering.
+- Use `facet tools describe <tool>` when the contract is uncertain and `facet tools estimate <tool> --input request.json` before consequential calls. A render estimate reports `estimated_duration_seconds` and `exceeds_default_host_deadline`; when the latter is true the render will not finish inside a host's default 60s budget, so raise `deadline_ms` or invoke with `async:true`. Rendering costs roughly 7s of fixed startup plus ~80ms per 720p frame, so a 15s explainer takes about 43s. Estimates perform tool-specific checks, not deep renderer validation or proof of live availability or successful rendering.
 - Execute and render here; do not hand the task off to a manual editor. `mock:true` is only for explicitly requested tests, never a production fallback for missing credentials or tools.
 
 ## Concise Requests

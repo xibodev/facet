@@ -1195,6 +1195,48 @@ func estimateResult(ops []string) map[string]any {
 	return map[string]any{"estimated_cost": 0.0, "network": false, "external_write": false, "side_effect_free": true, "operations": ops}
 }
 
+// A Remotion render costs a large FIXED setup plus a per-frame cost. Both are
+// measured, not assumed:
+//
+//	 30 frames  640x360    5.0s
+//	120 frames 1280x720   16.5s
+//	450 frames 1280x720   42.7s
+//
+// Fitting the two 720p points gives ~79ms per 720p frame and ~7s of fixed
+// bundling and browser startup. A per-frame-only model predicted 1.4s for a
+// render that actually took 16.5s, because at small sizes the setup dominates
+// completely — which is precisely the case where a caller most needs to know
+// the answer is "seconds, not instant".
+const renderFixedSeconds = 7.0
+const renderSecondsPerFrame = 0.0794
+const referencePixels = 1280 * 720
+
+// renderLoadFactor is how much slower the same render runs under contention.
+// The 450-frame render took 42.7s idle and 170.9s while other work was
+// running, so a caller choosing a deadline needs the pessimistic figure.
+const renderLoadFactor = 4.0
+
+// estimateRender adds an expected wall-clock duration to an estimate.
+//
+// Without it a caller cannot tell that a 15-second explainer takes 43 seconds
+// to render and will not fit the host's 60-second default deadline. That is
+// the decision async exists to inform, and the estimate mentioned time
+// nowhere — only cost, which is zero for a local render and says nothing.
+func estimateRender(ops []string, frames int, width, height int) map[string]any {
+	out := estimateResult(ops)
+	if frames <= 0 || width <= 0 || height <= 0 {
+		return out
+	}
+	scale := float64(width*height) / float64(referencePixels)
+	expected := renderFixedSeconds + float64(frames)*renderSecondsPerFrame*scale
+	out["estimated_duration_seconds"] = roundFloat(expected, 1)
+	out["estimated_duration_seconds_max"] = roundFloat(expected*renderLoadFactor, 1)
+	// Against the host's 60s default, less the margin Facet reserves to report
+	// a failure. True means: ask for a longer deadline_ms, or use async.
+	out["exceeds_default_host_deadline"] = expected*renderLoadFactor > 55
+	return out
+}
+
 func formatFloat(v float64) string { return strconv.FormatFloat(v, 'f', 6, 64) }
 
 func parseLoudnorm(s string) map[string]any {
