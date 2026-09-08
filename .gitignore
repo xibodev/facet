@@ -28,3 +28,13 @@ bin/videokit
 /internal/module/*.jpg
 /internal/module/*.mp4
 /internal/module/*.mp3
+
+# Scratch probes from coordinating sessions. Three sessions work in this tree
+# at once, and `git add -A` cannot tell a peer's temporary file from my own: a
+# Midden probe named zz_jc_test.go was captured mid-commit and broke the build
+# for the whole package.
+#
+# The prefix is the convention peers are asked to use for throwaway files, so
+# a capture is impossible rather than merely unlikely.
+zz_*_test.go
+zz_*.go
