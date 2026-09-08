@@ -387,6 +387,26 @@ func dependency(name string) map[string]any {
 	return map[string]any{"name": name, "available": err == nil, "path": path, "type": "binary"}
 }
 
+// composerDependency reports whether the Remotion composer can actually
+// render, not merely whether its directory exists.
+//
+// A composer without node_modules is present and unusable: the render CLI it
+// must execute lives inside those dependencies. Reporting the directory as
+// available made video_compose claim it was configured while every render
+// failed.
+func composerDependency() map[string]any {
+	dir, err := findComposerDir()
+	usable := false
+	if err == nil && dir != "" {
+		if _, err := os.Stat(filepath.Join(dir, "node_modules", "@remotion", "cli", "remotion-cli.js")); err == nil {
+			usable = true
+		}
+	}
+	return map[string]any{
+		"name": "remotion-composer", "available": usable, "path": dir, "type": "runtime",
+	}
+}
+
 func envDependency(name string) map[string]any {
 	val := os.Getenv(name)
 	return map[string]any{"name": name, "available": val != "", "path": "", "type": "env"}
@@ -399,8 +419,16 @@ func summary(name string) map[string]any {
 		deps = append(deps, dependency("ffprobe"))
 	case "frame_sample", "frame_sampler", "scene_detect", "visual_qa", "output_review", "source_edit", "video_trimmer", "video_stitch", "silence_cutter", "audio_mix", "audio_mixer":
 		deps = append(deps, dependency("ffmpeg"), dependency("ffprobe"))
-	case "video_compose", "remotion_caption_burn", "color_grade":
+	case "color_grade":
 		deps = append(deps, dependency("ffmpeg"))
+	case "video_compose", "remotion_caption_burn":
+		// The Remotion composer is a real dependency and was never declared.
+		//
+		// Verified on a fresh install: video_compose reported configured:true
+		// listing only ffmpeg, and the next render failed with
+		// dependency_missing because the composer had no node_modules. A tool
+		// that cannot render must not report itself ready.
+		deps = append(deps, dependency("ffmpeg"), dependency("node"), composerDependency())
 	case "hyperframes_compose":
 		deps = append(deps, dependency("npx"), dependency("ffmpeg"))
 	case "music_library":

@@ -53,10 +53,10 @@ type EnvVarCheck struct {
 
 // ToolCheck represents the configuration status of a toolbox tool.
 type ToolCheck struct {
-	Name         string   `json:"name"`
-	Capability   string   `json:"capability"`
-	Configured   bool     `json:"configured"`
-	MissingDeps  []string `json:"missing_dependencies,omitempty"`
+	Name        string   `json:"name"`
+	Capability  string   `json:"capability"`
+	Configured  bool     `json:"configured"`
+	MissingDeps []string `json:"missing_dependencies,omitempty"`
 }
 
 // DoctorReport contains the aggregated discovery and health report.
@@ -224,15 +224,32 @@ func probeRemotionComposer(composerPath string) RuntimeCheck {
 			if nmFi, err := os.Stat(nodeModules); err == nil && nmFi.IsDir() {
 				hasModules = true
 			}
-			details := abs
+			// A composer without its dependencies cannot render, so it is a
+			// WARNING rather than OK.
+			//
+			// Verified on a fresh install: doctor printed
+			//   OK (.../remotion-composer (node_modules missing - run npm install))
+			// and the very next render failed with dependency_missing. A user
+			// scanning for problems sees a tick and moves on, then hits the
+			// failure anyway — the check knew and said it in a parenthetical.
+			//
+			// Available stays false for the same reason: a caller asking
+			// whether the composer is usable is asking whether it can render.
 			if !hasModules {
-				details += " (node_modules missing - run npm install)"
+				return RuntimeCheck{
+					Name:   "Remotion Composer",
+					Status: StatusWarning,
+					Path:   abs,
+					Details: abs + " (dependencies not installed; run `npm ci` there " +
+						"before rendering)",
+					Available: false,
+				}
 			}
 			return RuntimeCheck{
 				Name:      "Remotion Composer",
 				Status:    StatusOK,
 				Path:      abs,
-				Details:   details,
+				Details:   abs,
 				Available: true,
 			}
 		}
