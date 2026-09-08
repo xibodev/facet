@@ -164,8 +164,13 @@ func main() {
 		// remains the documented human-facing contract. stdout carries exactly
 		// one JSON envelope; diagnostics go to stderr.
 		env, ok := moduleCLI(os.Args[2:])
+		// Compact, deliberately. The host parses this; nobody reads it.
+		// Indentation was 54% of the descriptor — 232KB against 107KB — and
+		// the host truncates at max_output_bytes, after which a partial JSON
+		// document cannot be trusted even if it looks complete. Halving the
+		// payload doubles the headroom before that becomes a hard failure.
+		// `facet tools` keeps its indentation; that output is read by people.
 		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
 		if err := encoder.Encode(env); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
