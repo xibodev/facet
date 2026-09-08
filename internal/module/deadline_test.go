@@ -2,6 +2,8 @@ package module
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -88,4 +90,52 @@ func TestDeadlineClamping(t *testing.T) {
 			t.Errorf("an empty body became %s", got)
 		}
 	})
+}
+
+// project_root was declared, used to label artifacts, and never resolved
+// against. The host sets the working directory to the module's install
+// directory, so a caller's "source.mp4" named nothing findable and every
+// relative path failed input_not_found — the seventh instance of a field
+// accepted and ignored.
+//
+// A caller's relative path means relative to their project, not to wherever
+// the host launched the module.
+func TestGrantedProjectRootIsEnteredAndRestored(t *testing.T) {
+	before, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := t.TempDir()
+
+	restore, err := useWorkingRoot(target)
+	if err != nil {
+		t.Fatalf("a granted root could not be entered: %v", err)
+	}
+	during, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Compare resolved paths: a temp dir may be reached through a symlink.
+	wantDir, _ := filepath.EvalSymlinks(target)
+	gotDir, _ := filepath.EvalSymlinks(during)
+	if gotDir != wantDir {
+		t.Errorf("working directory is %q, want the granted root %q", gotDir, wantDir)
+	}
+
+	restore()
+	after, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after != before {
+		t.Errorf("working directory not restored: %q, want %q", after, before)
+	}
+}
+
+// A root that cannot be entered is a request error, not a panic or a silent
+// continue in the wrong directory.
+func TestUnenterableRootIsRefused(t *testing.T) {
+	if _, err := useWorkingRoot(filepath.Join(t.TempDir(), "does-not-exist")); err == nil {
+		t.Error("a nonexistent root was entered")
+	}
 }

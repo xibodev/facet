@@ -237,6 +237,23 @@ func Invoke(capability string, raw []byte) Envelope {
 		defer restoreBundle()
 	}
 
+	// Relative paths are measured from the project root the host granted.
+	//
+	// project_root was declared, used to label artifacts, and never resolved
+	// against: the host sets the working directory to the module's install
+	// directory, so a user-supplied "source.mp4" named nothing findable and
+	// every relative path failed input_not_found. Working inside the granted
+	// root is what makes a caller's relative path mean what they wrote.
+	if pr, ok := req.Roots["project_root"]; ok && strings.TrimSpace(pr.Path) != "" {
+		restoreDir, err := useWorkingRoot(pr.Path)
+		if err != nil {
+			return fail(OpInvoke, reqID, "invalid_request",
+				"the granted project_root could not be entered",
+				map[string]any{"root": "project_root", "error": bounded(err.Error())}, false)
+		}
+		defer restoreDir()
+	}
+
 	tool := strings.TrimSpace(req.Tool)
 	if pinned != "" {
 		tool = pinned

@@ -16,13 +16,26 @@ import (
 // making the request strict without modelling protocol/capability/grants/
 // deadline_ms/max_output_bytes rejected every real host invocation.
 func TestRealHostRequestIsAccepted(t *testing.T) {
+	// A real host grants a root that EXISTS; the module enters it so a
+	// caller's relative path resolves there. An unenterable root is refused
+	// on purpose, so the fixture must name a real directory to exercise the
+	// field-modelling this test is actually about.
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := json.Marshal(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	body := []byte(`{
 	  "protocol":"xibodev.module/v1",
 	  "capability":"creative.tools.run",
 	  "request_id":"req_host",
 	  "tool":"media_probe",
 	  "input":{"input":"../../projects/cinematic-documentary/assets/video/shot1_raw.mp4"},
-	  "roots":{"project_root":{"path":"/abs/project","mode":"rw"}},
+	  "roots":{"project_root":{"path":` + string(root) + `,"mode":"rw"}},
 	  "grants":{"network":[],"credentials":[],"paid_providers":[],"publish":false,"subprocess":["ffprobe"]},
 	  "deadline_ms":600000,
 	  "max_output_bytes":262144

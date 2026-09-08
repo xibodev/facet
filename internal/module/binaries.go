@@ -2,6 +2,7 @@ package module
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -116,4 +117,21 @@ func useBinaries(bins map[string]string) (restore func()) {
 func useBundleRoot(path string) (restore func()) {
 	toolbox.SetBundleRoot(path)
 	return func() { toolbox.SetBundleRoot("") }
+}
+
+// useWorkingRoot enters a host-granted root for one invocation and returns a
+// function restoring the previous working directory.
+//
+// Relative paths in a request are the caller's, and the caller means them
+// relative to the project — not to wherever the host happens to launch the
+// module. Scoped per call and restored afterwards, like every other grant.
+func useWorkingRoot(path string) (restore func(), err error) {
+	previous, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Chdir(path); err != nil {
+		return nil, err
+	}
+	return func() { _ = os.Chdir(previous) }, nil
 }
