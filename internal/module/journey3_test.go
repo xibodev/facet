@@ -48,6 +48,29 @@ func TestJourney3RealSeedToManifest(t *testing.T) {
 	accepted, warnings := seed.OutputTypes()
 	t.Logf("suggested output types accepted=%v warnings=%v", accepted, warnings)
 
+	// ASSERTED, not merely logged. This line previously computed the real
+	// seed's vocabulary result and printed it, while every assertion in this
+	// test checked something else -- so the one cross-lane fact it observed
+	// could not fail.
+	//
+	// A LOG LINE IS NOT AN ASSERTION: an observation that cannot fail is
+	// indistinguishable from one that was never made. facet-studio hit the
+	// same shape in their real-binary test the same week, and it is the reason
+	// their run reported a category nobody had checked.
+	//
+	// What must hold for a REAL Midden seed: every type it suggests is one
+	// Facet can act on. A warning here means the two vocabularies have drifted
+	// apart in production, which is the entire point of staging a real seed
+	// rather than a fixture.
+	if len(accepted) == 0 {
+		t.Errorf("a real Midden seed suggested %v and Facet accepted NONE of them; "+
+			"the producer named output types this consumer cannot act on",
+			seed.SuggestedOutputTypes)
+	}
+	for _, w := range warnings {
+		t.Errorf("a REAL cross-lane seed carries a type Facet does not recognise: %s", w)
+	}
+
 	// The manifest must retain the source verbatim so a finished video is
 	// traceable to the exact bytes that produced it.
 	env := Invoke(CapToolsList, []byte(`{"request_id":"req_journey3"}`))
