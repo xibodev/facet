@@ -108,3 +108,65 @@ func TestContractVersionIsSingularNotAList(t *testing.T) {
 		t.Error("protocol_versions disappeared; the wire identity is separate and still required")
 	}
 }
+
+// A run must say WHICH contract governed it.
+//
+// Before this, "the host pinned v2" and "the host said nothing and was served
+// under v1" were both ok:true with identical envelopes. Two states, one
+// observable value — the shape this whole phase kept finding, and the one
+// facet-studio found in their own gate where absent and wrong both reported
+// not-ok.
+//
+// It does not lie today, because no v2 guarantee yet differs from v1 here. It
+// becomes a lie the moment one does, and a consumer cannot then tell a v2
+// guarantee from a v1 coincidence. Fixed before it is load-bearing rather
+// than after.
+func TestARunReportsWhichContractGovernedIt(t *testing.T) {
+	pinned := Invoke(CapToolsRun, []byte(`{
+	  "tool":"media_probe","input":{"input":"nope.mp4"},
+	  "contract_version":"`+ContractVersion+`"}`))
+	if got := pinned.Execution.ContractVersion; got != ContractVersion {
+		t.Errorf("a v2-pinned run reports contract_version %q, want %q", got, ContractVersion)
+	}
+
+	v1 := Invoke(CapToolsRun, []byte(`{"tool":"media_probe","input":{"input":"nope.mp4"}}`))
+	if got := v1.Execution.ContractVersion; got != "" {
+		t.Errorf("a run with no contract named reports %q; it must be omitted so a "+
+			"v1 caller sees what it saw before", got)
+	}
+
+	// The point of the field: the two must be DISTINGUISHABLE. Both are ok,
+	// and before this they were identical.
+	if pinned.Execution.ContractVersion == v1.Execution.ContractVersion {
+		t.Error("a v2-pinned run and a v1 fallback are indistinguishable in the envelope")
+	}
+}
+
+// Three outcomes, three observable states. Absent is served under v1, matching
+// is served under v2, wrong is refused — and no two of them look alike.
+func TestThreeContractOutcomesAreDistinct(t *testing.T) {
+	body := func(extra string) []byte {
+		return []byte(`{"tool":"media_probe","input":{"input":"nope.mp4"}` + extra + `}`)
+	}
+	absent := Invoke(CapToolsRun, body(""))
+	matched := Invoke(CapToolsRun, body(`,"contract_version":"`+ContractVersion+`"`))
+	wrong := Invoke(CapToolsRun, body(`,"contract_version":"xibodev.module/v99"`))
+
+	if wrong.OK {
+		t.Error("a wrong contract was served")
+	}
+	if wrong.Error.Code != "contract_incompatible" {
+		t.Errorf("wrong contract code = %q", wrong.Error.Code)
+	}
+	// Absent and matched are both SERVED — refusing absent would break every
+	// v1 caller, which §10 forbids.
+	for name, env := range map[string]Envelope{"absent": absent, "matched": matched} {
+		if env.Error != nil && env.Error.Code == "contract_incompatible" {
+			t.Errorf("%s contract was refused; §10 requires v1 modules keep working", name)
+		}
+	}
+	// And served-under-v1 is not served-under-v2.
+	if absent.Execution.ContractVersion == matched.Execution.ContractVersion {
+		t.Error("served-under-v1 and served-under-v2 report the same thing")
+	}
+}

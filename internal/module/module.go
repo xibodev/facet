@@ -99,6 +99,24 @@ type Execution struct {
 	EstimatedCost  *float64   `json:"estimated_cost"`
 	ActualCost     *float64   `json:"actual_cost"`
 	Artifacts      []Artifact `json:"artifacts"`
+	// ContractVersion names the behavioural contract that GOVERNED this run,
+	// omitted when the caller named none.
+	//
+	// Without it, "the host pinned v2" and "the host said nothing and was
+	// served under v1" are both ok:true and indistinguishable to a reader of
+	// the envelope. That does not lie today, because no v2 guarantee yet
+	// differs from v1 here — it becomes a lie the moment one does, and a
+	// consumer cannot then tell a v2 guarantee from a v1 coincidence.
+	//
+	// facet-studio found the same two-states-one-value collapse in their own
+	// gate (absent and wrong both reported not-ok) and split it into three
+	// outcomes. This is the mirror on the module side: they report which
+	// contract they may RELY on, this reports which contract a run was SERVED
+	// under.
+	//
+	// Additive and omitted when absent, per §10: a v1 caller sees exactly what
+	// it saw before.
+	ContractVersion string `json:"contract_version,omitempty"`
 }
 
 // Artifact is a pointer to a file a run produced, never its contents.

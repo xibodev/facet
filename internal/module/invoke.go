@@ -376,6 +376,9 @@ func Invoke(capability string, raw []byte) Envelope {
 
 	env, ok := toolbox.CLI(args)
 	out := project(OpInvoke, op, reqID, capability, tool, env, ok)
+	// Which contract governed this run. Omitted when the caller named none,
+	// so a v1 host sees exactly what it saw before.
+	out.Execution.ContractVersion = strings.TrimSpace(req.ContractVersion)
 
 	// A run that consumed a seed reports where its content came from.
 	//
@@ -533,8 +536,9 @@ func Estimate(capability string, raw []byte) Envelope {
 	}
 
 	env, ok := toolbox.CLI(args)
-	return EnforceOutputBudget(
-		project(OpInvoke, "estimate", reqID, capability, tool, env, ok), req.MaxOutputBytes)
+	est := project(OpInvoke, "estimate", reqID, capability, tool, env, ok)
+	est.Execution.ContractVersion = strings.TrimSpace(req.ContractVersion)
+	return EnforceOutputBudget(est, req.MaxOutputBytes)
 }
 
 func toolboxArgs(op, tool string, input json.RawMessage) ([]string, error) {
