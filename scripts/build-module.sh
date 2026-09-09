@@ -41,8 +41,25 @@ cp -r schemas/artifacts "$out/schemas/"
 # reason.
 mkdir -p "$out/remotion-composer"
 cp -r remotion-composer/src "$out/remotion-composer/"
-cp remotion-composer/package.json remotion-composer/package-lock.json    remotion-composer/tsconfig.json "$out/remotion-composer/" 2>/dev/null || true
-cp -r remotion-composer/public "$out/remotion-composer/" 2>/dev/null || true
+# package.json and package-lock.json are what make the composer installable:
+# without them `npm ci` cannot run and the bundle cannot render. They were
+# copied with `2>/dev/null || true`, which discards the error AND the exit
+# status, so a failed copy produced a silently incomplete bundle.
+#
+# Verified: with package.json removed, `module describe` still succeeds and
+# check-bundle-current.sh still reports "matches the repository". Both guards
+# pass on a bundle that cannot render, because neither looks at these files.
+#
+# Required files fail the build. tsconfig.json is required too -- the composer
+# is TypeScript.
+cp remotion-composer/package.json remotion-composer/package-lock.json    remotion-composer/tsconfig.json "$out/remotion-composer/"
+
+# public/ is genuinely optional: it holds staged media that a fresh checkout
+# may not have. Optional stays optional, but the reason is now stated rather
+# than implied by a silenced error.
+if [ -d remotion-composer/public ]; then
+  cp -r remotion-composer/public "$out/remotion-composer/"
+fi
 
 if [ ! -d "$out/remotion-composer/node_modules" ]; then
   echo "NOTE: $out/remotion-composer has no node_modules; run npm ci there before rendering"
@@ -51,4 +68,15 @@ fi
 # A module that cannot describe itself is not installable, so fail here rather
 # than let the host discover it.
 "$out/xibodev.facet.exe" module describe --json > /dev/null
+
+# A module that describes itself is not necessarily a module that can RENDER.
+# describe succeeds with or without the composer manifests, so it cannot be the
+# only check -- that is the same "a successful exit is not acceptance" mistake
+# this repo has made before.
+for required in package.json package-lock.json tsconfig.json; do
+  if [ ! -f "$out/remotion-composer/$required" ]; then
+    echo "FATAL: $out/remotion-composer/$required is missing; the bundle cannot render" >&2
+    exit 1
+  fi
+done
 echo "built $out/xibodev.facet.exe with declared content"
