@@ -19,6 +19,22 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// composeCut is one cut in an edit decision list.
+//
+// PRESERVES UNKNOWN FIELDS. The named fields below are what Facet's Go code
+// reasons about; the composition reads SIXTY distinct cut fields --
+// heroSubtitle, leftLabel, chartData, steps, columns and the rest. Enumerating
+// nine of them meant the envelope path silently dropped the other fifty-one
+// before Remotion saw them, so a cut whose scene type needed one rendered
+// EMPTY and reported success.
+//
+// Found by a target agentic CLI reading this source: it pre-emptively rewrote
+// its scene plan to text-only types to avoid the drop. That is the correct
+// workaround and not something a user should have to derive from Go structs.
+//
+// Enumerating all sixty would be a second copy of the composition's contract,
+// drifting the first time a scene type gains a field. Round-tripping the
+// unknown ones costs nothing and cannot drift.
 type composeCut struct {
 	ID         string  `json:"id,omitempty"`
 	Source     string  `json:"source"`
@@ -29,6 +45,61 @@ type composeCut struct {
 	Text       string  `json:"text,omitempty"`
 	Title      string  `json:"title,omitempty"`
 	Subtitle   string  `json:"subtitle,omitempty"`
+
+	// Extra carries every field the composition understands that Facet does
+	// not need to interpret. Populated by UnmarshalJSON, re-emitted by
+	// MarshalJSON.
+	Extra map[string]any `json:"-"`
+}
+
+// UnmarshalJSON keeps fields the named ones do not cover.
+func (c *composeCut) UnmarshalJSON(data []byte) error {
+	type alias composeCut
+	var named alias
+	if err := json.Unmarshal(data, &named); err != nil {
+		return err
+	}
+	*c = composeCut(named)
+
+	var all map[string]any
+	if err := json.Unmarshal(data, &all); err != nil {
+		return err
+	}
+	for _, known := range []string{
+		"id", "source", "in_seconds", "out_seconds",
+		"speed", "type", "text", "title", "subtitle",
+	} {
+		delete(all, known)
+	}
+	if len(all) > 0 {
+		c.Extra = all
+	}
+	return nil
+}
+
+// MarshalJSON re-emits the preserved fields alongside the named ones, so what
+// reaches the composition is what the caller sent.
+func (c composeCut) MarshalJSON() ([]byte, error) {
+	type alias composeCut
+	encoded, err := json.Marshal(alias(c))
+	if err != nil {
+		return nil, err
+	}
+	if len(c.Extra) == 0 {
+		return encoded, nil
+	}
+	merged := map[string]any{}
+	if err := json.Unmarshal(encoded, &merged); err != nil {
+		return nil, err
+	}
+	for k, v := range c.Extra {
+		// A named field always wins: the caller's spelling of a field Facet
+		// reasons about must not be shadowed by a stray duplicate.
+		if _, taken := merged[k]; !taken {
+			merged[k] = v
+		}
+	}
+	return json.Marshal(merged)
 }
 
 type composeEditDecisions struct {
@@ -882,6 +953,22 @@ func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any,
 	// separate opt-in step. So the render path itself stays silent about its
 	// own most expensive silent failure unless this says something.
 	var blankWarnings []string
+	// THE ENVELOPE PATH NEEDS THIS AS MUCH AS THE DIRECT PATH, and it was the
+	// one path that did not run it -- the guard against cuts rendering blank
+	// was absent from a path that used to drop the very fields it checks for.
+	//
+	// This works only now that composeCut preserves unknown fields. Before
+	// that, chartData was gone at decode time and re-marshalling the struct
+	// could never show it missing, because it had never been there.
+	if r.RawProps == nil && r.EditDecisions != nil {
+		encoded, mErr := json.Marshal(r.EditDecisions.Cuts)
+		if mErr == nil {
+			var decoded []map[string]any
+			if json.Unmarshal(encoded, &decoded) == nil {
+				blankWarnings = blankCutWarnings(decoded)
+			}
+		}
+	}
 	if r.RawProps != nil {
 		if raw, ok := r.RawProps["cuts"].([]map[string]any); ok {
 			blankWarnings = blankCutWarnings(raw)
