@@ -170,3 +170,69 @@ func TestThreeContractOutcomesAreDistinct(t *testing.T) {
 		t.Error("served-under-v1 and served-under-v2 report the same thing")
 	}
 }
+
+// Naming the WIRE identity in contract_version is a distinct mistake from
+// naming an unknown contract, and gets a distinct remedy.
+//
+// xibodev.module/v1 is a wire-format identity, not a behavioural contract —
+// v1 behaviour was never versioned, which is the premise of the successor. An
+// author writing it means "I am a v1 caller", which is TRUE, and the honest
+// answer is that a v1 caller sends nothing at all.
+//
+// facet-studio raised this as a possible interop divergence: their gate
+// refuses explicit v1, and they asked whether mine serves it. It refuses,
+// identically — verified against both matrices. But the old remedy told such
+// an author to "install a module implementing xibodev.module/v1", and no such
+// module can exist. A refusal whose remedy is impossible is worse than a blunt
+// one.
+func TestNamingTheWireIdentityGetsAnActionableRemedy(t *testing.T) {
+	env := Invoke(CapToolsRun, []byte(`{
+	  "tool":"media_probe","input":{"input":"nope.mp4"},
+	  "contract_version":"`+Protocol+`"}`))
+
+	if env.OK {
+		t.Fatal("the wire identity was accepted as a behavioural contract")
+	}
+	if env.Error.Code != "contract_incompatible" {
+		t.Errorf("code = %q, want contract_incompatible", env.Error.Code)
+	}
+
+	remedy, _ := env.Error.Details["remedy"].(string)
+	// The remedy must be something the author can actually DO.
+	if !strings.Contains(remedy, "omit") {
+		t.Errorf("the remedy does not tell the author to omit the field: %q", remedy)
+	}
+	// And it must not advise installing a module that cannot exist.
+	if strings.Contains(remedy, "install a module implementing "+Protocol) {
+		t.Error("the remedy advises installing a module implementing the wire " +
+			"identity; no such module can exist")
+	}
+
+	// An unknown contract keeps the generic remedy: it is a different mistake.
+	other := Invoke(CapToolsRun, []byte(`{
+	  "tool":"media_probe","input":{"input":"nope.mp4"},
+	  "contract_version":"xibodev.module/v99"}`))
+	otherRemedy, _ := other.Error.Details["remedy"].(string)
+	if otherRemedy == remedy {
+		t.Error("naming the wire identity and naming an unknown contract get the " +
+			"same remedy; they are different mistakes")
+	}
+}
+
+// Refused, not served — even though the author's intent is true. Serving it
+// would report a run as governed by a contract with no guarantees and no
+// conformance suite, which a consumer could not distinguish from a real one:
+// the two-states-one-value defect arriving through a permissive default. §10
+// requires absent to fall back to v1 behaviour, never to something more
+// permissive.
+func TestWireIdentityIsRefusedNotServedAsV1(t *testing.T) {
+	env := Invoke(CapToolsRun, []byte(`{
+	  "tool":"media_probe","input":{"input":"nope.mp4"},
+	  "contract_version":"`+Protocol+`"}`))
+	if env.OK {
+		t.Fatal("explicit wire identity was served")
+	}
+	if env.Execution.ContractVersion == Protocol {
+		t.Error("a refused run reported the wire identity as its governing contract")
+	}
+}

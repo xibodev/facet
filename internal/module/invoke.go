@@ -211,16 +211,43 @@ func Invoke(capability string, raw []byte) Envelope {
 	// refusing it would break every existing caller. Present-and-wrong is
 	// refused, because a host that names a contract has made a claim.
 	if v := strings.TrimSpace(req.ContractVersion); v != "" && v != ContractVersion {
-		return fail(OpInvoke, reqID, "contract_incompatible",
-			"the host expects behavioural contract "+v+" but this module implements "+
-				ContractVersion+"; there is no negotiation between behavioural "+
-				"contracts — install a module implementing "+v+
-				", or a host implementing "+ContractVersion,
+		// Naming the WIRE identity here is a distinct mistake and gets a
+		// distinct remedy.
+		//
+		// xibodev.module/v1 is a wire-format identity, not a behavioural
+		// contract — v1 behaviour was never versioned, which is the premise of
+		// the successor. So an author writing it here means "I am a v1
+		// caller", which is TRUE, and the honest answer is that a v1 caller
+		// sends nothing at all.
+		//
+		// Still refused rather than served: serving it would report a run as
+		// governed by a contract with no guarantees and no conformance suite,
+		// which a consumer could not distinguish from a real one. That is the
+		// two-states-one-value defect again, arriving through a permissive
+		// default — and §10 says absent falls back to v1 behaviour "never to a
+		// more permissive default".
+		//
+		// The old message told such an author to "install a module
+		// implementing xibodev.module/v1". No such module can exist. A
+		// refusal whose remedy is impossible is worse than a blunt one.
+		remedy := "match the contract_version exactly on both sides; " +
+			"ranges, downgrade and fallback are deliberately not supported"
+		detail := "the host expects behavioural contract " + v +
+			" but this module implements " + ContractVersion +
+			"; there is no negotiation between behavioural contracts"
+		if v == Protocol {
+			remedy = "omit contract_version entirely: it names a BEHAVIOURAL " +
+				"contract, and " + Protocol + " is the wire-format identity. " +
+				"A v1 caller sends no contract_version and is served under v1"
+			detail = Protocol + " is a wire-format identity, not a behavioural " +
+				"contract — v1 behaviour was never versioned. This module " +
+				"implements " + ContractVersion
+		}
+		return fail(OpInvoke, reqID, "contract_incompatible", detail,
 			map[string]any{
 				"requested_contract_version": v,
 				"module_contract_version":    ContractVersion,
-				"remedy": "match the contract_version exactly on both sides; " +
-					"ranges, downgrade and fallback are deliberately not supported",
+				"remedy":                     remedy,
 			}, false)
 	}
 
