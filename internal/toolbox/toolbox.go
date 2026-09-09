@@ -217,6 +217,17 @@ var chargeableTools = map[string]bool{
 // MayCharge reports whether invoking this Operation may result in a monetary
 // charge to the operator.
 //
+// NOT PROJECTED ONTO THE MODULE WIRE, and here is the unblocking event rather
+// than just the state: xibodev.module/v1 carries effects only on the
+// Capability, and v1 is immutable. A host reads capability.Effects at
+// registration to build its tool description, so per-Operation effects have
+// nowhere to land until the v2 effects shape exists. That shape is
+// facet-studio's to publish; when it does, this becomes a mapping rather than
+// a move.
+//
+// Unwired because there is no wire, not because it was forgotten. Those look
+// identical from outside, which is why this says which one it is.
+//
 // Independent of cost_known, which answers a different question: whether a
 // numeric amount is known. Both combinations are legal and both occur here —
 // every chargeable Operation has an unknown amount (may_charge=true,
@@ -264,6 +275,11 @@ var deterministicTools = map[string]bool{
 
 // Deterministic reports whether this Operation is a proven deterministic
 // function of its request and inputs.
+//
+// NOT PROJECTED ONTO THE MODULE WIRE, for the same reason as MayCharge and
+// with the same unblocking event: v1 has no per-Operation effects and is
+// immutable. Published locally through `facet tools list` and `describe`,
+// which is where an agent choosing an Operation reads it today.
 func Deterministic(tool string) bool {
 	if executionFor(tool).Network || MayCharge(tool) {
 		// Defence in depth: a networked or chargeable Operation cannot be
@@ -505,6 +521,11 @@ const (
 
 // resolutionOf reports a requirement's state without claiming more than was
 // checked.
+//
+// NOT PROJECTED ONTO THE MODULE WIRE. Unblocking event: v1 has no Resolution
+// vocabulary at all — a host reads `configured`, a boolean, which cannot carry
+// the middle state. The v2 shape is facet-studio's to publish. Until then this
+// is local truth, published through `facet tools describe`.
 //
 // A binary or file whose absence is decisive resolves to satisfied or
 // unsatisfied. A credential resolves to unknown when present, because holding
