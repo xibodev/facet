@@ -409,7 +409,7 @@ func CLI(args []string) (Envelope, bool) {
 		}, nil), true
 	}
 	if len(args) < 2 || args[0] != "tools" {
-		return bad("usage: videokit tools <list|describe|estimate|run>")
+		return bad("usage: facet tools <list|describe|estimate|run>")
 	}
 	op = args[1]
 	switch op {
@@ -424,7 +424,7 @@ func CLI(args []string) (Envelope, bool) {
 		return success("", op, map[string]any{"tools": items}, nil), true
 	case "describe":
 		if len(args) != 3 {
-			return bad("usage: videokit tools describe <tool>")
+			return bad("usage: facet tools describe <tool>")
 		}
 		tool = canonicalToolName(args[2])
 		if !known(tool) {
@@ -433,7 +433,7 @@ func CLI(args []string) (Envelope, bool) {
 		return success(tool, op, description(tool), nil), true
 	case "estimate", "run":
 		if len(args) != 5 || args[3] != "--input" {
-			return bad("usage: videokit tools " + op + " <tool> --input <request.json>")
+			return bad("usage: facet tools " + op + " <tool> --input <request.json>")
 		}
 		tool = canonicalToolName(args[2])
 		if !known(tool) {
