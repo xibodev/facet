@@ -1,3 +1,21 @@
+// Package engine adapts EXTERNAL agentic CLIs (Claude Code, Codex, Copilot,
+// OpenCode) into a normalized event stream.
+//
+// TRANSITIONAL — DEVELOPMENT HARNESS, NOT THE STANDALONE PRODUCT.
+//
+// The browser path that spawns one of these CLIs as its reasoning runtime is a
+// dev/testing harness. The standalone Facet application (Release A) bundles a
+// pinned facet-studio kernel as its conversational driver and binds Facet tools
+// NATIVELY, in-process -- it does not spawn a user-installed external CLI, and
+// it does not host Facet through Facet's own module-v2 projection.
+//
+// This package is retained because it works and exercises the
+// intent -> tool selection -> artifact chain end to end. Do NOT build new
+// product architecture on top of it. See docs/RELEASE_MANIFEST.md section 6.
+//
+// These adapters remain legitimately useful for Release C, where an external
+// CLI IS the intended reasoning driver -- the distinction is which release
+// shape is being served, not whether the code is good.
 package engine
 
 import (
