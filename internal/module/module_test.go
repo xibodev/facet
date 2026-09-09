@@ -38,6 +38,20 @@ func TestDescribeDeclaresExactlyTheAgreedFields(t *testing.T) {
 		"agent_overlays", "skills", "permissions", "requirements",
 		// v2: the BEHAVIOURAL contract, distinct from the wire protocol.
 		"contract_version",
+		// v2 SEMANTIC PAYLOAD. These ride in the same document as the v1
+		// fields above, which §10 permits: a v1 host ignores what it does not
+		// recognise, and facet-studio pinned that direction by test because
+		// "works because the decoder is tolerant" and "works because the
+		// contract requires it" produce the same observable.
+		//
+		// This test correctly refused them until this line was added. Adding a
+		// descriptor field IS a contract change, and it is being made
+		// deliberately under authorised Step 6 rather than absorbed silently.
+		//
+		// The v1 surface is unchanged: verified by diffing the serialized
+		// descriptor before and after, which reported two ADDED keys and zero
+		// changed or removed ones.
+		"operations", "artifact_kinds",
 	}
 	for _, field := range want {
 		if _, ok := got[field]; !ok {

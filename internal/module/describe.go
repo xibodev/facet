@@ -117,6 +117,10 @@ func Describe(version string) Envelope {
 		ArtifactSchemas:  artifacts,
 		AgentOverlays:    declaredOverlays,
 		Skills:           declaredSkills,
+		// v2 semantic payload, DERIVED from the canonical Operation metadata
+		// rather than restated. Published in the same document as v1.
+		Operations:    toolbox.V2Operations(),
+		ArtifactKinds: toolbox.V2ArtifactKinds(),
 		Permissions: Permissions{
 			// project_root is the production workspace Facet reads and writes.
 			// facet_bundle is READ-ONLY and holds the content that ships with

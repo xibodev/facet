@@ -7,6 +7,8 @@ package module
 import (
 	"crypto/rand"
 	"encoding/hex"
+
+	"github.com/xibodev/facet/internal/toolbox"
 )
 
 // Identity. ModuleID was chosen by the operator; Protocol is pending host ack.
@@ -164,6 +166,23 @@ type Descriptor struct {
 	Skills          []Skill        `json:"skills"`
 	Permissions     Permissions    `json:"permissions"`
 	Requirements    []Requirement  `json:"requirements"`
+
+	// --- xibodev.module/v2 semantic layer ---
+	//
+	// These ride in the SAME document as the v1 fields above. §10 requires a
+	// v1 host to ignore fields it does not recognise, and facet-studio pinned
+	// that direction by test (37835f6) precisely because "works because the
+	// decoder is tolerant" and "works because the contract requires it"
+	// produce the same observable.
+	//
+	// A v1 host therefore sees exactly the v1 descriptor it always saw; a v2
+	// host reads contract_version, passes the gate, and finds the semantics.
+	//
+	// omitempty is deliberate: a module that has not built its v2 payload must
+	// publish NOTHING rather than an empty list, because an empty `operations`
+	// is an affirmative claim of having none.
+	Operations    []toolbox.V2Operation             `json:"operations,omitempty"`
+	ArtifactKinds map[string]toolbox.V2ArtifactKind `json:"artifact_kinds,omitempty"`
 }
 
 // Capability describes one addressable operation and its honest effects.
