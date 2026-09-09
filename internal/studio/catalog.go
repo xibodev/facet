@@ -219,7 +219,19 @@ func RegisterOrUpdateProject(name, targetPath, engine string, packs []string, ro
 		found = &cat.Projects[0]
 	}
 
-	_ = SaveCatalog(cat, rootDir...)
+	// The save is the ONLY thing that makes this registration outlive the
+	// process, and its error was discarded in a function that returns one.
+	//
+	// SaveCatalog fails on four real paths -- mkdir, marshal, write, rename --
+	// and every one of them left the project registered in memory, absent from
+	// disk, and reported to the caller as success. The Studio then showed a
+	// project that would not be there after a restart.
+	//
+	// The value was right inside the function and died at the boundary a
+	// caller reads: the same shape as a warning collected and never appended.
+	if err := SaveCatalog(cat, rootDir...); err != nil {
+		return found, fmt.Errorf("project %q was registered but the catalog could not be saved: %w", name, err)
+	}
 	return found, nil
 }
 
