@@ -42,3 +42,10 @@ zz_*.go
 # Built module package. Reproduced by scripts/build-module.sh; the binary and
 # copied content are build output, not source.
 /dist/
+
+# Session scaffolding prompts. Local working notes for whoever is driving a
+# session; not product source and not reproducible from it. Ignored rather
+# than deleted so a session can keep its own context without that context
+# becoming a tracked artifact someone later mistakes for documentation.
+/SESSION_PROMPT.md
+/STARTER_PROMPT.md

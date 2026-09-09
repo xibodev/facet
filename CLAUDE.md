@@ -17,3 +17,10 @@ Facet equips the user's selected agent with video-production tools and a local S
 - `AGENTS.md` defines the release-harness authority boundary. Only deterministic sealed evidence can establish a release verdict; local tests and agent summaries cannot override it.
 - Run targeted regressions and the documented checks in `docs/operations/repair-verification.md`. Distinguish synthetic integration, live-provider UAT, and certification.
 - Do not commit, tag, push or publish without explicit authorization for those actions.
+- Keep the local worktree clean. Once work is pushed, remove local scratch and
+  stale worktrees rather than leaving them to drift: a dangling worktree holds an
+  older state that later gets mistaken for current and regresses the work. Prefer
+  one checkout per repository, and verify with `git worktree list` rather than
+  assuming. Build output (`dist/`), run scratch (`.quality-run/`) and session
+  scaffolding are ignored, not tracked — they are reproducible or local, and a
+  tracked copy of either becomes a stale artifact someone trusts.
