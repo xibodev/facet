@@ -99,8 +99,22 @@ func probeContext(ctx context.Context, path string) (map[string]any, []string, e
 	}
 	duration := parseFloat(raw.Format.Duration)
 	warnings := []string{}
-	var videos []map[string]any
-	var audios []map[string]any
+	// Initialized EMPTY, not nil. A nil slice marshals to JSON `null`, and
+	// media_probe's own result_schema declares video_streams and audio_streams
+	// as REQUIRED arrays -- so a video-only file made the tool violate its own
+	// published contract on a completely legitimate input.
+	//
+	// Found by a target CLI reading the schema and the result together during
+	// Release C bundle testing, which is the whole point of that surface: the
+	// agent compared what the tool ADVERTISED against what it RETURNED, and
+	// nothing in this repo had done that.
+	//
+	// Same defect the v2 envelope work already fixed one layer up -- a null
+	// collection forces every consumer into a nil check the contract says is
+	// unnecessary -- surviving inside a tool result where that fix did not
+	// reach.
+	videos := []map[string]any{}
+	audios := []map[string]any{}
 	for _, s := range raw.Streams {
 		switch s.CodecType {
 		case "video":
@@ -169,8 +183,8 @@ func probeContext(ctx context.Context, path string) (map[string]any, []string, e
 	}
 	_ = f.Close()
 	result := map[string]any{
-		"input":         path,
-		"sha256":        hex.EncodeToString(h.Sum(nil)),
+		"input":  path,
+		"sha256": hex.EncodeToString(h.Sum(nil)),
 		"format": map[string]any{
 			"duration":         duration,
 			"format_name":      raw.Format.FormatName,
