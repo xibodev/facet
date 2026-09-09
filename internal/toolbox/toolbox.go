@@ -1518,6 +1518,39 @@ const referencePixels = 1280 * 720
 // running, so a caller choosing a deadline needs the pessimistic figure.
 const renderLoadFactor = 4.0
 
+// DefaultHostDeadline is the host's deadline_ms default, from facet-studio
+// internal/module/runner.go:43 (DefaultDeadline = 60 * time.Second).
+//
+// Facet does not own this number and cannot enforce it. It is duplicated here
+// because an estimate must say whether a render fits BEFORE the host has sent
+// a request to read a real deadline_ms from — the whole point of the estimate
+// is to inform the choice of deadline_ms, so it cannot depend on one.
+//
+// Note the RFC (§8) states 180000 ms while the host SHIPS 60s. The shipped
+// constant is what kills the process, so this tracks the code, not the prose.
+// Raised as a discrepancy in facet-studio's lane rather than resolved here.
+const DefaultHostDeadline = 60 * time.Second
+
+// DeadlineSafetyMargin is reserved from any host budget so Facet can still
+// write an envelope after a tool gives up. A tool returning exactly at the
+// deadline is killed before its error can be reported, and the host then sees
+// a dead process rather than a failure it can explain.
+//
+// Measured: a whole invocation completes in ~0.1s and sha256 over a 200MB
+// artifact takes 0.15s, so one second is roughly 5x the worst case observed.
+const DeadlineSafetyMargin = time.Second
+
+// FitsDefaultHostDeadline is the longest render that still answers inside the
+// default budget.
+//
+// DERIVED, never written as a literal. It was previously hardcoded 55, correct
+// when the margin was 5s; the margin later dropped to 1s and the literal did
+// not follow, so for months the estimate warned about renders that had four
+// spare seconds. That is the duplicated-constant defect this codebase fixed in
+// chargeability and determinism, surviving in the estimate because a stale
+// number stays plausible in a way a stale list does not.
+var FitsDefaultHostDeadline = DefaultHostDeadline - DeadlineSafetyMargin
+
 // estimateRender adds an expected wall-clock duration to an estimate.
 //
 // Without it a caller cannot tell that a 15-second explainer takes 43 seconds
@@ -1533,9 +1566,9 @@ func estimateRender(ops []string, frames int, width, height int) map[string]any 
 	expected := renderFixedSeconds + float64(frames)*renderSecondsPerFrame*scale
 	out["estimated_duration_seconds"] = roundFloat(expected, 1)
 	out["estimated_duration_seconds_max"] = roundFloat(expected*renderLoadFactor, 1)
-	// Against the host's 60s default, less the margin Facet reserves to report
-	// a failure. True means: ask for a longer deadline_ms, or use async.
-	out["exceeds_default_host_deadline"] = expected*renderLoadFactor > 55
+	// True means: ask for a longer deadline_ms, or use async.
+	out["exceeds_default_host_deadline"] =
+		expected*renderLoadFactor > FitsDefaultHostDeadline.Seconds()
 	return out
 }
 

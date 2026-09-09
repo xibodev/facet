@@ -1011,15 +1011,12 @@ func fileBytes(path string) int64 {
 // to write its envelope after the tool gives up. A tool that returns exactly at
 // the deadline is still killed before its error can be reported.
 //
-// Measured rather than guessed: a whole invocation — process start, ffprobe,
-// artifact digest and envelope — completes in ~0.1s, and sha256 over a 200MB
-// artifact takes 0.15s. One second is roughly 5x the worst case observed.
-//
-// The previous 5s was fine on a large budget and expensive on a small one: it
-// reserved 1% of a 600s budget but 42% of a 12s one, so a short-deadline
-// render lost nearly half its time to a margin covering work that takes a
-// tenth of a second.
-const deadlineSafetyMargin = time.Second
+// ALIASES toolbox.DeadlineSafetyMargin rather than restating it. The estimate
+// derives "does this render fit the default deadline" from the same value, and
+// when these were two literals the estimate went stale by four seconds without
+// anything failing: the margin here dropped 5s -> 1s and the estimate's
+// hardcoded 55 did not follow.
+const deadlineSafetyMargin = toolbox.DeadlineSafetyMargin
 
 // minimumToolBudget is the least time worth handing a tool.
 //
