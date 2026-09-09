@@ -65,7 +65,12 @@ func TestFacetDoesNotExecutePipelines(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		body := string(b)
+		// Strip comments before scanning. The first version matched raw text
+		// and fired on internal/bundle, which PACKAGES pipelines and explains
+		// so in a comment -- packaging is not executing, and a guard that
+		// cannot tell prose from code punishes the documentation that makes
+		// the rule legible.
+		body := stripGoComments(string(b))
 		for _, bad := range banned {
 			if strings.Contains(body, bad.token) {
 				t.Errorf("%s contains %q: %s.\nFacet extends a reasoning runtime; it does not become one.",
@@ -109,4 +114,42 @@ func TestRequirementsNameToolProvidersNotConversationModels(t *testing.T) {
 	if checked == 0 {
 		t.Fatal("no requirements were examined; the check had no input")
 	}
+}
+
+// stripGoComments removes // and /* */ comments so a scan inspects CODE.
+//
+// Deliberately simple: it does not track string literals, so a token inside a
+// quoted string still counts -- which is correct here, since a path in a string
+// literal IS code referencing that path.
+func stripGoComments(src string) string {
+	var out strings.Builder
+	inLine, inBlock := false, false
+	for i := 0; i < len(src); i++ {
+		if inLine {
+			if src[i] == '\n' {
+				inLine = false
+				out.WriteByte(src[i])
+			}
+			continue
+		}
+		if inBlock {
+			if i+1 < len(src) && src[i] == '*' && src[i+1] == '/' {
+				inBlock = false
+				i++
+			}
+			continue
+		}
+		if i+1 < len(src) && src[i] == '/' && src[i+1] == '/' {
+			inLine = true
+			i++
+			continue
+		}
+		if i+1 < len(src) && src[i] == '/' && src[i+1] == '*' {
+			inBlock = true
+			i++
+			continue
+		}
+		out.WriteByte(src[i])
+	}
+	return out.String()
 }

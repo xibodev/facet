@@ -12,6 +12,7 @@ func testSource(t *testing.T) Source {
 	t.Helper()
 	return Source{
 		SkillsDir:    filepath.Join("..", "..", "skills", "facet"),
+		SkillsRoot:   filepath.Join("..", "..", "skills"),
 		PacksDir:     filepath.Join("..", "..", "packs"),
 		Tools:        []string{"video_compose", "media_probe", "edge_tts"},
 		FacetVersion: "1.0.2-test",
@@ -237,4 +238,59 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// A SHIPPED PIPELINE'S REQUIRED SKILLS MUST SHIP WITH IT.
+//
+// The bundle shipped animated-explainer.yaml declaring 11 required_skills and
+// NONE of them: 113 of 160 skill files projected, every explainer director and
+// every meta skill absent. A pipeline referencing files that are not there is a
+// contract with nothing behind it, and it fails SILENTLY -- the agent does not
+// error, it improvises, which is exactly what a real target CLI did when it
+// reverse-engineered the request shape from Go source instead.
+//
+// The manifest was internally consistent the whole time. TestManifestDescribes
+// TheDirectory passed, because it asks whether the bundle matches its own
+// manifest, not whether the bundle is COHERENT.
+func TestShippedPipelinesHaveTheirRequiredSkills(t *testing.T) {
+	dir := t.TempDir()
+	src := testSource(t)
+	src.SkillsRoot = filepath.Join("..", "..", "skills")
+	if _, err := Build(src, TargetClaude, dir); err != nil {
+		t.Fatal(err)
+	}
+
+	refs, err := requiredSkills(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A bundle whose pipelines require nothing would make this check vacuous.
+	if len(refs) == 0 {
+		t.Fatal("no pipeline in the bundle declares required_skills; this check has no subject")
+	}
+
+	for _, ref := range refs {
+		p := filepath.Join(dir, "skills", filepath.FromSlash(ref)+".md")
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("a shipped pipeline requires %q and the bundle does not contain it; "+
+				"the agent reads guidance pointing at a file that is not there", ref)
+		}
+	}
+	t.Logf("verified %d required skills all present", len(refs))
+}
+
+// A pipeline naming a skill that cannot be resolved must FAIL the build rather
+// than ship guidance pointing at nothing.
+func TestUnresolvableSkillFailsTheBuild(t *testing.T) {
+	src := testSource(t)
+	// Point the skills root somewhere real but wrong: pipelines will resolve
+	// none of their requirements from here.
+	src.SkillsRoot = t.TempDir()
+	_, err := Build(src, TargetClaude, t.TempDir())
+	if err == nil {
+		t.Fatal("a bundle whose pipeline requirements cannot be resolved was built successfully")
+	}
+	if !strings.Contains(err.Error(), "does not resolve") {
+		t.Errorf("error does not name the unresolved requirement: %v", err)
+	}
 }

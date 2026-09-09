@@ -906,14 +906,7 @@ func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any,
 		}
 	}
 
-	var propsJSON []byte
-	if r.RawProps != nil {
-		propsJSON, err = json.Marshal(r.RawProps)
-	} else if r.EditDecisions != nil {
-		propsJSON, err = json.Marshal(r.EditDecisions)
-	} else {
-		propsJSON = []byte("{}")
-	}
+	propsJSON, err := buildRemotionProps(r)
 	if err != nil {
 		return nil, nil, failure("invalid_request", "unable to encode remotion props", nil)
 	}
@@ -1501,4 +1494,41 @@ func boundedReason(s string) string {
 		return s[:limit] + "..."
 	}
 	return s
+}
+
+// buildRemotionProps produces the props JSON the Remotion composition receives.
+//
+// EXTRACTED SO A TEST CAN CALL THE REAL LOGIC. The first guard for the audio
+// defect rebuilt this merge inside the test, which meant it passed no matter
+// what this function did -- a circular oracle: both sides computed the same
+// answer from the same idea, so removing the fix left the test green.
+//
+// The envelope path marshals edit_decisions into props, and
+// composeEditDecisions has NO audio field, so a request declaring `audio` had
+// its narration silently discarded and rendered a SILENT video that reported
+// success. composeRequest.Audio was accepted, decoded, and read by nothing --
+// the declared-and-ignored class already fixed here once for width/height.
+//
+// The composition reads `audio` at the TOP LEVEL of props, so it is merged in
+// beside the edit decisions rather than nested under them.
+func buildRemotionProps(r composeRequest) ([]byte, error) {
+	if r.RawProps != nil {
+		return json.Marshal(r.RawProps)
+	}
+	if r.EditDecisions == nil {
+		return []byte("{}"), nil
+	}
+
+	encoded, err := json.Marshal(r.EditDecisions)
+	if err != nil {
+		return nil, err
+	}
+	merged := map[string]any{}
+	if err := json.Unmarshal(encoded, &merged); err != nil {
+		return nil, err
+	}
+	if r.Audio != nil {
+		merged["audio"] = r.Audio
+	}
+	return json.Marshal(merged)
 }
