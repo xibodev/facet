@@ -36,7 +36,7 @@ MUTANTS = [
      "cost_known"),
     ("mandatory Requirement weakened",
      "internal/toolbox/v2ops.go",
-     'strength := "required"',
+     'strength := "mandatory"',
      'strength := "preferred"',
      "strength"),
     ("Resolution collapsed",

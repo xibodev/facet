@@ -133,7 +133,7 @@ func TestSerializedResolutionKeepsThreeStates(t *testing.T) {
 	d := serializedV2(t)
 	seen := map[string]int{}
 	for _, op := range d.Operations {
-		for _, r := range op.Requires {
+		for _, r := range op.Requirements {
 			switch r.Resolution {
 			case toolbox.ResolutionSatisfied, toolbox.ResolutionUnsatisfied, toolbox.ResolutionUnknown:
 				seen[r.Resolution]++
@@ -156,8 +156,8 @@ func TestSerializedRequirementStrength(t *testing.T) {
 
 	var foundPreferred bool
 	for _, op := range d.Operations {
-		for _, r := range op.Requires {
-			if r.Strength != "required" && r.Strength != "preferred" {
+		for _, r := range op.Requirements {
+			if r.Strength != "mandatory" && r.Strength != "preferred" {
 				t.Errorf("%s requires %s with strength %q", op.ID, r.Name, r.Strength)
 			}
 			if r.Strength == "preferred" {
@@ -169,7 +169,7 @@ func TestSerializedRequirementStrength(t *testing.T) {
 		t.Error("no preferred requirement anywhere; music_library ffprobe is optional and must say so")
 	}
 	if op, ok := byID["music_library"]; ok {
-		for _, r := range op.Requires {
+		for _, r := range op.Requirements {
 			if r.Name == "ffprobe" && r.Strength != "preferred" {
 				t.Errorf("music_library ffprobe is %q; it degrades rather than blocks", r.Strength)
 			}
@@ -186,10 +186,10 @@ func TestSerializedRequirementStrength(t *testing.T) {
 	// degradation.
 	if op, ok := byID["audio_mix"]; ok {
 		var sawFFmpeg bool
-		for _, r := range op.Requires {
+		for _, r := range op.Requirements {
 			if r.Name == "ffmpeg" {
 				sawFFmpeg = true
-				if r.Strength != "required" {
+				if r.Strength != "mandatory" {
 					t.Errorf("audio_mix ffmpeg is %q; without it the Operation cannot run at all", r.Strength)
 				}
 			}
@@ -204,8 +204,8 @@ func TestSerializedRequirementStrength(t *testing.T) {
 	// information while still type-checking.
 	var required int
 	for _, op := range d.Operations {
-		for _, r := range op.Requires {
-			if r.Strength == "required" {
+		for _, r := range op.Requirements {
+			if r.Strength == "mandatory" {
 				required++
 			}
 		}

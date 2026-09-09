@@ -403,7 +403,93 @@ func pruneReferences(caps []Capability, artifacts map[string]any,
 	return out
 }
 
+// dispatchingCapabilities reach the Operation layer; every other capability is
+// a registry read that transforms no product material.
+//
+// Kept as a set rather than repeated on each literal so a new capability
+// cannot silently default to "projects nothing" — the state that made the
+// host's no-weakening check compare zero pairs.
+var dispatchingCapabilities = map[string]bool{
+	CapToolsRun: true,
+	// creative.tools.estimate is DELIBERATELY ABSENT.
+	//
+	// It reads a request and reports what running would cost and do. It
+	// TRANSFORMS NO PRODUCT MATERIAL — the frozen shape's own test for a
+	// capability that projects nothing — and its consent gate fires only on
+	// op=="run" (invoke.go:313).
+	//
+	// Listing it here declared may_charge TRUE on the capability whose entire
+	// purpose is checking cost BEFORE a paid run. facet-studio found the same
+	// shape in their tree and named the consequence: gating the cost-CHECKING
+	// tool as possibly-billing discourages the one behaviour that makes a cost
+	// gate work. I reproduced it here by deriving from the wrong set, and
+	// caught it because estimate showed writes=true when its own summary says
+	// it never writes.
+}
+
+// withProjections fills in each capability's `projects` list.
+//
+// A dispatching capability reaches ANY public tool, so it projects all of
+// them: creative.tools.run selects the Operation from the request, and the
+// capability description is read before that choice is made. That is why its
+// declared effects are the pessimistic union rather than a narrowing — the
+// host must gate on the worst case it could dispatch.
+//
+// A registry read projects NOTHING, and an empty list says exactly that. It is
+// legal and different from the field being absent: absent means the module
+// never spoke, empty means it did and the answer is none.
+func withProjections(caps []Capability) []Capability {
+	all := toolbox.Names()
+
+	// The pessimistic union over every projected Operation.
+	//
+	// DERIVED, never hardcoded: a capability that dispatches any of 35 tools
+	// must declare the worst case any of them can do, because the capability
+	// description is read BEFORE the request selects which. Writing these as
+	// literals would be a second effects table that drifts the first time a
+	// tool becomes chargeable.
+	//
+	// §2a permits a conditional here and Facet keeps the boolean collapse for
+	// now: a conditional needs matching evaluation semantics on both sides,
+	// which is a thing to implement deliberately rather than assume. Rule 4
+	// makes the collapse legal, and boolean true always satisfies no-weakening.
+	var union struct{ network, writes, charge bool }
+	for _, n := range all {
+		if toolbox.NetworkFor(n) {
+			union.network = true
+		}
+		if toolbox.ExternalWriteFor(n) {
+			union.writes = true
+		}
+		if toolbox.MayCharge(n) {
+			union.charge = true
+		}
+	}
+
+	for i := range caps {
+		if !dispatchingCapabilities[caps[i].ID] {
+			// A registry read projects NOTHING. Empty is legal and says so;
+			// absent would mean the module never spoke.
+			caps[i].Projects = []string{}
+			continue
+		}
+		caps[i].Projects = all
+		caps[i].Effects.Network = union.network
+		caps[i].Effects.ExternalWrites = union.writes
+		caps[i].Effects.MayCharge = union.charge
+		// A capability dispatching 35 tools is never deterministic: it reaches
+		// networked and chargeable Operations, and the union of a
+		// nondeterministic set is nondeterministic.
+		caps[i].Effects.Deterministic = false
+	}
+	return caps
+}
+
 func capabilityList() []Capability {
+	return withProjections(rawCapabilityList())
+}
+
+func rawCapabilityList() []Capability {
 	return []Capability{
 		{
 			ID:              CapToolsList,

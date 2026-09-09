@@ -22,7 +22,7 @@ import "sort"
 // charge. Eight may charge and their amount is unknowable before the call.
 type V2Effects struct {
 	Network       bool `json:"network"`
-	ExternalWrite bool `json:"external_write"`
+	ExternalWrite bool `json:"external_writes"`
 	MayCharge     bool `json:"may_charge"`
 	CostKnown     bool `json:"cost_known"`
 	Deterministic bool `json:"deterministic"`
@@ -31,8 +31,9 @@ type V2Effects struct {
 // V2Requirement is one thing an Operation needs, with how badly it needs it.
 type V2Requirement struct {
 	Name string `json:"name"`
-	Type string `json:"type"`
-	// Strength is "required" or "preferred". A preferred requirement that is
+	Kind string `json:"kind"`
+	// Strength is "mandatory" or "preferred" -- the frozen vocabulary. A
+	// preferred requirement that is
 	// unsatisfied degrades the Operation rather than blocking it.
 	Strength string `json:"strength"`
 	// Resolution is SATISFIED, UNSATISFIED or UNKNOWN — never collapsed to a
@@ -44,10 +45,10 @@ type V2Requirement struct {
 // V2Operation is the semantic unit: what this Operation MEANS, as opposed to
 // what the capability surface exposes.
 type V2Operation struct {
-	ID       string          `json:"id"`
-	Title    string          `json:"title"`
-	Effects  V2Effects       `json:"effects"`
-	Requires []V2Requirement `json:"requires"`
+	ID           string          `json:"id"`
+	Title        string          `json:"title"`
+	Effects      V2Effects       `json:"effects"`
+	Requirements []V2Requirement `json:"requirements"`
 	// Produces names artifact kinds declared in the descriptor's
 	// artifact_kinds map. An Operation naming a kind that is not declared is a
 	// dangling reference the host reports.
@@ -144,7 +145,7 @@ func V2Operations() []V2Operation {
 				CostKnown:     exec.EstimatedCost != nil,
 				Deterministic: Deterministic(n),
 			},
-			Requires:        v2RequirementsFor(n),
+			Requirements:    v2RequirementsFor(n),
 			Produces:        operationProduces[n],
 			Implementations: operationImplementations[n],
 		})
@@ -166,12 +167,12 @@ func v2RequirementsFor(tool string) []V2Requirement {
 		name, _ := m["name"].(string)
 		typ, _ := m["type"].(string)
 		res, _ := m["resolution"].(string)
-		strength := "required"
+		strength := "mandatory"
 		if pref[name] {
 			strength = "preferred"
 		}
 		out = append(out, V2Requirement{
-			Name: name, Type: typ, Strength: strength, Resolution: res,
+			Name: name, Kind: typ, Strength: strength, Resolution: res,
 		})
 	}
 	return out
@@ -186,3 +187,12 @@ func v2RequirementsFor(tool string) []V2Requirement {
 // mutation setting cost_known = !may_charge passed every value assertion. The
 // inverse relationship is an accident of today's tools, not the contract.
 func EstimatedCostKnown(tool string) bool { return executionFor(tool).EstimatedCost != nil }
+
+// NetworkFor and ExternalWriteFor expose the canonical per-tool effects so a
+// PROJECTION can derive its pessimistic union instead of restating it.
+//
+// Exported for exactly that reason: a capability that dispatches any of 35
+// tools must declare the worst case any of them can do, and a hardcoded
+// literal there is a second effects table waiting to drift.
+func NetworkFor(tool string) bool       { return executionFor(tool).Network }
+func ExternalWriteFor(tool string) bool { return externalWriteFor(tool, "run") }

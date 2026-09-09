@@ -201,6 +201,22 @@ type Capability struct {
 	Skills          []string `json:"skills"`
 	LongRunning     bool     `json:"long_running"`
 	PollCapability  string   `json:"poll_capability,omitempty"`
+
+	// Projects names the v2 Operations this capability can reach.
+	//
+	// WITHOUT IT THE NO-WEAKENING CHECK COMPARES NOTHING. facet-studio's
+	// CheckNoWeakening iterates a capability's projections; an absent list
+	// means zero iterations, so a capability declaring effects weaker than the
+	// Operations it dispatches passes identically to an honest one. Measured:
+	// their host performed 0 comparisons against a descriptor with 35
+	// Operations and reported zero findings — a check with no input and a
+	// check that passed produce the same observable.
+	//
+	// EMPTY IS LEGAL and means something different from absent: a registry
+	// read transforms no product material and projects nothing, which the
+	// frozen shape states explicitly. Five of Facet's seven capabilities are
+	// exactly that.
+	Projects []string `json:"projects"`
 }
 
 // Effects declares what invoking a capability does, BEFORE it runs. The host
@@ -215,6 +231,23 @@ type Effects struct {
 	ExternalWrites bool   `json:"external_writes"`
 	Provider       string `json:"provider"`
 	CostKnown      bool   `json:"cost_known"`
+
+	// --- v2 ---
+	//
+	// The host decodes a CAPABILITY's effects into the SAME type as an
+	// Operation's, so no-weakening is a field comparison rather than a
+	// translation. A field absent here decodes to FALSE, which is an
+	// affirmative claim the module never made.
+	//
+	// Measured: without may_charge, creative.tools.run declared false while
+	// reaching eight chargeable Operations. That is a real weakening and the
+	// host is right to refuse it -- it was invisible only because the
+	// capability declared no projections, so nothing was ever compared.
+	//
+	// Additive to v1: these names did not exist in the v1 effects object, so a
+	// v1 host ignores them exactly as it ignores `operations`.
+	MayCharge     bool `json:"may_charge"`
+	Deterministic bool `json:"deterministic"`
 }
 
 // Overlay points at agent guidance the host may load. The host decides.
