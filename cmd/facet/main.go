@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/xibodev/facet/internal/bundle"
 	"github.com/xibodev/facet/internal/config"
 	"github.com/xibodev/facet/internal/module"
 	"github.com/xibodev/facet/internal/studio"
@@ -189,6 +190,68 @@ func main() {
 		}
 		if !ok {
 			os.Exit(1)
+		}
+
+	case "bundle":
+		// Release C: build an installable, target-shaped Facet package.
+		//
+		// The canonical assets and the public tool vocabulary are READ from
+		// product truth here and passed in; the builder never holds its own
+		// copy of either.
+		fs := flag.NewFlagSet("bundle", flag.ExitOnError)
+		target := fs.String("target", "", "claude | codex | copilot | opencode | all")
+		out := fs.String("out", "dist/bundles", "Output directory")
+		_ = fs.Parse(os.Args[2:])
+
+		if *target == "" {
+			fmt.Fprintln(os.Stderr, "Usage: facet bundle --target <claude|codex|copilot|opencode|all> [--out dir]")
+			os.Exit(1)
+		}
+
+		var wanted []bundle.Target
+		if *target == "all" {
+			wanted = bundle.Targets()
+		} else {
+			t := bundle.Target(*target)
+			valid := false
+			for _, k := range bundle.Targets() {
+				if k == t {
+					valid = true
+				}
+			}
+			if !valid {
+				fmt.Fprintf(os.Stderr, "Unknown target %q; choose claude, codex, copilot, opencode or all\n", *target)
+				os.Exit(1)
+			}
+			wanted = []bundle.Target{t}
+		}
+
+		src := bundle.Source{
+			SkillsDir:    filepath.Join("skills", "facet"),
+			PacksDir:     "packs",
+			Tools:        toolbox.Names(),
+			FacetVersion: Version,
+		}
+
+		for _, t := range wanted {
+			dir := filepath.Join(*out, string(t))
+			// A stale bundle merged with a fresh one produces a manifest that
+			// does not describe its own directory.
+			_ = os.RemoveAll(dir)
+			m, err := bundle.Build(src, t, dir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "bundle %s: %v\n", t, err)
+				os.Exit(1)
+			}
+			// Verify what was just written rather than trusting the build.
+			// "the build returned nil" and "the bundle is whole" are different
+			// claims, and this repo has shipped a bundle that reported success
+			// while missing the files that made it work.
+			if _, err := bundle.Verify(dir); err != nil {
+				fmt.Fprintf(os.Stderr, "bundle %s failed verification: %v\n", t, err)
+				os.Exit(1)
+			}
+			fmt.Printf("%-9s %d entries  %s  %s\n", t, len(m.Entries), m.BundleDigest[:19], dir)
 		}
 
 	case "ui", "studio":
