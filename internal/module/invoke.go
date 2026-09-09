@@ -50,8 +50,12 @@ type Request struct {
 	// sends would refuse every genuine call, and tolerating unknown fields
 	// would silently discard a misspelled `consent`. Both are unacceptable, so
 	// the protocol's own fields are named explicitly.
-	Protocol   string `json:"protocol,omitempty"`
-	Capability string `json:"capability,omitempty"`
+	Protocol string `json:"protocol,omitempty"`
+	// ContractVersion is the BEHAVIOURAL contract the host expects, echoed
+	// from what it read in the descriptor. Exact match or refusal — see
+	// module.ContractVersion.
+	ContractVersion string `json:"contract_version,omitempty"`
+	Capability      string `json:"capability,omitempty"`
 	// Grants are the permissions actually authorized for THIS invocation. A
 	// module must assume it has nothing that is not listed.
 	Grants *Grants `json:"grants,omitempty"`
@@ -194,6 +198,30 @@ func Invoke(capability string, raw []byte) Envelope {
 		return fail(OpInvoke, reqID, "unsupported_protocol",
 			"this module speaks "+Protocol+" and cannot answer a request in "+v,
 			map[string]any{"requested": v, "supported": []string{Protocol}}, false)
+	}
+
+	// The BEHAVIOURAL contract must match exactly.
+	//
+	// Checked before any work because a behavioural mismatch means the two
+	// sides disagree about what the guarantees MEAN — not about a field's
+	// shape. Running first and discovering that afterwards is how every
+	// inference in this module got made.
+	//
+	// Absent is permitted: a v1 host does not know this field exists, and
+	// refusing it would break every existing caller. Present-and-wrong is
+	// refused, because a host that names a contract has made a claim.
+	if v := strings.TrimSpace(req.ContractVersion); v != "" && v != ContractVersion {
+		return fail(OpInvoke, reqID, "contract_incompatible",
+			"the host expects behavioural contract "+v+" but this module implements "+
+				ContractVersion+"; there is no negotiation between behavioural "+
+				"contracts — install a module implementing "+v+
+				", or a host implementing "+ContractVersion,
+			map[string]any{
+				"requested_contract_version": v,
+				"module_contract_version":    ContractVersion,
+				"remedy": "match the contract_version exactly on both sides; " +
+					"ranges, downgrade and fallback are deliberately not supported",
+			}, false)
 	}
 
 	// A capability disagreeing with the verb argument means the host and the

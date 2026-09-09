@@ -28,10 +28,16 @@ func TestDescribeDeclaresExactlyTheAgreedFields(t *testing.T) {
 		t.Fatalf("unmarshal descriptor: %v", err)
 	}
 
+	// The AGREED descriptor shape. Adding a field is a contract change, which
+	// is why this asserts an exact count rather than a subset — it caught
+	// contract_version being added, correctly, and the field stays only
+	// because xibodev.module/v2 froze it as normative.
 	want := []string{
 		"module", "name", "version", "protocol_versions", "capabilities",
 		"request_schemas", "result_schemas", "artifact_schemas",
 		"agent_overlays", "skills", "permissions", "requirements",
+		// v2: the BEHAVIOURAL contract, distinct from the wire protocol.
+		"contract_version",
 	}
 	for _, field := range want {
 		if _, ok := got[field]; !ok {

@@ -15,6 +15,24 @@ const (
 	ModuleName = "Facet"
 	Protocol   = "xibodev.module/v1"
 
+	// ContractVersion is the BEHAVIOURAL contract Facet implements, distinct
+	// from Protocol, which versions only the wire format.
+	//
+	// Everything Facet believed about roots, deadline semantics, grant
+	// exhaustiveness and confinement authority was inferred from what a host's
+	// validator happened to accept. Nothing versioned those behaviours, so an
+	// inference could not be pinned and could not fail a test when it drifted.
+	// That is the defect this closes.
+	//
+	// EXACT PINNING, NOT NEGOTIATION (operator ruling). A module and a host
+	// either agree on this identity or they do not interoperate. There are no
+	// ranges, no highest-common selection, no downgrade and no fallback —
+	// those are negotiation, and negotiation is deferred until several
+	// behavioural versions genuinely coexist. A single-valued "negotiation" is
+	// the shape that let ProtocolVersions look like a choice while being a
+	// membership test against one constant.
+	ContractVersion = "xibodev.module/v2"
+
 	// Operation is the VERB, exactly one of these two — never a capability ID.
 	// The capability travels in the request and is correlated by request_id.
 	// Pinned to the host's modproto.OperationDescribe / OperationInvoke.
@@ -111,18 +129,23 @@ type Artifact struct {
 // The schema maps carry JSON Schema documents keyed by schema ID, so a
 // capability can reference a schema by ID rather than inlining it.
 type Descriptor struct {
-	Module           string         `json:"module"`
-	Name             string         `json:"name"`
-	Version          string         `json:"version"`
-	ProtocolVersions []string       `json:"protocol_versions"`
-	Capabilities     []Capability   `json:"capabilities"`
-	RequestSchemas   map[string]any `json:"request_schemas"`
-	ResultSchemas    map[string]any `json:"result_schemas"`
-	ArtifactSchemas  map[string]any `json:"artifact_schemas"`
-	AgentOverlays    []Overlay      `json:"agent_overlays"`
-	Skills           []Skill        `json:"skills"`
-	Permissions      Permissions    `json:"permissions"`
-	Requirements     []Requirement  `json:"requirements"`
+	Module           string   `json:"module"`
+	Name             string   `json:"name"`
+	Version          string   `json:"version"`
+	ProtocolVersions []string `json:"protocol_versions"`
+	// ContractVersion is the single behavioural contract this module
+	// implements. Singular by design: a list would read as negotiable, and
+	// ProtocolVersions already proved that a list validated by a membership
+	// test looks like a choice while being a constant.
+	ContractVersion string         `json:"contract_version"`
+	Capabilities    []Capability   `json:"capabilities"`
+	RequestSchemas  map[string]any `json:"request_schemas"`
+	ResultSchemas   map[string]any `json:"result_schemas"`
+	ArtifactSchemas map[string]any `json:"artifact_schemas"`
+	AgentOverlays   []Overlay      `json:"agent_overlays"`
+	Skills          []Skill        `json:"skills"`
+	Permissions     Permissions    `json:"permissions"`
+	Requirements    []Requirement  `json:"requirements"`
 }
 
 // Capability describes one addressable operation and its honest effects.

@@ -110,6 +110,7 @@ func Describe(version string) Envelope {
 		Name:             ModuleName,
 		Version:          version,
 		ProtocolVersions: []string{Protocol},
+		ContractVersion:  ContractVersion,
 		Capabilities:     capabilities,
 		RequestSchemas:   reqSchemas,
 		ResultSchemas:    resSchemas,
