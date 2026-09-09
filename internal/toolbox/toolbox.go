@@ -133,7 +133,14 @@ func executionFor(tool string) Execution {
 	case "color_grade":
 		provider = "ffmpeg"
 	case "direct_clip_search":
-		provider = "openmontage"
+		// AGGREGATOR: this tool contacts Pexels, Pixabay and Wikimedia in
+		// turn, whichever are configured. "openmontage" named a project this
+		// code no longer belongs to, so the host was told a dead name was the
+		// provider of a real network call it could not attribute.
+		//
+		// "multi_stock" says what a host can act on: the upstream is not one
+		// service, and naming any single one would be false for the other two.
+		provider = "multi_stock"
 		network = true
 	case "edge_tts":
 		provider = "microsoft_edge"
@@ -169,7 +176,10 @@ func executionFor(tool string) Execution {
 		provider = "openai"
 		network = true
 	case "subtitle_gen":
-		provider = "openmontage"
+		// LOCAL: renderSRT/renderVTT write text on this machine and contact
+		// nothing. It carried "openmontage" — a name that both misattributed
+		// the work AND implied an external service for a tool that has none.
+		provider = "local"
 	case "video_selector":
 		provider = "selector"
 	case "wikimedia":
