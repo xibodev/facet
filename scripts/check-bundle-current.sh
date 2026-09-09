@@ -20,11 +20,29 @@
 # Exits non-zero when they differ, so this can gate a release rather than being
 # something a person has to remember to look at.
 set -e
-bundle="${FACET_BUNDLE:-$HOME/.facet/bundle}"
-if [ ! -d "$bundle" ]; then
-  echo "no installed bundle at $bundle; nothing to compare"
-  exit 0
+# An explicit argument WINS. This script silently ignored $1 and always
+# checked $HOME/.facet/bundle, so `check-bundle-current.sh dist` reported on a
+# directory it was never asked about. Every "bundle current" claim made with an
+# argument was true only because the two happened to agree -- which is not a
+# property of the measurement.
+#
+# A nonexistent path passed explicitly is an ERROR, not "nothing to compare":
+# the caller named a bundle and it is not there. Only the DEFAULT location may
+# be legitimately absent, because then nothing is installed yet.
+if [ -n "${1:-}" ]; then
+  bundle="$1"
+  if [ ! -d "$bundle" ]; then
+    echo "FATAL: no bundle at $bundle (named explicitly)" >&2
+    exit 1
+  fi
+else
+  bundle="${FACET_BUNDLE:-$HOME/.facet/bundle}"
+  if [ ! -d "$bundle" ]; then
+    echo "no installed bundle at $bundle; nothing to compare"
+    exit 0
+  fi
 fi
+echo "comparing against: $bundle"
 
 status=0
 for rel in \
