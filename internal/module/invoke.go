@@ -333,6 +333,7 @@ func Invoke(capability string, raw []byte) Envelope {
 	// Verified first so a bad digest fails before spending a render, and so a
 	// Facet artifact can never claim provenance from bytes it did not read.
 	var seedRes *SeedResolution
+	var seedWarnings []string
 	if req.Seed != nil {
 		seed, res, err := LoadSeed(req.Seed)
 		if err != nil {
@@ -346,7 +347,20 @@ func Invoke(capability string, raw []byte) Envelope {
 				map[string]any{"expected": req.Seed.Digest, "actual": res.DigestActual}, false)
 		}
 		seedRes = res
-		_ = seed
+
+		// A seed's suggested output types are CHECKED against Facet's
+		// vocabulary, and an unrecognised one is reported.
+		//
+		// OutputTypes was written, tested, and called by nothing -- the ninth
+		// instance of the declared-but-never-wired class, and the second in
+		// this seed path alone after SeedRef itself. A producer naming
+		// "explainer-video" instead of "explainer" got silence, and the run
+		// proceeded as if the seed had suggested nothing at all.
+		//
+		// A warning rather than a refusal, deliberately: Midden's vocabulary
+		// is its own and may legitimately grow past Facet's. The caller learns
+		// the suggestion was ignored instead of assuming it was honoured.
+		_, seedWarnings = seed.OutputTypes()
 	}
 
 	// Finish inside the host's budget rather than being killed by it.
@@ -403,6 +417,13 @@ func Invoke(capability string, raw []byte) Envelope {
 
 	env, ok := toolbox.CLI(args)
 	out := project(OpInvoke, op, reqID, capability, tool, env, ok)
+
+	// Seed warnings reach the CALLER, not just the log. Collecting a warning
+	// and dropping it would be the same defect one layer along: the check
+	// would run, find the problem, and tell nobody.
+	if len(seedWarnings) > 0 {
+		out.Warnings = append(out.Warnings, seedWarnings...)
+	}
 	// Which contract governed this run. Omitted when the caller named none,
 	// so a v1 host sees exactly what it saw before.
 	out.Execution.ContractVersion = strings.TrimSpace(req.ContractVersion)
