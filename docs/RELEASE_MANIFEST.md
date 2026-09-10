@@ -107,6 +107,33 @@ capabilities, accepted by the real host with zero findings.
 
 Ships independently of Release A.
 
+#### Why v2 exists here and nowhere else
+
+`xibodev.module/v2` is **Release B's host boundary, not a product-wide
+contract.** Releases A and C contain zero references to it, measured.
+
+The distinction is NOT "structured schemas versus prose" — that reading is
+wrong and worth stating so it is not repeated. `facet tools describe` already
+returns `request_schema`, `result_schema`, `may_charge` and `cost.known` over
+plain CLI, so `describe → estimate → consent → run → verify` is Release C's
+loop too. **That discipline is a product property, carried by every projection.**
+
+What v2 actually buys is one thing: **a program, rather than an agent, must
+decide whether an invocation may proceed — before Facet is asked.**
+
+| Release | Who gates the call | What they need |
+|---|---|---|
+| A, C | the agent, inline with a human | readable schemas and cost, per call |
+| B | a **host**, before invocation | machine-checkable effects it can gate on |
+
+A host routes approval, issues grants, and runs no-weakening conformance
+*without executing the tool*. It cannot read help text to do that. An agent can.
+
+**This is why a sibling product with no host has no reason to adopt v2.** The
+cost is real — a frozen contract, conformance tests, a projection to maintain —
+and with nothing gating it programmatically, the benefit is zero. Not
+divergence; different consumers.
+
 ### Release C — external agentic-CLI bundle
 
 ```
