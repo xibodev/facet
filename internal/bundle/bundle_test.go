@@ -95,6 +95,10 @@ func TestTargetsShareProductSemantics(t *testing.T) {
 		"not the exit code", // verify output, not process exit
 		"estimate",          // estimate before running
 		"Never substitute mock",
+		// A stale binary earlier on PATH rejects the shapes this bundle
+		// documents, and the failure reads as bad guidance rather than a
+		// wrong binary. Every target must tell the agent to check.
+		"version",
 	}
 	for tgt, body := range bodies {
 		for _, r := range required {

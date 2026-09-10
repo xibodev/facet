@@ -457,6 +457,22 @@ func renderToolWiring(t Target, c Compatibility, src Source) string {
 	b.WriteString(fmt.Sprintf("%s tools run <tool> --input request.json\n", c.FacetBinary))
 	b.WriteString("```\n\n")
 
+	// VERSION CHECK FIRST. A stale binary earlier on PATH rejects the request
+	// shapes this bundle documents, and the failure looks like bad guidance
+	// rather than a wrong binary. One real session spent five round trips
+	// reverse-engineering schemas before noticing the version mismatch it had
+	// already printed in its second command.
+	b.WriteString("## Check the binary matches this bundle\n\n")
+	b.WriteString("```sh\n")
+	b.WriteString(fmt.Sprintf("%s version\n", c.FacetBinary))
+	b.WriteString("```\n\n")
+	b.WriteString(fmt.Sprintf(
+		"This bundle was built for **Facet v%s**. If the command above reports a\n"+
+			"different version, an older install is earlier on `PATH` — it will reject\n"+
+			"request shapes documented here, and the errors will look like bad guidance\n"+
+			"rather than a stale binary. Say so rather than working around it.\n\n",
+		src.FacetVersion))
+
 	b.WriteString("**Always `describe` before constructing a request**, and `estimate` before running\n")
 	b.WriteString("anything that may cost money. `estimate` never bills, never writes, never generates.\n\n")
 
