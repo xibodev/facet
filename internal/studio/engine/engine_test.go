@@ -21,6 +21,8 @@ func TestGetAdapter(t *testing.T) {
 		{"github-copilot", "copilot"},
 		{"codex", "codex"},
 		{"openai-codex", "codex"},
+		{"studio", "studio"},
+		{"kernel", "studio"},
 		{"unknown-engine", "claude"}, // defaults to claude
 	}
 
@@ -37,8 +39,8 @@ func TestGetAdapter(t *testing.T) {
 
 func TestListAdapters(t *testing.T) {
 	adapters := ListAdapters()
-	if len(adapters) != 4 {
-		t.Fatalf("expected 4 adapters, got %d", len(adapters))
+	if len(adapters) != 5 {
+		t.Fatalf("expected 5 adapters, got %d", len(adapters))
 	}
 	names := make(map[string]bool)
 	for _, a := range adapters {
@@ -50,7 +52,7 @@ func TestListAdapters(t *testing.T) {
 			t.Errorf("adapter %s has empty ExecutableName", a.Name())
 		}
 	}
-	for _, expected := range []string{"claude", "opencode", "codex", "copilot"} {
+	for _, expected := range []string{"studio", "claude", "opencode", "codex", "copilot"} {
 		if !names[expected] {
 			t.Errorf("missing adapter %q in ListAdapters()", expected)
 		}
@@ -84,6 +86,8 @@ func TestBuildTurnArgsExactFirstAndResume(t *testing.T) {
 		{name: "codex resume", adapter: NewCodexAdapter(), native: "thread-native", want: []string{"exec", "resume", "--json", "--dangerously-bypass-approvals-and-sandbox", "thread-native", prompt}},
 		{name: "copilot first", adapter: NewCopilotAdapter(), want: []string{"--allow-all", "--output-format", "json", "--stream", "on", "--prompt", prompt}},
 		{name: "copilot resume", adapter: NewCopilotAdapter(), native: "copilot-native", want: []string{"--allow-all", "--output-format", "json", "--stream", "on", "--resume=copilot-native", "--prompt", prompt}},
+		{name: "studio first", adapter: NewStudioKernelAdapter(), want: []string{"agent", "-m", prompt, "--dir", "ignored"}},
+		{name: "studio resume", adapter: NewStudioKernelAdapter(), native: "studio-native", want: []string{"agent", "-m", prompt, "--dir", "ignored", "-s", "studio-native"}},
 	}
 
 	for _, tt := range tests {

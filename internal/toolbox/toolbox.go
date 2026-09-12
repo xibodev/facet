@@ -1607,3 +1607,36 @@ func contains(values []string, value string) bool {
 
 // Names returns a defensive copy of the exact public tool catalog.
 func Names() []string { out := append([]string(nil), names...); sort.Strings(out); return out }
+
+// Description returns the tool's human-readable capability description.
+func Description(tool string) string {
+	tool = canonicalToolName(tool)
+	if desc, ok := capabilities[tool]; ok {
+		return desc
+	}
+	return tool
+}
+
+// Parameters returns the JSON Schema for the tool's input parameters.
+func Parameters(tool string) map[string]any {
+	tool = canonicalToolName(tool)
+	if s, ok := schemas[tool]; ok {
+		if m, ok := s.(map[string]any); ok {
+			return m
+		}
+	}
+	return map[string]any{"type": "object"}
+}
+
+// Run executes a tool operation in 'run' mode with raw JSON input.
+func Run(tool string, data []byte) Envelope {
+	tool = canonicalToolName(tool)
+	if !known(tool) {
+		return errorEnvelope(tool, "run", failure("unknown_tool", "unknown tool: "+tool, nil))
+	}
+	result, warnings, err := execute(tool, "run", data)
+	if err != nil {
+		return errorEnvelope(tool, "run", err)
+	}
+	return success(tool, "run", result, warnings)
+}

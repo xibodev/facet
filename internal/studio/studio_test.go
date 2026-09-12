@@ -1233,7 +1233,7 @@ func TestEngineAvailabilityShape(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if len(payload.Engines) != 4 {
+	if len(payload.Engines) != 5 {
 		t.Fatalf("engines = %#v", payload.Engines)
 	}
 	for _, item := range payload.Engines {

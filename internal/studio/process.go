@@ -13,10 +13,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xibodev/facet-studio/pkg/agent"
 	"github.com/xibodev/facet/internal/studio/engine"
 )
 
-// Session is a durable Studio conversation. Each turn uses a fresh CLI process.
+// Session is a durable Studio conversation. Each turn uses a fresh CLI process or in-process native loop.
 type Session struct {
 	ID       string
 	NativeID string
@@ -27,6 +28,7 @@ type Session struct {
 	mu           sync.Mutex
 	valid        bool
 	cmd          *exec.Cmd
+	nativeLoop   *agent.AgentLoop
 	cancel       context.CancelFunc
 	done         chan struct{}
 	turnGate     chan struct{}
@@ -68,7 +70,12 @@ func (s *Session) Close() error {
 	s.valid = false
 	cancel := s.cancel
 	done := s.done
+	loop := s.nativeLoop
 	s.mu.Unlock()
+
+	if loop != nil {
+		loop.Close()
+	}
 
 	if cancel != nil {
 		cancel()
@@ -188,6 +195,26 @@ func (s *Session) runTurn(ctx context.Context, prompt string, emit func(turnEven
 		}
 		s.mu.Unlock()
 	}()
+
+	if s.nativeLoop != nil {
+		resp, err := s.nativeLoop.ProcessDirect(turnCtx, prompt, s.ID)
+		if err != nil {
+			canceled := errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+			return turnResult{reason: err.Error(), canceled: canceled}
+		}
+
+		_ = emit(turnEvent{
+			normalized: &engine.NormalizedEvent{
+				Type:    engine.EventTextDelta,
+				Content: resp,
+			},
+			payload: map[string]any{
+				"type": "text_delta",
+				"text": resp,
+			},
+		})
+		return turnResult{ok: true}
+	}
 
 	if adapter == nil {
 		s.invalidate()

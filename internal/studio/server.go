@@ -27,7 +27,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xibodev/facet-studio/pkg/agent"
+	"github.com/xibodev/facet-studio/pkg/bus"
+	"github.com/xibodev/facet-studio/pkg/config"
 	"github.com/xibodev/facet/internal/studio/engine"
+	"github.com/xibodev/facet/pkg/provider"
 	"github.com/xibodev/facet/web"
 )
 
@@ -681,18 +685,37 @@ func (s *Server) newSession(dir, mode, engineName string) (*Session, error) {
 		return nil, err
 	}
 
-	adapter, ok := registeredAdapter(engineName)
-	if !ok {
-		return nil, fmt.Errorf("unknown engine %q; expected a registered engine", engineName)
+	var adapter engine.EngineAdapter
+	var nativeLoop *agent.AgentLoop
+
+	if strings.EqualFold(engineName, "native") {
+		engineName = "native"
+		cfg := config.DefaultConfig()
+		cfg.Agents.Defaults.Workspace = resolvedDir
+		nativeLoop = agent.NewAgentLoop(
+			cfg,
+			bus.NewMessageBus(),
+			nil,
+			agent.WithToolProviders(provider.NewFacetToolProvider()),
+		)
+	} else {
+		var ok bool
+		adapter, ok = registeredAdapter(engineName)
+		if !ok {
+			return nil, fmt.Errorf("unknown engine %q; expected a registered engine", engineName)
+		}
+		engineName = adapter.Name()
 	}
-	engineName = adapter.Name()
+
 	environment := s.environmentSnapshot()
+
 	sess := &Session{
 		ID:          id,
 		Dir:         resolvedDir,
 		Mode:        mode,
 		Engine:      engineName,
 		adapter:     adapter,
+		nativeLoop:  nativeLoop,
 		valid:       true,
 		turnGate:    make(chan struct{}, 1),
 		environment: environment,

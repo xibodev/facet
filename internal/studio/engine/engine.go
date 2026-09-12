@@ -99,6 +99,8 @@ func validateAutonomousMode(mode string) error {
 // Defaults to "claude" if name is empty or unrecognized.
 func GetAdapter(name string) EngineAdapter {
 	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "studio", "studio-kernel", "kernel":
+		return NewStudioKernelAdapter()
 	case "claude", "claude-code":
 		return NewClaudeAdapter()
 	case "opencode":
@@ -117,6 +119,7 @@ func GetAdapter(name string) EngineAdapter {
 // ListAdapters returns a slice of all registered standard adapters.
 func ListAdapters() []EngineAdapter {
 	return []EngineAdapter{
+		NewStudioKernelAdapter(),
 		NewClaudeAdapter(),
 		NewOpenCodeAdapter(),
 		NewCopilotAdapter(),
