@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Facet Docs | Install, Create, and Review</title>
   <meta name="description" content="Source installation, Studio and terminal workflows, provider prerequisites, limitations, and source-linked technical reference for Facet.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
@@ -28,7 +29,8 @@
     .wrap { max-width: 1200px; margin: auto; padding-inline: 1.5rem; }
     .topbar { min-height: 4.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem 1rem; padding-block: .5rem; }
     .brand { display: inline-flex; align-items: center; gap: .65rem; text-decoration: none; font-size: 1.4rem; font-weight: 700; }
-    .mark { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .5rem; background: linear-gradient(135deg, #0284c7, #7c3aed); color: white; }
+    .mark { display: block; width: 2.5rem; height: 2.5rem; flex: 0 0 auto; }
+    .brand-period { color: #d92d48; }
     .topnav { display: flex; gap: 1.25rem; }
     .topnav a { font-size: .875rem; padding-block: .6rem; }
     .layout { display: grid; grid-template-columns: 235px minmax(0, 1fr); gap: 3rem; padding-top: 2.5rem; padding-bottom: 4rem; }
@@ -60,7 +62,7 @@
   </style>
 </head>
 <body>
-  <header><div class="wrap topbar"><a href="index.html" class="brand"><span class="mark" aria-hidden="true">F</span>Facet Docs</a><nav class="topnav" aria-label="Main navigation"><a href="index.html">Overview</a><a href="https://github.com/xibodev/facet">GitHub</a></nav></div></header>
+  <header><div class="wrap topbar"><a href="index.html" class="brand" aria-label="Facet documentation home"><img class="mark" src="logo-mark.svg" alt="" width="120" height="120"><span aria-hidden="true">facet<span class="brand-period">.</span></span></a><nav class="topnav" aria-label="Main navigation"><a href="index.html">Overview</a><a href="https://github.com/xibodev/facet">GitHub</a></nav></div></header>
   <div class="wrap layout">
     <aside><nav aria-label="On this page"><a href="#start">Start Here</a><a href="#install">Source Installation</a><a href="#doctor">Diagnostics</a><a href="#studio">Studio Walkthrough</a><a href="#terminal">Terminal Workflow</a><a href="#packs">Production Packs</a><a href="#gflow">Google Flow Setup</a><a href="#workspace">Project Files</a><a href="#limitations">Known Limitations</a><a href="#reference">Technical Reference</a></nav></aside>
     <main>
