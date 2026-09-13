@@ -454,6 +454,27 @@ func TestDeclaredDigestsMatchFileContents(t *testing.T) {
 // root — while capabilities still referenced them. That is the dangling
 // reference class again, produced by the environment rather than by code.
 func TestDescriptorIsIndependentOfWorkingDirectory(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	configDir := filepath.Join(home, ".config", "facet")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config, err := json.Marshal(map[string]any{
+		"paths": map[string]string{"bundle": repoRoot},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), config, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
 	from := func(dir string) Descriptor {
 		t.Helper()
 		orig, err := os.Getwd()
