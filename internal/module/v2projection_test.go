@@ -130,6 +130,7 @@ func TestSerializedEffectsMatchCanonicalTruth(t *testing.T) {
 // Resolution stays tri-state on the wire. Collapsing UNKNOWN into either
 // neighbour is the defect: a present credential is not a working provider.
 func TestSerializedResolutionKeepsThreeStates(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "present-but-unverified")
 	d := serializedV2(t)
 	seen := map[string]int{}
 	for _, op := range d.Operations {
@@ -143,7 +144,7 @@ func TestSerializedResolutionKeepsThreeStates(t *testing.T) {
 			}
 		}
 	}
-	if seen[toolbox.ResolutionUnknown] == 0 && seen[toolbox.ResolutionSatisfied] > 0 {
+	if seen[toolbox.ResolutionUnknown] == 0 {
 		t.Error("no requirement resolved UNKNOWN; holding a credential is being reported as proof it works")
 	}
 }
