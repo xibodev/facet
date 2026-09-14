@@ -220,64 +220,103 @@ async function recoveryRegression() {
       let releaseDetail;
       const detailGate = new Promise(resolve => { releaseDetail = resolve; });
       let heldRequest;
-      // Only the FIRST recovered detail request hangs; ordinary 3-second polls succeed.
-      await page.route('**/api/projects/synthetic-recovery-a', async route => {
+      let holdArmed = false;
+      let markDetailHeld;
+      let detailHeldTimer;
+      const detailHeld = new Promise((resolve, reject) => {
+        markDetailHeld = resolve;
+        detailHeldTimer = setTimeout(() => reject(new Error('Reload project detail request was not held')), 10000);
+      });
+      // Attach immediately so a failed reload cannot leave an unhandled rejection.
+      detailHeld.catch(() => {});
+      const detailURL = '**/api/projects/synthetic-recovery-a';
+      let detailFinished = false;
+      // Only the first detail from the reloaded document hangs; outgoing-document requests and ordinary polls succeed.
+      const holdDetail = async route => {
+        if (!holdArmed || heldRequest) {
+          await route.fallback();
+          return;
+        }
         heldRequest = route.request();
         const response = await route.fetch({ timeout: 10000 });
+        clearTimeout(detailHeldTimer);
+        markDetailHeld();
         await detailGate;
         await route.fulfill({ response });
-      }, { times: 1 });
-      const started = Date.now();
-      const sessionLookups = () => results.events.filter(event => event.type === 'request' && event.url.startsWith('/api/session?')).length;
-      const beforeLookups = sessionLookups();
-      await page.reload();
-      await page.waitForFunction(() => document.querySelector('#sessionControl').textContent.includes('Restoring'));
-      await assertPending();
-      assert.ok(heldRequest, 'The first recovered project detail was not intercepted');
-      const poll = await page.waitForResponse(response => response.request() !== heldRequest
-        && new URL(response.url()).pathname === '/api/projects/synthetic-recovery-a' && response.ok());
-      await poll.finished();
-      const polledProject = await poll.json();
-      await page.waitForFunction(title => document.querySelector('#workspaceTitle').textContent === title,
-        polledProject.name || polledProject.slug || 'synthetic-recovery-a');
-      await assertPending();
-      let newerSession;
-      if (changeContext) {
-        await page.locator('#projectSelect').selectOption('synthetic-recovery-b');
-        await submit('Synthetic new context before old recovery deadline');
-        assert.equal(requests.at(-1).session, undefined);
-        await submit('Synthetic resume new context before old recovery deadline');
-        newerSession = requests.at(-1).session;
-        assert.ok(newerSession);
-        // Keep the old selection unresolved past its deadline, with a live new context.
-        await page.waitForTimeout(Math.max(0, 11000 - (Date.now() - started)));
-      } else {
-        const boundMs = 12000; // Ten-second deadline plus browser scheduling tolerance.
-        await page.waitForFunction(() => !document.querySelector('#promptInput').disabled
-          && !document.querySelector('#sendButton').disabled
-          && !document.querySelector('#sessionControl').textContent.includes('Restoring'), null,
-        { timeout: Math.max(1, boundMs - (Date.now() - started)) });
-        const elapsedMs = Date.now() - started;
-        assert.ok(elapsedMs <= boundMs, `Recovery remained pending for ${elapsedMs}ms`);
-        record({ type: 'project-recovery-deadline', elapsedMs, boundMs });
-      }
-      // Release only AFTER the deadline; flush the actual late fetch continuation.
-      const finished = page.waitForEvent('requestfinished', request => request === heldRequest);
-      releaseDetail();
-      await finished;
-      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      assert.equal(sessionLookups(), beforeLookups, 'Late selection started stale session restoration');
-      assert.doesNotMatch(await page.locator('#liveText').textContent(), /conversation restored/);
-      assert.equal(await page.locator('#projectSelect').inputValue(), changeContext ? 'synthetic-recovery-b' : 'synthetic-recovery-a');
-      await submit(`Synthetic normal submit after late project recovery (${changeContext ? 'new context' : 'same context'})`);
-      assert.equal(requests.at(-1).session, newerSession, 'Recovery revived the saved session or reset the newer session');
-      assert.equal(requests.at(-1).dir, changeContext ? catalog.projects.find(project => project.id === 'synthetic-recovery-b').path : projectA.path);
-      results.checks.push(changeContext
-        ? 'Old project recovery deadline and late detail preserve a newer project conversation'
-        : 'Hung first project detail with successful polls clears recovery within 12s; late detail cannot restore session and normal submit starts fresh');
-      if (changeContext) {
-        await page.locator('#projectSelect').selectOption('synthetic-recovery-a');
-        await submit('Synthetic project A after recovery deadline isolation');
+      };
+      let detailRouted = false;
+      await page.route(detailURL, holdDetail);
+      detailRouted = true;
+      try {
+        const started = Date.now();
+        const sessionLookups = () => results.events.filter(event => event.type === 'request' && event.url.startsWith('/api/session?')).length;
+        const beforeLookups = sessionLookups();
+        const reloadCommitted = page.waitForEvent('framenavigated', frame => {
+          if (frame !== page.mainFrame()) return false;
+          holdArmed = true;
+          return true;
+        });
+        await Promise.all([reloadCommitted, page.reload()]);
+        await page.waitForFunction(() => document.querySelector('#sessionControl').textContent.includes('Restoring'));
+        await detailHeld;
+        await assertPending();
+        assert.ok(heldRequest, 'The first recovered project detail was not intercepted');
+        const poll = await page.waitForResponse(response => response.request() !== heldRequest
+          && new URL(response.url()).pathname === '/api/projects/synthetic-recovery-a' && response.ok());
+        await poll.finished();
+        const polledProject = await poll.json();
+        await page.waitForFunction(title => document.querySelector('#workspaceTitle').textContent === title,
+          polledProject.name || polledProject.slug || 'synthetic-recovery-a');
+        await assertPending();
+        let newerSession;
+        if (changeContext) {
+          await page.locator('#projectSelect').selectOption('synthetic-recovery-b');
+          await submit('Synthetic new context before old recovery deadline');
+          assert.equal(requests.at(-1).session, undefined);
+          await submit('Synthetic resume new context before old recovery deadline');
+          newerSession = requests.at(-1).session;
+          assert.ok(newerSession);
+          // Keep the old selection unresolved past its deadline, with a live new context.
+          await page.waitForTimeout(Math.max(0, 11000 - (Date.now() - started)));
+        } else {
+          const boundMs = 12000; // Ten-second deadline plus browser scheduling tolerance.
+          await page.waitForFunction(() => !document.querySelector('#promptInput').disabled
+            && !document.querySelector('#sendButton').disabled
+            && !document.querySelector('#sessionControl').textContent.includes('Restoring'), null,
+          { timeout: Math.max(1, boundMs - (Date.now() - started)) });
+          const elapsedMs = Date.now() - started;
+          assert.ok(elapsedMs <= boundMs, `Recovery remained pending for ${elapsedMs}ms`);
+          record({ type: 'project-recovery-deadline', elapsedMs, boundMs });
+        }
+        // Release only AFTER the deadline; flush the actual late fetch continuation.
+        const finished = page.waitForEvent('requestfinished', request => request === heldRequest);
+        releaseDetail();
+        await finished;
+        detailFinished = true;
+        await page.unroute(detailURL, holdDetail);
+        detailRouted = false;
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        assert.equal(sessionLookups(), beforeLookups, 'Late selection started stale session restoration');
+        assert.doesNotMatch(await page.locator('#liveText').textContent(), /conversation restored/);
+        assert.equal(await page.locator('#projectSelect').inputValue(), changeContext ? 'synthetic-recovery-b' : 'synthetic-recovery-a');
+        await submit(`Synthetic normal submit after late project recovery (${changeContext ? 'new context' : 'same context'})`);
+        assert.equal(requests.at(-1).session, newerSession, 'Recovery revived the saved session or reset the newer session');
+        assert.equal(requests.at(-1).dir, changeContext ? catalog.projects.find(project => project.id === 'synthetic-recovery-b').path : projectA.path);
+        results.checks.push(changeContext
+          ? 'Old project recovery deadline and late detail preserve a newer project conversation'
+          : 'Hung first project detail with successful polls clears recovery within 12s; late detail cannot restore session and normal submit starts fresh');
+        if (changeContext) {
+          await page.locator('#projectSelect').selectOption('synthetic-recovery-a');
+          await submit('Synthetic project A after recovery deadline isolation');
+        }
+      } finally {
+        clearTimeout(detailHeldTimer);
+        if (heldRequest && !detailFinished) {
+          const finished = page.waitForEvent('requestfinished', request => request === heldRequest);
+          releaseDetail();
+          await finished.catch(() => {});
+        } else releaseDetail();
+        if (detailRouted) await page.unroute(detailURL, holdDetail);
       }
     }
     for (const failure of ['http', 'network', 'json', 'identity', 'engine', 'dead']) {
