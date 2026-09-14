@@ -5,6 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Facet | Video Production With Your AI Agent</title>
   <meta name="description" content="Install Facet from source, describe a video to your coding agent, and review project files and rendered media in the local Studio.">
+  <link rel="canonical" href="https://xibodev.github.io/facet/">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://xibodev.github.io/facet/">
+  <meta property="og:title" content="Facet | Video Production With Your AI Agent">
+  <meta property="og:description" content="Install Facet from source, describe a video to your coding agent, and review project files and rendered media in the local Studio.">
+  <meta property="og:image" content="https://xibodev.github.io/facet/og-default.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Facet logo and video production tools for your AI coding agent.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Facet | Video Production With Your AI Agent">
+  <meta name="twitter:description" content="Install Facet from source, describe a video to your coding agent, and review project files and rendered media in the local Studio.">
+  <meta name="twitter:image" content="https://xibodev.github.io/facet/og-default.png">
+  <meta name="twitter:image:alt" content="Facet logo and video production tools for your AI coding agent.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
@@ -28,7 +44,8 @@
     header { background: #ffffffed; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 10; }
     .topbar { min-height: 4.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
     .brand { display: inline-flex; align-items: center; gap: .65rem; text-decoration: none; color: #0f172a; font-size: 1.4rem; font-weight: 700; }
-    .mark { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .5rem; background: linear-gradient(135deg, #0284c7, #7c3aed); color: white; }
+    .mark { display: block; width: 2.5rem; height: 2.5rem; flex: 0 0 auto; }
+    .brand-period { color: #d92d48; }
     nav { display: flex; flex-wrap: wrap; gap: .4rem 1.5rem; }
     nav a { padding: .6rem 0; font-size: .875rem; font-weight: 600; text-decoration: none; color: #475569; }
     .hero { text-align: center; padding: 5rem 0; background: radial-gradient(ellipse at top, #e0f2fe, #f3e8ff55 50%, transparent 80%); }
@@ -75,7 +92,7 @@
 <body>
   <header>
     <div class="wrap topbar">
-      <a href="index.html" class="brand"><span class="mark" aria-hidden="true">F</span>Facet</a>
+      <a href="index.html" class="brand" aria-label="Facet home"><img class="mark" src="logo-mark.svg" alt="" width="120" height="120"><span aria-hidden="true">facet<span class="brand-period">.</span></span></a>
       <nav aria-label="Main navigation">
         <a href="#studio">Studio</a><a href="#packs">Packs</a><a href="#quickstart">Install</a><a href="docs.html">Documentation</a><a href="https://github.com/xibodev/facet">GitHub</a>
       </nav>
