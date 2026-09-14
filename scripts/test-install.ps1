@@ -15,7 +15,7 @@ try {
 }
 
 $root = Join-Path ([IO.Path]::GetTempPath()) ('facet-install-preflight-' + [guid]::NewGuid())
-$savedPath = $env:Path
+$savedPath = $env:PATH
 $savedOS = $env:OS
 $savedUserProfile = $env:USERPROFILE
 try {
@@ -41,7 +41,7 @@ try {
             if ($_.Exception.Message -notmatch '-UpdateShortcuts cannot be combined') { throw }
         }
     }
-    $env:Path = ''
+    $env:PATH = ''
     try {
         & $installer @flags
         throw 'Missing prerequisite unexpectedly succeeded.'
@@ -149,7 +149,7 @@ try {
     # Expected failing prerequisite mocks must not become the CI shell's exit code.
     $global:LASTEXITCODE = 0
 } finally {
-    $env:Path = $savedPath
+    $env:PATH = $savedPath
     $env:OS = $savedOS
     $env:USERPROFILE = $savedUserProfile
     Remove-Item -LiteralPath $root -Recurse -Force
