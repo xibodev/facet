@@ -21,7 +21,7 @@ const assert=require('node:assert/strict');
  const requests=[];
  const model=http.createServer(async(req,res)=>{
   if(req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({object:'list',data:[{id:'uat-model',object:'model'},{id:'uat-other',object:'model'}]}));return;}
-  let raw='';for await(const chunk of req)raw+=chunk;
+  let raw='';try {for await(const chunk of req)raw+=chunk;} catch(error) {if(error.code==='ECONNRESET')return;throw error;}
   const input=JSON.parse(raw);requests.push(input);
   const latest=input.messages?.filter(m=>m.role==='user').at(-1)?.content||'';
   if(latest==='hold request'){res.writeHead(200,{'Content-Type':'text/event-stream'});res.write(':waiting\n\n');return;}

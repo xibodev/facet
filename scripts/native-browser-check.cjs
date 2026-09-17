@@ -17,7 +17,7 @@ const assert = require('node:assert/strict');
   await fs.writeFile(path.join(root,'.facet','catalog.json'),JSON.stringify({version:'1.0',default_root:path.join(root,'productions'),projects:[]}));
   const modelRequests=[];
   const model = http.createServer(async (req,res) => {
-    let raw='';for await (const c of req) raw+=c;
+    let raw='';try {for await (const c of req) raw+=c;} catch(error) {if(error.code==='ECONNRESET')return;throw error;}
     const input=JSON.parse(raw);modelRequests.push(input);
     const latest=input.messages.filter(m=>m.role==='user').at(-1)?.content || '';
     if(latest.includes('fail deliberately')) {res.writeHead(503);res.end('Fixture service unavailable');return;}
