@@ -1,0 +1,87 @@
+name: Prebuilt release
+
+on:
+  push:
+    tags: ['v*']
+    branches: [staging]
+    paths:
+      - '.github/workflows/release.yml'
+      - 'cmd/facet-install/**'
+      - 'internal/installer/**'
+      - 'scripts/package-release.py'
+      - 'scripts/test-prebuilt-install.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, os: linux, arch: amd64 }
+          - { runner: ubuntu-24.04-arm, os: linux, arch: arm64 }
+          - { runner: windows-2025, os: windows, arch: amd64 }
+          - { runner: windows-11-arm, os: windows, arch: arm64 }
+          - { runner: macos-15-intel, os: darwin, arch: amd64 }
+          - { runner: macos-15, os: darwin, arch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Check tag version
+        shell: bash
+        run: |
+          python -c 'import json,os; v=json.load(open("package.json"))["version"]; ref=os.environ["GITHUB_REF"]; assert not ref.startswith("refs/tags/") or ref == "refs/tags/v"+v, "Tag must match package.json"'
+      - name: Installer tests
+        run: go test ./internal/installer ./cmd/facet-install
+      - name: Package native binaries and content
+        run: python scripts/package-release.py --os ${{ matrix.os }} --arch ${{ matrix.arch }} --out build/release
+      - name: Validate native package and project integration
+        run: python scripts/test-prebuilt-install.py --os ${{ matrix.os }} --arch ${{ matrix.arch }} --release-dir build/release
+      - name: Install FFmpeg for package integration test (Linux x64)
+        if: matrix.os == 'linux' && matrix.arch == 'amd64'
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends ffmpeg
+      - name: Exercise four project integrations and media check
+        if: matrix.os == 'linux' && matrix.arch == 'amd64'
+        env:
+          FACET_INSTALL_SMOKE: '1'
+        run: python scripts/test-prebuilt-install.py --os ${{ matrix.os }} --arch ${{ matrix.arch }} --release-dir build/release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.os }}-${{ matrix.arch }}
+          path: build/release/*
+          retention-days: 7
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release
+          merge-multiple: true
+      - name: Combine checksums
+        run: python -c 'from pathlib import Path; p=Path("release"); (p/"SHA256SUMS.txt").write_text("".join(f.read_text() for f in sorted(p.glob("checksums-*.txt"))),encoding="utf-8")'
+      - name: Create draft release (never replace existing assets)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "Facet $GITHUB_REF_NAME" release/facet-* release/SHA256SUMS.txt install-release.ps1

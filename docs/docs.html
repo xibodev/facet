@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Facet Docs | Install, Create, and Review</title>
-  <meta name="description" content="Source installation, Studio and terminal workflows, provider prerequisites, limitations, and source-linked technical reference for Facet.">
+  <meta name="description" content="Install Facet for your agentic CLI, select optional production dependencies, and create and review videos with your agent.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
@@ -62,84 +62,59 @@
 <body>
   <header><div class="wrap topbar"><a href="index.html" class="brand"><span class="mark" aria-hidden="true">F</span>Facet Docs</a><nav class="topnav" aria-label="Main navigation"><a href="index.html">Overview</a><a href="https://github.com/xibodev/facet">GitHub</a></nav></div></header>
   <div class="wrap layout">
-    <aside><nav aria-label="On this page"><a href="#start">Start Here</a><a href="#install">Source Installation</a><a href="#doctor">Diagnostics</a><a href="#studio">Studio Walkthrough</a><a href="#terminal">Terminal Workflow</a><a href="#packs">Production Packs</a><a href="#gflow">Google Flow Setup</a><a href="#workspace">Project Files</a><a href="#limitations">Known Limitations</a><a href="#reference">Technical Reference</a></nav></aside>
+    <aside><nav aria-label="On this page"><a href="#start">Start Here</a><a href="#install">Installation</a><a href="#other-agents">Other Agents</a><a href="#doctor">Verification</a><a href="#studio">Standalone Status</a><a href="#terminal">Terminal Workflow</a><a href="#packs">Production Packs</a><a href="#gflow">Optional gflow</a><a href="#workspace">Project Files</a><a href="#limitations">Known Limitations</a><a href="#reference">Technical Reference</a></nav></aside>
     <main>
       <section id="start">
         <h1>Make a Video With Your Agent</h1>
-        <p>Facet combines production instructions, a Go media toolbox, and a local browser Studio. Your coding agent plans the work and invokes tools. You supply the idea or footage, approve consequential choices, and review the result.</p>
+        <p>Facet combines production instructions and media tools for your agentic CLI. Your coding agent plans the work and invokes tools. You supply the idea or footage, approve consequential choices, and review the result.</p>
         <p>Start with a simple request such as <strong>"Make a short explainer about how rain forms"</strong> or <strong>"Turn my screen recording into a concise walkthrough."</strong> You do not need to specify JSON, tool names, or a rigid production sequence.</p>
-        <p>Install the source bundle and authenticate an agent before trying either workflow. Tool configuration, completed media generation, and editorial acceptance are separate checks.</p>
+        <p>Use Facet with your agentic CLI. Tool configuration, completed media generation, and editorial acceptance are separate checks.</p>
       </section>
       <section id="install">
-        <h2>Install From a Complete Checkout</h2>
-        <p>Install Git, <strong>Go 1.25+</strong>, <strong>Node.js 18+ with npm</strong>, and <strong>FFmpeg and FFprobe</strong> on PATH. Linux/macOS also require Bash and tar. Browser-based rendering requires a supported Chromium browser, system libraries, and fonts.</p>
-        <p>The source scripts build both <code>facet</code> and <code>facet-ui</code>, copy the production bundle, and run <code>npm ci</code> for the installed Remotion composer. Go modules and npm dependencies may need network access.</p>
-        <h3>Windows</h3>
-        <pre><code>git clone https://github.com/xibodev/facet.git
-pwsh -File ./facet/install.ps1 -NonInteractive</code></pre>
-        <p>Default locations are <code>%USERPROFILE%/.facet/bin</code> and <code>%USERPROFILE%/.facet/bundle</code>. The installer updates the user PATH; reopen your terminal because the child <code>pwsh</code> process cannot update its parent's environment.</p>
+        <h2>Recommended Installation</h2>
+        <p>Use Facet with your agentic CLI. The interactive installer supports OpenCode, Codex, Claude Code, and GitHub Copilot CLI, and lets you choose the optional production tools you need.</p>
+        <p class="notice"><strong>Release availability:</strong> The new CLI-only installer is awaiting release validation and publication. The published v1.0.2 release contains a Windows x64 bundle, but does not include this installer yet. Check the <a href="https://github.com/xibodev/facet/releases">release assets</a> for available downloads.</p>
+        <ol>
+          <li>Select your CLI and the project folder that should use Facet.</li>
+          <li>Choose optional dependencies from the list of capabilities and approximate download sizes.</li>
+          <li>Review the installation summary and any dependency installation commands.</li>
+          <li>Start a new agent session in the configured project and ask it to use Facet.</li>
+        </ol>
+        <p>The installer uses prebuilt Facet binaries and preserves existing user instructions and project configuration. It assumes your CLI is already authenticated.</p>
+        <h3>Optional Dependencies</h3>
+        <p>Local editing and rendering do not require media-provider API keys. Optional generation services may require separate credentials, account access, or credits. The installer explains optional downloads, and tools report missing configuration when you use them.</p>
         <ul>
-          <li><code>-NonInteractive</code> suppresses prompts, not side effects. Desktop and Start Menu shortcuts are still created by default.</li>
-          <li><code>-NoShortcuts</code> skips shortcuts; <code>-NoPath</code> leaves PATH unchanged. With <code>-NoPath</code>, invoke the installed executable by its full path.</li>
-          <li>Existing shortcuts are preserved by default. Add <code>-UpdateShortcuts</code> when installing into a fresh destination to retarget only recognized Facet links (the current home default, legacy LocalAppData default, or selected install directory, with no arguments). Custom targets or arguments are always preserved and must be edited manually. This flag cannot be combined with <code>-NoShortcuts</code> or <code>-Isolated</code>. After a side-by-side install, launch the new Studio directly with <code>&amp; 'C:\path\to\new\bin\facet-ui.exe'</code> if the old shortcut was preserved; rerunning into the occupied destination is still refused.</li>
-          <li><code>-Scope on-demand</code> is the default: no global agent skills are changed. <code>-Scope global</code> registers the core skill for Claude Code and OpenCode only, preserving existing skills. Packs stay project-local.</li>
-          <li><code>-InstallDir</code> selects the binary directory, with a sibling <code>bundle</code> directory. The installer refuses to overwrite existing binaries or a bundle; use a fresh destination rather than deleting a working installation.</li>
-          <li><code>-Isolated</code> is for isolated installs/tests and requires explicit <code>-HomeDir</code>, <code>-InstallDir</code>, <code>-NoPath</code>, <code>-NoShortcuts</code>, and on-demand scope. The home must differ from your real profile.</li>
+          <li><strong>FFmpeg and FFprobe:</strong> core media editing and inspection.</li>
+          <li><strong>Remotion:</strong> animated compositions and rendered captions, with its browser and Node.js/npm dependencies.</li>
+          <li><strong>Piper:</strong> local speech synthesis, with an optional runtime and voice-model download.</li>
+          <li><strong>gflow:</strong> optional image/video generation through its supported providers.</li>
+          <li><strong>HyperFrames:</strong> HTML-based video rendering.</li>
         </ul>
-        <p>For the complete flag contract, read <a href="https://github.com/xibodev/facet/blob/main/install.ps1">install.ps1</a>.</p>
-        <h3>Linux / macOS</h3>
-        <pre><code>git clone https://github.com/xibodev/facet.git
-bash ./facet/install.sh
-export PATH="$HOME/.facet/bin:$PATH"</code></pre>
-        <p><a href="https://github.com/xibodev/facet/blob/main/install.sh">install.sh</a> installs under <code>~/.facet</code> without changing shell profiles, global agent skills, or custom Facet configuration. Add the PATH export to your shell profile for future terminals. The Bash installer writes into its fixed install location; it is not the Windows fresh-destination installer.</p>
-        <h3>What Is Installed</h3>
-        <pre><code>.facet/
-  bin/                 # facet and facet-ui (Windows: .exe)
-  bundle/
-    skills/
-    packs/
-    pipeline_defs/
-    schemas/
-    styles/
-    remotion-composer/  # source, lockfile, installed npm dependencies</code></pre>
-        <p>Both scripts resolve source relative to their own file and can be called by absolute path from another directory. They do not download or clone source for you.</p>
-        <p class="notice"><strong>Not supported as full installs:</strong> piping a remote script into a shell, installing the Go CLI alone with <code>go install</code>, or assuming npm/npx will deliver native binaries. npm provides launchers and content; install native Facet from source first. There is no zero-install guarantee.</p>
-        <p>npm launchers check an existing <code>FACET_BIN</code> executable override first, then package-local binaries, then <code>~/.facet/bin</code>. On Windows, the legacy <code>%LOCALAPPDATA%/Programs/Facet/bin</code> location is a final fallback. Set <code>FACET_BIN</code> to the full native executable path for the command being launched (CLI or Studio), not a directory; a missing override falls back to normal discovery. Launchers never search PATH for themselves.</p>
+      </section>
+      <section id="other-agents">
+        <h2>Using Facet with Another Agent</h2>
+        <p>Using a different agentic CLI? Ask your agent to inspect this repository and adapt Facet's skills and command-line tools to its own integration conventions. The installer currently supports the four CLIs listed above; other integrations are community-adapted and may need additional setup.</p>
+        <a href="https://github.com/xibodev/facet">Explore the repository</a>
       </section>
       <section id="doctor">
-        <h2>Check the Host, Then Test the Work</h2>
-        <pre><code>facet version
-facet doctor</code></pre>
-        <p>Read the diagnostic results from your own machine. Resolve missing FFmpeg, FFprobe, Node, composer, or agent dependencies before producing. There is deliberately no sample "all ready" output here.</p>
-        <p>Install and authenticate Claude Code, OpenCode, Codex, or GitHub Copilot separately. An executable on PATH is not proof that the account, selected model, or provider is usable. Facet does not supply model access.</p>
-        <p><code>doctor</code> does not produce a video or certify a release. Verify a real render from your intended production directory, inspect the file, and review it visually and audibly.</p>
+        <h2>Verify the Setup, Then Review the Work</h2>
+        <p>The CLI-only installer runs local media checks for the selected components unless verification is explicitly skipped. Those checks do not test external provider access or establish editorial quality.</p>
+        <p>Review the actual video, audio, captions, and source material from your production before sharing it.</p>
       </section>
       <section id="studio">
-        <h2>Use Facet Studio</h2>
-        <pre><code>facet ui</code></pre>
-        <p>Open <code>http://localhost:8787</code> if the browser does not open automatically. Use <code>facet ui --port 8788 --no-open</code> to choose another port without opening a browser. Use <code>--dir /absolute/path/to/productions</code> to set the working/project root.</p>
-        <ol>
-          <li><strong>Create a production or open an existing folder.</strong> The new-production form asks for a Production Name, Folder Slug, Agent Engine, and Production Packs. Check the location preview before selecting <strong>Create &amp; Launch</strong>.</li>
-          <li><strong>Select a usable engine.</strong> Studio checks which CLIs are available. Install and authenticate your choice outside Studio; a listed engine can still fail on login, quota, or model access.</li>
-          <li><strong>Send your request in chat.</strong> For example: "Make a short introduction to our project using the logo in assets." The agent's activity appears while it works. Read errors instead of treating an idle chat as success.</li>
-          <li><strong>Review actual artifacts.</strong> As project files appear, inspect the script, narration, review images/report, and available video. Play the video and use its download action when a render exists. A newly created project has no finished video.</li>
-          <li><strong>Ask for a revision.</strong> Keep the same project selected and say what should change. Switching projects or engines separates the conversation context.</li>
-        </ol>
-        <div class="card"><h3>Reload and Session Boundaries</h3><p>Reselecting the same project retains its active session. Reloading the same browser tab can restore a <strong>completed conversation within the current Studio process lifetime</strong>.</p><p>It does not restore an in-flight turn, replay earlier activity, or recover a chat after restarting Studio. A different project or engine starts separate context. Project files remain on disk; a new conversation can inspect those files to reconstruct the work.</p><p>If the connection fails, check the agent error, restart the session as directed by Studio, and inspect existing outputs before retrying. A provider job may still be running after a timeout.</p></div>
-        <p>Studio binds to loopback. It is not a public or multi-user deployment; ordinary Docker <code>-p</code> publishing is insufficient to expose that listener.</p>
+        <h2>Standalone Status</h2>
+        <p class="notice">Facet Standalone is experimental. For now, we recommend using Facet through a supported agentic CLI.</p>
       </section>
       <section id="terminal">
         <h2>Use Your Agent in the Terminal</h2>
-        <pre><code>facet init my-video --engine opencode</code></pre>
-        <p>This initializes a production folder, projects the core and Explainer skills, and launches OpenCode there. Replace <code>opencode</code> with <code>claude</code>, <code>codex</code>, or <code>copilot</code>. Without an engine flag, the CLI defaults to Claude Code.</p>
-        <p>To create the files without launching an agent:</p>
-        <pre><code>facet init my-video --engine opencode --no-launch</code></pre>
+        <p>Open your selected CLI in the project configured by the installer and ask it to use the Facet skill.</p>
+        <pre><code>Use Facet to make a short explainer about how rain forms.</code></pre>
         <p>Use a separate directory for each production. In your agent conversation, try "Add captions to my recording" or "Make the narration slower and leave more time on the diagram." Give it the actual source file location when editing existing media.</p>
         <p>Ask the agent to explain provider choices and costs before paid work, and to report errors without substituting placeholders. Number of turns, render duration, and final quality depend on the request and environment.</p>
       </section>
       <section id="packs">
         <h2>Choose a Production Pack</h2>
-        <p>The source bundle contains the following packs. Studio's form lists installed packs; basic <code>facet init</code> selects Explainer. A pack supplies guidance and content, not proof that every referenced tool or provider is installed.</p>
+        <p>The bundle contains the following packs. The Facet skill directs your agent to the relevant pack for the task. A pack supplies guidance and content, not proof that every referenced tool or provider is installed.</p>
         <dl>
           <dt data-pack="explainer">Explainer / <code>@xibodev/facet-pack-explainer</code></dt><dd><a href="https://github.com/xibodev/facet/blob/main/packs/explainer/facet-pack.json">Manifest</a>: animated explainers, diagrams, charts, and text cards. Requires the Remotion runtime, browser, and usable narration route when speech is requested.</dd>
           <dt data-pack="cinematic">Cinematic / <code>@xibodev/facet-pack-cinematic</code></dt><dd><a href="https://github.com/xibodev/facet/blob/main/packs/cinematic/facet-pack.json">Manifest</a>: cinematic and documentary montages. Needs supplied or accessible source media with suitable rights; generated clips need configured providers.</dd>
@@ -151,38 +126,31 @@ facet doctor</code></pre>
         </dl>
       </section>
       <section id="gflow">
-        <h2>Google Flow Is a Separate Prerequisite</h2>
-        <p>Facet's <code>gflow_image</code> and <code>gflow_video</code> tools call the standalone <a href="https://github.com/xibodev/gflow-cli">gflow CLI</a>. Facet does not install or authenticate that tool, its extension, or a Google account.</p>
-        <ol>
-          <li>Follow the gflow project's installation instructions and put the standalone <code>gflow</code> executable on PATH.</li>
-          <li>Install its Chrome extension and grant the extension the required site permissions for <code>labs.google</code>.</li>
-          <li>Open <a href="https://labs.google/fx/tools/flow">Google Flow</a> in that Chrome profile and log in with an account that has access. Keep the browser/extension connection available as required by gflow.</li>
-          <li>Use the CLI's setup/status diagnostics to check the connection. Then, only with approval for any account credits or charges, test real generation and inspect the returned local file.</li>
-        </ol>
+        <h2>Optional gflow Integration</h2>
+        <p>Facet's <code>gflow_image</code> and <code>gflow_video</code> tools call the optional <a href="https://github.com/xibodev/gflow-cli">gflow CLI</a>. Select it during dependency setup if you need it. gflow supports extension-free provider routes; its help and error diagnostics explain the requirements of the provider you choose.</p>
         <p class="notice">Setup or status success is <strong>not generation evidence</strong>. Quotas, credits, account eligibility, models, and service availability still apply. Facet does not promise zero-cost generation; unknown estimates or zero-valued generic metadata are not a billing guarantee.</p>
         <p>Dependency, authentication, provider, timeout, and invalid-response errors should be investigated, not hidden by mock output. An explicit <code>mock: true</code> request creates test media; it is never proof of provider generation. A timed-out request may still be running remotely, so check before retrying.</p>
       </section>
       <section id="workspace">
         <h2>Project Files Are the Durable Record</h2>
-        <p>Initialization creates project directories and configuration. Scripts, scene plans, narration, renders, and review outputs appear only when the corresponding work runs. Their existence is not a verdict on quality.</p>
+        <p>The CLI-only installer creates a project skill and <code>.facet-install/</code> for its launcher, installation record, and pack references. Existing configuration is preserved. Scripts, scene plans, narration, renders, and review outputs appear only when the corresponding work runs.</p>
         <pre><code>my-video/
   assets/             # supplied or acquired media
-  artifacts/          # initial brief, later scripts/plans/reports
+  artifacts/          # scripts/plans/reports when produced
   narration/          # generated or supplied voice tracks
   renders/            # video and review outputs when produced
-  .facet/             # local ownership metadata
-  .facet.yaml         # project configuration
-  facet.lock.json     # engine and selected pack record</code></pre>
-        <p>Agent-specific skill projections are also created, for example <code>.opencode/skills/</code>. Paths such as <code>renders/final.mp4</code> are conventions, not a promise that initialization creates a video.</p>
+  .facet-install/     # installed launcher, record, and pack references
+  .opencode/skills/facet/SKILL.md  # example host skill location</code></pre>
+        <p>Skill locations depend on your CLI. Media directories and paths such as <code>renders/final.mp4</code> are conventions, not a promise that installation creates a video.</p>
         <p>Configuration can pin runtime paths in <code>.facet.yaml</code> or <code>~/.config/facet/config.yaml</code>. Unpinned discovery looks near the working directory and executable, then in the user bundle. Reopening a project preserves pinned configuration. Verify rendering from that production folder rather than relying on a successful run inside the source checkout.</p>
       </section>
       <section id="limitations">
         <h2>Known Limitations</h2>
         <ul>
-          <li><strong>Installation is not acceptance.</strong> The installers do not verify a completed render. Browser dependencies, fonts, pinned runtime paths, and provider access can still fail.</li>
+          <li><strong>Installation is not acceptance.</strong> Local setup checks do not verify every workflow. Browser dependencies, fonts, pinned runtime paths, and provider access can still affect a production.</li>
           <li><strong>Pack guidance is broader than the executable registry.</strong> Some routes reference optional tools, models, transcription, or browser integrations not supplied by the native CLI. Check the installed tool and its actual implementation before relying on it.</li>
           <li><strong>Network services are conditional.</strong> Edge TTS is keyless but network-dependent. Other providers may need credentials and payment; model availability and account limits can change.</li>
-          <li><strong>Studio is not durable workflow hosting.</strong> Completed-session reload is limited to the same tab and current server lifetime. No in-flight recovery, transcript replay, or server-restart continuation is provided.</li>
+          <li><strong>Standalone is experimental.</strong> For now, we recommend using Facet through a supported agentic CLI.</li>
           <li><strong>Automated review is partial.</strong> Technical media checks and sampled frames do not establish factual accuracy, language quality, consent, asset rights, or creative quality. Watch and listen to the output.</li>
         </ul>
         <p>These pages do not certify a release or promise a finished video in a fixed number of turns or minutes.</p>

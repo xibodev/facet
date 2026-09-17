@@ -74,7 +74,9 @@ jobs:
         run: node node_modules/typescript/bin/tsc --noEmit
       - name: Windows installer parser and preflight
         shell: pwsh
-        run: ./scripts/test-install.ps1
+        run: |
+          ./scripts/test-install.ps1
+          ./scripts/test-release-installer.ps1
       - name: npm content and native source version checks (not binary distribution)
         run: node scripts/release-package-smoke.mjs
       - name: Windows isolated source installation
