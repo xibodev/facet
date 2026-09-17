@@ -1,6 +1,7 @@
 package toolbox
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -99,6 +100,10 @@ func resolveSamples(s sampleStrategy, duration float64) ([]float64, []string, er
 }
 
 func sceneSamples(input string, strategy sampleStrategy, duration float64, timeout time.Duration) ([]float64, []string, error) {
+	return sceneSamplesContext(context.Background(), input, strategy, duration, timeout)
+}
+
+func sceneSamplesContext(ctx context.Context, input string, strategy sampleStrategy, duration float64, timeout time.Duration) ([]float64, []string, error) {
 	threshold := strategy.Threshold
 	if threshold == 0 {
 		threshold = 0.3
@@ -106,7 +111,7 @@ func sceneSamples(input string, strategy sampleStrategy, duration float64, timeo
 	if !finite(threshold) || threshold <= 0 || threshold >= 1 {
 		return nil, nil, failure("invalid_request", "scene threshold must be between 0 and 1", nil)
 	}
-	out, err := runCommand(timeout, "ffmpeg", "-hide_banner", "-i", input, "-vf", fmt.Sprintf("select='gt(scene,%s)',showinfo", formatFloat(threshold)), "-an", "-f", "null", "-")
+	out, err := runCommandDirContext(ctx, timeout, "", "ffmpeg", "-hide_banner", "-i", input, "-vf", fmt.Sprintf("select='gt(scene,%s)',showinfo", formatFloat(threshold)), "-an", "-f", "null", "-")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -144,6 +149,10 @@ func sceneSamples(input string, strategy sampleStrategy, duration float64, timeo
 }
 
 func doFrameSample(op string, data []byte) (any, []string, error) {
+	return doFrameSampleContext(context.Background(), op, data)
+}
+
+func doFrameSampleContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r sampleRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -205,7 +214,7 @@ func doFrameSample(op string, data []byte) (any, []string, error) {
 		return estimateResult([]string{"validate", "ffprobe", "extract_frames"}), nil, nil
 	}
 
-	p, _, err := probe(input, t)
+	p, _, err := probeWithContext(ctx, input, t)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -215,7 +224,7 @@ func doFrameSample(op string, data []byte) (any, []string, error) {
 		return nil, nil, err
 	}
 	if strategyObj.Type == "scenes" && op == "run" {
-		ts, w, err = sceneSamples(input, strategyObj, duration, t)
+		ts, w, err = sceneSamplesContext(ctx, input, strategyObj, duration, t)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -243,10 +252,10 @@ func doFrameSample(op string, data []byte) (any, []string, error) {
 			args = append(args, "-q:v", "2")
 		}
 		args = append(args, stage)
-		if _, err = runCommand(t, "ffmpeg", args...); err != nil {
+		if _, err = runCommandDirContext(ctx, t, "", "ffmpeg", args...); err != nil {
 			return nil, nil, err
 		}
-		if _, _, err = probe(stage, t); err != nil {
+		if _, _, err = probeWithContext(ctx, stage, t); err != nil {
 			return nil, nil, failure("output_validation_failed", "extracted frame could not be validated", map[string]any{"frame": i + 1, "error": err.Error()})
 		}
 		staged = append(staged, stage)
@@ -270,13 +279,17 @@ func doFrameSample(op string, data []byte) (any, []string, error) {
 }
 
 func doFrameSampler(op string, data []byte) (any, []string, error) {
+	return doFrameSamplerContext(context.Background(), op, data)
+}
+
+func doFrameSamplerContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	// Supports both frame_sampler (interval/count/timestamps/scene_guided string strategy) and frame_sample object strategy
 	var raw map[string]any
 	if err := decode(data, &raw); err != nil {
 		return nil, nil, err
 	}
 	if stratMap, ok := raw["strategy"].(map[string]any); ok && stratMap != nil {
-		return doFrameSample(op, data)
+		return doFrameSampleContext(ctx, op, data)
 	}
 
 	input, _ := raw["input_path"].(string)
@@ -321,7 +334,7 @@ func doFrameSampler(op string, data []byte) (any, []string, error) {
 		return estimateResult([]string{"validate", "ffprobe", "extract_frames"}), nil, nil
 	}
 
-	p, _, err := probe(input, t)
+	p, _, err := probeWithContext(ctx, input, t)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -408,7 +421,7 @@ func doFrameSampler(op string, data []byte) (any, []string, error) {
 			args = append(args, "-qscale:v", strconv.Itoa(quality))
 		}
 		args = append(args, outFile)
-		if _, err = runCommand(t, "ffmpeg", args...); err != nil {
+		if _, err = runCommandDirContext(ctx, t, "", "ffmpeg", args...); err != nil {
 			return nil, nil, err
 		}
 		frames = append(frames, map[string]any{

@@ -51,6 +51,10 @@ type piperTTSRequest struct {
 }
 
 func doOpenAITTS(op string, data []byte) (any, []string, error) {
+	return doOpenAITTSContext(context.Background(), op, data)
+}
+
+func doOpenAITTSContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r openAITTSRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -111,7 +115,7 @@ func doOpenAITTS(op string, data []byte) (any, []string, error) {
 	}
 	reqBody, _ := json.Marshal(bodyMap)
 
-	req, err := http.NewRequest("POST", "https://api.openai.com/v1/audio/speech", bytes.NewReader(reqBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/audio/speech", bytes.NewReader(reqBody))
 	if err != nil {
 		return nil, nil, failure("command_failed", "unable to create HTTP request", nil)
 	}
@@ -144,7 +148,7 @@ func doOpenAITTS(op string, data []byte) (any, []string, error) {
 		return nil, nil, failure("command_failed", "unable to save audio content", nil)
 	}
 
-	dur, _ := probeDuration(outPath, 5*time.Second)
+	dur, _ := probeDurationContext(ctx, outPath, 5*time.Second)
 
 	return map[string]any{
 		"provider":               "openai",
@@ -158,6 +162,10 @@ func doOpenAITTS(op string, data []byte) (any, []string, error) {
 }
 
 func doElevenLabsTTS(op string, data []byte) (any, []string, error) {
+	return doElevenLabsTTSContext(context.Background(), op, data)
+}
+
+func doElevenLabsTTSContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r elevenLabsTTSRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -235,7 +243,7 @@ func doElevenLabsTTS(op string, data []byte) (any, []string, error) {
 	reqBody, _ := json.Marshal(bodyMap)
 
 	urlStr := fmt.Sprintf("https://api.elevenlabs.io/v1/text-to-speech/%s?output_format=%s", voiceID, outFormat)
-	req, err := http.NewRequest("POST", urlStr, bytes.NewReader(reqBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", urlStr, bytes.NewReader(reqBody))
 	if err != nil {
 		return nil, nil, failure("command_failed", "unable to create HTTP request", nil)
 	}
@@ -269,7 +277,7 @@ func doElevenLabsTTS(op string, data []byte) (any, []string, error) {
 		return nil, nil, failure("command_failed", "unable to save audio content", nil)
 	}
 
-	dur, _ := probeDuration(outPath, 5*time.Second)
+	dur, _ := probeDurationContext(ctx, outPath, 5*time.Second)
 
 	return map[string]any{
 		"provider":               "elevenlabs",
@@ -283,6 +291,10 @@ func doElevenLabsTTS(op string, data []byte) (any, []string, error) {
 }
 
 func doPiperTTS(op string, data []byte) (any, []string, error) {
+	return doPiperTTSContext(context.Background(), op, data)
+}
+
+func doPiperTTSContext(parent context.Context, op string, data []byte) (any, []string, error) {
 	var r piperTTSRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -325,7 +337,7 @@ func doPiperTTS(op string, data []byte) (any, []string, error) {
 		return nil, nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), tmo)
+	ctx, cancel := context.WithTimeout(parent, tmo)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, piperPath,
@@ -343,7 +355,7 @@ func doPiperTTS(op string, data []byte) (any, []string, error) {
 		return nil, nil, failure("command_failed", "piper failed: "+runErr.Error(), map[string]any{"stderr": stderr.String()})
 	}
 
-	dur, _ := probeDuration(outPath, 5*time.Second)
+	dur, _ := probeDurationContext(ctx, outPath, 5*time.Second)
 
 	return map[string]any{
 		"provider":               "piper",

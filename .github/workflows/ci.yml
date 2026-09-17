@@ -107,6 +107,9 @@ jobs:
       - name: Install fixture browser (Linux)
         if: runner.os == 'Linux'
         run: npx --no-install playwright install --with-deps chromium
-      - name: Studio synthetic browser regression (not real-agent UAT)
+      - name: Native standalone browser regression (fixture model, real tools)
         if: runner.os == 'Linux'
-        run: node scripts/studio-repair-smoke.mjs
+        run: |
+          mkdir -p "$RUNNER_TEMP/opencode"
+          go build -o "$RUNNER_TEMP/facet" ./cmd/facet
+          node scripts/native-browser-check.cjs "$RUNNER_TEMP/facet"

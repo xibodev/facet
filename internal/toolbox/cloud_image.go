@@ -44,6 +44,10 @@ type fluxImageRequest struct {
 }
 
 func doOpenAIImage(op string, data []byte) (any, []string, error) {
+	return doOpenAIImageContext(context.Background(), op, data)
+}
+
+func doOpenAIImageContext(parent context.Context, op string, data []byte) (any, []string, error) {
 	var r openAIImageRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -164,7 +168,7 @@ func doOpenAIImage(op string, data []byte) (any, []string, error) {
 	}
 	endpoint := baseURL + "/v1/images/generations"
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(payloadBytes))
@@ -230,6 +234,10 @@ func doOpenAIImage(op string, data []byte) (any, []string, error) {
 }
 
 func doFluxImage(op string, data []byte) (any, []string, error) {
+	return doFluxImageContext(context.Background(), op, data)
+}
+
+func doFluxImageContext(parent context.Context, op string, data []byte) (any, []string, error) {
 	var r fluxImageRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -323,7 +331,7 @@ func doFluxImage(op string, data []byte) (any, []string, error) {
 		return nil, nil, failure("command_failed", "failed to serialize fal request: "+err.Error(), nil)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	baseURL := os.Getenv("FAL_BASE_URL")

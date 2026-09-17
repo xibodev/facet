@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/xibodev/facet-studio/pkg/agent"
+	"github.com/xibodev/facet-studio/pkg/bus"
 	"github.com/xibodev/facet/internal/studio/engine"
 )
 
@@ -29,6 +30,8 @@ type Session struct {
 	valid        bool
 	cmd          *exec.Cmd
 	nativeLoop   *agent.AgentLoop
+	nativeBus    *bus.MessageBus
+	approvals    map[string]chan bool
 	cancel       context.CancelFunc
 	done         chan struct{}
 	turnGate     chan struct{}
@@ -73,12 +76,14 @@ func (s *Session) Close() error {
 	loop := s.nativeLoop
 	s.mu.Unlock()
 
-	if loop != nil {
-		loop.Close()
-	}
-
 	if cancel != nil {
 		cancel()
+	}
+	if loop != nil {
+		defer loop.Close()
+	}
+	if s.nativeBus != nil {
+		defer s.nativeBus.Close()
 	}
 	if done == nil {
 		return nil
@@ -104,7 +109,7 @@ func (s *Session) IsAlive() bool {
 func (s *Session) isRunning() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.cmd != nil
+	return s.done != nil
 }
 
 func (s *Session) setNativeID(id string) bool {
@@ -197,23 +202,7 @@ func (s *Session) runTurn(ctx context.Context, prompt string, emit func(turnEven
 	}()
 
 	if s.nativeLoop != nil {
-		resp, err := s.nativeLoop.ProcessDirect(turnCtx, prompt, s.ID)
-		if err != nil {
-			canceled := errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
-			return turnResult{reason: err.Error(), canceled: canceled}
-		}
-
-		_ = emit(turnEvent{
-			normalized: &engine.NormalizedEvent{
-				Type:    engine.EventTextDelta,
-				Content: resp,
-			},
-			payload: map[string]any{
-				"type": "text_delta",
-				"text": resp,
-			},
-		})
-		return turnResult{ok: true}
+		return s.runNativeTurn(turnCtx, prompt, emit)
 	}
 
 	if adapter == nil {

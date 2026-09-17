@@ -1,17 +1,11 @@
 <!doctype html>
-<!--
-THESIS: Facet Studio is a calm production instrument centered on the real output, not a dashboard of fabricated progress.
-OWN-WORLD: Apple HIG-derived utility chrome; white and system-gray planes, hairline separators, SF system type, compact pill controls, and semantic status color used only for facts.
-STORY: Select a real project, inspect its file-backed production evidence, direct the chosen CLI, watch its live work, and review the actual master.
-FIRST VIEWPORT: macOS toolbar above a slim sidebar, six-stage evidence rail, dominant video theater, open inspector, and persistent agent composer.
-FORM: First-ranked approved Apple utility alternative, theater-centered desktop staging; seed key: release-stable-win/f77c942f.
--->
+<!-- Facet's capability is the product. Conversation and views operate the same project. -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%231d1d1f'/%3E%3Cpath d='M19 16h28v8H28v8h15v8H28v16h-9z' fill='white'/%3E%3C/svg%3E">
-  <title>Facet Video Kit Studio</title>
+  <title>Facet — Video production</title>
   <style>
     :root {
       color-scheme: light;
@@ -196,7 +190,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
     .workspace-note { color: var(--muted); font: 9px/1.4 var(--font-mono); text-align: center; }
 
     .workspace { min-width: 0; overflow: auto; padding: 20px 24px; }
-    .workspace-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 16px; background: var(--bg); }
+    .workspace-head { position: relative; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 16px; background: var(--bg); }
     .workspace-heading { min-width: 0; }
     .eyebrow { margin: 0 0 4px; color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: .075em; text-transform: uppercase; }
     h1 { margin: 0; overflow-wrap: anywhere; font-family: var(--font-display); font-size: clamp(28px, 3vw, 40px); line-height: 1.05; letter-spacing: -.015em; }
@@ -322,7 +316,17 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
     .activity-title { min-width: 0; flex: 1; overflow: hidden; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
     .activity-time, .activity-tail { flex: none; color: var(--muted); font: 8px var(--font-mono); }
     .activity-body { border-top: 1px solid var(--border-soft); padding: 9px; }
-    .activity-text { max-height: 280px; margin: 0; overflow: auto; color: var(--fg-2); font: 10px/1.55 var(--font-mono); white-space: pre-wrap; word-break: break-word; user-select: text; }
+    .activity-text { max-height: none; margin: 0; overflow: auto; color: var(--fg-2); font: 14px/1.65 var(--font-body); white-space: pre-wrap; word-break: break-word; user-select: text; }
+    .model-card { background: var(--surface); color: var(--fg); padding: 20px; border: 1px solid var(--border); border-radius: 12px; }
+    .model-card select { margin: 12px 0; background: var(--bg); color: var(--fg); }
+    .awaiting-output .theater { min-height: 240px; aspect-ratio: auto; background: var(--surface); color: var(--fg); border: 1px solid var(--border-soft); }
+    .awaiting-output .player-state { position: static; padding: 28px; text-align: left; align-items: flex-start; color: var(--fg); }
+    .awaiting-output .player-state span { max-width: 100%; white-space: pre-wrap; color: var(--fg-2); }
+    #btnModelSettings { max-width: 300px; }
+    #modelBadgeText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .shell.projects-open .inspector, .shell.projects-open .composer-area { display: none; }
+    .shell.projects-open .projects-view { grid-column: 2 / -1; grid-row: 2 / -1; }
+    #newProdEngine, label[for="newProdEngine"], #openFolderEngine, label[for="openFolderEngine"] { display: none; }
     .activity-label { margin: 8px 0 4px; color: var(--muted); font: 8px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
     .activity-label:first-child { margin-top: 0; }
     .activity-item.thinking .activity-text { color: var(--muted); font-family: var(--font-body); font-style: italic; }
@@ -360,8 +364,8 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
     .composer-label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .composer { min-width: 0; display: flex; align-items: center; gap: 8px; padding: 6px 7px 6px 13px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-warm); }
     .composer:focus-within { border-color: var(--accent); }
-    .composer input { min-width: 0; height: 44px; flex: 1; border: 0; outline: 0; background: transparent; font-size: 13px; }
-    .composer input::placeholder { color: var(--meta); }
+    .composer textarea { min-width: 0; min-height: 54px; max-height: 150px; resize: vertical; flex: 1; border: 0; background: transparent; font-size: 14px; }
+    .composer textarea::placeholder { color: var(--meta); }
     .send { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--accent); color: var(--accent-on); }
     .send:not(:disabled):hover { background: var(--accent-hover); }
     .send:not(:disabled):active { background: var(--accent-active); transform: scale(.94); }
@@ -504,6 +508,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
       .theater { min-height: 250px; }
       .question-tab, .custom-answer, .question-submit, .restart-inline { min-height: 44px; }
       .shell.settings-open .settings-view { grid-column: 1; grid-row: 3 / 5; }
+      .shell.projects-open .projects-view { grid-column: 1; grid-row: 3 / 5; }
     }
 
     @media (max-width: 560px) {
@@ -728,6 +733,11 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
     .pack-check-title { font-size: 13px; font-weight: 600; }
     .pack-check-desc { font-size: 11px; color: var(--muted); }
 
+    .awaiting-output .player-state strong { color: var(--fg); }
+    .awaiting-output .player-state { width: 100%; max-width: none; }
+    .awaiting-output .player-state span { width: 100%; text-align: left; }
+    #artifactsPanel input[type="file"] { max-width: 100%; min-width: 0; width: 100%; }
+    #artifactsPanel label.btn-secondary { display: block; }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
     }
@@ -753,24 +763,24 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
           </button>
         </div>
         <div class="toolbar-tail">
-          <label class="sr-only" for="engineSelect">Agent engine</label>
-          <select class="engine-select" id="engineSelect" aria-describedby="engineHint" disabled>
-            <option value="claude">Claude Code</option>
-            <option value="opencode">OpenCode</option>
-            <option value="codex">Codex</option>
-            <option value="copilot">GitHub Copilot</option>
+          <button class="titlebar-btn" id="btnModelSettings" type="button" title="Configure assistant models">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2m-3.2-6.8-1.4 1.4m-8.8 8.8-1.4 1.4m0-11.6 1.4 1.4m8.8 8.8 1.4 1.4"/></svg>
+            <span id="modelBadgeText">Choose a model</span>
+          </button>
+          <select class="engine-select" id="engineSelect" aria-describedby="engineHint" style="display:none;">
+            <option value="studio" selected>Facet</option>
           </select>
           <span class="engine-hint" id="engineHint" role="status" aria-live="polite" hidden></span>
           <div class="connection" id="connection" data-state="idle" role="status" aria-live="polite">
             <i class="connection-dot" aria-hidden="true"></i>
-            <span id="connectionText">Not connected · idle</span>
+            <span id="connectionText">Ready</span>
           </div>
-          <button class="session-button" id="sessionControl" type="button" disabled>No session</button>
+          <button class="session-button" id="sessionControl" type="button" disabled>Restart</button>
         </div>
       </header>
 
-      <nav class="sidebar" aria-label="Facet Studio navigation">
-        <div class="brand"><span class="brand-mark">F</span><span>Facet Studio</span></div>
+      <nav class="sidebar" aria-label="Facet navigation">
+        <div class="brand"><span class="brand-mark">F</span><span>Facet</span></div>
         <ul class="nav-list">
           <li><button class="nav-button" type="button" data-nav="projects" aria-label="Projects"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h6l2 2h8v11H4z"/></svg><span>Projects</span></button></li>
           <li><button class="nav-button active" type="button" data-nav="produce" aria-label="Produce" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M6 6l12 12M18 6 6 18"/></svg><span>Produce</span></button></li>
@@ -827,13 +837,34 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
           </div>
         </div>
 
-        <p class="autonomy"><b>Autonomous mode:</b> CLI permission prompts are disabled for this workspace. Consent is still required before using a paid provider, publishing output, or acting in an external account.</p>
+        <p class="autonomy">Describe your video or the changes you want. Inspect the resulting media and review it before delivery.</p>
+        <section id="artifactPreview" class="model-card" hidden aria-label="Selected production material">
+          <h2 id="artifactPreviewTitle"></h2>
+          <div id="artifactPreviewContent"></div>
+        </section>
+        <section id="outputReview" class="model-card" hidden aria-labelledby="outputReviewTitle">
+          <h2 id="outputReviewTitle">Review output</h2>
+          <p>Compare the file with your intended delivery profile. Technical checks do not replace watching and listening.</p>
+          <form id="reviewForm">
+            <div class="key-grid">
+              <label>Width <input class="form-input" id="reviewWidth" type="number" min="2" required></label>
+              <label>Height <input class="form-input" id="reviewHeight" type="number" min="2" required></label>
+              <label>Frames per second <input class="form-input" id="reviewFPS" type="number" min="1" step="any" required></label>
+              <label>Expected seconds <input class="form-input" id="reviewDuration" type="number" min="0.01" step="any" required></label>
+            </div>
+            <label><input id="reviewAudio" type="checkbox"> Audio required</label>
+            <div class="settings-actions"><button class="btn-primary" id="runReview" type="submit">Run technical review</button></div>
+          </form>
+          <p id="reviewFeedback" role="status" aria-live="polite"></p>
+          <label><input id="confirmReview" type="checkbox"> I watched this output and approve it for my intended use.</label>
+          <button class="btn-secondary" id="acceptOutput" type="button">Record my approval</button>
+        </section>
       </section>
 
       <section class="workspace projects-view" id="projectsView" aria-labelledby="projectsTitle" hidden>
         <div class="launcher-hero">
           <div class="launcher-title">
-            <p class="eyebrow">Facet Studio</p>
+            <p class="eyebrow">Facet</p>
             <h1 id="projectsTitle" tabindex="-1">Productions & Catalog</h1>
             <p class="launcher-subtitle">Start a new video production, open a project folder, or resume recent work.</p>
           </div>
@@ -849,8 +880,18 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
           </div>
         </div>
 
+        <section aria-labelledby="recentTitle" style="margin-bottom: 32px;">
+          <div class="recent-section-header">
+            <h2 class="launcher-section-title" id="recentTitle">Recent Productions</h2>
+            <span class="form-hint" id="productionsCountLabel">Loading productions...</span>
+          </div>
+          <div class="projects-grid" id="projectsGrid">
+            <!-- Populated dynamically from /api/catalog and /api/projects -->
+          </div>
+        </section>
+
         <section aria-labelledby="packsTitle">
-          <h2 class="launcher-section-title" id="packsTitle">Capability Packs</h2>
+          <h2 class="launcher-section-title" id="packsTitle">Installed Capability Packs</h2>
           <div class="packs-strip" id="packsStrip">
             <div class="pack-card">
               <div class="pack-header">
@@ -882,29 +923,48 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
             </div>
           </div>
         </section>
-
-        <section aria-labelledby="recentTitle">
-          <div class="recent-section-header">
-            <h2 class="launcher-section-title" id="recentTitle">Recent Productions</h2>
-            <span class="form-hint" id="productionsCountLabel">Loading productions...</span>
-          </div>
-          <div class="projects-grid" id="projectsGrid">
-            <!-- Populated dynamically from /api/catalog and /api/projects -->
-          </div>
-        </section>
       </section>
 
       <section class="workspace settings-view" id="settingsView" aria-labelledby="settingsTitle" hidden>
         <div class="settings-toolbar">
           <div>
-            <p class="eyebrow">Facet Studio</p>
-            <h1 id="settingsTitle" tabindex="-1">Environment</h1>
+            <p class="eyebrow">Facet</p>
+            <h1 id="settingsTitle" tabindex="-1">Settings</h1>
           </div>
           <button class="back-button" id="settingsBack" type="button">Back to production</button>
         </div>
-        <p class="settings-intro">Provider credentials are held in the Studio process environment. Facet reports only masked configuration state here; saved values become available to newly started agent sessions.</p>
+        <p class="settings-intro">Configure the assistant that helps you produce videos, and the media services used by your projects. Facet runs its agent locally with the embedded Studio kernel; model connections may use online services.</p>
+
+        <section class="settings-section" id="modelSettingsSection" aria-labelledby="modelSettingsTitle">
+          <h2 id="modelSettingsTitle">Assistant models</h2>
+          <p>Discover available free models through the kernel, or use a configured provider. Catalog availability and a successful test are different: test the selected model before starting work.</p>
+          <div class="settings-section model-card">
+            <label for="modelSelect">Model for new conversations</label>
+            <select class="form-input" id="modelSelect" name="model"><option value="">Loading models…</option></select>
+            <div class="settings-actions">
+              <button class="btn-secondary" id="btnDiscoverModels" type="button">Discover free models</button>
+              <button class="btn-secondary" id="btnTestModel" type="button">Test selected model</button>
+              <button class="btn-primary" id="btnSaveModel" type="button">Save model</button>
+            </div>
+            <p id="modelFeedback" role="status" aria-live="polite"></p>
+            <p id="modelConfigLocation" class="form-hint"></p>
+          </div>
+          <details class="model-card">
+            <summary>Connect a provider or local model server</summary>
+            <form id="providerForm">
+              <div class="field"><label for="providerSelect">Provider</label><select class="form-input" id="providerSelect" name="provider" required></select></div>
+              <div class="field"><label for="providerEndpoint">Endpoint</label><input class="form-input" id="providerEndpoint" name="endpoint" type="url" placeholder="Provider default" autocomplete="off"></div>
+              <div class="field"><label for="providerSecret">API key or access token</label><input class="form-input" id="providerSecret" name="secret" type="password" autocomplete="off" placeholder="If required by your provider"></div>
+              <p class="form-hint">The list comes from the embedded kernel. Local servers use their own endpoint. Connection verifies catalog access; model tests may use your provider quota.</p>
+              <button class="btn-secondary" id="connectProvider" type="submit">Connect and load models</button>
+            </form>
+          </details>
+        </section>
 
         <section class="settings-section" aria-labelledby="configuredTitle">
+          <h2>Production capabilities</h2>
+          <p>Availability is derived from Facet’s tools and installed dependencies. Credentials marked configured still need a successful provider request.</p>
+          <div id="capabilityStatus" role="status" aria-live="polite"></div>
           <h2 id="configuredTitle">Provider availability</h2>
           <p>Keyless local tools remain available without provider credentials.</p>
           <div class="config-list" id="configList" aria-live="polite"></div>
@@ -940,22 +1000,22 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         <div class="tabs" role="tablist" aria-label="Inspector views">
           <button class="tab active" id="artifactsTab" type="button" role="tab" aria-selected="true" aria-controls="artifactsPanel" data-tab="artifactsPanel">Artifacts</button>
           <button class="tab" id="propertiesTab" type="button" role="tab" aria-selected="false" aria-controls="propertiesPanel" data-tab="propertiesPanel" tabindex="-1">Properties</button>
-          <button class="tab" id="activityTab" type="button" role="tab" aria-selected="false" aria-controls="activityPanel" data-tab="activityPanel" tabindex="-1">Activity</button>
+          <button class="tab" id="activityTab" type="button" role="tab" aria-selected="false" aria-controls="activityPanel" data-tab="activityPanel" tabindex="-1">Conversation</button>
         </div>
         <section class="panel active" id="artifactsPanel" role="tabpanel" aria-labelledby="artifactsTab"></section>
         <section class="panel" id="propertiesPanel" role="tabpanel" aria-labelledby="propertiesTab"></section>
         <section class="panel" id="activityPanel" role="tabpanel" aria-labelledby="activityTab">
-          <h2>Production activity</h2>
+          <h2>Project conversation</h2>
           <ol class="activity-list" id="activityList"></ol>
         </section>
       </aside>
 
       <footer class="composer-area">
         <div class="composer-column">
-          <div class="composer-label"><span id="composerAgent">Message Claude Code</span><span id="composerMeta">No live session · 0 turns · $0.0000</span></div>
+          <div class="composer-label"><span id="composerAgent">Message Facet</span><span id="composerMeta">No conversation selected</span></div>
           <form class="composer" id="composer">
             <label class="sr-only" for="promptInput">Message the selected agent</label>
-            <input id="promptInput" placeholder="Select a project to message Claude Code." autocomplete="off" disabled>
+            <textarea id="promptInput" rows="2" placeholder="Describe your video or the changes you want…" autocomplete="off" disabled></textarea>
             <button class="send" id="sendButton" type="submit" aria-label="Send prompt" disabled>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 3-8.5 18-3.6-7.4L2 10.5zM9 13l5-5"/></svg>
             </button>
@@ -990,10 +1050,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
           <div class="form-group">
             <label for="newProdEngine">Agent Engine</label>
             <select class="form-input" id="newProdEngine">
-              <option value="claude">Claude Code (Autonomous)</option>
-              <option value="opencode">OpenCode</option>
-              <option value="codex">Codex</option>
-              <option value="copilot">GitHub Copilot</option>
+              <option value="studio" selected>Facet</option>
             </select>
           </div>
           <div class="form-group">
@@ -1048,10 +1105,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
           <div class="form-group">
             <label for="openFolderEngine">Agent Engine</label>
             <select class="form-input" id="openFolderEngine">
-              <option value="claude">Claude Code (Autonomous)</option>
-              <option value="opencode">OpenCode</option>
-              <option value="codex">Codex</option>
-              <option value="copilot">GitHub Copilot</option>
+              <option value="studio" selected>Facet</option>
             </select>
           </div>
         </div>
@@ -1073,10 +1127,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
       const SESSION_TOKEN_HEADER = 'X-Facet-Session-Token';
       const LOCAL_SECURITY_ERROR = 'Local security token could not be loaded. Agent and configuration changes are disabled; project and media viewing remain available.';
       const ENGINE_NAMES = {
-        claude: 'Claude Code',
-        opencode: 'OpenCode',
-        codex: 'Codex',
-        copilot: 'GitHub Copilot'
+        studio: 'Facet'
       };
       const STAGES = [
         { key: 'brief', label: 'Brief', api: 'brief' },
@@ -1123,7 +1174,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         projectsInitialized: false,
         sessionToken: '',
         securityState: 'loading',
-        engine: 'claude',
+        engine: 'studio',
         engineAvailability: { known: false, loading: true, engines: {} },
         lifecycle: 'idle',
         sessionId: '',
@@ -1446,28 +1497,28 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
       function lifecycleText(state) {
         const name = engineName();
         switch (state) {
-          case 'connecting': return `Connecting · ${name}`;
-          case 'connected': return `Connected · ${name}`;
-          case 'working': return `Connected · ${name} · working`;
-          case 'ready': return `Connected · ${name} · ready`;
-          case 'disconnected': return 'Disconnected · restart required';
-          default: return 'Not connected · idle';
+          case 'connecting': return 'Starting request…';
+          case 'connected': return 'Request started';
+          case 'working': return 'Working…';
+          case 'ready': return 'Ready for your next request';
+          case 'disconnected': return 'Request stopped';
+          default: return ui.activeModel ? 'Model selected' : 'Set up assistant in Settings';
         }
       }
 
       function updateSessionControl() {
         const control = $('#sessionControl');
         if (!mutationsReady()) {
-          control.textContent = ui.securityState === 'loading' ? 'Securing Studio' : 'Security unavailable';
+          control.textContent = ui.securityState === 'loading' ? 'Starting Facet' : 'Controls unavailable';
           control.disabled = true;
         } else if (ui.sessionRecoveryPending) {
           control.textContent = 'Restoring session';
           control.disabled = true;
         } else if (!ui.sessionId && ui.engineAvailability.loading) {
-          control.textContent = 'Checking engines';
+          control.textContent = 'Starting…';
           control.disabled = true;
         } else if (!ui.sessionId && !hasAvailableEngine()) {
-          control.textContent = 'No engine';
+          control.textContent = 'Unavailable';
           control.disabled = true;
         } else if (ui.lifecycle === 'disconnected') {
           control.textContent = 'Restart';
@@ -1475,11 +1526,11 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         } else if (ui.lifecycle === 'connecting' && !ui.sessionId) {
           control.textContent = 'Connecting';
           control.disabled = true;
-        } else if (ui.sessionId || ['connecting', 'connected', 'working', 'ready'].includes(ui.lifecycle)) {
+        } else if (ui.busy || ['connecting', 'connected', 'working'].includes(ui.lifecycle)) {
           control.textContent = 'Stop';
           control.disabled = false;
         } else {
-          control.textContent = 'No session';
+          control.textContent = 'Stop';
           control.disabled = true;
         }
       }
@@ -1509,11 +1560,11 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         } else if (ui.sessionRecoveryPending) {
           input.placeholder = 'Restoring the previous conversation...';
         } else if (checkingEngines) {
-          input.placeholder = 'Checking agent engine availability…';
+          input.placeholder = 'Starting the assistant…';
         } else if (noEngines) {
-          input.placeholder = 'No agent engines are available in this environment.';
+          input.placeholder = 'Assistant unavailable. Check Settings.';
         } else if (!engineCanStart()) {
-          input.placeholder = `${engineName()} is unavailable. Choose another engine.`;
+          input.placeholder = 'Assistant unavailable. Check Settings.';
         } else if (!ui.projectSlug) {
           input.placeholder = `Select a project to message ${engineName()}.`;
         } else if (ui.lifecycle === 'disconnected') {
@@ -1524,8 +1575,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
           input.placeholder = `Give ${engineName()} the next production task…`;
         }
 
-        const sessionCopy = ui.sessionId ? `Session ${shortSession(ui.agentSessionId || ui.sessionId)}` : 'No live session';
-        $('#composerMeta').textContent = `${sessionCopy} · ${ui.turns} turn${ui.turns === 1 ? '' : 's'} · $${ui.cost.toFixed(4)}`;
+        $('#composerMeta').textContent = `${ui.turns} request${ui.turns === 1 ? '' : 's'} · Model usage cost not reported`;
       }
 
       function renderActivityEmpty(message = 'No agent activity for this project yet.') {
@@ -1596,8 +1646,10 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
       }
 
       function appendDetail(record, label, text) {
-        record.body.appendChild(element('div', 'activity-label', label));
-        record.body.appendChild(element('pre', 'activity-text', text));
+        const detail=element('details','activity-detail');
+        detail.appendChild(element('summary','activity-label',label));
+        detail.appendChild(element('pre','activity-text',text));
+        record.body.appendChild(detail);
       }
 
       function finalizeLiveRecords(label, failed = false) {
@@ -1794,7 +1846,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
           video.classList.add('visible');
           badge.hidden = false;
           badge.dataset.state = 'ready';
-          badge.textContent = ui.currentVideoKind === 'master' ? 'MASTER READY' : ui.currentVideoKind === 'preview' ? 'PREVIEW' : 'READY';
+          badge.textContent = ui.currentVideoKind === 'master' ? 'OUTPUT AVAILABLE' : ui.currentVideoKind === 'preview' ? 'PREVIEW' : 'AVAILABLE';
           $('#transport').hidden = false;
           $('#mediaMeta').hidden = false;
           if (ui.selectedStage === 'master' && ui.project) renderProperties(ui.project);
@@ -1850,7 +1902,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         $('#videoDownloadLink').textContent = `Download ${kind || 'video'}`;
         $('#mediaMeta').hidden = false;
         if (ui.currentVideoURL === canonicalURL && ui.currentVideoVersion === version) {
-          if (ui.videoState === 'ready') $('#videoStateBadge').textContent = kind === 'master' ? 'MASTER READY' : kind === 'preview' ? 'PREVIEW' : 'READY';
+          if (ui.videoState === 'ready') $('#videoStateBadge').textContent = kind === 'master' ? 'OUTPUT AVAILABLE' : kind === 'preview' ? 'PREVIEW' : 'AVAILABLE';
           return;
         }
 
@@ -1944,6 +1996,19 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         const headingRow = element('div', 'panel-heading-row');
         headingRow.append(element('h2', '', 'Project artifacts'), element('span', 'count-label', `${artifacts.length} item${artifacts.length === 1 ? '' : 's'}`));
         panel.appendChild(headingRow);
+        if (project) {
+          const label=element('label','btn-secondary','Import source media');
+          const input=element('input');input.type='file';input.accept='video/*,audio/*,image/*';input.setAttribute('aria-label','Import source media');
+          input.addEventListener('change',async()=>{
+            if(!input.files.length)return;
+            const data=new FormData();data.append('file',input.files[0]);input.disabled=true;
+            try {
+              const response=await fetch(`/api/assets?${new URLSearchParams({dir:project.path})}`,{method:'POST',headers:{[SESSION_TOKEN_HEADER]:ui.sessionToken},body:data});
+              const result=await response.json();if(!response.ok)throw new Error(result.error);
+              setLiveSummary(`Imported ${result.path}. You can use it in this project.`);await loadProjectDetails(ui.projectSlug,false);
+            }catch(error){setLiveSummary(error.message,'failed');input.disabled=false;}
+          });label.appendChild(input);panel.appendChild(label);
+        }
         if (!project || artifacts.length === 0) {
           panel.appendChild(element('p', 'empty-panel', project ? 'No brief, script, media, review, or video artifacts are currently exposed by this project.' : 'Select a project to inspect its real artifacts and media.'));
           return;
@@ -1957,6 +2022,10 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
             row.href = artifact.url;
             row.target = '_blank';
             row.rel = 'noopener';
+            row.addEventListener('click',event=>{
+              if(event.ctrlKey||event.metaKey||event.shiftKey)return;
+              event.preventDefault();previewArtifact(artifact);
+            });
           }
           const icon = element('span', 'file-icon');
           icon.appendChild(createIcon('file'));
@@ -1969,6 +2038,85 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
           list.appendChild(item);
         });
         panel.appendChild(list);
+      }
+
+      // Small, safe text renderer: no HTML from model responses is executed.
+      function renderConversationText(container,text) {
+        container.replaceChildren();
+        const lines=String(text).split('\n');let code=false;
+        for(const line of lines){
+          if(line.startsWith('```')){code=!code;continue;}
+          const block=element('div',code?'conversation-code':'');
+          const value=line.replace(/^#{1,6}\s+/,'').replace(/^[-*]\s+/,'• ');
+          if(code){block.textContent=value;}
+          else {
+            for(const part of value.split(/(\*\*[^*]+\*\*|`[^`]+`)/g)){
+              if(part.startsWith('**')&&part.endsWith('**'))block.appendChild(element('strong','',part.slice(2,-2)));
+              else if(part.startsWith('`')&&part.endsWith('`'))block.appendChild(element('code','',part.slice(1,-1)));
+              else block.appendChild(document.createTextNode(part));
+            }
+          }
+          if(!value)block.appendChild(document.createElement('br'));container.appendChild(block);
+        }
+      }
+
+      let materialDirty=false;
+      function canLeaveMaterial(){
+        if(!materialDirty)return true;
+        if(!window.confirm('Discard unsaved document changes?'))return false;
+        materialDirty=false;return true;
+      }
+      window.addEventListener('beforeunload',event=>{if(materialDirty){event.preventDefault();event.returnValue='';}});
+      async function previewArtifact(artifact) {
+        if(!canLeaveMaterial())return;
+        const section=$('#artifactPreview'),content=$('#artifactPreviewContent');
+        section.hidden=false;$('#artifactPreviewTitle').textContent=artifact.name;content.replaceChildren();
+        const ext=artifact.name.split('.').pop().toLowerCase();
+        if(['mp4','webm','mov'].includes(ext)) { ui.selectedOutput={...artifact,projectPath:ui.project.path};$('#confirmReview').checked=false;setVideo(artifact.url,artifact.path,'preview','');$('#theaterShell').classList.remove('awaiting-output');section.hidden=true;$('#theaterShell').scrollIntoView({block:'nearest'});return; }
+        else if(['mp3','wav','ogg','m4a'].includes(ext)){const audio=element('audio');audio.controls=true;audio.src=artifact.url;content.appendChild(audio);}
+        else if(['png','jpg','jpeg','webp'].includes(ext)){const image=element('img');image.src=artifact.url;image.alt=artifact.name;content.appendChild(image);}
+        else {
+          content.textContent='Loading…';
+          try {
+            const response=await fetch(artifact.url);if(!response.ok)throw new Error('Could not load this file.');const text=await response.text();if($('#artifactPreviewTitle').textContent!==artifact.name)return;
+            content.replaceChildren(element('pre','activity-text',text));
+            if(['md','json','srt','vtt','txt'].includes(ext)){
+              if(ext==='json'){
+                let composition;try{composition=JSON.parse(text);}catch{}
+                if(composition&&(composition.cuts||composition.scenes||composition.edit_decisions)){
+                  const render=element('button','btn-primary','Render saved composition');render.type='button';content.appendChild(render);
+                  const stop=element('button','btn-secondary','Cancel render');stop.type='button';stop.hidden=true;content.appendChild(stop);
+                  const feedback=element('p');feedback.setAttribute('role','status');content.appendChild(feedback);
+                  render.addEventListener('click',async()=>{
+                    const controller=new AbortController();stop.hidden=false;render.disabled=true;feedback.textContent='Rendering the saved composition…';stop.onclick=()=>controller.abort();
+                    try{const response=await fetch('/api/materials/render',{method:'POST',signal:controller.signal,headers:{'Content-Type':'application/json',[SESSION_TOKEN_HEADER]:ui.sessionToken},body:JSON.stringify({dir:ui.project.path,path:projectRelativeArtifact(artifact)})});const data=await response.json();if(!response.ok)throw new Error(data.error?.message||'Render failed.');feedback.textContent='Rendered. Open the output in Assets to preview and review it.';await loadProjectDetails(ui.projectSlug,false);}
+                    catch(error){feedback.textContent=error.name==='AbortError'?'Render cancelled.':error.message;}finally{stop.hidden=true;render.disabled=false;}
+                  });
+                }
+              }
+              const edit=element('button','btn-secondary','Edit document');edit.type='button';content.appendChild(edit);
+              edit.addEventListener('click',()=>{
+                const editor=element('textarea','form-input');editor.value=text;editor.rows=14;editor.style.width='100%';editor.setAttribute('aria-label','Production document content');
+                editor.addEventListener('input',()=>{materialDirty=editor.value!==text;});
+                const save=element('button','btn-primary','Save document');save.type='button';const feedback=element('p');feedback.setAttribute('role','status');
+                content.replaceChildren(editor,save,feedback);
+                save.addEventListener('click',async()=>{
+                  save.disabled=true;
+                  try{const response=await fetch('/api/materials',{method:'POST',headers:{'Content-Type':'application/json',[SESSION_TOKEN_HEADER]:ui.sessionToken},body:JSON.stringify({dir:ui.project.path,path:projectRelativeArtifact(artifact),original:text,content:editor.value})});const data=await response.json();if(!response.ok)throw new Error(data.error);materialDirty=false;feedback.textContent='Saved to the project.';await loadProjectDetails(ui.projectSlug,false);}
+                  catch(error){feedback.textContent=error.message;save.disabled=false;}
+                });
+              });
+            }
+          }
+          catch(error){content.textContent=error.message;}
+        }
+        section.scrollIntoView({block:'nearest'});
+      }
+
+      function projectRelativeArtifact(artifact){
+        const path=String(artifact.path||'').replaceAll('\\','/');
+        for(const prefix of [`catalog/${ui.projectSlug}/`,`projects/${ui.projectSlug}/`]){if(path.startsWith(prefix))return path.slice(prefix.length);}
+        return path;
       }
 
       function appendEmptyProperty(panel, message) {
@@ -2123,6 +2271,12 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         const badgeLabel = review.rawStatus || 'Status not reported';
         summary.appendChild(element('span', `status-badge ${review.status}`, badgeLabel));
         panel.appendChild(summary);
+		const reviewedPath=review.report.output_facts?.input;
+		if(reviewedPath){
+			panel.appendChild(element('p','artifact-info',`Reviewed file: ${reviewedPath}`));
+			const shown=(ui.selectedOutput?.path||projectVideoResource(project).path||'').split(/[\\/]/).pop();
+			if(shown&&String(reviewedPath).split(/[\\/]/).pop()!==shown)panel.appendChild(element('p','settings-message error','This report belongs to a different output than the current preview.'));
+		}
 
         if (review.gates.length) {
           const list = element('ul', 'gate-list');
@@ -2180,6 +2334,10 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
       }
 
       function clearProjectUI(clearTranscript = true) {
+        ui.selectedOutput=null;
+        $('#confirmReview').checked=false;
+        $('#artifactPreview').hidden=true;
+        $('#outputReview').hidden=true;
         ui.project = null;
         ui.projectFingerprint = '';
         ui.projectRefreshWarning = false;
@@ -2210,13 +2368,40 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         $('#workspaceTitle').textContent = project.name || project.slug || ui.projectSlug;
         const signalCount = Object.values(project.stages || {}).filter(Boolean).length;
         const updated = formatDate(project.last_modified);
-        $('#projectMeta').textContent = [`${signalCount} of 6 artifact signals present`, updated ? `Updated ${updated}` : ''].filter(Boolean).join(' · ');
+        $('#projectMeta').textContent = [signalCount ? `${signalCount} production materials available` : 'Start with an idea or existing footage', updated ? `Updated ${updated}` : ''].filter(Boolean).join(' · ');
         renderRail(project);
-        const video = projectVideoResource(project);
+        const video = ui.selectedOutput?.projectPath===project.path ? {...ui.selectedOutput,kind:'preview'} : projectVideoResource(project);
         setVideo(video.url, video.path, video.kind, videoVersion(project));
+        $('#theaterShell').classList.toggle('awaiting-output', !video.url);
+        if (!video.url) {
+          $('#playerStateTitle').textContent = 'Your production starts here';
+          $('#playerStateCopy').textContent = project.brief || 'Describe what you want to make, or open a project containing footage. Your preview appears here when there is an output.';
+        }
         renderArtifacts(project);
         renderProperties(project);
         updateComposerState();
+        if (projectChanged && !ui.busy) restoreProjectConversation(project);
+      }
+
+      async function restoreProjectConversation(project) {
+        if (!mutationsReady()) return;
+        try {
+          const response=await fetch(`/api/conversation?${new URLSearchParams({dir:project.path})}`,{headers:{[SESSION_TOKEN_HEADER]:ui.sessionToken}});
+          if(!response.ok)return;
+          const data=await response.json();
+          if(ui.project?.path!==project.path||ui.busy||!data.session||(ui.sessionId&&ui.sessionId!==data.session.id))return;
+          ui.sessionId=data.session.id;ui.agentSessionId=data.session.native_id||'';
+          clearActivity('');
+          for(const message of data.messages||[]) {
+            if(!['user','assistant'].includes(message.role)||!message.content)continue;
+            const record=createActivityCard(message.role==='user'?'user':'agent',message.role==='user'?'You':'Facet','success');
+            appendTextBlock(record,message.content);
+            if(message.role==='assistant')renderConversationText(record.body.querySelector('.activity-text'),message.content);
+          }
+          ui.turns=(data.messages||[]).filter(m=>m.role==='user').length;
+          setLifecycle('ready');showInspectorTab('activityPanel',false);
+          setLiveSummary('Project conversation restored.');
+        }catch(error){setLiveSummary('Conversation history could not be loaded. Your project files are available.','warning');}
       }
 
       async function loadProjectDetails(slug, projectChanged = false) {
@@ -2231,8 +2416,8 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
           const project = await response.json();
           if (serial !== ui.projectLoadSerial || ui.projectSlug !== slug) return;
           applyEngineAvailability(project);
-          if (!ui.project && !ui.sessionId && ENGINE_NAMES[project.engine]) {
-            ui.engine = project.engine;
+          if (!ui.project && !ui.sessionId) {
+            ui.engine = 'studio';
             $('#engineSelect').value = ui.engine;
             updateSessionControl();
           }
@@ -2343,7 +2528,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
           clearProjectUI(true);
           $('#kicker').textContent = 'Studio unavailable';
           $('#workspaceTitle').textContent = 'Projects could not be loaded';
-          $('#projectMeta').textContent = 'Check the Facet Studio server and reload this page.';
+          $('#projectMeta').textContent = 'Reconnect to Facet and reload this page.';
           setLiveSummary(error.message || 'Project list failed.', 'failed');
         }
       }
@@ -2549,6 +2734,8 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
             renderQuestionCard(fenced.spec);
           }
         }
+        const raw=record.body.querySelector('.activity-text');
+        if(raw && record.raw) renderConversationText(raw,record.raw);
         record.finish('received', 'success');
       }
 
@@ -2566,7 +2753,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
       }
 
       function normalizedEventType(type) {
-        return ['session', 'text_delta', 'think_delta', 'tool_use', 'tool_result', 'question', 'permission', 'done', 'error'].includes(type);
+        return ['session', 'text_delta', 'text_replace', 'think_delta', 'tool_use', 'tool_result', 'question', 'permission', 'approval', 'done', 'error'].includes(type);
       }
 
       function markWorking() {
@@ -2574,6 +2761,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
       }
 
       function handleSessionPayload(payload, context, serverEvent = false) {
+		if (payload.model) $('#modelBadgeText').textContent=payload.model;
         applyEngineAvailability(payload);
         const serverID = payload?.server_session_id || (serverEvent ? payload?.id : '');
         const agentID = payload?.native_id || payload?.claude_id || payload?.engine_session_id || payload?.agent_session_id || payload?.session_id || payload?.conversation_id || (!serverEvent ? payload?.id : '');
@@ -2629,16 +2817,36 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
 
       function handleNormalizedEvent(event, context) {
         const type = event.type;
+        if (type === 'approval') {
+          const record = createActivityCard('question','Approval required','waiting');
+          appendTextBlock(record, `${event.tool_name}: ${event.content}`);
+          const controls = element('div','settings-actions');
+          for (const allow of [false,true]) {
+            const button = element('button',allow?'btn-primary':'btn-secondary',allow?'Allow this operation':'Decline');
+            button.type='button';
+            button.addEventListener('click',async()=>{
+              controls.querySelectorAll('button').forEach(b=>b.disabled=true);
+              try {
+                const response=await fetch('/api/approval',{method:'POST',headers:{'Content-Type':'application/json',[SESSION_TOKEN_HEADER]:ui.sessionToken},body:JSON.stringify({session:ui.sessionId,id:event.tool_id,allow})});
+                const data=await response.json();if(!response.ok)throw new Error(data.error);
+                appendTextBlock(record,allow?'Approved by you.':'Declined by you.');
+              } catch(error){appendTextBlock(record,error.message);}
+            });controls.appendChild(button);
+          }
+          record.body.appendChild(controls); return;
+        }
         if (type === 'session') {
           handleSessionPayload(event, context);
           return;
         }
         markWorking();
-        if (type === 'text_delta') {
+        if (type === 'text_delta' || type === 'text_replace') {
           if (context.normalizedThinking && !context.normalizedThinking.finished) context.normalizedThinking.finish('thought', 'success');
           if (!context.normalizedText || context.normalizedText.finished) context.normalizedText = createTextRecord();
-          context.normalizedText.raw += String(event.content || '');
+          const delta = String(event.content ?? event.text ?? event.delta ?? '');
+          context.normalizedText.raw = type === 'text_replace' ? delta : context.normalizedText.raw + delta;
           appendTextBlock(context.normalizedText, context.normalizedText.raw);
+          if(type==='text_replace')renderConversationText(context.normalizedText.body.querySelector('.activity-text'),context.normalizedText.raw);
           context.hadStreamText = true;
         } else if (type === 'think_delta') {
           if (!context.normalizedThinking || context.normalizedThinking.finished) context.normalizedThinking = createThinkingRecord();
@@ -2911,7 +3119,8 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
           ui.turns = Number(saved.turns) || 0;
           ui.cost = Number(saved.cost) || 0;
           setLifecycle('ready');
-          setLiveSummary(`${engineName()} conversation restored. Earlier activity is not replayed.`);
+          setLiveSummary(`${engineName()} conversation restored.`);
+          await restoreProjectConversation(ui.project);
         } catch { /* A restarted Studio starts a new session on the next message. */ }
         finally {
           clearTimeout(recoveryTimeout);
@@ -2951,11 +3160,15 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
           setLiveSummary(`${engineName()} is ready for the next task.`);
         } else {
           const oldSession = ui.sessionId;
-          ui.sessionId = '';
-          ui.agentSessionId = '';
-          setLifecycle('disconnected');
-          setLiveSummary(reason || 'The session disconnected. Restart to continue.', 'failed');
-          requestClose(oldSession);
+          if (context.sessionLive !== true) {
+            ui.sessionId = '';
+            ui.agentSessionId = '';
+            requestClose(oldSession);
+          }
+          setLifecycle(ui.sessionId ? 'ready' : 'idle');
+          const record=createActivityCard('warning','Could not complete the request','failed');
+          appendTextBlock(record,reason || 'Connection interrupted. Retry your request.');
+          setLiveSummary(reason || 'Request interrupted. You can retry or change model in Settings.', 'failed');
         }
 
         loadProjects(true);
@@ -3076,11 +3289,11 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         ui.sessionId = '';
         ui.agentSessionId = '';
         ui.pendingAnswers = [];
-        setLifecycle('disconnected');
-        setLiveSummary('Session stopped. Restart to continue.', 'failed');
+        setLifecycle('idle');
+        setLiveSummary('Request stopped. You can continue with another request.');
         const record = createActivityCard('warning', 'Session stopped', 'failed');
         record.root.classList.add('failed');
-        appendTextBlock(record, 'The live engine process was closed. Project artifacts remain on disk.');
+        appendTextBlock(record, 'Work was stopped. Your project files remain available.');
         const closed = await requestClose(sessionID);
         if (!closed) appendDetail(record, 'Diagnostic', 'Facet could not confirm /api/close. The local UI session has still been cleared.');
       }
@@ -3152,12 +3365,13 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
 
       async function selectProject(next) {
         const previous = ui.projectSlug;
+        if(next!==previous&&!canLeaveMaterial()){$('#projectSelect').value=previous;return;}
         if (next === previous) {
           if (next) await loadProjectDetails(next, false);
           return;
         }
         const remainDisconnected = ui.lifecycle === 'disconnected';
-        const resetPromise = resetForContextChange('The next message will start a new engine process for this project.');
+        const resetPromise = resetForContextChange('Your next message continues work in this project.');
         ui.projectSlug = next;
         $('#projectSelect').value = next;
         ui.project = null;
@@ -3202,16 +3416,16 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
           return;
         }
         if (next === ui.engine) return;
-        const remainDisconnected = ui.lifecycle === 'disconnected';
         const prior = engineName();
         ui.engine = next;
+        if (ui.project) ui.project.engine = next;
         updateComposerState();
         const resetPromise = resetForContextChange(`${prior} was closed. ${engineName()} will start on the next message.`);
         setLiveSummary(`Switching to ${engineName()}…`, 'active');
         if (!await resetPromise) return;
-        if (remainDisconnected) setLifecycle('disconnected');
+        setLifecycle('idle');
         setLiveSummary(`Engine set to ${engineName()}.`);
-        if (ui.projectSlug && !remainDisconnected) $('#promptInput').focus();
+        if (ui.projectSlug) $('#promptInput').focus();
       }
 
       function showView(view) {
@@ -3248,6 +3462,8 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         const target = button.dataset.nav;
         if (target === 'settings') {
           showView('settings');
+          loadModels();
+          loadConfig();
           return;
         }
         if (target === 'projects') {
@@ -3257,6 +3473,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         showView('produce');
         if (target === 'assets') showInspectorTab('artifactsPanel');
         if (target === 'review') {
+          $('#outputReview').hidden=false;
           ui.selectedStage = 'qa';
           renderRail(ui.project);
           renderProperties(ui.project);
@@ -3309,7 +3526,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
           const card = element('div', 'pack-card');
           const head = element('div', 'pack-header');
           head.append(
-            element('span', 'pack-name', pack.name || pack.id),
+            element('span', 'pack-name', pack.id.replaceAll('-', ' ')),
             element('span', `pack-badge ${pack.installed ? 'installed' : 'available'}`, pack.installed ? 'Installed' : 'Available')
           );
           const desc = element('p', 'pack-desc', pack.description || 'Facet capability pack');
@@ -3332,7 +3549,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
 
           const descWrapper = element('div', 'pack-check-label');
           descWrapper.append(
-            element('span', 'pack-check-title', `${pack.name || pack.id} (${pack.version || '1.0.0'})`),
+            element('span', 'pack-check-title', pack.id.replaceAll('-', ' ')),
             element('span', 'pack-check-desc', pack.description || '')
           );
           label.append(input, descWrapper);
@@ -3433,9 +3650,11 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         });
       }
 
+      const modalOpeners=new Map();
       function openModal(id) {
         const el = $(id);
         if (el) {
+          modalOpeners.set(id,document.activeElement);
           el.hidden = false;
           const firstInput = el.querySelector('input:not([type="checkbox"]), select');
           if (firstInput) setTimeout(() => firstInput.focus(), 50);
@@ -3444,8 +3663,18 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
 
       function closeModal(id) {
         const el = $(id);
-        if (el) el.hidden = true;
+        if (el&&!el.hidden) {el.hidden = true;modalOpeners.get(id)?.focus();}
       }
+      document.addEventListener('keydown',event=>{
+        const modal=all('.modal-overlay').find(el=>!el.hidden);if(!modal)return;
+        if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();closeModal('#'+modal.id);return;}
+        if(event.key!=='Tab')return;
+        const controls=Array.from(modal.querySelectorAll('button,input,select,textarea,a[href]')).filter(el=>!el.disabled&&el.getClientRects().length);
+        if(!controls.length)return;
+        const first=controls[0],last=controls[controls.length-1];
+        if(event.shiftKey&&(document.activeElement===first||!modal.contains(document.activeElement))){event.preventDefault();last.focus();}
+        else if(!event.shiftKey&&(document.activeElement===last||!modal.contains(document.activeElement))){event.preventDefault();first.focus();}
+      },true);
 
       function setupLauncherEvents() {
         $('#btnQuickNew')?.addEventListener('click', () => {
@@ -3546,7 +3775,127 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         });
       }
 
+      let modelSelectionRevision = 0;
+      let modelLoadRevision = 0;
+      async function loadModels() {
+        const revision=++modelLoadRevision;
+        const selectionRevision=modelSelectionRevision;
+        try {
+          const res = await fetch('/api/models', { headers: { Accept: 'application/json' } });
+          if (!res.ok) throw new Error('Model settings could not be loaded.');
+          const data = await res.json();
+          if(revision!==modelLoadRevision)return;
+          ui.activeModel = data.active_model || '';
+          const select = $('#modelSelect');
+          const selected = selectionRevision===modelSelectionRevision ? ui.activeModel : select.value;
+          select.replaceChildren(new Option(data.models.length ? 'Choose a model…' : 'No models configured', ''));
+          data.models.forEach(m => select.appendChild(new Option(m.name, m.id)));
+          select.value = selected;
+          $('#modelBadgeText').textContent = ui.activeModel || 'Set up assistant';
+          $('#modelConfigLocation').textContent = `Facet settings: ${data.config_path}`;
+          const providerSelect = $('#providerSelect');
+          providerSelect.replaceChildren(new Option('Choose a provider…',''));
+          (data.providers || []).filter(p => ['openai-compatible','anthropic-compatible','github-copilot-native'].includes(p.adapter)).forEach(p => {
+            const option = new Option(p.display_name || p.label || p.id,p.id);
+            option.dataset.endpoint = p.default_endpoint || ''; providerSelect.appendChild(option);
+          });
+          if (!data.configured) $('#modelFeedback').textContent = 'Choose a configured model or discover free models to get started.';
+        } catch (error) { $('#modelFeedback').textContent = error.message; }
+      }
+
+      async function testModel() {
+        const feedback = $('#modelFeedback');
+        const btn = $('#btnTestModel');
+        const model = $('#modelSelect').value;
+        if (!model) { feedback.textContent = 'Choose a model first.'; return; }
+        if (btn) btn.disabled = true;
+        if (feedback) {
+          feedback.style.color = 'var(--text-muted, #8b949e)';
+          feedback.textContent = 'Testing connection and measuring latency…';
+        }
+        try {
+          const res = await fetch('/api/models/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json', [SESSION_TOKEN_HEADER]: ui.sessionToken },
+            body: JSON.stringify({model})
+          });
+          const data = await res.json();
+          if (data.ok) {
+            feedback.style.color = '#22c55e';
+            feedback.textContent = `✓ Connected successfully (${data.latency_ms}ms) to ${data.model}`;
+          } else {
+            feedback.style.color = '#ef4444';
+            feedback.textContent = `✗ Connection error (${data.latency_ms}ms): ${data.error || 'Endpoint unreachable'}`;
+          }
+        } catch (e) {
+          if (feedback) {
+            feedback.style.color = '#ef4444';
+            feedback.textContent = '✗ Test failed: ' + e.message;
+          }
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+      }
+
+      async function saveModel() {
+        const select = $('#modelSelect');
+        const feedback = $('#modelFeedback');
+        const btn = $('#btnSaveModel');
+        if (!select || !select.value) return;
+        const selectedModel=select.value;
+        if (ui.busy) { feedback.textContent='Finish or stop the current request before changing its model.';return; }
+        if (btn) btn.disabled = true;
+        try {
+          const res = await fetch('/api/models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json', [SESSION_TOKEN_HEADER]: ui.sessionToken },
+            body: JSON.stringify({ model: selectedModel })
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) throw new Error(data.error || 'Model could not be saved.');
+          if (data.ok) {
+            if (ui.sessionId) {
+              const closed=await requestClose(ui.sessionId);
+              if(!closed)throw new Error('Model saved, but the current conversation could not be stopped. Retry after it finishes.');
+              ui.sessionId='';ui.agentSessionId='';setLifecycle('idle');
+            }
+            await loadModels();
+            if (feedback) {
+              feedback.style.color = '#22c55e';
+              feedback.textContent = 'Saved. Your next request uses this model; project conversation history is preserved.';
+            }
+          }
+        } catch (e) {
+          if (feedback) {
+            feedback.style.color = '#ef4444';
+            feedback.textContent = '✗ Failed to apply model: ' + e.message;
+          }
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+      }
+
+      async function discoverModels() {
+        const button = $('#btnDiscoverModels');
+        button.disabled = true;
+        $('#modelFeedback').textContent = 'Discovering free model catalogs…';
+        try {
+          const response = await fetch('/api/models/discover', {method:'POST', headers:{[SESSION_TOKEN_HEADER]:ui.sessionToken}});
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Discovery failed.');
+          await loadModels();
+          $('#modelFeedback').textContent = data.message;
+        } catch(error) { $('#modelFeedback').textContent = error.message; }
+        finally { button.disabled = false; }
+      }
+
       async function loadConfig() {
+        fetch('/api/capabilities').then(r=>r.json()).then(data=>{
+          const list=$('#capabilityStatus');list.replaceChildren();
+          for(const tool of data.result?.tools||[]){
+            const row=element('div','config-row');row.append(element('span','',tool.capability||tool.name),element('span','',tool.configured?'Available':'Setup needed'));list.appendChild(row);
+          }
+        }).catch(()=>{$('#capabilityStatus').textContent='Capability status could not be loaded.';});
         const list = $('#configList');
         list.replaceChildren(element('div', 'config-row', 'Checking provider configuration…'));
         try {
@@ -3601,7 +3950,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
           CONFIG_FIELDS.forEach(field => { $(field.input).value = ''; });
           const activeSession = Boolean(ui.sessionId || ui.busy || ['connecting', 'connected', 'working', 'ready'].includes(ui.lifecycle));
           message.textContent = activeSession
-            ? 'Overrides saved. They apply to newly started agent sessions; the current child process is unchanged.'
+            ? 'Media settings saved. Start a new conversation to use the updated settings.'
             : 'Overrides saved. They apply to the next agent session.';
           await loadConfig();
         } catch (error) {
@@ -3695,6 +4044,11 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
         sendPrompt($('#promptInput').value);
       });
       $('#promptInput').addEventListener('input', updateComposerState);
+      $('#promptInput').addEventListener('keydown', event => {
+        if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+          event.preventDefault(); $('#composer').requestSubmit();
+        }
+      });
       $('#projectSelect').addEventListener('change', handleProjectChange);
       $('#engineSelect').addEventListener('change', handleEngineChange);
       $('#sessionControl').addEventListener('click', () => ui.lifecycle === 'disconnected' ? restartSession() : stopSession());
@@ -3726,6 +4080,42 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
       });
       $('#settingsForm').addEventListener('submit', saveConfig);
       $('#appearanceToggle').addEventListener('click', toggleAppearance);
+      $('#btnModelSettings')?.addEventListener('click', () => {
+        handleNavigation($('.nav-button[data-nav="settings"]'));
+        window.requestAnimationFrame(() => $('#modelSelect')?.focus());
+      });
+      $('#btnTestModel').addEventListener('click', testModel);
+      $('#modelSelect').addEventListener('change',()=>{modelSelectionRevision++;});
+      $('#btnSaveModel').addEventListener('click', saveModel);
+      $('#btnDiscoverModels').addEventListener('click', discoverModels);
+      $('#reviewForm').addEventListener('submit',async event=>{
+        event.preventDefault();if(!ui.project)return;
+        $('#runReview').disabled=true;$('#reviewFeedback').textContent='Reviewing the actual output…';
+        try{
+          const video=ui.selectedOutput?.projectPath===ui.project.path?ui.selectedOutput:projectVideoResource(ui.project);
+          const response=await fetch('/api/review',{method:'POST',headers:{'Content-Type':'application/json',[SESSION_TOKEN_HEADER]:ui.sessionToken},body:JSON.stringify({dir:ui.project.path,path:projectRelativeArtifact(video),width:Number($('#reviewWidth').value),height:Number($('#reviewHeight').value),fps:Number($('#reviewFPS').value),duration:Number($('#reviewDuration').value),audio:$('#reviewAudio').checked})});
+          const data=await response.json();if(!response.ok)throw new Error(data.error?.message||data.error||'Review failed.');
+          $('#reviewFeedback').textContent=`Technical review: ${data.result?.review_status||'completed'}. Open the report and sampled frames in Assets.`;await loadProjectDetails(ui.projectSlug,false);
+        }catch(error){$('#reviewFeedback').textContent=error.message;}finally{$('#runReview').disabled=false;}
+      });
+      $('#acceptOutput').addEventListener('click',async()=>{
+        if(!ui.project||!$('#confirmReview').checked){$('#reviewFeedback').textContent='Watch the output and confirm your decision first.';return;}
+        const video=ui.selectedOutput?.projectPath===ui.project.path?ui.selectedOutput:projectVideoResource(ui.project);
+        const response=await fetch('/api/review/accept',{method:'POST',headers:{'Content-Type':'application/json',[SESSION_TOKEN_HEADER]:ui.sessionToken},body:JSON.stringify({dir:ui.project.path,path:projectRelativeArtifact(video)})});
+        const data=await response.json();$('#reviewFeedback').textContent=data.message||data.error||'Could not record approval.';
+      });
+      $('#providerSelect').addEventListener('change', () => { $('#providerEndpoint').value = $('#providerSelect').selectedOptions[0]?.dataset.endpoint || ''; });
+      $('#providerForm').addEventListener('submit', async event => {
+        event.preventDefault(); $('#connectProvider').disabled = true;
+        $('#modelFeedback').textContent = 'Connecting to provider…';
+        try {
+          const response = await fetch('/api/providers',{method:'POST',headers:{'Content-Type':'application/json',[SESSION_TOKEN_HEADER]:ui.sessionToken},body:JSON.stringify({provider:$('#providerSelect').value,endpoint:$('#providerEndpoint').value,secret:$('#providerSecret').value})});
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Provider connection failed.');
+          $('#providerSecret').value = ''; await loadModels(); $('#modelFeedback').textContent = data.message;
+        } catch(error) { $('#modelFeedback').textContent = error.message; }
+        finally { $('#connectProvider').disabled = false; }
+      });
       setupLauncherEvents();
 
       document.addEventListener('keydown', event => {
@@ -3764,7 +4154,7 @@ FORM: First-ranked approved Apple utility alternative, theater-centered desktop 
       renderActivityEmpty();
       clearProjectUI(false);
       setLifecycle('idle');
-      Promise.allSettled([loadSessionToken(), loadEngines(), loadProjects(true), loadCatalogAndPacks()]).then(async () => {
+      Promise.allSettled([loadSessionToken(), loadEngines(), loadProjects(true), loadCatalogAndPacks(), loadModels()]).then(async () => {
         await restoreActiveContext();
         if (ui.securityState === 'failed') setLiveSummary(LOCAL_SECURITY_ERROR, 'failed');
       });

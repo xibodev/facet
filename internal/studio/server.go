@@ -1,12 +1,4 @@
-// Package studio serves Facet's standalone browser Studio.
-//
-// FROZEN: working and supported, but not under development. Bug and security
-// fixes only; no new UI features. Facet is a headless creative toolbox, and
-// presentation of its artefacts is moving to the agentic host that invokes the
-// module surface. See web/FROZEN.md.
-//
-// This package shares nothing with internal/module; the module protocol is
-// unaffected by the freeze.
+// Package studio composes Facet's browser workbench and embedded agent runtime.
 package studio
 
 import (
@@ -16,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -29,9 +22,8 @@ import (
 
 	"github.com/xibodev/facet-studio/pkg/agent"
 	"github.com/xibodev/facet-studio/pkg/bus"
-	"github.com/xibodev/facet-studio/pkg/config"
 	"github.com/xibodev/facet/internal/studio/engine"
-	"github.com/xibodev/facet/pkg/provider"
+	"github.com/xibodev/facet/internal/toolbox"
 	"github.com/xibodev/facet/web"
 )
 
@@ -62,13 +54,16 @@ const (
 
 // Server coordinates the Studio web UI, REST API, and CLI session manager.
 type Server struct {
-	rootDir       string
-	mux           *http.ServeMux
-	sessions      map[string]*Session
-	sessionsMu    sync.Mutex
-	environment   []string
-	environmentMu sync.RWMutex
-	sessionToken  string
+	rootDir         string
+	mux             *http.ServeMux
+	sessions        map[string]*Session
+	sessionsMu      sync.Mutex
+	runtimeMu       sync.Mutex
+	environment     []string
+	environmentMu   sync.RWMutex
+	sessionToken    string
+	modelMu         sync.Mutex
+	modelConfigPath string
 }
 
 // NewServer constructs a new Studio Server.
@@ -92,11 +87,12 @@ func NewServer(rootDir string) *Server {
 	processEnvironmentMu.Unlock()
 
 	s := &Server{
-		rootDir:      rootDir,
-		mux:          http.NewServeMux(),
-		sessions:     make(map[string]*Session),
-		environment:  environment,
-		sessionToken: sessionToken,
+		rootDir:         rootDir,
+		mux:             http.NewServeMux(),
+		sessions:        make(map[string]*Session),
+		environment:     environment,
+		sessionToken:    sessionToken,
+		modelConfigPath: filepath.Join(applicationHome(), "config.json"),
 	}
 	s.registerRoutes()
 	return s
@@ -112,6 +108,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/engines", s.guardRequest(noToken, s.handleListEngines))
 	s.mux.HandleFunc("GET /api/session-token", s.guardRequest(noToken, s.handleSessionToken))
 	s.mux.HandleFunc("GET /api/session", s.guardRequest(tokenHeader, s.handleGetSession))
+	s.mux.HandleFunc("GET /api/conversation", s.guardRequest(tokenHeader, s.handleConversation))
 
 	// Media File Serving
 	s.mux.HandleFunc("GET /api/media/{path...}", s.guardRequest(noToken, s.handleServeMedia))
@@ -121,16 +118,88 @@ func (s *Server) registerRoutes() {
 
 	// CLI Session Close
 	s.mux.HandleFunc("POST /api/close", s.guardRequest(tokenHeader, s.handleCloseSession))
+	s.mux.HandleFunc("POST /api/approval", s.guardRequest(tokenHeader, s.handleApproval))
 
 	// Config / Environment
 	s.mux.HandleFunc("GET /api/config", s.guardRequest(noToken, s.handleGetConfig))
 	s.mux.HandleFunc("POST /api/config", s.guardRequest(tokenHeader, s.handlePostConfig))
+
+	// Application settings are projections of the kernel's model services.
+	s.mux.HandleFunc("GET /api/models", s.guardRequest(noToken, s.handleGetModels))
+	s.mux.HandleFunc("POST /api/models", s.guardRequest(tokenHeader, s.handleSelectModel))
+	s.mux.HandleFunc("POST /api/models/discover", s.guardRequest(tokenHeader, s.handleDiscoverModels))
+	s.mux.HandleFunc("POST /api/models/test", s.guardRequest(tokenHeader, s.handleTestModel))
+	s.mux.HandleFunc("POST /api/providers", s.guardRequest(tokenHeader, s.handleConnectProvider))
 
 	// Catalog & Packs API
 	s.mux.HandleFunc("GET /api/catalog", s.guardRequest(noToken, s.handleGetCatalog))
 	s.mux.HandleFunc("POST /api/catalog/new", s.guardRequest(noToken, s.handleNewProject))
 	s.mux.HandleFunc("POST /api/catalog/open", s.guardRequest(noToken, s.handleOpenProject))
 	s.mux.HandleFunc("GET /api/packs", s.guardRequest(noToken, s.handleListPacks))
+	s.mux.HandleFunc("GET /api/capabilities", s.guardRequest(noToken, s.handleCapabilities))
+	s.mux.HandleFunc("POST /api/assets", s.guardRequest(tokenHeader, s.handleImportAsset))
+	s.mux.HandleFunc("POST /api/materials", s.guardRequest(tokenHeader, s.handleSaveMaterial))
+	s.mux.HandleFunc("POST /api/materials/render", s.guardRequest(tokenHeader, s.handleRenderMaterial))
+	s.mux.HandleFunc("POST /api/review", s.guardRequest(tokenHeader, s.handleReviewOutput))
+	s.mux.HandleFunc("POST /api/review/accept", s.guardRequest(tokenHeader, s.handleAcceptOutput))
+}
+
+func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
+	result, ok := toolbox.CLI([]string{"tools", "list"})
+	status := 200
+	if !ok {
+		status = 500
+	}
+	respondJSON(w, status, result)
+}
+
+func (s *Server) handleImportAsset(w http.ResponseWriter, r *http.Request) {
+	dir, err := s.resolveSessionDir(r.URL.Query().Get("dir"))
+	if err != nil {
+		respondJSON(w, 400, map[string]any{"error": err.Error()})
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 512<<20)
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		respondJSON(w, 400, map[string]any{"error": "File could not be read (maximum 512 MB)."})
+		return
+	}
+	defer r.MultipartForm.RemoveAll()
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		respondJSON(w, 400, map[string]any{"error": "Choose a media file."})
+		return
+	}
+	defer file.Close()
+	name := filepath.Base(header.Filename)
+	ext := strings.ToLower(filepath.Ext(name))
+	if !containsExt([]string{".mp4", ".mov", ".webm", ".wav", ".mp3", ".ogg", ".png", ".jpg", ".jpeg", ".webp"}, ext) {
+		respondJSON(w, 400, map[string]any{"error": "Choose a video, audio recording or image."})
+		return
+	}
+	assets := filepath.Join(dir, "assets")
+	if err := os.MkdirAll(assets, 0755); err != nil {
+		respondJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	resolved, err := filepath.EvalSymlinks(assets)
+	if err != nil || !pathWithin(dir, resolved) {
+		respondJSON(w, 400, map[string]any{"error": "Asset directory leaves the project."})
+		return
+	}
+	out, err := os.OpenFile(filepath.Join(assets, name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+	if err != nil {
+		respondJSON(w, 409, map[string]any{"error": "A file with this name already exists, or the directory is not writable."})
+		return
+	}
+	_, copyErr := io.Copy(out, file)
+	closeErr := out.Close()
+	if copyErr != nil || closeErr != nil {
+		_ = os.Remove(filepath.Join(assets, name))
+		respondJSON(w, 500, map[string]any{"error": "Import could not be completed."})
+		return
+	}
+	respondJSON(w, 200, map[string]any{"ok": true, "path": "assets/" + name})
 }
 
 func (s *Server) guardRequest(location tokenLocation, next http.HandlerFunc) http.HandlerFunc {
@@ -240,6 +309,9 @@ func Run(addr, dir string) error {
 
 // RunWithOption starts the Studio server with optional browser opening.
 func RunWithOption(addr, dir string, autoOpen bool) error {
+	if err := InitializeApplication(); err != nil {
+		return err
+	}
 	return NewServer(dir).RunWithOption(addr, autoOpen)
 }
 
@@ -365,19 +437,11 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListEngines(w http.ResponseWriter, r *http.Request) {
-	engines := make([]map[string]any, 0, len(engine.ListAdapters()))
-	for _, adapter := range engine.ListAdapters() {
-		_, err := exec.LookPath(adapter.ExecutableName())
-		item := map[string]any{
-			"name":         adapter.Name(),
-			"display_name": adapter.DisplayName(),
-			"available":    err == nil,
-		}
-		if err != nil {
-			item["reason"] = fmt.Sprintf("%s executable not found in PATH", adapter.ExecutableName())
-		}
-		engines = append(engines, item)
-	}
+	engines := []map[string]any{{
+		"name":         "studio",
+		"display_name": "Facet",
+		"available":    true,
+	}}
 	respondJSON(w, http.StatusOK, map[string]any{"engines": engines})
 }
 
@@ -402,7 +466,7 @@ func (s *Server) handleNewProject(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid request body: " + err.Error()})
 		return
 	}
-	proj, err := CreateNewProject(req.Name, req.Slug, req.Directory, req.Engine, req.Packs, s.rootDir)
+	proj, err := CreateNewProject(req.Name, req.Slug, req.Directory, "studio", req.Packs, s.rootDir)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
@@ -419,7 +483,7 @@ func (s *Server) handleOpenProject(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid request body: " + err.Error()})
 		return
 	}
-	proj, err := OpenExistingProject(req.Path, req.Engine, s.rootDir)
+	proj, err := OpenExistingProject(req.Path, "studio", s.rootDir)
 	if err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
@@ -529,6 +593,8 @@ func (s *Server) handleServeMedia(w http.ResponseWriter, r *http.Request) {
 		".jpeg": "image/jpeg",
 		".webp": "image/webp",
 		".json": "application/json",
+		".webm": "video/webm",
+		".mov":  "video/quicktime",
 		".md":   "text/markdown; charset=utf-8",
 		".srt":  "text/plain; charset=utf-8",
 		".vtt":  "text/vtt; charset=utf-8",
@@ -586,8 +652,8 @@ func (s *Server) evictSession(id string, expected *Session) {
 
 func registeredAdapter(name string) (engine.EngineAdapter, bool) {
 	canonical := strings.ToLower(strings.TrimSpace(name))
-	if canonical == "" {
-		canonical = "claude"
+	if canonical == "" || canonical == "studio" || canonical == "native" {
+		return engine.GetAdapter("studio"), true
 	}
 	for _, adapter := range engine.ListAdapters() {
 		if adapter.Name() == canonical {
@@ -687,17 +753,22 @@ func (s *Server) newSession(dir, mode, engineName string) (*Session, error) {
 
 	var adapter engine.EngineAdapter
 	var nativeLoop *agent.AgentLoop
+	var nativeBus *bus.MessageBus
 
-	if strings.EqualFold(engineName, "native") {
-		engineName = "native"
-		cfg := config.DefaultConfig()
-		cfg.Agents.Defaults.Workspace = resolvedDir
-		nativeLoop = agent.NewAgentLoop(
-			cfg,
-			bus.NewMessageBus(),
-			nil,
-			agent.WithToolProviders(provider.NewFacetToolProvider()),
-		)
+	if strings.EqualFold(engineName, "native") || strings.EqualFold(engineName, "studio") || engineName == "" {
+		s.runtimeMu.Lock()
+		defer s.runtimeMu.Unlock()
+		engineName = "studio"
+		digest := sha256.Sum256([]byte(resolvedDir))
+		id = fmt.Sprintf("facet-%x", digest[:12])
+		if existing := s.getSession(id); existing != nil && existing.IsAlive() {
+			return existing, nil
+		}
+		var loopErr error
+		nativeLoop, nativeBus, loopErr = s.buildRuntime(resolvedDir)
+		if loopErr != nil {
+			return nil, fmt.Errorf("failed to initialize Studio kernel: %w", loopErr)
+		}
 	} else {
 		var ok bool
 		adapter, ok = registeredAdapter(engineName)
@@ -716,6 +787,7 @@ func (s *Server) newSession(dir, mode, engineName string) (*Session, error) {
 		Engine:      engineName,
 		adapter:     adapter,
 		nativeLoop:  nativeLoop,
+		nativeBus:   nativeBus,
 		valid:       true,
 		turnGate:    make(chan struct{}, 1),
 		environment: environment,
@@ -730,7 +802,7 @@ func (s *Server) newSession(dir, mode, engineName string) (*Session, error) {
 
 func sessionPayload(sess *Session) map[string]any {
 	nativeID, dir, mode, engineName, alive := sess.status()
-	return map[string]any{
+	payload := map[string]any{
 		"id":        sess.ID,
 		"native_id": nativeID,
 		"dir":       dir,
@@ -738,6 +810,69 @@ func sessionPayload(sess *Session) map[string]any {
 		"engine":    engineName,
 		"alive":     alive,
 	}
+	if sess.nativeLoop != nil {
+		payload["model"] = sess.nativeLoop.GetConfig().Agents.Defaults.ModelName
+	}
+	return payload
+}
+
+func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {
+	dir, err := s.resolveSessionDir(r.URL.Query().Get("dir"))
+	if err != nil {
+		respondJSON(w, 400, map[string]any{"error": err.Error()})
+		return
+	}
+	data, err := os.ReadFile(filepath.Join(dir, ".facet", "conversation.json"))
+	if os.IsNotExist(err) {
+		respondJSON(w, 200, map[string]any{"messages": []any{}})
+		return
+	}
+	var ref struct {
+		ID  string `json:"id"`
+		Key string `json:"key"`
+	}
+	if err != nil || json.Unmarshal(data, &ref) != nil {
+		respondJSON(w, 500, map[string]any{"error": "Conversation reference could not be read."})
+		return
+	}
+	sess := s.getSession(ref.ID)
+	if sess == nil || !sess.IsAlive() {
+		sess, err = s.newSession(dir, "rw", "studio")
+		if err != nil {
+			respondJSON(w, 409, map[string]any{"error": err.Error()})
+			return
+		}
+	}
+	store := sess.nativeLoop.GetRegistry().GetDefaultAgent().Sessions
+	messages := store.GetHistory(ref.Key)
+	respondJSON(w, 200, map[string]any{"messages": messages, "session": sessionPayload(sess)})
+}
+
+func (s *Server) handleApproval(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Session string `json:"session"`
+		ID      string `json:"id"`
+		Allow   bool   `json:"allow"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		respondJSON(w, 400, map[string]any{"error": "invalid decision"})
+		return
+	}
+	sess := s.getSession(request.Session)
+	if sess == nil {
+		respondJSON(w, 404, map[string]any{"error": "conversation not found"})
+		return
+	}
+	sess.mu.Lock()
+	answer := sess.approvals[request.ID]
+	delete(sess.approvals, request.ID)
+	sess.mu.Unlock()
+	if answer == nil {
+		respondJSON(w, 409, map[string]any{"error": "This approval is no longer pending."})
+		return
+	}
+	answer <- request.Allow
+	respondJSON(w, 200, map[string]any{"ok": true})
 }
 
 func sendEnd(w http.ResponseWriter, ok, alive bool, reason string) error {
@@ -759,6 +894,17 @@ func sendProcessExit(w http.ResponseWriter, sess *Session, reason string) error 
 
 func (s *Server) handleChatSSE(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	// Standalone always uses the embedded kernel, including projects created by
+	// a CLI integration. Stored delivery-target metadata cannot select a runtime.
+	if q.Get("session") == "" {
+		if _, ok := registeredAdapter(q.Get("engine")); !ok {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_ = sse(w, "error", map[string]string{"message": "unknown engine"})
+			_ = sendEnd(w, false, false, "unknown engine")
+			return
+		}
+		q.Set("engine", "studio")
+	}
 	prompt := q.Get("prompt")
 	if strings.TrimSpace(prompt) == "" {
 		http.Error(w, "prompt required", 400)

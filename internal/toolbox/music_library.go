@@ -1,6 +1,7 @@
 package toolbox
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,10 @@ var audioExtensions = map[string]bool{
 }
 
 func doMusicLibrary(op string, data []byte) (any, []string, error) {
+	return doMusicLibraryContext(context.Background(), op, data)
+}
+
+func doMusicLibraryContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r musicLibraryRequest
 	if len(data) > 0 {
 		_ = decode(data, &r)
@@ -63,7 +68,7 @@ func doMusicLibrary(op string, data []byte) (any, []string, error) {
 		if !audioExtensions[ext] {
 			return nil
 		}
-		dur, probeErr := probeDuration(path, 5*time.Second)
+		dur, probeErr := probeDurationContext(ctx, path, 5*time.Second)
 		if probeErr == nil && dur > 0 {
 			totalDuration += dur
 		}

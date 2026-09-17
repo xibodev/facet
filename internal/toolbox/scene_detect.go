@@ -1,6 +1,7 @@
 package toolbox
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -19,6 +20,10 @@ type sceneDetectRequest struct {
 }
 
 func doSceneDetect(op string, data []byte) (any, []string, error) {
+	return doSceneDetectContext(context.Background(), op, data)
+}
+
+func doSceneDetectContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r sceneDetectRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -51,7 +56,7 @@ func doSceneDetect(op string, data []byte) (any, []string, error) {
 		return estimateResult([]string{"validate_input", "ffprobe_duration", "ffmpeg_scene_detect"}), nil, nil
 	}
 
-	p, _, err := probe(input, t)
+	p, _, err := probeWithContext(ctx, input, t)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -60,7 +65,7 @@ func doSceneDetect(op string, data []byte) (any, []string, error) {
 		return nil, nil, failure("input_probe_failed", "unable to determine input duration", nil)
 	}
 
-	out, err := runCommand(t, "ffmpeg", "-hide_banner", "-i", input, "-vf", fmt.Sprintf("select='gt(scene,%s)',showinfo", formatFloat(threshold)), "-an", "-f", "null", "-")
+	out, err := runCommandDirContext(ctx, t, "", "ffmpeg", "-hide_banner", "-i", input, "-vf", fmt.Sprintf("select='gt(scene,%s)',showinfo", formatFloat(threshold)), "-an", "-f", "null", "-")
 	if err != nil {
 		return nil, nil, err
 	}

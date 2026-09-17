@@ -1,6 +1,7 @@
 package toolbox
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -34,6 +35,10 @@ var profileFilters = map[string]string{
 }
 
 func doColorGrade(op string, data []byte) (any, []string, error) {
+	return doColorGradeContext(context.Background(), op, data)
+}
+
+func doColorGradeContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r colorGradeRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -137,11 +142,11 @@ func doColorGrade(op string, data []byte) (any, []string, error) {
 		tempOut,
 	}
 
-	if _, err := runCommand(timeout, "ffmpeg", args...); err != nil {
+	if _, err := runCommandDirContext(ctx, timeout, "", "ffmpeg", args...); err != nil {
 		return nil, nil, failure("command_failed", "color grading FFmpeg process failed: "+err.Error(), nil)
 	}
 
-	p, _, probeErr := probe(tempOut, timeout)
+	p, _, probeErr := probeWithContext(ctx, tempOut, timeout)
 	var outputFacts map[string]any
 	var duration float64
 	if probeErr == nil {

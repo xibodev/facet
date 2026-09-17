@@ -449,6 +449,8 @@ func getSkillsTargetPath(targetDir, engine, skillName string) string {
 		skillName = "facet"
 	}
 	switch engine {
+	case "studio":
+		return filepath.Join(targetDir, "skills", skillName)
 	case "claude":
 		return filepath.Join(targetDir, ".claude", "skills", skillName)
 	case "opencode":

@@ -1,10 +1,10 @@
 module github.com/xibodev/facet
 
-go 1.25.13
+go 1.26.5
 
 require (
 	github.com/kolonist/edgetts v1.0.1
-	github.com/xibodev/facet-studio v0.0.0
+	github.com/xibodev/facet-studio v1.0.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -36,7 +36,7 @@ require (
 	github.com/caarlos0/env/v11 v11.4.1 // indirect
 	github.com/creack/pty v1.1.24 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/github/copilot-sdk/go v0.2.0 // indirect
+	github.com/github/copilot-sdk/go v1.0.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
@@ -68,6 +68,9 @@ require (
 	github.com/tidwall/match v1.2.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
+	github.com/xibodev/llm-provider-auth v0.1.2 // indirect
+	github.com/xibodev/llm-translate v0.1.0 // indirect
+	github.com/xibodev/llmgw-core v0.2.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel v1.35.0 // indirect
@@ -87,5 +90,3 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 	modernc.org/sqlite v1.53.0 // indirect
 )
-
-replace github.com/xibodev/facet-studio => ../facet-studio

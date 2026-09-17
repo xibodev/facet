@@ -22,8 +22,8 @@ func TestFacetToolProvider_Registration(t *testing.T) {
 	if len(summaries) != len(expectedNames) {
 		t.Fatalf("expected %d summaries, got %d", len(expectedNames), len(summaries))
 	}
-	if len(registered) != len(expectedNames) {
-		t.Fatalf("expected %d registered tools, got %d", len(expectedNames), len(registered))
+	if len(registered) != len(expectedNames)+3 {
+		t.Fatalf("expected %d domain tools plus three capability accessors, got %d", len(expectedNames), len(registered))
 	}
 
 	for _, name := range expectedNames {

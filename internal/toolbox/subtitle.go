@@ -1,6 +1,7 @@
 package toolbox
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -125,6 +126,10 @@ func doSubtitleGen(op string, data []byte) (any, []string, error) {
 }
 
 func doRemotionCaptionBurn(op string, data []byte) (any, []string, error) {
+	return doRemotionCaptionBurnContext(context.Background(), op, data)
+}
+
+func doRemotionCaptionBurnContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r captionBurnRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -213,7 +218,7 @@ func doRemotionCaptionBurn(op string, data []byte) (any, []string, error) {
 	}
 	vf := fmt.Sprintf("subtitles='%s':force_style='FontName=Segoe UI,FontSize=%d,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=3,Shadow=2,Alignment=2,MarginV=100'", srtEscaped, fontSize)
 	args := []string{"-hide_banner", "-loglevel", "error", "-y", "-i", r.InputPath, "-vf", vf, "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "copy", r.OutputPath}
-	if _, err := runCommand(tmo, "ffmpeg", args...); err != nil {
+	if _, err := runCommandDirContext(ctx, tmo, "", "ffmpeg", args...); err != nil {
 		return nil, nil, err
 	}
 

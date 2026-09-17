@@ -38,6 +38,10 @@ type soraVideoRequest struct {
 }
 
 func doKlingVideo(op string, data []byte) (any, []string, error) {
+	return doKlingVideoContext(context.Background(), op, data)
+}
+
+func doKlingVideoContext(parent context.Context, op string, data []byte) (any, []string, error) {
 	var r klingVideoRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -151,7 +155,7 @@ func doKlingVideo(op string, data []byte) (any, []string, error) {
 		return nil, nil, failure("command_failed", "failed to serialize Kling video request: "+err.Error(), nil)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(payloadBytes))
@@ -269,6 +273,10 @@ DownloadVideo:
 }
 
 func doSoraVideo(op string, data []byte) (any, []string, error) {
+	return doSoraVideoContext(context.Background(), op, data)
+}
+
+func doSoraVideoContext(parent context.Context, op string, data []byte) (any, []string, error) {
 	var r soraVideoRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -350,7 +358,7 @@ func doSoraVideo(op string, data []byte) (any, []string, error) {
 		}, nil, nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	baseURL := os.Getenv("OPENAI_BASE_URL")

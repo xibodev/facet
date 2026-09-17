@@ -1,6 +1,7 @@
 package toolbox
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
@@ -118,6 +119,10 @@ func validateAudioValues(r mixRequest, duration float64, checkDuration bool) err
 }
 
 func doAudioMix(op string, data []byte) (any, []string, error) {
+	return doAudioMixContext(context.Background(), op, data)
+}
+
+func doAudioMixContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r mixRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -159,7 +164,9 @@ func doAudioMix(op string, data []byte) (any, []string, error) {
 	if op == "estimate" {
 		return map[string]any{"estimated_cost": 0, "network": false, "external_write": false, "side_effect_free": true, "requested_operations": requested, "operations": []string{"validate_paths_and_audio_parameters", "ffprobe", "mix"}, "validation_scope": "request shape, paths, gains, fades, ducking, and loudness ranges; stream presence and fade fit against decoded duration are validated during run"}, nil, nil
 	}
-	p, _, err := probe(r.Video, tmo)
+	ctx, cancel := context.WithTimeout(ctx, tmo)
+	defer cancel()
+	p, _, err := probeContext(ctx, r.Video)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -172,7 +179,7 @@ func doAudioMix(op string, data []byte) (any, []string, error) {
 		return nil, nil, err
 	}
 	if r.Music != nil {
-		musicProbe, _, probeErr := probe(r.Music.Input, tmo)
+		musicProbe, _, probeErr := probeContext(ctx, r.Music.Input)
 		if probeErr != nil {
 			return nil, nil, probeErr
 		}
@@ -222,11 +229,11 @@ func doAudioMix(op string, data []byte) (any, []string, error) {
 		current = "[outa]"
 	}
 	args = append(args, "-filter_complex", strings.Join(filters, ";"), "-map", "0:v:0", "-map", current, "-c:v", "copy", "-c:a", "aac", "-ar", "48000", "-ac", "2", "-t", formatFloat(d), tempOutput)
-	diag, err := runCommand(tmo, "ffmpeg", args...)
+	diag, err := runCommandContext(ctx, "ffmpeg", args...)
 	if err != nil {
 		return nil, nil, err
 	}
-	out, w, err := probe(tempOutput, tmo)
+	out, w, err := probeContext(ctx, tempOutput)
 	if err != nil {
 		return nil, nil, failure("output_validation_failed", "mixed temporary output could not be validated", map[string]any{"error": err.Error()})
 	}

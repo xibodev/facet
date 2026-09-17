@@ -74,7 +74,7 @@ func TestFacet_NativeRuntimeProof(t *testing.T) {
 						Type: "function",
 						Function: &providers.FunctionCall{
 							Name:      "music_library",
-							Arguments: `{"operation":"list"}`,
+							Arguments: `{}`,
 						},
 					},
 				},

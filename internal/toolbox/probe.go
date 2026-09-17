@@ -59,13 +59,21 @@ func parseFPS(s string) float64 {
 }
 
 func probe(path string, timeout time.Duration) (map[string]any, []string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	return probeWithContext(context.Background(), path, timeout)
+}
+
+func probeWithContext(parent context.Context, path string, timeout time.Duration) (map[string]any, []string, error) {
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	return probeContext(ctx, path)
 }
 
 func probeDuration(path string, timeout time.Duration) (float64, error) {
-	p, _, err := probe(path, timeout)
+	return probeDurationContext(context.Background(), path, timeout)
+}
+
+func probeDurationContext(ctx context.Context, path string, timeout time.Duration) (float64, error) {
+	p, _, err := probeWithContext(ctx, path, timeout)
 	if err != nil {
 		return 0, err
 	}
@@ -204,6 +212,10 @@ func probeContext(ctx context.Context, path string) (map[string]any, []string, e
 }
 
 func doMediaProbe(op string, data []byte) (any, []string, error) {
+	return doMediaProbeContext(context.Background(), op, data)
+}
+
+func doMediaProbeContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r probeRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -229,10 +241,14 @@ func doMediaProbe(op string, data []byte) (any, []string, error) {
 		}
 		return estimateResult([]string{"validate_extension", "ffprobe", "sha256"}), []string{"estimate validates request shape and basic file eligibility; media decoding and stream validation occur only during run"}, nil
 	}
-	return probe(targetPath, t)
+	return probeWithContext(ctx, targetPath, t)
 }
 
 func doAudioProbe(op string, data []byte) (any, []string, error) {
+	return doAudioProbeContext(context.Background(), op, data)
+}
+
+func doAudioProbeContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r probeRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -254,7 +270,7 @@ func doAudioProbe(op string, data []byte) (any, []string, error) {
 	if op == "estimate" {
 		return estimateResult([]string{"validate_path", "ffprobe"}), []string{"audio_probe inspects audio container and stream properties"}, nil
 	}
-	p, warnings, err := probe(targetPath, t)
+	p, warnings, err := probeWithContext(ctx, targetPath, t)
 	if err != nil {
 		return nil, nil, err
 	}

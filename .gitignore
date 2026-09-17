@@ -15,6 +15,7 @@ remotion-composer/node_modules/
 # Binaries
 *.exe
 *.test
+build/
 bin/facet-*
 bin/facet
 bin/facet-ui

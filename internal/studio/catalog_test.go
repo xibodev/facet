@@ -54,6 +54,21 @@ func TestCatalogOperations(t *testing.T) {
 	}
 }
 
+func TestCreateProjectRefusesExistingAndEscapingDirectory(t *testing.T) {
+	root := t.TempDir()
+	if _, err := CreateNewProject("Existing", "existing", root, "studio", nil, root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CreateNewProject("Existing", "existing", root, "studio", nil, root); err == nil {
+		t.Fatal("existing project silently reused")
+	}
+	for _, slug := range []string{"../escape", "nested/folder", "nested\\folder", "."} {
+		if _, err := CreateNewProject("Invalid", slug, root, "studio", nil, root); err == nil {
+			t.Fatalf("unsafe slug accepted: %s", slug)
+		}
+	}
+}
+
 func TestDiscoverPacks(t *testing.T) {
 	// Root dir of the workspace
 	packs := DiscoverAvailablePacks(".")

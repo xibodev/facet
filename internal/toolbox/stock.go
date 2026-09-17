@@ -1,6 +1,7 @@
 package toolbox
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -83,6 +84,10 @@ type stockCandidate struct {
 }
 
 func doPexelsVideo(op string, data []byte) (any, []string, error) {
+	return doPexelsVideoContext(context.Background(), op, data)
+}
+
+func doPexelsVideoContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r pexelsRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -121,7 +126,7 @@ func doPexelsVideo(op string, data []byte) (any, []string, error) {
 	}
 	u.RawQuery = q.Encode()
 
-	req, _ := http.NewRequest("GET", u.String(), nil)
+	req, _ := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	req.Header.Set("Authorization", apiKey)
 
 	client := &http.Client{Timeout: 30 * time.Second}
@@ -139,19 +144,19 @@ func doPexelsVideo(op string, data []byte) (any, []string, error) {
 	var pexelsResp struct {
 		TotalResults int `json:"total_results"`
 		Videos       []struct {
-			ID         int    `json:"id"`
-			Duration   int    `json:"duration"`
-			URL        string `json:"url"`
-			User       struct {
+			ID       int    `json:"id"`
+			Duration int    `json:"duration"`
+			URL      string `json:"url"`
+			User     struct {
 				Name string `json:"name"`
 			} `json:"user"`
 			VideoFiles []struct {
-				ID      int    `json:"id"`
-				Quality string `json:"quality"`
-				Width   int    `json:"width"`
-				Height  int    `json:"height"`
+				ID      int     `json:"id"`
+				Quality string  `json:"quality"`
+				Width   int     `json:"width"`
+				Height  int     `json:"height"`
 				FPS     float64 `json:"fps"`
-				Link    string `json:"link"`
+				Link    string  `json:"link"`
 			} `json:"video_files"`
 		} `json:"videos"`
 	}
@@ -166,12 +171,12 @@ func doPexelsVideo(op string, data []byte) (any, []string, error) {
 
 	chosenVideo := pexelsResp.Videos[0]
 	var chosenFile struct {
-		ID      int    `json:"id"`
-		Quality string `json:"quality"`
-		Width   int    `json:"width"`
-		Height  int    `json:"height"`
+		ID      int     `json:"id"`
+		Quality string  `json:"quality"`
+		Width   int     `json:"width"`
+		Height  int     `json:"height"`
 		FPS     float64 `json:"fps"`
-		Link    string `json:"link"`
+		Link    string  `json:"link"`
 	}
 	prefQual := r.PreferredQuality
 	if prefQual == "" {
@@ -191,7 +196,7 @@ func doPexelsVideo(op string, data []byte) (any, []string, error) {
 	if outPath == "" {
 		outPath = fmt.Sprintf("pexels_video_%d.mp4", chosenVideo.ID)
 	}
-	if err := downloadFile(chosenFile.Link, outPath, 120*time.Second); err != nil {
+	if err := downloadFileContext(ctx, chosenFile.Link, outPath, 120*time.Second); err != nil {
 		return nil, nil, failure("command_failed", "unable to download video from Pexels: "+err.Error(), nil)
 	}
 
@@ -214,6 +219,10 @@ func doPexelsVideo(op string, data []byte) (any, []string, error) {
 }
 
 func doPixabayVideo(op string, data []byte) (any, []string, error) {
+	return doPixabayVideoContext(context.Background(), op, data)
+}
+
+func doPixabayVideoContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r pixabayRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -258,7 +267,11 @@ func doPixabayVideo(op string, data []byte) (any, []string, error) {
 	u.RawQuery = q.Encode()
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Get(u.String())
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, nil, failure("command_failed", "Pixabay search request failed: "+err.Error(), nil)
 	}
@@ -317,7 +330,7 @@ func doPixabayVideo(op string, data []byte) (any, []string, error) {
 	if outPath == "" {
 		outPath = fmt.Sprintf("pixabay_video_%d.mp4", chosenHit.ID)
 	}
-	if err := downloadFile(vInfo.URL, outPath, 120*time.Second); err != nil {
+	if err := downloadFileContext(ctx, vInfo.URL, outPath, 120*time.Second); err != nil {
 		return nil, nil, failure("command_failed", "unable to download video from Pixabay: "+err.Error(), nil)
 	}
 
@@ -339,6 +352,10 @@ func doPixabayVideo(op string, data []byte) (any, []string, error) {
 }
 
 func doWikimedia(op string, data []byte) (any, []string, error) {
+	return doWikimediaContext(context.Background(), op, data)
+}
+
+func doWikimediaContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r wikimediaRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -388,7 +405,7 @@ func doWikimedia(op string, data []byte) (any, []string, error) {
 	q.Set("inprop", "url")
 	u.RawQuery = q.Encode()
 
-	req, _ := http.NewRequest("GET", u.String(), nil)
+	req, _ := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	req.Header.Set("User-Agent", "FacetBot/1.0 (https://github.com/xibodev/facet)")
 
 	client := &http.Client{Timeout: 30 * time.Second}
@@ -461,7 +478,7 @@ func doWikimedia(op string, data []byte) (any, []string, error) {
 		}
 		outPath = fmt.Sprintf("wikimedia_%s%s", chosen.SourceID, ext)
 	}
-	if err := downloadFile(chosen.DownloadURL, outPath, 120*time.Second); err != nil {
+	if err := downloadFileContext(ctx, chosen.DownloadURL, outPath, 120*time.Second); err != nil {
 		return nil, nil, failure("command_failed", "unable to download from Wikimedia: "+err.Error(), nil)
 	}
 
@@ -479,6 +496,10 @@ func doWikimedia(op string, data []byte) (any, []string, error) {
 }
 
 func doDirectClipSearch(op string, data []byte) (any, []string, error) {
+	return doDirectClipSearchContext(context.Background(), op, data)
+}
+
+func doDirectClipSearchContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r directClipSearchRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -516,18 +537,18 @@ func doDirectClipSearch(op string, data []byte) (any, []string, error) {
 		// Search sources: Pexels if available, Pixabay if available, else Wikimedia
 		if os.Getenv("PEXELS_API_KEY") != "" && collected < clipsPerQuery {
 			pexReq := map[string]any{
-				"query":      qStr,
-				"per_page":   clipsPerQuery,
+				"query":       qStr,
+				"per_page":    clipsPerQuery,
 				"output_path": filepath.Join(clipsDir, fmt.Sprintf("pexels_%s.mp4", sanitizeFilename(qStr))),
 			}
 			pexData, _ := json.Marshal(pexReq)
-			if res, _, err := doPexelsVideo("run", pexData); err == nil {
+			if res, _, err := doPexelsVideoContext(ctx, "run", pexData); err == nil {
 				m := res.(map[string]any)
 				outP := m["output"].(string)
 				thumbP := ""
 				if r.ExtractThumbnails {
 					thumbP = filepath.Join(thumbsDir, fmt.Sprintf("%s.jpg", filepath.Base(outP)))
-					extractThumbnail(outP, thumbP)
+					extractThumbnailContext(ctx, outP, thumbP)
 				}
 				downloaded = append(downloaded, map[string]any{
 					"clip_id":   filepath.Base(outP),
@@ -545,18 +566,18 @@ func doDirectClipSearch(op string, data []byte) (any, []string, error) {
 
 		if os.Getenv("PIXABAY_API_KEY") != "" && collected < clipsPerQuery {
 			pixReq := map[string]any{
-				"query":      qStr,
-				"per_page":   clipsPerQuery,
+				"query":       qStr,
+				"per_page":    clipsPerQuery,
 				"output_path": filepath.Join(clipsDir, fmt.Sprintf("pixabay_%s.mp4", sanitizeFilename(qStr))),
 			}
 			pixData, _ := json.Marshal(pixReq)
-			if res, _, err := doPixabayVideo("run", pixData); err == nil {
+			if res, _, err := doPixabayVideoContext(ctx, "run", pixData); err == nil {
 				m := res.(map[string]any)
 				outP := m["output"].(string)
 				thumbP := ""
 				if r.ExtractThumbnails {
 					thumbP = filepath.Join(thumbsDir, fmt.Sprintf("%s.jpg", filepath.Base(outP)))
-					extractThumbnail(outP, thumbP)
+					extractThumbnailContext(ctx, outP, thumbP)
 				}
 				downloaded = append(downloaded, map[string]any{
 					"clip_id":   filepath.Base(outP),
@@ -574,18 +595,18 @@ func doDirectClipSearch(op string, data []byte) (any, []string, error) {
 
 		if collected < clipsPerQuery {
 			wikiReq := map[string]any{
-				"query":      qStr,
-				"per_page":   clipsPerQuery,
+				"query":       qStr,
+				"per_page":    clipsPerQuery,
 				"output_path": filepath.Join(clipsDir, fmt.Sprintf("wikimedia_%s.mp4", sanitizeFilename(qStr))),
 			}
 			wikiData, _ := json.Marshal(wikiReq)
-			if res, _, err := doWikimedia("run", wikiData); err == nil {
+			if res, _, err := doWikimediaContext(ctx, "run", wikiData); err == nil {
 				m := res.(map[string]any)
 				outP := m["output"].(string)
 				thumbP := ""
 				if r.ExtractThumbnails {
 					thumbP = filepath.Join(thumbsDir, fmt.Sprintf("%s.jpg", filepath.Base(outP)))
-					extractThumbnail(outP, thumbP)
+					extractThumbnailContext(ctx, outP, thumbP)
 				}
 				downloaded = append(downloaded, map[string]any{
 					"clip_id":   filepath.Base(outP),
@@ -613,11 +634,15 @@ func doDirectClipSearch(op string, data []byte) (any, []string, error) {
 }
 
 func downloadFile(fileURL, targetPath string, timeout time.Duration) error {
+	return downloadFileContext(context.Background(), fileURL, targetPath, timeout)
+}
+
+func downloadFileContext(ctx context.Context, fileURL, targetPath string, timeout time.Duration) error {
 	if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
 		return err
 	}
 	client := &http.Client{Timeout: timeout}
-	req, err := http.NewRequest("GET", fileURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", fileURL, nil)
 	if err != nil {
 		return err
 	}
@@ -659,11 +684,15 @@ func sanitizeFilename(s string) string {
 }
 
 func extractThumbnail(videoPath, thumbPath string) {
-	dur, err := probeDuration(videoPath, 5*time.Second)
+	extractThumbnailContext(context.Background(), videoPath, thumbPath)
+}
+
+func extractThumbnailContext(ctx context.Context, videoPath, thumbPath string) {
+	dur, err := probeDurationContext(ctx, videoPath, 5*time.Second)
 	seekTime := 1.0
 	if err == nil && dur > 1.0 {
 		seekTime = dur / 2.0
 	}
 	args := []string{"-hide_banner", "-loglevel", "error", "-y", "-ss", formatFloat(seekTime), "-i", videoPath, "-frames:v", "1", "-q:v", "2", thumbPath}
-	_, _ = runCommand(10*time.Second, "ffmpeg", args...)
+	_, _ = runCommandDirContext(ctx, 10*time.Second, "", "ffmpeg", args...)
 }

@@ -809,7 +809,7 @@ var schemas = map[string]any{
 		"codec": stringSchema(), "crf": map[string]any{"type": "integer"}, "preset": stringSchema(), "profile": stringSchema(), "remotion_timeout_ms": map[string]any{"type": "integer"}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1},
 	}},
 	"subtitle_gen": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"segments"}, "properties": map[string]any{
-		"segments": map[string]any{"type": "array"}, "format": map[string]any{"enum": []string{"srt", "vtt", "json"}, "default": "srt"},
+		"segments": map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{"text": stringSchema(), "start": map[string]any{"type": "number", "description": "Start time in seconds"}, "end": map[string]any{"type": "number", "description": "End time in seconds"}, "words": map[string]any{"type": "array", "items": map[string]any{"type": "object", "properties": map[string]any{"word": stringSchema(), "start": map[string]any{"type": "number"}, "end": map[string]any{"type": "number"}, "startMs": map[string]any{"type": "integer"}, "endMs": map[string]any{"type": "integer"}}}}}}}, "format": map[string]any{"enum": []string{"srt", "vtt", "json"}, "default": "srt"},
 		"output_path": map[string]any{"type": "string"}, "max_chars_per_line": map[string]any{"type": "integer", "default": 42}, "max_words_per_cue": map[string]any{"type": "integer", "default": 8},
 		"highlight_style": map[string]any{"enum": []string{"none", "word_by_word", "karaoke"}, "default": "none"}, "corrections": map[string]any{"type": "object"},
 	}},
@@ -1032,71 +1032,75 @@ func audioOperationSchema(music bool) map[string]any {
 }
 
 func execute(tool, op string, data []byte) (any, []string, error) {
+	return executeContext(context.Background(), tool, op, data)
+}
+
+func executeContext(ctx context.Context, tool, op string, data []byte) (any, []string, error) {
 	switch tool {
 	case "media_probe":
-		return doMediaProbe(op, data)
+		return doMediaProbeContext(ctx, op, data)
 	case "audio_probe":
-		return doAudioProbe(op, data)
+		return doAudioProbeContext(ctx, op, data)
 	case "frame_sample":
-		return doFrameSample(op, data)
+		return doFrameSampleContext(ctx, op, data)
 	case "frame_sampler":
-		return doFrameSampler(op, data)
+		return doFrameSamplerContext(ctx, op, data)
 	case "scene_detect":
-		return doSceneDetect(op, data)
+		return doSceneDetectContext(ctx, op, data)
 	case "visual_qa":
-		return doVisualQA(op, data)
+		return doVisualQAContext(ctx, op, data)
 	case "output_review":
-		return doOutputReview(op, data)
+		return doOutputReviewContext(ctx, op, data)
 	case "source_edit":
-		return doSourceEdit(op, data)
+		return doSourceEditContext(ctx, op, data)
 	case "video_trimmer":
-		return doVideoTrimmer(op, data)
+		return doVideoTrimmerContext(ctx, op, data)
 	case "video_stitch":
-		return doVideoStitch(op, data)
+		return doVideoStitchContext(ctx, op, data)
 	case "video_compose":
-		return doVideoCompose(op, data)
+		return doVideoComposeContext(ctx, op, data)
 	case "subtitle_gen":
 		return doSubtitleGen(op, data)
 	case "remotion_caption_burn":
-		return doRemotionCaptionBurn(op, data)
+		return doRemotionCaptionBurnContext(ctx, op, data)
 	case "silence_cutter":
-		return doSilenceCutter(op, data)
+		return doSilenceCutterContext(ctx, op, data)
 	case "hyperframes_compose":
-		return doHyperFramesCompose(op, data)
+		return doHyperFramesComposeContext(ctx, op, data)
 	case "audio_mix", "audio_mixer":
-		return doAudioMix(op, data)
+		return doAudioMixContext(ctx, op, data)
 	case "music_library":
-		return doMusicLibrary(op, data)
+		return doMusicLibraryContext(ctx, op, data)
 	case "direct_clip_search":
-		return doDirectClipSearch(op, data)
+		return doDirectClipSearchContext(ctx, op, data)
 	case "pexels_video":
-		return doPexelsVideo(op, data)
+		return doPexelsVideoContext(ctx, op, data)
 	case "pixabay_video":
-		return doPixabayVideo(op, data)
+		return doPixabayVideoContext(ctx, op, data)
 	case "wikimedia":
-		return doWikimedia(op, data)
+		return doWikimediaContext(ctx, op, data)
 	case "edge_tts":
-		return doEdgeTTS(op, data)
+		return doEdgeTTSContext(ctx, op, data)
 	case "openai_tts":
-		return doOpenAITTS(op, data)
+		return doOpenAITTSContext(ctx, op, data)
 	case "elevenlabs_tts":
-		return doElevenLabsTTS(op, data)
+		return doElevenLabsTTSContext(ctx, op, data)
 	case "piper_tts":
-		return doPiperTTS(op, data)
+		return doPiperTTSContext(ctx, op, data)
 	case "openai_image":
-		return doOpenAIImage(op, data)
+		return doOpenAIImageContext(ctx, op, data)
 	case "flux_image":
-		return doFluxImage(op, data)
+		return doFluxImageContext(ctx, op, data)
 	case "kling_video":
-		return doKlingVideo(op, data)
+		return doKlingVideoContext(ctx, op, data)
 	case "sora_video":
-		return doSoraVideo(op, data)
+		return doSoraVideoContext(ctx, op, data)
 	case "gflow_video":
-		return doGFlowVideo(op, data)
+		return doGFlowVideoContext(ctx, op, data)
 	case "gflow_image":
-		return doGFlowImage(op, data)
+		return doGFlowImageContext(ctx, op, data)
 	case "color_grade":
-		return doColorGrade(op, data)
+		return doColorGradeContext(ctx, op, data)
 	case "image_selector":
 		return doImageSelector(op, data)
 	case "video_selector":
@@ -1478,7 +1482,11 @@ func runCommandContext(ctx context.Context, program string, args ...string) ([]b
 }
 
 func runCommandDir(timeout time.Duration, dir, program string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	return runCommandDirContext(context.Background(), timeout, dir, program, args...)
+}
+
+func runCommandDirContext(parent context.Context, timeout time.Duration, dir, program string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	resolved, err := lookPath(program)
 	if err != nil {
@@ -1630,11 +1638,22 @@ func Parameters(tool string) map[string]any {
 
 // Run executes a tool operation in 'run' mode with raw JSON input.
 func Run(tool string, data []byte) Envelope {
+	return RunContext(context.Background(), tool, data)
+}
+
+// RunContext carries cancellation into media execution and network requests.
+func RunContext(ctx context.Context, tool string, data []byte) Envelope {
 	tool = canonicalToolName(tool)
+	if err := ctx.Err(); err != nil {
+		return errorEnvelope(tool, "run", failure("cancelled", err.Error(), nil))
+	}
 	if !known(tool) {
 		return errorEnvelope(tool, "run", failure("unknown_tool", "unknown tool: "+tool, nil))
 	}
-	result, warnings, err := execute(tool, "run", data)
+	result, warnings, err := executeContext(ctx, tool, "run", data)
+	if ctx.Err() != nil {
+		return errorEnvelope(tool, "run", failure("cancelled", ctx.Err().Error(), nil))
+	}
 	if err != nil {
 		return errorEnvelope(tool, "run", err)
 	}

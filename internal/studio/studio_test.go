@@ -352,7 +352,7 @@ func TestServerEndpoints(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET / returned %d, want 200", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "Video Kit Studio") {
+	if !strings.Contains(rec.Body.String(), "Facet — Video production") {
 		t.Fatalf("GET / body missing Video Kit Studio title")
 	}
 
@@ -564,7 +564,7 @@ func TestUnknownEngineRejected(t *testing.T) {
 }
 
 func TestOnlyCanonicalEnginesAreRegistered(t *testing.T) {
-	for _, name := range []string{"", "claude", "opencode", "codex", "copilot"} {
+	for _, name := range []string{"", "studio", "claude", "opencode", "codex", "copilot"} {
 		if _, ok := registeredAdapter(name); !ok {
 			t.Errorf("registeredAdapter(%q) rejected a canonical engine", name)
 		}
@@ -573,6 +573,53 @@ func TestOnlyCanonicalEnginesAreRegistered(t *testing.T) {
 		if _, ok := registeredAdapter(name); ok {
 			t.Errorf("registeredAdapter(%q) accepted a non-canonical engine", name)
 		}
+	}
+}
+
+func TestStudioNativeEngineSession(t *testing.T) {
+	server := NewServer(t.TempDir())
+	configureTestModel(t, server, "http://127.0.0.1:1")
+	sess, err := server.newSession("", "rw", "studio")
+	if err != nil {
+		t.Fatalf("failed to create native studio session: %v", err)
+	}
+	defer sess.Close()
+
+	if sess.Engine != "studio" {
+		t.Errorf("expected engine 'studio', got %q", sess.Engine)
+	}
+	if sess.nativeLoop == nil {
+		t.Errorf("expected non-nil nativeLoop for studio engine")
+	}
+
+	rec := httptest.NewRecorder()
+	req := newSecurityRequest(http.MethodGet, "/api/engines", "")
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: %d", rec.Code)
+	}
+
+	var resp struct {
+		Engines []struct {
+			Name      string `json:"name"`
+			Available bool   `json:"available"`
+		} `json:"engines"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode /api/engines response: %v", err)
+	}
+
+	foundStudio := false
+	for _, e := range resp.Engines {
+		if e.Name == "studio" {
+			foundStudio = true
+			if !e.Available {
+				t.Errorf("expected studio engine to be available")
+			}
+		}
+	}
+	if !foundStudio {
+		t.Errorf("studio engine not found in /api/engines list")
 	}
 }
 
@@ -1233,7 +1280,7 @@ func TestEngineAvailabilityShape(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if len(payload.Engines) != 5 {
+	if len(payload.Engines) != 1 || payload.Engines[0]["name"] != "studio" {
 		t.Fatalf("engines = %#v", payload.Engines)
 	}
 	for _, item := range payload.Engines {

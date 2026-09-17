@@ -1,6 +1,7 @@
 package toolbox
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -153,6 +154,53 @@ type composeRequest struct {
 }
 
 func doVideoCompose(op string, data []byte) (any, []string, error) {
+	return doVideoComposeContext(context.Background(), op, data)
+}
+
+func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	// A saved composition is the same operation as its inline JSON. Resolve it
+	// here so native, CLI and module callers preserve one canonical contract.
+	var ref map[string]json.RawMessage
+	if json.Unmarshal(data, &ref) == nil && ref["cuts"] == nil && ref["scenes"] == nil && ref["edit_decisions"] == nil {
+		var input string
+		if json.Unmarshal(ref["input_path"], &input) == nil && strings.EqualFold(filepath.Ext(input), ".json") {
+			body, err := os.ReadFile(input)
+			if err != nil {
+				return nil, nil, err
+			}
+			var props map[string]any
+			if err := json.Unmarshal(body, &props); err != nil {
+				return nil, nil, err
+			}
+			if len(props) == 1 && props["input_path"] != nil {
+				return nil, nil, failure("invalid_request", "composition file must contain props, not another file reference", nil)
+			}
+			for key, value := range ref {
+				if key == "input_path" {
+					continue
+				}
+				if key != "output" && key != "output_path" && key != "timeout_seconds" {
+					return nil, nil, failure("invalid_request", "saved composition accepts only output or timeout overrides", nil)
+				}
+				var decoded any
+				_ = json.Unmarshal(value, &decoded)
+				props[key] = decoded
+				if key == "output_path" {
+					delete(props, "output")
+				}
+			}
+			root := filepath.Dir(input)
+			if filepath.Base(root) == "artifacts" {
+				root = filepath.Dir(root)
+			}
+			props = ProjectArguments(props, root)
+			encoded, _ := json.Marshal(props)
+			return doVideoComposeContext(ctx, op, encoded)
+		}
+	}
 	// First check if payload is direct Remotion props or Scene Plan JSON
 	var rawMap map[string]any
 	if err := json.Unmarshal(data, &rawMap); err == nil && rawMap != nil {
@@ -221,7 +269,7 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 			if ap, ok := rawMap["audio_path"].(string); ok && ap != "" {
 				r.AudioPath = ap
 			}
-			return doRemotionRender(r, outPath, tmo)
+			return doRemotionRenderContext(ctx, r, outPath, tmo)
 		}
 
 		// 2. Direct Scene Plan JSON (contains top-level "scenes")
@@ -324,7 +372,7 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 				OutputPath: outPath,
 				RawProps:   remotionProps,
 			}
-			return doRemotionRender(r, outPath, tmo)
+			return doRemotionRenderContext(ctx, r, outPath, tmo)
 		}
 	}
 
@@ -344,6 +392,8 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 	if op == "estimate" {
 		return estimateResult([]string{"video_compose_" + operation}), nil, nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, tmo)
+	defer cancel()
 
 	switch operation {
 	case "compose", "render":
@@ -363,7 +413,7 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 
 		runtime := strings.ToLower(r.EditDecisions.RenderRuntime)
 		if runtime == "remotion" {
-			return doRemotionRender(r, outPath, tmo)
+			return doRemotionRenderContext(ctx, r, outPath, tmo)
 		} else if runtime == "hyperframes" {
 			// Delegate to hyperframes
 			hfReq := map[string]any{
@@ -373,11 +423,11 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 				"asset_manifest": r.AssetManifest,
 			}
 			hfData, _ := json.Marshal(hfReq)
-			return doHyperFramesCompose(op, hfData)
+			return doHyperFramesComposeContext(ctx, op, hfData)
 		}
 
 		// FFmpeg compose implementation
-		return doFFmpegCompose(r, outPath, tmo)
+		return doFFmpegComposeContext(ctx, r, outPath, tmo)
 
 	case "remotion_render":
 		outPath := r.OutputPath
@@ -390,7 +440,7 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 		if err := outputPath(outPath, true, false); err != nil {
 			return nil, nil, err
 		}
-		return doRemotionRender(r, outPath, tmo)
+		return doRemotionRenderContext(ctx, r, outPath, tmo)
 
 	case "burn_subtitles":
 		if err := inputPath(r.InputPath); err != nil {
@@ -410,7 +460,7 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 		subEscaped := strings.ReplaceAll(filepath.ToSlash(r.SubtitlePath), ":", `\:`)
 		vf := fmt.Sprintf("subtitles='%s':force_style='%s'", subEscaped, assStyle)
 		args := []string{"-hide_banner", "-loglevel", "error", "-y", "-i", r.InputPath, "-vf", vf, "-c:v", "libx264", "-c:a", "copy", outPath}
-		if _, err := runCommand(tmo, "ffmpeg", args...); err != nil {
+		if _, err := runCommandContext(ctx, "ffmpeg", args...); err != nil {
 			return nil, nil, err
 		}
 		return map[string]any{
@@ -452,7 +502,7 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 			filters = append(filters, fmt.Sprintf("%s[%d:v]overlay=x=%s:y=%s:enable='between(t,%s,%s)'%s", vIn, i+1, formatFloat(ov.X), formatFloat(ov.Y), formatFloat(ov.StartSeconds), formatFloat(ov.EndSeconds), vOut))
 		}
 		cmdArgs = append(cmdArgs, "-filter_complex", strings.Join(filters, ";"), "-map", "[outv]", "-map", "0:a?", "-c:v", "libx264", "-c:a", "copy", outPath)
-		if _, err := runCommand(tmo, "ffmpeg", cmdArgs...); err != nil {
+		if _, err := runCommandContext(ctx, "ffmpeg", cmdArgs...); err != nil {
 			return nil, nil, err
 		}
 		return map[string]any{
@@ -486,7 +536,7 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 			preset = "medium"
 		}
 		args := []string{"-hide_banner", "-loglevel", "error", "-y", "-i", r.InputPath, "-c:v", codec, "-crf", strconv.Itoa(crf), "-preset", preset, "-c:a", "aac", outPath}
-		if _, err := runCommand(tmo, "ffmpeg", args...); err != nil {
+		if _, err := runCommandContext(ctx, "ffmpeg", args...); err != nil {
 			return nil, nil, err
 		}
 		return map[string]any{
@@ -502,6 +552,12 @@ func doVideoCompose(op string, data []byte) (any, []string, error) {
 }
 
 func doFFmpegCompose(r composeRequest, outPath string, tmo time.Duration) (any, []string, error) {
+	return doFFmpegComposeContext(context.Background(), r, outPath, tmo)
+}
+
+func doFFmpegComposeContext(ctx context.Context, r composeRequest, outPath string, tmo time.Duration) (any, []string, error) {
+	ctx, cancel := context.WithTimeout(ctx, tmo)
+	defer cancel()
 	tempDir, err := os.MkdirTemp(filepath.Dir(outPath), ".compose_tmp-*")
 	if err != nil {
 		return nil, nil, failure("command_failed", "unable to create temporary directory", nil)
@@ -527,7 +583,7 @@ func doFFmpegCompose(r composeRequest, outPath string, tmo time.Duration) (any, 
 		segFile := filepath.Join(tempDir, fmt.Sprintf("seg_%04d.mp4", i))
 		vf := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=%s,format=yuv420p", targetW, targetH, targetW, targetH, formatFloat(targetFPS))
 
-		p, _, err := probe(src, tmo)
+		p, _, err := probeContext(ctx, src)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -537,7 +593,7 @@ func doFFmpegCompose(r composeRequest, outPath string, tmo time.Duration) (any, 
 		} else {
 			args = []string{"-hide_banner", "-loglevel", "error", "-y", "-ss", formatFloat(inS), "-t", formatFloat(dur), "-i", src, "-f", "lavfi", "-t", formatFloat(dur), "-i", "anullsrc=r=48000:cl=stereo", "-vf", vf, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "libx264", "-crf", "23", "-preset", "medium", "-c:a", "aac", "-ar", "48000", "-ac", "2", segFile}
 		}
-		if _, err := runCommand(tmo, "ffmpeg", args...); err != nil {
+		if _, err := runCommandContext(ctx, "ffmpeg", args...); err != nil {
 			return nil, nil, err
 		}
 		tempSegments[i] = segFile
@@ -554,7 +610,7 @@ func doFFmpegCompose(r composeRequest, outPath string, tmo time.Duration) (any, 
 	}
 
 	concatOut := filepath.Join(tempDir, "concat.mp4")
-	if _, err := runCommand(tmo, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", concatList, "-c", "copy", concatOut); err != nil {
+	if _, err := runCommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", concatList, "-c", "copy", concatOut); err != nil {
 		return nil, nil, err
 	}
 
@@ -580,7 +636,7 @@ func doFFmpegCompose(r composeRequest, outPath string, tmo time.Duration) (any, 
 		cmdArgs = append(cmdArgs, "-c", "copy", outPath)
 	}
 
-	if _, err := runCommand(tmo, "ffmpeg", cmdArgs...); err != nil {
+	if _, err := runCommandContext(ctx, "ffmpeg", cmdArgs...); err != nil {
 		return nil, nil, err
 	}
 
@@ -725,6 +781,10 @@ func findComposerDir() (string, error) {
 // music bed meant to fade out, and refusing a render for it would block a
 // reasonable request. The number is what the caller needs — how much was lost.
 func truncatedAudioWarning(props map[string]any, tmo time.Duration) string {
+	return truncatedAudioWarningContext(context.Background(), props, tmo)
+}
+
+func truncatedAudioWarningContext(ctx context.Context, props map[string]any, tmo time.Duration) string {
 	audio, ok := props["audio"].(map[string]any)
 	if !ok {
 		return ""
@@ -737,7 +797,7 @@ func truncatedAudioWarning(props map[string]any, tmo time.Duration) string {
 	if !ok || duration <= 0 {
 		return ""
 	}
-	facts, _, err := probe(path, tmo)
+	facts, _, err := probeWithContext(ctx, path, tmo)
 	if err != nil {
 		return ""
 	}
@@ -906,6 +966,12 @@ func blankCutWarnings(cuts []map[string]any) []string {
 }
 
 func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any, []string, error) {
+	return doRemotionRenderContext(context.Background(), r, outPath, tmo)
+}
+
+func doRemotionRenderContext(ctx context.Context, r composeRequest, outPath string, tmo time.Duration) (any, []string, error) {
+	ctx, cancel := context.WithTimeout(ctx, tmo)
+	defer cancel()
 	absComposer, err := findComposerDir()
 	if err != nil {
 		return nil, nil, err
@@ -988,7 +1054,7 @@ func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any,
 		// file with no warning at all — half the script gone, and the run
 		// reported success. The walkthrough documents this hazard; the tool
 		// said nothing, so a caller learns it only by listening to the result.
-		if msg := truncatedAudioWarning(r.RawProps, tmo); msg != "" {
+		if msg := truncatedAudioWarningContext(ctx, r.RawProps, tmo); msg != "" {
 			blankWarnings = append(blankWarnings, msg)
 		}
 	}
@@ -1019,6 +1085,12 @@ func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any,
 	absProps, _ := filepath.Abs(propsPath)
 
 	args := []string{cliPath, "render", entryFile, compositionID, absOut, "--props=" + absProps, "--public-dir=" + publicDir}
+	// Pure graphics with no audio declaration should not acquire an encoder's
+	// default audio track. Video cuts retain their source audio unless directed
+	// otherwise; an explicit narration/music track is never muted here.
+	if silentGraphicProps(propsJSON) && r.AudioPath == "" {
+		args = append(args, "--muted")
+	}
 
 	// Honour an explicitly requested output profile.
 	//
@@ -1057,7 +1129,7 @@ func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any,
 	if browser := findBrowserExecutable(); browser != "" {
 		args = append(args, "--browser-executable="+browser)
 	}
-	if stdout, err := runCommandDir(tmo, absComposer, "node", args...); err != nil {
+	if stdout, err := runCommandDirContext(ctx, tmo, absComposer, "node", args...); err != nil {
 		var failed *toolFailure
 		if errors.As(err, &failed) {
 			if failed.err.Code == "command_timeout" {
@@ -1086,21 +1158,21 @@ func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any,
 			return nil, nil, err
 		}
 		defer cleanupMux()
-		if _, err := runCommand(tmo, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", renderPath, "-i", r.AudioPath, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-shortest", tempMux); err != nil {
+		if _, err := runCommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", renderPath, "-i", r.AudioPath, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-shortest", tempMux); err != nil {
 			return nil, nil, err
 		}
 		renderPath = tempMux
 	}
 
 	// Validate the completed artifact before replacing an existing delivery.
-	if _, _, err := probe(renderPath, tmo); err != nil {
+	if _, _, err := probeContext(ctx, renderPath); err != nil {
 		return nil, nil, err
 	}
 	if err := os.Rename(renderPath, outPath); err != nil {
 		return nil, nil, failure("command_failed", "remotion output could not be published", map[string]any{"error": bounded(err.Error())})
 	}
 	// Bind evidence to the actual published bytes, including any post-render mux.
-	facts, warnings, err := probe(outPath, tmo)
+	facts, warnings, err := probeContext(ctx, outPath)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1115,6 +1187,32 @@ func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any,
 		"output":         outPath,
 		"output_facts":   facts,
 	}, warnings, nil
+}
+
+func silentGraphicProps(data []byte) bool {
+	var props map[string]any
+	if json.Unmarshal(data, &props) != nil {
+		return false
+	}
+	if audio, ok := props["audio"].(map[string]any); ok && len(audio) > 0 {
+		return false
+	}
+	cuts, ok := props["cuts"].([]any)
+	if !ok || len(cuts) == 0 {
+		return false
+	}
+	for _, item := range cuts {
+		cut, ok := item.(map[string]any)
+		if !ok {
+			return false
+		}
+		for _, key := range []string{"source", "src", "video", "video_path", "audio_path"} {
+			if value, ok := cut[key].(string); ok && value != "" {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // Stage only explicit component media fields, never a project/public tree or arbitrary
@@ -1507,6 +1605,16 @@ func findBrowserExecutable() string {
 	}
 	if env := os.Getenv("CHROME_PATH"); env != "" && fileExists(env) {
 		return env
+	}
+	// Prefer the renderer-managed headless browser over a desktop browser with
+	// user policies/profiles. Explicit overrides above retain precedence.
+	if composer, err := findComposerDir(); err == nil {
+		matches, _ := filepath.Glob(filepath.Join(composer, "node_modules", ".remotion", "chrome-headless-shell", "*", "*", "chrome-headless-shell*"))
+		for _, candidate := range matches {
+			if fileExists(candidate) && (strings.HasSuffix(candidate, ".exe") || filepath.Base(candidate) == "chrome-headless-shell") {
+				return candidate
+			}
+		}
 	}
 	candidates := []string{
 		`C:\Program Files\Google\Chrome\Application\chrome.exe`,

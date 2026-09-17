@@ -68,6 +68,8 @@ type MediaFile struct {
 
 // ProjectDetails provides deep inspection data for a project.
 type ProjectDetails struct {
+	Assets           []MediaFile   `json:"assets,omitempty"`
+	Artifacts        []MediaFile   `json:"artifacts,omitempty"`
 	Slug             string        `json:"slug"`
 	Name             string        `json:"name"`
 	Path             string        `json:"path"`
@@ -470,6 +472,8 @@ func GetProjectDetails(rootDir, slug string) (*ProjectDetails, error) {
 	evidence := scanProjectEvidence(project, true)
 
 	details := &ProjectDetails{
+		Assets:           scanMediaDir(project, "assets", []string{".mp4", ".webm", ".mov", ".png", ".jpg", ".jpeg", ".webp", ".wav", ".mp3", ".ogg"}),
+		Artifacts:        append(scanMediaDir(project, "artifacts", []string{".md", ".json", ".srt", ".vtt", ".txt", ".png", ".jpg", ".mp4", ".wav", ".mp3"}), scanMediaDir(project, "renders", []string{".mp4", ".webm", ".mov", ".wav", ".mp3"})...),
 		Slug:             slug,
 		Name:             slugToTitle(slug),
 		Path:             project.projectPath,

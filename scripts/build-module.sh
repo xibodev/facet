@@ -15,7 +15,7 @@ out="${1:-dist}"
 # Overwriting in place is enough and does not fail on a busy directory.
 mkdir -p "$out/agents" "$out/skills" "$out/packs" "$out/schemas"
 
-go build -o "$out/xibodev.facet.exe" ./cmd/facet
+go build -o "$out/xibodev.facet.exe" ./cmd/facet-module
 
 cp agents/facet-creative.md "$out/agents/"
 cp -r skills/facet "$out/skills/"

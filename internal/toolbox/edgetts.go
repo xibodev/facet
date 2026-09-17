@@ -22,6 +22,10 @@ type edgeTTSRequest struct {
 }
 
 func doEdgeTTS(op string, data []byte) (any, []string, error) {
+	return doEdgeTTSContext(context.Background(), op, data)
+}
+
+func doEdgeTTSContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r edgeTTSRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -73,7 +77,7 @@ func doEdgeTTS(op string, data []byte) (any, []string, error) {
 		timeoutSec = 30
 	}
 
-	audioBytes, err := synthesizeEdgeTTS(r.Text, voice, rate, pitch, volume, time.Duration(timeoutSec)*time.Second)
+	audioBytes, err := synthesizeEdgeTTSContext(ctx, r.Text, voice, rate, pitch, volume, time.Duration(timeoutSec)*time.Second)
 	if err != nil {
 		return nil, nil, failure("tts_failed", fmt.Sprintf("edge-tts synthesis failed: %v", err), nil)
 	}
@@ -91,7 +95,7 @@ func doEdgeTTS(op string, data []byte) (any, []string, error) {
 	}
 
 	// Try to get duration from ffprobe if available
-	if probeRes, _, err := doMediaProbe("run", []byte(fmt.Sprintf(`{"input_path":%q}`, outPath))); err == nil {
+	if probeRes, _, err := doMediaProbeContext(ctx, "run", []byte(fmt.Sprintf(`{"input_path":%q}`, outPath))); err == nil {
 		if pm, ok := probeRes.(map[string]any); ok {
 			if dur, ok := pm["duration_seconds"]; ok {
 				res["duration_seconds"] = dur
@@ -103,7 +107,11 @@ func doEdgeTTS(op string, data []byte) (any, []string, error) {
 }
 
 func synthesizeEdgeTTS(text, voice, rate, pitch, volume string, timeout time.Duration) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	return synthesizeEdgeTTSContext(context.Background(), text, voice, rate, pitch, volume, timeout)
+}
+
+func synthesizeEdgeTTSContext(parent context.Context, text, voice, rate, pitch, volume string, timeout time.Duration) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	args := edgetts.Args{

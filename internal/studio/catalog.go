@@ -419,18 +419,34 @@ func CreateNewProject(name, slug, baseDir, engine string, packs []string, rootDi
 		slug = strings.ToLower(name)
 		slug = strings.ReplaceAll(slug, " ", "-")
 	}
+	if !filepath.IsLocal(slug) || strings.ContainsAny(slug, "/\\") || slug == "." {
+		return nil, fmt.Errorf("project folder name must be a single local directory name")
+	}
 
 	if baseDir == "" {
-		baseDir = GetDefaultProductionsRoot()
+		catalog, err := LoadCatalog(rootDir...)
+		if err != nil {
+			return nil, err
+		}
+		baseDir = catalog.DefaultRoot
+		if baseDir == "" {
+			baseDir = GetDefaultProductionsRoot()
+		}
 	}
 
 	targetDir := filepath.Join(baseDir, slug)
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		return nil, err
+	}
+	if err := os.Mkdir(targetDir, 0755); err != nil {
+		if os.IsExist(err) {
+			return nil, fmt.Errorf("a project folder with this name already exists; use Open to resume it")
+		}
 		return nil, fmt.Errorf("failed to create project directory: %w", err)
 	}
 
 	if engine == "" {
-		engine = "claude"
+		engine = "studio"
 	}
 	if len(packs) == 0 {
 		packs = []string{"explainer"}
@@ -463,7 +479,7 @@ func OpenExistingProject(targetPath, engine string, rootDir ...string) (*Catalog
 	if data, err := os.ReadFile(lockPath); err == nil {
 		var lock config.ProjectLock
 		if err := json.Unmarshal(data, &lock); err == nil {
-			if lock.Engine != "" {
+			if engine == "" && lock.Engine != "" {
 				engine = lock.Engine
 			}
 			if len(lock.Packs) > 0 {
@@ -473,7 +489,7 @@ func OpenExistingProject(targetPath, engine string, rootDir ...string) (*Catalog
 	}
 
 	if engine == "" {
-		engine = "claude"
+		engine = "studio"
 	}
 
 	opts := config.InitOptions{

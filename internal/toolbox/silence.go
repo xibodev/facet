@@ -1,6 +1,7 @@
 package toolbox
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -41,6 +42,10 @@ var silenceStartRE = regexp.MustCompile(`silence_start:\s*([0-9]+(?:\.[0-9]+)?)`
 var silenceEndRE = regexp.MustCompile(`silence_end:\s*([0-9]+(?:\.[0-9]+)?)\s*\|\s*silence_duration:\s*([0-9]+(?:\.[0-9]+)?)`)
 
 func doSilenceCutter(op string, data []byte) (any, []string, error) {
+	return doSilenceCutterContext(context.Background(), op, data)
+}
+
+func doSilenceCutterContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r silenceCutterRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -97,14 +102,14 @@ func doSilenceCutter(op string, data []byte) (any, []string, error) {
 		return estimateResult([]string{"silence_cutter_" + mode}), nil, nil
 	}
 
-	p, _, err := probe(input, tmo)
+	p, _, err := probeWithContext(ctx, input, tmo)
 	if err != nil {
 		return nil, nil, err
 	}
 	totalDur := p["format"].(map[string]any)["duration"].(float64)
 
 	// Run silencedetect
-	cmdOut, err := runCommand(tmo, "ffmpeg", "-hide_banner", "-i", input, "-af", fmt.Sprintf("silencedetect=noise=%sdB:d=%s", formatFloat(thresholdDB), formatFloat(minSilence)), "-f", "null", "-")
+	cmdOut, err := runCommandDirContext(ctx, tmo, "", "ffmpeg", "-hide_banner", "-i", input, "-af", fmt.Sprintf("silencedetect=noise=%sdB:d=%s", formatFloat(thresholdDB), formatFloat(minSilence)), "-f", "null", "-")
 	outStr := string(cmdOut)
 
 	starts := silenceStartRE.FindAllStringSubmatch(outStr, -1)
@@ -208,7 +213,7 @@ func doSilenceCutter(op string, data []byte) (any, []string, error) {
 		for i, seg := range speechSegments {
 			segPath := filepath.Join(tempDir, fmt.Sprintf("seg_%04d.mp4", i))
 			args := []string{"-hide_banner", "-loglevel", "error", "-y", "-ss", formatFloat(seg.Start), "-to", formatFloat(seg.End), "-i", input, "-c:v", codec, "-crf", strconv.Itoa(crf), "-preset", "fast", "-c:a", "aac", "-ar", "48000", "-ac", "2", segPath}
-			if _, err := runCommand(tmo, "ffmpeg", args...); err != nil {
+			if _, err := runCommandDirContext(ctx, tmo, "", "ffmpeg", args...); err != nil {
 				return nil, nil, err
 			}
 			segFiles = append(segFiles, segPath)
@@ -220,7 +225,7 @@ func doSilenceCutter(op string, data []byte) (any, []string, error) {
 			fmt.Fprintf(&b, "file '%s'\n", strings.ReplaceAll(abs, `\`, `/`))
 		}
 		_ = os.WriteFile(listPath, []byte(b.String()), 0644)
-		if _, err := runCommand(tmo, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", outPath); err != nil {
+		if _, err := runCommandDirContext(ctx, tmo, "", "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", outPath); err != nil {
 			return nil, nil, err
 		}
 	} else if mode == "speed_up" {
@@ -247,7 +252,7 @@ func doSilenceCutter(op string, data []byte) (any, []string, error) {
 				atempo := buildAtempoChain(seg.Speed)
 				args = []string{"-hide_banner", "-loglevel", "error", "-y", "-ss", formatFloat(seg.Start), "-to", formatFloat(seg.End), "-i", input, "-filter:v", fmt.Sprintf("setpts=%s*PTS", formatFloat(pts)), "-filter:a", atempo, "-c:v", codec, "-crf", strconv.Itoa(crf), "-preset", "fast", "-c:a", "aac", "-ar", "48000", "-ac", "2", segPath}
 			}
-			if _, err := runCommand(tmo, "ffmpeg", args...); err != nil {
+			if _, err := runCommandDirContext(ctx, tmo, "", "ffmpeg", args...); err != nil {
 				return nil, nil, err
 			}
 			segFiles = append(segFiles, segPath)
@@ -259,7 +264,7 @@ func doSilenceCutter(op string, data []byte) (any, []string, error) {
 			fmt.Fprintf(&b, "file '%s'\n", strings.ReplaceAll(abs, `\`, `/`))
 		}
 		_ = os.WriteFile(listPath, []byte(b.String()), 0644)
-		if _, err := runCommand(tmo, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", outPath); err != nil {
+		if _, err := runCommandDirContext(ctx, tmo, "", "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", outPath); err != nil {
 			return nil, nil, err
 		}
 	}

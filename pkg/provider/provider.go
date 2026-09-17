@@ -39,9 +39,12 @@ func (p *FacetToolProvider) RegisterTools(
 	var summaries []string
 
 	for _, name := range toolbox.Names() {
-		t := &facetTool{name: name}
+		t := &facetTool{name: name, workspace: workspace}
 		register(t)
 		summaries = append(summaries, name)
+	}
+	for _, operation := range []string{"describe", "estimate", "guidance"} {
+		register(capabilityTool{operation: operation, workspace: workspace})
 	}
 
 	return summaries, nil
@@ -49,14 +52,19 @@ func (p *FacetToolProvider) RegisterTools(
 
 // facetTool wraps a single Facet toolbox operation as a Studio Tool.
 type facetTool struct {
-	name string
+	name      string
+	workspace string
 }
 
-func (t *facetTool) Name() string        { return t.name }
-func (t *facetTool) Description() string  { return toolbox.Description(t.name) }
-func (t *facetTool) Parameters() map[string]any { return toolbox.Parameters(t.name) }
+func (t *facetTool) Name() string               { return t.name }
+func (t *facetTool) Description() string        { return toolbox.Description(t.name) }
+func (t *facetTool) Parameters() map[string]any { return kernelSchema(toolbox.Parameters(t.name)) }
 
 func (t *facetTool) Execute(ctx context.Context, args map[string]any) *toolshared.ToolResult {
+	if err := ctx.Err(); err != nil {
+		return &toolshared.ToolResult{ForLLM: err.Error(), IsError: true}
+	}
+	args = toolbox.ProjectArguments(args, t.workspace)
 	data, err := json.Marshal(args)
 	if err != nil {
 		return &toolshared.ToolResult{
@@ -65,20 +73,23 @@ func (t *facetTool) Execute(ctx context.Context, args map[string]any) *toolshare
 		}
 	}
 
-	env := toolbox.Run(t.name, data)
+	env := toolbox.RunContext(ctx, t.name, data)
 
 	if !env.OK {
 		msg := "unknown error"
 		if env.Error != nil {
 			msg = env.Error.Message
 		}
+		data, _ := json.Marshal(env)
 		return &toolshared.ToolResult{
-			ForLLM:  msg,
+			ForLLM:  msg + "\n" + string(data),
 			IsError: true,
 		}
 	}
 
-	resultJSON, err := json.Marshal(env.Result)
+	// Preserve warnings, cost uncertainty and execution provenance alongside the
+	// result; a native host must not lose information exposed to CLI/module hosts.
+	resultJSON, err := json.Marshal(env)
 	if err != nil {
 		return &toolshared.ToolResult{
 			ForLLM:  fmt.Sprintf("Error serializing result: %v", err),

@@ -1,6 +1,7 @@
 package toolbox
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -111,6 +112,10 @@ func hasAudio(p map[string]any) bool {
 }
 
 func doOutputReview(op string, data []byte) (any, []string, error) {
+	return doOutputReviewContext(context.Background(), op, data)
+}
+
+func doOutputReviewContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r reviewRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -142,7 +147,7 @@ func doOutputReview(op string, data []byte) (any, []string, error) {
 	if op == "estimate" {
 		return map[string]any{"estimated_cost": 0, "network": false, "external_write": false, "side_effect_free": true, "operations": []string{"validate_checks", "ffprobe", "extract_4_frames", "volumedetect"}, "validation_scope": "request shape, concrete gate constraints, exact uniform sample strategy, and paths; media decoding and gate evaluation occur during run"}, nil, nil
 	}
-	p, w, err := probe(r.Input, tmo)
+	p, w, err := probeWithContext(ctx, r.Input, tmo)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -277,7 +282,7 @@ func doOutputReview(op string, data []byte) (any, []string, error) {
 	}
 	gates = append(gates, gate("audio", audioPass, "audio expectation differs"))
 	sampleJSON, _ := json.Marshal(sampleRequest{Input: r.Input, OutputDir: r.EvidenceDir, Strategy: r.Samples, ImageFormat: "jpg", Overwrite: true, TimeoutSeconds: r.TimeoutSeconds})
-	samples, sw, err := doFrameSample("run", sampleJSON)
+	samples, sw, err := doFrameSampleContext(ctx, "run", sampleJSON)
 	if err != nil {
 		return nil, nil, failure("partial_result", "technical review completed but evidence extraction failed", map[string]any{"execution_status": "partial", "review_status": "revise", "completed_artifacts": map[string]any{"gates": gates, "output_facts": p}, "failures": []map[string]any{{"operation": "sample_extraction", "error": errorEnvelope("frame_sample", "run", err).Error}}})
 	}
@@ -299,8 +304,8 @@ func doOutputReview(op string, data []byte) (any, []string, error) {
 	// and identical frames across distinct timestamps mean nothing changed.
 	// It cannot judge whether the content is GOOD — that is human review — it
 	// only refuses to call an empty video a pass.
-	gates = append(gates, contentGate(samples))
-	vol, verr := runCommand(tmo, "ffmpeg", "-hide_banner", "-i", r.Input, "-map", "0:a:0", "-af", "volumedetect", "-f", "null", "-")
+	gates = append(gates, contentGateContext(ctx, samples))
+	vol, verr := runCommandDirContext(ctx, tmo, "", "ffmpeg", "-hide_banner", "-i", r.Input, "-map", "0:a:0", "-af", "volumedetect", "-f", "null", "-")
 	volume := map[string]any{}
 	if verr != nil {
 		w = append(w, "volumedetect unavailable: "+bounded(verr.Error()))
@@ -320,6 +325,10 @@ func doOutputReview(op string, data []byte) (any, []string, error) {
 }
 
 func doVisualQA(op string, data []byte) (any, []string, error) {
+	return doVisualQAContext(context.Background(), op, data)
+}
+
+func doVisualQAContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r visualQARequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -347,7 +356,7 @@ func doVisualQA(op string, data []byte) (any, []string, error) {
 		return estimateResult([]string{"visual_qa_" + operation, "ffprobe"}), nil, nil
 	}
 
-	p, _, err := probe(input, tmo)
+	p, _, err := probeWithContext(ctx, input, tmo)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -371,7 +380,7 @@ func doVisualQA(op string, data []byte) (any, []string, error) {
 			label := strings.ReplaceAll(fmt.Sprintf("%.1f", tVal), ".", "_")
 			frameFile := filepath.Join(outDir, fmt.Sprintf("frame_%ss.jpg", label))
 			args := []string{"-hide_banner", "-loglevel", "error", "-y", "-ss", formatFloat(tVal), "-i", input, "-frames:v", "1", "-q:v", "2", frameFile}
-			if _, err := runCommand(tmo, "ffmpeg", args...); err == nil {
+			if _, err := runCommandDirContext(ctx, tmo, "", "ffmpeg", args...); err == nil {
 				frames = append(frames, map[string]any{
 					"timestamp": tVal,
 					"path":      frameFile,
@@ -440,7 +449,7 @@ func doVisualQA(op string, data []byte) (any, []string, error) {
 		}
 		levels := []map[string]any{}
 		for _, tVal := range ts {
-			cmdOut, err := runCommand(tmo, "ffmpeg", "-hide_banner", "-ss", formatFloat(tVal), "-t", "3", "-i", input, "-vn", "-af", "volumedetect", "-f", "null", "-")
+			cmdOut, err := runCommandDirContext(ctx, tmo, "", "ffmpeg", "-hide_banner", "-ss", formatFloat(tVal), "-t", "3", "-i", input, "-vn", "-af", "volumedetect", "-f", "null", "-")
 			if err != nil {
 				levels = append(levels, map[string]any{"timestamp": tVal, "error": err.Error()})
 			} else {
@@ -502,7 +511,11 @@ const brightnessGap = 40
 // If the frame cannot be decoded — ffmpeg missing, an unreadable file — the
 // encoded-size fallback is used rather than manufacturing a verdict.
 func frameHasContent(path string, encodedBytes int) bool {
-	out, err := runCommand(10*time.Second, "ffmpeg", "-v", "error", "-i", path,
+	return frameHasContentContext(context.Background(), path, encodedBytes)
+}
+
+func frameHasContentContext(ctx context.Context, path string, encodedBytes int) bool {
+	out, err := runCommandDirContext(ctx, 10*time.Second, "", "ffmpeg", "-v", "error", "-i", path,
 		"-f", "rawvideo", "-pix_fmt", "gray", "-")
 	if err != nil || len(out) == 0 {
 		return encodedBytes >= blankFrameBytes
@@ -533,6 +546,10 @@ func frameHasContent(path string, encodedBytes int) bool {
 // means nothing was drawn, and every frame being byte-identical, which means
 // nothing changed across the timeline even though the scenes differ.
 func contentGate(samples any) map[string]any {
+	return contentGateContext(context.Background(), samples)
+}
+
+func contentGateContext(ctx context.Context, samples any) map[string]any {
 	list, _ := samples.(map[string]any)["samples"].([]map[string]any)
 	if len(list) == 0 {
 		return gate("content", true, "")
@@ -553,7 +570,7 @@ func contentGate(samples any) map[string]any {
 		// Decode and measure actual pixels. Encoded size alone reported a
 		// correct short-text render as blank, which is the failure this gate
 		// exists to catch — a false alarm here teaches callers to ignore it.
-		if frameHasContent(path, len(raw)) {
+		if frameHasContentContext(ctx, path, len(raw)) {
 			drawn++
 		}
 		sum := sha256.Sum256(raw)

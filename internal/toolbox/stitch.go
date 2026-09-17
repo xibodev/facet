@@ -1,6 +1,7 @@
 package toolbox
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,6 +30,10 @@ type stitchRequest struct {
 }
 
 func doVideoStitch(op string, data []byte) (any, []string, error) {
+	return doVideoStitchContext(context.Background(), op, data)
+}
+
+func doVideoStitchContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r stitchRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -55,7 +60,7 @@ func doVideoStitch(op string, data []byte) (any, []string, error) {
 		if err := inputPath(clip); err != nil {
 			return nil, nil, err
 		}
-		p, _, err := probe(clip, tmo)
+		p, _, err := probeWithContext(ctx, clip, tmo)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -166,7 +171,7 @@ func doVideoStitch(op string, data []byte) (any, []string, error) {
 				dur := p["format"].(map[string]any)["duration"].(float64)
 				args = []string{"-hide_banner", "-loglevel", "error", "-y", "-i", clip, "-f", "lavfi", "-t", formatFloat(dur), "-i", "anullsrc=r=48000:cl=stereo", "-vf", vf, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "libx264", "-crf", strconv.Itoa(crf), "-preset", preset, "-c:a", "aac", "-ar", "48000", "-ac", "2", normFile}
 			}
-			if _, err := runCommand(tmo, "ffmpeg", args...); err != nil {
+			if _, err := runCommandDirContext(ctx, tmo, "", "ffmpeg", args...); err != nil {
 				return nil, nil, err
 			}
 			normalizedClips[i] = normFile
@@ -193,7 +198,7 @@ func doVideoStitch(op string, data []byte) (any, []string, error) {
 				return nil, nil, failure("command_failed", "unable to write concat list", nil)
 			}
 			cmdArgs := []string{"-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", outPath}
-			if _, err := runCommand(tmo, "ffmpeg", cmdArgs...); err != nil {
+			if _, err := runCommandDirContext(ctx, tmo, "", "ffmpeg", cmdArgs...); err != nil {
 				return nil, nil, err
 			}
 		} else {
@@ -235,12 +240,12 @@ func doVideoStitch(op string, data []byte) (any, []string, error) {
 				cumOffset = offset
 			}
 			cmdArgs = append(cmdArgs, "-filter_complex", strings.Join(filters, ";"), "-map", "[vout]", "-map", "[aout]", "-c:v", "libx264", "-crf", strconv.Itoa(crf), "-preset", preset, "-c:a", "aac", outPath)
-			if _, err := runCommand(tmo, "ffmpeg", cmdArgs...); err != nil {
+			if _, err := runCommandDirContext(ctx, tmo, "", "ffmpeg", cmdArgs...); err != nil {
 				return nil, nil, err
 			}
 		}
 
-		outProbe, _, _ := probe(outPath, tmo)
+		outProbe, _, _ := probeWithContext(ctx, outPath, tmo)
 		outDur := 0.0
 		if outProbe != nil {
 			if fmtM, ok := outProbe["format"].(map[string]any); ok {
@@ -284,13 +289,13 @@ func doVideoStitch(op string, data []byte) (any, []string, error) {
 		case "side_by_side":
 			filterComplex := "[0:v]scale=-2:480[left];[1:v]scale=-2:480[right];[left][right]hstack=inputs=2[v];[0:a][1:a]amix=inputs=2:duration=shortest[a]"
 			cmdArgs := []string{"-hide_banner", "-loglevel", "error", "-y", "-i", r.Clips[0], "-i", r.Clips[1], "-filter_complex", filterComplex, "-map", "[v]", "-map", "[a]", "-c:v", codec, "-crf", strconv.Itoa(crf), "-c:a", "aac", "-shortest", outPath}
-			if _, err := runCommand(tmo, "ffmpeg", cmdArgs...); err != nil {
+			if _, err := runCommandDirContext(ctx, tmo, "", "ffmpeg", cmdArgs...); err != nil {
 				return nil, nil, err
 			}
 		case "vertical_stack":
 			filterComplex := "[0:v]scale=540:-2[top];[1:v]scale=540:-2[bottom];[top][bottom]vstack=inputs=2[v];[0:a][1:a]amix=inputs=2:duration=shortest[a]"
 			cmdArgs := []string{"-hide_banner", "-loglevel", "error", "-y", "-i", r.Clips[0], "-i", r.Clips[1], "-filter_complex", filterComplex, "-map", "[v]", "-map", "[a]", "-c:v", codec, "-crf", strconv.Itoa(crf), "-c:a", "aac", "-shortest", outPath}
-			if _, err := runCommand(tmo, "ffmpeg", cmdArgs...); err != nil {
+			if _, err := runCommandDirContext(ctx, tmo, "", "ffmpeg", cmdArgs...); err != nil {
 				return nil, nil, err
 			}
 		case "picture_in_picture":
@@ -313,7 +318,7 @@ func doVideoStitch(op string, data []byte) (any, []string, error) {
 			}
 			filterComplex := fmt.Sprintf("[1:v]scale=iw*%s:ih*%s[pip];[0:v][pip]overlay=%s:shortest=1[v]", formatFloat(scale), formatFloat(scale), pos)
 			cmdArgs := []string{"-hide_banner", "-loglevel", "error", "-y", "-i", r.Clips[0], "-i", r.Clips[1], "-filter_complex", filterComplex, "-map", "[v]", "-map", "0:a?", "-c:v", codec, "-crf", strconv.Itoa(crf), "-c:a", "aac", "-shortest", outPath}
-			if _, err := runCommand(tmo, "ffmpeg", cmdArgs...); err != nil {
+			if _, err := runCommandDirContext(ctx, tmo, "", "ffmpeg", cmdArgs...); err != nil {
 				return nil, nil, err
 			}
 		default:

@@ -1,6 +1,7 @@
 package toolbox
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -26,6 +27,10 @@ type hyperframesRequest struct {
 }
 
 func doHyperFramesCompose(op string, data []byte) (any, []string, error) {
+	return doHyperFramesComposeContext(context.Background(), op, data)
+}
+
+func doHyperFramesComposeContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r hyperframesRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -117,7 +122,7 @@ func doHyperFramesCompose(op string, data []byte) (any, []string, error) {
 		if r.SkipContrast {
 			args = append(args, "--no-contrast")
 		}
-		out, err := runCommandDir(tmo, workspace, "npx", args...)
+		out, err := runCommandDirContext(ctx, tmo, workspace, "npx", args...)
 		if err != nil {
 			return nil, nil, failure("command_failed", "hyperframes "+operation+" failed: "+err.Error(), map[string]any{"output": string(out)})
 		}
@@ -135,7 +140,7 @@ func doHyperFramesCompose(op string, data []byte) (any, []string, error) {
 			return nil, nil, failure("invalid_request", "block_name is required for add_block", nil)
 		}
 		args := []string{"hyperframes", "add", r.BlockName, "--json", "--no-clipboard"}
-		out, err := runCommandDir(tmo, workspace, "npx", args...)
+		out, err := runCommandDirContext(ctx, tmo, workspace, "npx", args...)
 		if err != nil {
 			return nil, nil, failure("command_failed", "hyperframes add failed: "+err.Error(), map[string]any{"output": string(out)})
 		}
@@ -161,7 +166,7 @@ func doHyperFramesCompose(op string, data []byte) (any, []string, error) {
 		}
 		absOut, _ := filepath.Abs(outPath)
 		args := []string{"hyperframes", "render", "--output", absOut, "--fps", strconv.Itoa(fps), "--quality", quality}
-		out, err := runCommandDir(tmo, workspace, "npx", args...)
+		out, err := runCommandDirContext(ctx, tmo, workspace, "npx", args...)
 		if err != nil {
 			return nil, nil, failure("command_failed", "hyperframes render failed: "+err.Error(), map[string]any{"output": string(out)})
 		}

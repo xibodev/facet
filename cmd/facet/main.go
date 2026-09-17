@@ -77,7 +77,7 @@ func main() {
 		for i := 0; i < len(args); i++ {
 			arg := args[i]
 			if arg == "--help" || arg == "-h" || arg == "-help" {
-				fmt.Println("Usage: facet init [project-directory] [--engine claude|opencode|codex|copilot] [--no-launch]\n\nInitialize a workspace and launch the selected agent (default: claude).\n--no-launch initializes without starting an agent.\n-h, --help prints this usage without writing files.")
+				fmt.Println("Usage: facet init [project-directory] [--engine claude|opencode|codex|copilot|studio] [--no-launch]\n\nInitialize a workspace and launch the selected agent (default: claude).\n--no-launch initializes without starting an agent.\n-h, --help prints this usage without writing files.")
 				return
 			} else if arg == "--no-launch" || arg == "-no-launch" {
 				noLaunch = true
@@ -100,9 +100,9 @@ func main() {
 		}
 		engine = strings.ToLower(strings.TrimSpace(engine))
 		switch engine {
-		case "claude", "opencode", "codex", "copilot":
+		case "claude", "opencode", "codex", "copilot", "studio":
 		default:
-			fmt.Fprintf(os.Stderr, "Init error: unknown engine %q; choose claude, opencode, codex, or copilot\n", engine)
+			fmt.Fprintf(os.Stderr, "Init error: unknown engine %q; choose claude, opencode, codex, copilot, or studio\n", engine)
 			os.Exit(1)
 		}
 
@@ -121,6 +121,13 @@ func main() {
 			targetDir := "."
 			if slug != "" {
 				targetDir = slug
+			}
+			if engine == "studio" {
+				if err := studio.RunWithOption(":8787", targetDir, true); err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					os.Exit(1)
+				}
+				return
 			}
 			cliPath := config.FindExecutable(engine, engine+".cmd", engine+".exe", engine+".ps1")
 			if cliPath == "" {

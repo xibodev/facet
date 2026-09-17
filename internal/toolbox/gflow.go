@@ -43,6 +43,10 @@ type gflowImageRequest struct {
 }
 
 func doGFlowVideo(op string, data []byte) (any, []string, error) {
+	return doGFlowVideoContext(context.Background(), op, data)
+}
+
+func doGFlowVideoContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r gflowVideoRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -96,7 +100,7 @@ func doGFlowVideo(op string, data []byte) (any, []string, error) {
 	if r.EndFrame != "" {
 		args = append(args, "--end", r.EndFrame)
 	}
-	outputs, err := generateGFlow(args, r.Prompt, "video", r.OutputPath, 1, timeout)
+	outputs, err := generateGFlowContext(ctx, args, r.Prompt, "video", r.OutputPath, 1, timeout)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -105,6 +109,10 @@ func doGFlowVideo(op string, data []byte) (any, []string, error) {
 }
 
 func doGFlowImage(op string, data []byte) (any, []string, error) {
+	return doGFlowImageContext(context.Background(), op, data)
+}
+
+func doGFlowImageContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r gflowImageRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -150,7 +158,7 @@ func doGFlowImage(op string, data []byte) (any, []string, error) {
 	if r.ReferenceImage != "" {
 		args = append(args, "--ref", r.ReferenceImage)
 	}
-	outputs, err := generateGFlow(args, r.Prompt, "image", r.OutputPath, r.Count, timeout)
+	outputs, err := generateGFlowContext(ctx, args, r.Prompt, "image", r.OutputPath, r.Count, timeout)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -238,6 +246,10 @@ func gflowSafeOutput(path string) error {
 }
 
 func generateGFlow(args []string, prompt, kind, output string, count int, timeout time.Duration) (_ []gflowOutput, resultErr error) {
+	return generateGFlowContext(context.Background(), args, prompt, kind, output, count, timeout)
+}
+
+func generateGFlowContext(caller context.Context, args []string, prompt, kind, output string, count int, timeout time.Duration) (_ []gflowOutput, resultErr error) {
 	targets := make([]string, count)
 	for i := range targets {
 		targets[i] = output
@@ -287,7 +299,7 @@ func generateGFlow(args []string, prompt, kind, output string, count int, timeou
 		return nil, failure("command_failed", "could not open gflow staging directory", nil)
 	}
 	defer root.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(caller, timeout)
 	defer cancel()
 	// -o is a directory in the public CLI. Never retry through a second transport.
 	args = append(args, "-o", stage, "--json", "--", prompt)

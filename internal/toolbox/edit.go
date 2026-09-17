@@ -1,6 +1,7 @@
 package toolbox
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -107,6 +108,10 @@ func sourceEditRequestedOperations(r editRequest) []string {
 }
 
 func doSourceEdit(op string, data []byte) (any, []string, error) {
+	return doSourceEditContext(context.Background(), op, data)
+}
+
+func doSourceEditContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r editRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -165,7 +170,7 @@ func doSourceEdit(op string, data []byte) (any, []string, error) {
 		if op == "estimate" {
 			continue
 		}
-		p, _, e := probe(sIn, tmo)
+		p, _, e := probeWithContext(ctx, sIn, tmo)
 		if e != nil {
 			return nil, nil, e
 		}
@@ -188,7 +193,7 @@ func doSourceEdit(op string, data []byte) (any, []string, error) {
 		if op == "estimate" {
 			return map[string]any{"estimated_cost": 0, "network": false, "external_write": false, "side_effect_free": true, "duration": total, "requested_operations": sourceEditRequestedOperations(r), "operations": []string{"validate_paths_and_timeline", "trim", "normalize", "concat", "replace_audio"}, "validation_scope": "request shape, paths, timeline ordering, target, framing, and cut-only transitions; stream presence and duration bounds are validated during run"}, nil, nil
 		}
-		replacementProbe, _, probeErr := probe(r.ReplacementAudio, tmo)
+		replacementProbe, _, probeErr := probeWithContext(ctx, r.ReplacementAudio, tmo)
 		if probeErr != nil {
 			return nil, nil, probeErr
 		}
@@ -251,10 +256,10 @@ func doSourceEdit(op string, data []byte) (any, []string, error) {
 		audioLabel = "[replacement]"
 	}
 	args = append(args, "-filter_complex", strings.Join(filters, ";"), "-map", "[vcat]", "-map", audioLabel, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", formatFloat(r.Target.FPS), "-c:a", "aac", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", tempOutput)
-	if _, err = runCommand(tmo, "ffmpeg", args...); err != nil {
+	if _, err = runCommandDirContext(ctx, tmo, "", "ffmpeg", args...); err != nil {
 		return nil, nil, err
 	}
-	out, w, err := probe(tempOutput, tmo)
+	out, w, err := probeWithContext(ctx, tempOutput, tmo)
 	if err != nil {
 		return nil, nil, failure("output_validation_failed", "created temporary output could not be validated", map[string]any{"error": err.Error()})
 	}
@@ -272,17 +277,21 @@ func doSourceEdit(op string, data []byte) (any, []string, error) {
 		ops = append(ops, "replace_audio")
 	}
 	return map[string]any{
-		"output":                r.Output,
-		"duration":              out["format"].(map[string]any)["duration"],
-		"realized_segments":     len(r.Segments),
-		"silent_inputs_filled":  silent,
-		"requested_operations":  sourceEditRequestedOperations(r),
-		"realized_operations":   ops,
-		"output_facts":          out,
+		"output":               r.Output,
+		"duration":             out["format"].(map[string]any)["duration"],
+		"realized_segments":    len(r.Segments),
+		"silent_inputs_filled": silent,
+		"requested_operations": sourceEditRequestedOperations(r),
+		"realized_operations":  ops,
+		"output_facts":         out,
 	}, w, nil
 }
 
 func doVideoTrimmer(op string, data []byte) (any, []string, error) {
+	return doVideoTrimmerContext(context.Background(), op, data)
+}
+
+func doVideoTrimmerContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r trimmerRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -299,6 +308,8 @@ func doVideoTrimmer(op string, data []byte) (any, []string, error) {
 	if op == "estimate" {
 		return estimateResult([]string{"video_trimmer_" + operation}), nil, nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, tmo)
+	defer cancel()
 
 	switch operation {
 	case "cut":
@@ -328,7 +339,7 @@ func doVideoTrimmer(op string, data []byte) (any, []string, error) {
 			args = append(args, "-c:v", codec, "-c:a", "aac")
 		}
 		args = append(args, outPath)
-		if _, err := runCommand(tmo, "ffmpeg", args...); err != nil {
+		if _, err := runCommandContext(ctx, "ffmpeg", args...); err != nil {
 			return nil, nil, err
 		}
 		return map[string]any{
@@ -359,7 +370,7 @@ func doVideoTrimmer(op string, data []byte) (any, []string, error) {
 		videoFilter := fmt.Sprintf("setpts=%s*PTS", formatFloat(1.0/factor))
 		audioFilter := buildAtempoChain(factor)
 		args := []string{"-hide_banner", "-loglevel", "error", "-y", "-i", r.InputPath, "-filter:v", videoFilter, "-filter:a", audioFilter, "-c:v", "libx264", "-preset", "fast", "-c:a", "aac", outPath}
-		if _, err := runCommand(tmo, "ffmpeg", args...); err != nil {
+		if _, err := runCommandContext(ctx, "ffmpeg", args...); err != nil {
 			return nil, nil, err
 		}
 		return map[string]any{
@@ -413,7 +424,7 @@ func doVideoTrimmer(op string, data []byte) (any, []string, error) {
 					cmdArgs = append(cmdArgs, "-to", formatFloat(sEnd))
 				}
 				cmdArgs = append(cmdArgs, "-c", "copy", tmpSeg)
-				if _, err := runCommand(tmo, "ffmpeg", cmdArgs...); err != nil {
+				if _, err := runCommandContext(ctx, "ffmpeg", cmdArgs...); err != nil {
 					return nil, nil, err
 				}
 				tempFiles = append(tempFiles, tmpSeg)
@@ -434,7 +445,7 @@ func doVideoTrimmer(op string, data []byte) (any, []string, error) {
 		}
 
 		cmdArgs := []string{"-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", outPath}
-		if _, err := runCommand(tmo, "ffmpeg", cmdArgs...); err != nil {
+		if _, err := runCommandContext(ctx, "ffmpeg", cmdArgs...); err != nil {
 			return nil, nil, err
 		}
 
