@@ -5,6 +5,7 @@ const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:
 const {spawn,execFileSync}=require('node:child_process');
 const {createHash}=require('node:crypto');
 (async()=>{
+ await fs.mkdir(path.join(os.tmpdir(),'opencode'),{recursive:true});
  const base=await fs.mkdtemp(path.join(os.tmpdir(),'opencode','facet-live-browser-'));
  const home=path.join(base,'home'),root=path.join(base,'workspace');await fs.mkdir(home);await fs.mkdir(path.join(root,'.facet'),{recursive:true});
  await fs.writeFile(path.join(root,'.facet','catalog.json'),JSON.stringify({version:'1.0',default_root:path.join(root,'productions'),projects:[]}));

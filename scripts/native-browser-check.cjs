@@ -9,6 +9,7 @@ const { spawn, execFileSync } = require('node:child_process');
 const assert = require('node:assert/strict');
 
 (async () => {
+  await fs.mkdir(path.join(os.tmpdir(),'opencode'),{recursive:true});
   const base = await fs.mkdtemp(path.join(os.tmpdir(), 'opencode', 'facet-native-browser-'));
   const root = path.join(base, 'projects-root'), home = path.join(base, 'home');
   await fs.mkdir(path.join(root,'.facet'), {recursive:true});

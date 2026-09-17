@@ -11,6 +11,7 @@ const {spawn,execFileSync}=require('node:child_process');
 const assert=require('node:assert/strict');
 
 (async()=>{
+ await fs.mkdir(path.join(os.tmpdir(),'opencode'),{recursive:true});
  const base=await fs.mkdtemp(path.join(os.tmpdir(),'opencode','facet-complete-uat-'));
  const home=path.join(base,'home'),root=path.join(base,'workspace');
  await fs.mkdir(home);await fs.mkdir(path.join(root,'.facet'),{recursive:true});
