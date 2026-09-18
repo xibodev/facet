@@ -1,7 +1,6 @@
 # Facet Product Model
 
-**Status: authoritative.** Companion to `RELEASE_MANIFEST.md`, which covers how
-Facet is packaged. This covers **what Facet is and is not**.
+**Status: authoritative.** This covers **what Facet is and is not**.
 
 ---
 
@@ -18,9 +17,9 @@ It supplies the domain knowledge and the tools that a reasoning driver uses.
 | The reasoning driver owns | Facet owns |
 |---|---|
 | conversation | media tools and implementations |
-| reasoning / planning | creative skills, agents, packs |
-| tool calling | pipeline definitions |
-| skills / agent loading | provider requirements |
+| reasoning / planning | production guidance and capability descriptions |
+| tool calling | stateless media operations |
+| skills / agent loading | operation requirements |
 | permissions and hooks | effects: `may_charge`, network, external writes |
 | context and session handling | media verification and artifacts |
 | the model powering the conversation | production workspace knowledge |
@@ -30,20 +29,18 @@ workflow runtime when the driver already supplies one.
 
 ### One clarification that has caused confusion
 
-**"Provider requirements" means providers Facet's TOOLS need** — image, video,
-voice, stock media, rendering runtimes. It does **not** mean the model powering
-the conversation. That model is the driver's concern and Facet never configures,
-proxies or bills it.
+**"Operation requirements" means dependencies Facet's tools need** — image,
+video, voice, stock media, and rendering runtimes. Facet reports those
+requirements and effects but does not select a provider on the user's behalf.
+The model powering the conversation is the driver's concern and Facet never
+configures, proxies, or bills it.
 
-## Pipelines are instructions, not a runtime
+## Packs are stateless guidance
 
-The 16 pipeline and style YAML files under `packs/` are **instructions to the
-reasoning driver**. The driver reads them and executes the sequence using Facet
-tools.
-
-**Verified:** nothing in Go parses or executes a pipeline. The two `yaml.Unmarshal`
-call sites (`internal/config/config.go`, `internal/toolbox/compose.go`) both read
-configuration, not pipelines. There is no second workflow runtime to retire.
+Retained packs provide Facet-owned, method-specific guidance. They do not
+declare required stages, choose providers, or encode an executable workflow.
+The reasoning driver decides how to sequence available Facet operations for
+the user's request.
 
 ---
 
@@ -89,15 +86,14 @@ development tooling.
 
 ## What this re-orientation changed
 
-Nothing was rewritten. The audit found:
+The canonical contract keeps Facet stateless:
 
-1. **No duplicate planner, hook system, approval engine or workflow runtime
-   exists.** Pipelines are already instructions; the driver already executes them.
-2. **The one real duplication is the subprocess reasoning harness**, already
-   classified as transitional and already excluded from both target releases.
-3. **The domain/driver split is clean** everywhere else — `projects.go` knows
-   about renders and narration; `process.go` knows about job objects. They are
-   not entangled.
-
-The correct action was to **confirm and record**, not to restart architecture
-work.
+1. **Guidance describes production methods and capabilities.** It does not
+   prescribe a required sequence or transfer planning responsibility from the
+   reasoning driver.
+2. **The subprocess reasoning harness is transitional development tooling.**
+   It remains excluded from target releases and is not a product architecture
+   to extend.
+3. **Domain code remains separate from driver capability.** `projects.go`
+   understands media records and evidence; `process.go` supervises development
+   subprocesses.

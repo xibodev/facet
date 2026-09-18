@@ -230,6 +230,80 @@ func TestRetainedPackMetadataDescribesGuidanceNotPipelines(t *testing.T) {
 	}
 }
 
+func TestActiveProductDocsDescribeGuidanceNotWorkflowContracts(t *testing.T) {
+	files := []string{
+		"docs/PRODUCT_MODEL.md",
+		"docs/index.html",
+	}
+	banned := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)\bpipeline definitions?\b`),
+		regexp.MustCompile(`(?i)\b(?:pipeline|style) YAML files?\b`),
+		regexp.MustCompile(`(?i)\bdirector skills?\b`),
+		regexp.MustCompile(`(?i)\bprovider[-_ ]selection\b`),
+		regexp.MustCompile(`(?i)\bworkflow schemas?\b`),
+	}
+	var violations []string
+	for _, name := range files {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, pattern := range banned {
+			if match := pattern.Find(data); match != nil {
+				violations = append(violations, name+": "+string(match))
+			}
+		}
+	}
+	sort.Strings(violations)
+	if len(violations) != 0 {
+		t.Fatalf("active product docs advertise removed workflow contracts:\n%s",
+			strings.Join(violations, "\n"))
+	}
+}
+
+func TestNpmPackageShipsCanonicalContractAndNotices(t *testing.T) {
+	command := exec.Command("npm", "pack", "--dry-run", "--json", "--ignore-scripts")
+	raw, err := command.Output()
+	if err != nil {
+		t.Fatalf("inspect npm package payload: %v", err)
+	}
+	var result []struct {
+		Files []struct {
+			Path string `json:"path"`
+		} `json:"files"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatalf("decode npm package payload: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("npm pack returned %d payloads, want 1", len(result))
+	}
+	shipped := make(map[string]bool, len(result[0].Files))
+	for _, file := range result[0].Files {
+		shipped[filepath.ToSlash(file.Path)] = true
+	}
+
+	required := []string{
+		"LICENSE",
+		"THIRD_PARTY_NOTICES.md",
+		"skills/facet/SKILL.md",
+		"agents/facet-creative.md",
+	}
+	for _, pack := range PackNames() {
+		required = append(required, "packs/"+pack+"/SKILL.md")
+	}
+	var missing []string
+	for _, name := range required {
+		if !shipped[name] {
+			missing = append(missing, name)
+		}
+	}
+	sort.Strings(missing)
+	if len(missing) != 0 {
+		t.Fatalf("npm package omits canonical product files:\n%s", strings.Join(missing, "\n"))
+	}
+}
+
 func TestReleasePackagingExcludesRemovedProductSurfaces(t *testing.T) {
 	checks := map[string][]string{
 		"scripts/package-release.py": {
