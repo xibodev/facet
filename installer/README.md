@@ -22,6 +22,14 @@ and approximate download sizes have one source: `manifest.tsv`.
 
 ## Invocation
 
+The website's `docs/install.ps1` and `docs/install.sh` are small bootstrap
+entry points for `irm ... | iex` and `curl ... | bash`. They pin a published
+installer version and SHA-256, extract the verified package temporarily, and
+invoke these canonical release scripts. They contain no host/dependency setup
+policy. Update their pins only after the matching release asset is published.
+Bash prompts use `/dev/tty`, never the download pipe. Bootstrap tests run in
+normal CI and as a required release-cutting job.
+
 Windows:
 
 ```powershell

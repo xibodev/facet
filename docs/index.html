@@ -30,7 +30,7 @@
     body { margin: 0; background: #f8fafc; color: #0f172a; font: 16px/1.65 Inter, sans-serif; }
     a { color: #0369a1; text-underline-offset: .2em; }
     a:hover { color: #6d28d9; }
-    a:focus-visible, summary:focus-visible { outline: 3px solid #0284c7; outline-offset: 4px; }
+    a:focus-visible, summary:focus-visible, button:focus-visible { outline: 3px solid #0284c7; outline-offset: 4px; }
     h1, h2, h3, .brand { font-family: 'Space Grotesk', sans-serif; line-height: 1.15; }
     h1 { font-size: clamp(2.5rem, 5.4vw, 4.5rem); letter-spacing: -.035em; margin: 1rem auto; max-width: 18ch; }
     h2 { font-size: clamp(1.8rem, 3vw, 2.5rem); margin: 0 0 1rem; }
@@ -55,6 +55,7 @@
     .actions { display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap; margin: 1.5rem 0; }
     .button { display: inline-block; padding: .75rem 1.25rem; border-radius: .6rem; background: white; border: 1px solid #cbd5e1; text-decoration: none; color: #0f172a; font-weight: 600; }
     .button.primary { color: white; background: linear-gradient(100deg, #0284c7, #7c3aed); border: 0; }
+    button.button { font: inherit; cursor: pointer; min-height: 44px; }
     .prompt { max-width: 850px; margin: 3rem auto 0; text-align: left; background: #0f172a; color: #f8fafc; padding: 1.5rem; border: 1px solid #334155; border-radius: 1rem; box-shadow: 0 16px 30px -14px #0f172a66; }
     .prompt .label { color: #7dd3fc; font-size: .8rem; font-family: 'JetBrains Mono', monospace; }
     .prompt blockquote { margin: 1rem 0; font-size: 1.125rem; }
@@ -156,8 +157,13 @@
       <div class="wrap">
         <h2>Recommended Installation</h2>
         <p class="intro">Use Facet with your agentic CLI. The interactive installer supports OpenCode, Codex, Claude Code, and GitHub Copilot CLI, and lets you choose the optional production tools you need.</p>
-        <p>Download and extract the installer package, then open a terminal in the extracted folder. Run <code>pwsh -File ./install.ps1</code> on Windows (PowerShell 7) or <code>bash ./install.sh</code> on Linux/macOS.</p>
-        <p><a class="button primary" href="https://github.com/xibodev/facet/releases/download/v1.0.3/facet-installer-1.0.3.zip">Download Installer v1.0.3</a> <a href="docs.html#install">Installation details</a></p>
+        <p>Paste the command for your platform into a terminal. It downloads and checksum-verifies the installer package, then opens interactive setup.</p>
+        <div class="grid">
+          <div class="card"><h3>Windows (PowerShell 7)</h3><pre><code id="install-windows">irm https://xibodev.github.io/facet/install.ps1 | iex</code></pre><button type="button" class="button" data-copy="install-windows">Copy Windows command</button></div>
+          <div class="card"><h3>Linux / macOS</h3><pre><code id="install-unix">curl -fsSL https://xibodev.github.io/facet/install.sh | bash</code></pre><button type="button" class="button" data-copy="install-unix">Copy Linux/macOS command</button></div>
+        </div>
+        <p id="copy-status" role="status" aria-live="polite"></p>
+        <p><a href="https://github.com/xibodev/facet/releases/download/v1.0.3/facet-installer-1.0.3.zip">Download Installer ZIP v1.0.3</a> &middot; <a href="docs.html#install">Manual installation and details</a></p>
         <h3>Optional Dependencies</h3>
         <p>Local editing and rendering do not require media-provider API keys. Optional generation services may require separate credentials, account access, or credits. The installer explains optional downloads, and tools report missing configuration when you use them.</p>
         <p>Select Remotion, Piper, gflow, or HyperFrames as needed. The dependency selection lists approximate download sizes and what each component adds.</p>
@@ -187,6 +193,19 @@
       </div>
     </section>
   </main>
+  <script>
+    document.querySelectorAll('[data-copy]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const status = document.getElementById('copy-status');
+        try {
+          await navigator.clipboard.writeText(document.getElementById(button.dataset.copy).textContent);
+          status.textContent = 'Command copied. Paste it into your terminal to start setup.';
+        } catch {
+          status.textContent = 'Copy was unavailable. Select and copy the command above.';
+        }
+      });
+    });
+  </script>
   <footer><div class="wrap footer-row"><span>Facet is licensed under <a href="https://github.com/xibodev/facet/blob/main/LICENSE">AGPL-3.0-or-later</a>.</span><span><a href="docs.html">Documentation</a> &middot; <a href="https://github.com/xibodev/facet">Source on GitHub</a></span></div></footer>
 </body>
 </html>

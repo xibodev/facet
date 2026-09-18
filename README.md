@@ -10,19 +10,21 @@ Facet combines media tools, production packs, and a project workspace. Your agen
 
 Use Facet with your agentic CLI. The interactive installer supports OpenCode, Codex, Claude Code, and GitHub Copilot CLI, and lets you choose the optional production tools you need.
 
-Download [the v1.0.3 installer package](https://github.com/xibodev/facet/releases/download/v1.0.3/facet-installer-1.0.3.zip) and extract it into a folder. Open a terminal in that folder and run:
+Run the command for your platform in a terminal:
 
 ```powershell
 # Windows (PowerShell 7)
-pwsh -File ./install.ps1
+irm https://xibodev.github.io/facet/install.ps1 | iex
 ```
 
 ```bash
 # Linux / macOS
-bash ./install.sh
+curl -fsSL https://xibodev.github.io/facet/install.sh | bash
 ```
 
-The scripts select the matching prebuilt Windows, Linux, or macOS bundle for x64 or ARM64. [Release assets and SHA-256 checksums](https://github.com/xibodev/facet/releases/tag/v1.0.3) are available for manual/offline downloads. Keep the `installer/` folder beside the scripts; do not pipe them into a shell.
+The website bootstrap downloads and checksum-verifies the v1.0.3 installer package, then launches its interactive installer. That installer selects the matching prebuilt Windows, Linux, or macOS bundle for x64 or ARM64.
+
+**Manual/offline download:** [Download the installer ZIP](https://github.com/xibodev/facet/releases/download/v1.0.3/facet-installer-1.0.3.zip), extract it, and run `pwsh -File ./install.ps1` or `bash ./install.sh` from the extracted folder. Keep its `installer/` directory beside the scripts. [Release assets and SHA-256 checksums](https://github.com/xibodev/facet/releases/tag/v1.0.3) are also available. Only the website bootstrap is designed for piping; the extracted installer requires its companion files.
 
 The installer lets you select your CLI, project folder, and optional dependencies. It installs prebuilt Facet binaries and registers the Facet skill in your CLI's project directory, preserving existing user instructions and configuration. Start a new agent session in that project after setup.
 

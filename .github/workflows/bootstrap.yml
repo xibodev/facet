@@ -1,0 +1,46 @@
+name: Installer one-liners
+
+on:
+  push:
+    branches: [staging, main]
+    paths:
+      - 'docs/install.ps1'
+      - 'docs/install.sh'
+      - 'scripts/test-bootstrap*'
+      - '.github/workflows/bootstrap.yml'
+  pull_request:
+    paths:
+      - 'docs/install.ps1'
+      - 'docs/install.sh'
+      - 'scripts/test-bootstrap*'
+      - '.github/workflows/bootstrap.yml'
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: PowerShell pipe and failure checks
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/test-bootstrap.ps1
+      - name: Bash pipe and real terminal checks
+        if: runner.os != 'Windows'
+        run: |
+          bash -n docs/install.sh
+          python3 scripts/test-bootstrap.py
+      - name: Verify pinned published installer and handoff
+        run: python scripts/test-bootstrap-live.py

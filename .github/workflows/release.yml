@@ -21,6 +21,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  bootstrap:
+    uses: ./.github/workflows/bootstrap.yml
   package:
     strategy:
       fail-fast: false
@@ -77,7 +79,7 @@ jobs:
           retention-days: 7
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: package
+    needs: [package, bootstrap]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
