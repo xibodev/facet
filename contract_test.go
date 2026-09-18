@@ -263,15 +263,19 @@ func TestRetainedPackMetadataDescribesGuidanceNotPipelines(t *testing.T) {
 func TestActiveProductDocsDescribeGuidanceNotWorkflowContracts(t *testing.T) {
 	files := []string{
 		"docs/PRODUCT_MODEL.md",
+		"docs/RELEASE_MANIFEST.md",
 		"docs/index.html",
 		"internal/toolbox/productmodel_test.go",
 	}
 	banned := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)\bcanonical\b[^\n]{0,80}\bpipelines?\b`),
 		regexp.MustCompile(`(?i)\bpipeline definitions?\b`),
 		regexp.MustCompile(`(?i)\b(?:pipeline|style) YAML files?\b`),
 		regexp.MustCompile(`(?i)\bdirector skills?\b`),
 		regexp.MustCompile(`(?i)\bprovider[-_ ]selection\b`),
 		regexp.MustCompile(`(?i)\bworkflow schemas?\b`),
+		regexp.MustCompile(`(?i)\bauthoring schemas?\b`),
+		regexp.MustCompile(`(?i)\b(?:112|34)\s+files?\b`),
 	}
 	var violations []string
 	for _, name := range files {
