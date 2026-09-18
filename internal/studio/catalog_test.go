@@ -91,6 +91,109 @@ func TestDiscoverPacks(t *testing.T) {
 	}
 }
 
+func TestPackEndpointFallbackExposesOnlyRetainedSkillGuidance(t *testing.T) {
+	tmpDir := t.TempDir()
+	rootDir := filepath.Join(tmpDir, "workspace", "project")
+	if err := os.MkdirAll(rootDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOCALAPPDATA", filepath.Join(tmpDir, "appdata"))
+	t.Setenv("HOME", tmpDir)
+
+	server := NewServer(rootDir)
+	req := httptest.NewRequest(http.MethodGet, "/api/packs", nil)
+	req.Host = "127.0.0.1:8787"
+	req.Header.Set("Origin", "http://127.0.0.1:8787")
+	rec := httptest.NewRecorder()
+	server.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/packs returned %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var response struct {
+		Packs []map[string]any `json:"packs"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode fallback packs: %v", err)
+	}
+	packs := response.Packs
+	if len(packs) == 0 {
+		t.Fatal("expected Facet-owned fallback packs")
+	}
+
+	retainedSkills := map[string]bool{
+		"explainer":           false,
+		"cinematic":           false,
+		"screen-demo":         false,
+		"talking-head":        false,
+		"social":              false,
+		"character-animation": false,
+		"localization":        false,
+	}
+	deletedIDs := map[string]struct{}{
+		"animated-explainer":  {},
+		"documentary-montage": {},
+		"avatar-spokesperson": {},
+		"clip-factory":        {},
+		"podcast-repurpose":   {},
+		"localization-dub":    {},
+		"explainer-producer":  {},
+		"animation":           {},
+	}
+
+	var findDeletedID func(any) string
+	findDeletedID = func(value any) string {
+		switch value := value.(type) {
+		case string:
+			if _, deleted := deletedIDs[value]; deleted {
+				return value
+			}
+		case []any:
+			for _, item := range value {
+				if id := findDeletedID(item); id != "" {
+					return id
+				}
+			}
+		case map[string]any:
+			for _, item := range value {
+				if id := findDeletedID(item); id != "" {
+					return id
+				}
+			}
+		}
+		return ""
+	}
+
+	for _, pack := range packs {
+		if _, exposed := pack["pipelines"]; exposed {
+			t.Fatalf("fallback pack exposes deleted pipelines contract: %#v", pack)
+		}
+		if id := findDeletedID(pack); id != "" {
+			t.Errorf("fallback pack exposes deleted ID %q", id)
+		}
+		skills, ok := pack["skills"].([]any)
+		if !ok {
+			t.Fatalf("fallback pack has invalid skills: %#v", pack)
+		}
+		for _, value := range skills {
+			id, ok := value.(string)
+			if !ok {
+				t.Fatalf("fallback pack has non-string skill ID: %#v", pack)
+			}
+			if _, retained := retainedSkills[id]; !retained {
+				t.Errorf("fallback pack exposes non-canonical skill ID %q", id)
+				continue
+			}
+			retainedSkills[id] = true
+		}
+	}
+	for id, found := range retainedSkills {
+		if !found {
+			t.Errorf("fallback packs omit retained skill guidance %q", id)
+		}
+	}
+}
+
 func TestCatalogEndpoints(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("LOCALAPPDATA", tmpDir)
