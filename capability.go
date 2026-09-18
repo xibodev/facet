@@ -13,7 +13,7 @@ import (
 // Assets is compiled from the same files used by the CLI bundle and module.
 // It is independent of the executable's working directory.
 //
-//go:embed skills packs agents schemas
+//go:embed skills packs agents schemas/tools
 var Assets embed.FS
 
 func Guidance(name string) (string, error) {

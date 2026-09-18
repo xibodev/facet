@@ -38,21 +38,10 @@ type V2Validator struct {
 	Schema string `json:"schema"`
 }
 
-// THE RELOCATION, stated because the two fields now look similar.
-//
-// The v1 `artifact_schemas` map holds 21 entries, of which 20 describe things
-// an AGENT AUTHORS — a brief, a scene plan, a review, a rig plan — and exactly
-// one describes what a tool writes. It was the module's index of every schema
-// it knows, and the host reads it as "artifact kinds this module emits", which
-// was never true of the other twenty.
-//
-// v2 does not fix that by deleting anything: `artifact_schemas` is a published
-// v1 contract and stays exactly as it was. Instead `artifact_kinds` is the
-// EMITTED surface and carries only the eight real outputs. The authoring
-// formats remain available where they were always published.
-//
-// So the same document now says two different true things: here is every
-// schema I know (v1), and here is what I actually produce (v2).
+// The v1 `artifact_schemas` field declares the generic output kind needed by
+// legacy hosts. This v2 map adds precise media/text kinds for actual tool
+// outputs. Workflow authoring documents are not emitted tool contracts and
+// are intentionally absent from both surfaces.
 
 // V2ArtifactKinds returns the artifact kinds Facet actually emits.
 //

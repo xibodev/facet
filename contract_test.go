@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -37,33 +38,19 @@ func TestProductContractContainsNoBannedTerms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = filepath.WalkDir(".", func(name string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			switch entry.Name() {
-			case ".git", "node_modules", "dist", ".quality-run":
-				return filepath.SkipDir
-			}
-			return nil
-		}
+	for _, name := range trackedFiles(t) {
 		if !isProductTextFile(name) {
-			return nil
+			continue
 		}
-		data, err := os.ReadFile(name)
+		data, err := os.ReadFile(filepath.FromSlash(name))
 		if err != nil {
-			return err
+			t.Fatal(err)
 		}
 		for _, pattern := range banned {
 			if pattern.Match(data) {
-				violations = append(violations, filepath.ToSlash(name)+": "+pattern.String())
+				violations = append(violations, name+": "+pattern.String())
 			}
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 	sort.Strings(violations)
 	if len(violations) != 0 {
@@ -146,8 +133,10 @@ func TestRetainedPacksReferenceOnlyExistingFacetAssets(t *testing.T) {
 }
 
 func TestRemovedDonorSurfacesStayRemoved(t *testing.T) {
+	legacyCommand := "cmd/" + "video" + "kit"
 	removed := []string{
 		".agents/skills",
+		legacyCommand,
 		"pipeline_defs",
 		"skills/core",
 		"skills/creative",
@@ -155,6 +144,8 @@ func TestRemovedDonorSurfacesStayRemoved(t *testing.T) {
 		"skills/methods",
 		"skills/pipelines",
 		"skills/shared",
+		"schemas/artifacts",
+		"schemas/checkpoints",
 		"schemas/pipelines",
 		"schemas/styles",
 		"projects",
@@ -170,7 +161,14 @@ func TestRemovedDonorSurfacesStayRemoved(t *testing.T) {
 		"UPSTREAM_SURFACE_CENSUS.md",
 	}
 	var found []string
+	tracked := trackedFiles(t)
 	for _, name := range removed {
+		for _, trackedName := range tracked {
+			if trackedName == name || strings.HasPrefix(trackedName, name+"/") {
+				found = append(found, name+" (tracked as "+trackedName+")")
+				break
+			}
+		}
 		if _, err := os.Stat(filepath.FromSlash(name)); err == nil {
 			found = append(found, name)
 		} else if !os.IsNotExist(err) {
@@ -179,6 +177,56 @@ func TestRemovedDonorSurfacesStayRemoved(t *testing.T) {
 	}
 	if len(found) != 0 {
 		t.Fatalf("removed donor surfaces returned: %s", strings.Join(found, ", "))
+	}
+}
+
+func TestShippedSchemasAreStatelessToolContracts(t *testing.T) {
+	var violations []string
+	for _, name := range trackedFiles(t) {
+		if !strings.HasPrefix(name, "schemas/") {
+			continue
+		}
+		if strings.HasPrefix(name, "schemas/tools/") && strings.HasSuffix(name, ".schema.json") {
+			continue
+		}
+		violations = append(violations, name)
+	}
+	if len(violations) != 0 {
+		t.Fatalf("shipped schema tree contains non-tool or workflow contracts:\n%s",
+			strings.Join(violations, "\n"))
+	}
+}
+
+func TestRetainedPackMetadataDescribesGuidanceNotPipelines(t *testing.T) {
+	entries, err := os.ReadDir("packs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	banned := regexp.MustCompile(`(?i)\b(pipelines?|director skills?|styles?)\b`)
+	var violations []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := filepath.Join("packs", entry.Name(), "package.json")
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var manifest struct {
+			Description string `json:"description"`
+		}
+		if err := json.Unmarshal(data, &manifest); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if match := banned.FindString(manifest.Description); match != "" {
+			violations = append(violations, filepath.ToSlash(name)+": "+match)
+		}
+	}
+	sort.Strings(violations)
+	if len(violations) != 0 {
+		t.Fatalf("retained pack metadata advertises removed workflow contracts:\n%s",
+			strings.Join(violations, "\n"))
 	}
 }
 
@@ -293,4 +341,22 @@ func isProductTextFile(name string) bool {
 	default:
 		return false
 	}
+}
+
+func trackedFiles(t *testing.T) []string {
+	t.Helper()
+	command := exec.Command("git", "ls-files", "-z")
+	raw, err := command.Output()
+	if err != nil {
+		t.Fatalf("list tracked files: %v", err)
+	}
+	parts := strings.Split(string(raw), "\x00")
+	files := make([]string, 0, len(parts))
+	for _, name := range parts {
+		if name != "" {
+			files = append(files, filepath.ToSlash(name))
+		}
+	}
+	sort.Strings(files)
+	return files
 }

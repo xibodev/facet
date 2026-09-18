@@ -35,12 +35,12 @@ func TestSelfDescribingMediaGetsNoHint(t *testing.T) {
 	}
 }
 
-// Structured artifacts the module knows are time-ranged keep their hint: this
-// is the original reason the field exists.
-func TestTimeRangedJSONKeepsItsTimeline(t *testing.T) {
+// Removed workflow-document contracts must not survive as special presentation
+// behavior after their schemas are gone.
+func TestWorkflowDocumentsGetNoSpecialPresentation(t *testing.T) {
 	for _, path := range []string{"artifacts/scene_plan.json", "artifacts/edit_decisions.json"} {
-		if got := presentationFor(path, "application/json"); got != "timeline" {
-			t.Errorf("%s presentation = %q, want timeline", path, got)
+		if got := presentationFor(path, "application/json"); got != "" {
+			t.Errorf("%s presentation = %q, want no workflow-specific hint", path, got)
 		}
 	}
 }

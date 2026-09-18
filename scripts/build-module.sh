@@ -13,14 +13,13 @@ set -e
 out="${1:-dist}"
 # Not rm -rf: the previous binary may be running (a host holds it open).
 # Overwriting in place is enough and does not fail on a busy directory.
-mkdir -p "$out/agents" "$out/skills" "$out/packs" "$out/schemas"
+mkdir -p "$out/agents" "$out/skills" "$out/packs"
 
 go build -o "$out/xibodev.facet.exe" ./cmd/facet-module
 
 cp agents/facet-creative.md "$out/agents/"
 cp -r skills/facet "$out/skills/"
 cp -r packs/explainer "$out/packs/"
-cp -r schemas/artifacts "$out/schemas/"
 
 # The Remotion composer SOURCE, which the descriptor declares facet_bundle as
 # holding. Omitting it left an installed bundle running a composer from a week

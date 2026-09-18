@@ -914,19 +914,11 @@ func mapSlice(v any) []map[string]any {
 // It is deliberately sparse. A media type already tells the host that an mp4 is
 // video and a jpeg is an image, so repeating that adds nothing and risks
 // disagreeing with the bytes. The hint is for what a media type CANNOT express:
-// a scene plan is application/json and also a timeline, and only Facet knows
-// which JSON documents carry a time axis.
-//
 // An unknown value is ignored by the host, so naming a primitive it does not
 // own is harmless — but pointless, and it would misrepresent the artefact to
 // anything that did honour it.
 func presentationFor(path, mediaType string) string {
 	switch {
-	case strings.HasSuffix(path, "scene_plan.json"),
-		strings.HasSuffix(path, "edit_decisions.json"):
-		// Time-ranged data: every item carries start/end seconds, and a table
-		// of numbers answers "is the pacing sane" badly.
-		return "timeline"
 	case strings.HasSuffix(path, ".md"):
 		return "markdown"
 	case strings.HasSuffix(path, ".srt"), strings.HasSuffix(path, ".vtt"):

@@ -181,7 +181,7 @@ const AnimatedBackground: React.FC<{ theme: ThemeConfig }> = ({ theme }) => {
 };
 
 // ---------------------------------------------------------------------------
-// Types — aligned with edit_decisions artifact schema
+// Types used by the stateless video_compose request.
 // ---------------------------------------------------------------------------
 
 interface Cut {

@@ -3,7 +3,6 @@ package module
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
@@ -71,20 +70,12 @@ func Describe(version string) Envelope {
 	// validate against, and a capability referencing one that is absent leaves
 	// nothing to validate.
 	//
-	// NOT a claim that validation happens. facet-studio confirmed the
-	// equivalent sentence about artifact_schemas in their own protocol doc is
-	// fiction — nothing reads them — and I never verified the request/result
-	// case either. Under operator ruling 6 an unenforced guarantee must be
-	// described as it is, not as it was hoped: these are declared so a host
-	// CAN validate, and whether any host does is that host's to state.
-	artifacts := artifactSchemas(&warnings)
+	// NOT a claim that validation happens. These are declared so a host CAN
+	// validate, and whether any host does is that host's to state.
+	artifacts := map[string]any{}
 
 	// "output" is the KIND every Facet artifact carries, and the host
 	// validates an artifact's kind against the capability's artifact_schemas.
-	// The twenty document schemas describe things an agent AUTHORS — a brief,
-	// a scene plan, a review — not the media a tool writes, so none of them
-	// could ever describe a rendered mp4.
-	//
 	// Without an entry here, declaring the kind a capability really emits gets
 	// pruned as a dangling reference, and the host refuses every
 	// artifact-producing run. This makes the kind a first-class entry so the
@@ -544,18 +535,10 @@ func rawCapabilityList() []Capability {
 			// The KINDS this capability emits, which is what the host
 			// validates each artifact's `kind` against.
 			//
-			// This declared "render_report" and "asset_manifest" — names of
-			// JSON schema documents in schemas/artifacts/, not kinds. Every
-			// artifact Facet emits carries kind "output" (a rendered file: an
-			// mp4, an mp3, a frame), so the host refused every artifact-
-			// producing run with "produced artifact kind \"output\", which it
-			// does not declare in artifact_schemas".
-			//
-			// The two vocabularies were never the same: the schemas describe
-			// documents an agent authors, while the artifacts are the media a
-			// tool writes. Declaring the kind actually emitted is the honest
-			// half of that fix; the document schemas remain available through
-			// the descriptor's index for anything that authors them.
+			// Every artifact Facet emits carries kind "output" (a rendered
+			// file: an mp4, an mp3, a frame). Declaring that emitted kind is
+			// the complete contract; Facet does not ship workflow-document
+			// schemas alongside stateless tool operations.
 			ArtifactSchemas: []string{ArtifactKindOutput},
 			Skills:          []string{"facet-core"},
 			// A render takes 30s at 720p and 83s at 1080p, so this capability
@@ -629,99 +612,6 @@ func rawCapabilityList() []Capability {
 			},
 		},
 	}
-}
-
-// unreferencedArtifactSchemas are schema files present on disk that no tool,
-// pack, pipeline, or skill references. They are still declared — the host may
-// legitimately read an existing artifact written against one — but they are
-// flagged so the host does not present them as current output contracts.
-//
-// Verified by reference count across tracked files at commit e476bc3.
-var unreferencedArtifactSchemas = map[string]bool{
-	"cost_log": true,
-}
-
-// artifactSchemas loads the real JSON Schema documents from disk, keyed by
-// schema ID.
-//
-// The host receives schemas through `describe`, not by reading a module's files
-// off disk, so the documents are inlined rather than referenced by path: a path
-// would only be resolvable if the host could see into this repository.
-//
-// A missing directory or unreadable file is reported as a warning rather than
-// declared, so the host is never promised a schema that is not there. Files
-// with no known producer or consumer are declared but warned about.
-func artifactSchemas(warnings *[]string) map[string]any {
-	out := map[string]any{}
-	dir := modulePath("schemas", "artifacts")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		*warnings = append(*warnings, "artifact schema directory unavailable: "+filepath.ToSlash(dir))
-		return out
-	}
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".schema.json") {
-			continue
-		}
-		id := strings.TrimSuffix(name, ".schema.json")
-
-		raw, err := os.ReadFile(filepath.Join(dir, name))
-		if err != nil {
-			*warnings = append(*warnings, "artifact schema unreadable: "+id)
-			continue
-		}
-		var doc any
-		if err := json.Unmarshal(raw, &doc); err != nil {
-			*warnings = append(*warnings, "artifact schema is not valid JSON: "+id)
-			continue
-		}
-		// The schema BODY is deliberately not inlined. It was 67KB of a 107KB
-		// descriptor — 58% — that every agent paid at session start, and the
-		// host confirmed nothing reads it: the cockpit renders from the
-		// host-resolved primitive, computed from media type plus the
-		// artifact's own presentation hint.
-		//
-		// What stays is an index entry: the ID a capability references, so
-		// every reference still resolves, plus a digest and size so a host
-		// that DOES want a schema can verify the file it reads is the one this
-		// descriptor described. An index of IDs alone would make the reference
-		// checkable but the content unverifiable.
-		out[id] = artifactSchemaRef(doc, raw)
-
-		if unreferencedArtifactSchemas[id] {
-			*warnings = append(*warnings,
-				"artifact schema '"+id+"' has no known producer or consumer; "+
-					"readable for existing artifacts, not a current output contract")
-		}
-	}
-	return out
-}
-
-// digestOfBytes renders a sha256 digest in the module-boundary form.
-func digestOfBytes(raw []byte) string {
-	sum := sha256.Sum256(raw)
-	return "sha256:" + hex.EncodeToString(sum[:])
-}
-
-// artifactSchemaRef describes an artifact schema without carrying it.
-//
-// The description and title come from the schema itself, so an agent can tell
-// what an artifact IS without fetching the document — which is what the
-// summary was actually used for. The digest identifies the exact bytes.
-func artifactSchemaRef(doc any, raw []byte) map[string]any {
-	ref := map[string]any{
-		"digest": digestOfBytes(raw),
-		"bytes":  len(raw),
-	}
-	if m, ok := doc.(map[string]any); ok {
-		for _, k := range []string{"title", "description"} {
-			if v, present := m[k]; present {
-				ref[k] = v
-			}
-		}
-	}
-	return ref
 }
 
 func overlays(warnings *[]string) []Overlay {

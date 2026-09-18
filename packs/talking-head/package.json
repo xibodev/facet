@@ -1,7 +1,7 @@
 {
   "name": "@xibodev/facet-pack-talkinghead",
   "version": "1.0.0",
-  "description": "AI presenter videos, lip-sync, teleprompter scripts, and neural narration pipeline for Facet.",
+  "description": "Facet guidance for presenter video, lip-sync, teleprompter scripts, and narration.",
   "keywords": ["facet", "facet-pack", "talking-head", "avatar", "video"],
   "author": "Facet Authors",
   "license": "Apache-2.0",
