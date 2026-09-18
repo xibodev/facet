@@ -14,6 +14,22 @@ import (
 
 var productPathPattern = regexp.MustCompile("`((?:skills|packs|agents|schemas|styles|pipeline_defs|\\.agents)/[^`\\s,;:)]+)")
 
+func TestDonorGuardChecksTrackedPathNames(t *testing.T) {
+	banned := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)open[\s._-]*` + "montage"),
+		regexp.MustCompile(`(?i)video[\s._-]*` + "kit"),
+	}
+	tracked := []string{
+		"docs/Open" + "Montage.md",
+		"packs/video" + "-kit/README.md",
+		"docs/FACET.md",
+	}
+	violations := donorPathViolations(tracked, banned)
+	if len(violations) != 2 {
+		t.Fatalf("donor path scan found %d violations, want 2: %v", len(violations), violations)
+	}
+}
+
 func TestProductContractContainsNoBannedTerms(t *testing.T) {
 	banned := []*regexp.Regexp{
 		regexp.MustCompile(`(?i)open[\s._-]*` + "montage"),
@@ -38,7 +54,9 @@ func TestProductContractContainsNoBannedTerms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range trackedFiles(t) {
+	tracked := trackedFiles(t)
+	violations = append(violations, donorPathViolations(tracked, banned)...)
+	for _, name := range tracked {
 		if !isProductTextFile(name) {
 			continue
 		}
@@ -56,6 +74,18 @@ func TestProductContractContainsNoBannedTerms(t *testing.T) {
 	if len(violations) != 0 {
 		t.Fatalf("banned donor product terms remain:\n%s", strings.Join(violations, "\n"))
 	}
+}
+
+func donorPathViolations(names []string, banned []*regexp.Regexp) []string {
+	var violations []string
+	for _, name := range names {
+		for _, pattern := range banned {
+			if pattern.MatchString(name) {
+				violations = append(violations, "tracked path:"+name+": "+pattern.String())
+			}
+		}
+	}
+	return violations
 }
 
 func TestRetainedPacksReferenceOnlyExistingFacetAssets(t *testing.T) {
@@ -234,6 +264,7 @@ func TestActiveProductDocsDescribeGuidanceNotWorkflowContracts(t *testing.T) {
 	files := []string{
 		"docs/PRODUCT_MODEL.md",
 		"docs/index.html",
+		"internal/toolbox/productmodel_test.go",
 	}
 	banned := []*regexp.Regexp{
 		regexp.MustCompile(`(?i)\bpipeline definitions?\b`),
