@@ -14,7 +14,7 @@
     "packs",
     "schemas",
     "remotion-composer/src",
-    "remotion-composer/public",
+    "remotion-composer/legacy-composer-manifest.json",
     "remotion-composer/package.json",
     "remotion-composer/package-lock.json",
     "remotion-composer/tsconfig.json",

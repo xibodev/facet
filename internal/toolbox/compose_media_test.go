@@ -37,16 +37,10 @@ func TestStageRemotionMediaPaths(t *testing.T) {
 	composeRuntimeFixture(t, filepath.Join(composer, "public", "unreferenced.png"), png)
 	remote := "https://example.invalid/a.mp4?token=keep%2Bexact#fragment"
 	props := map[string]any{
-		"cuts":          []any{map[string]any{"source": "assets/clip.mp4", "backgroundImage": "assets/still.png", "backgroundVideo": "assets/clip.mp4", "images": []any{"assets/still.png"}, "text": ".env"}},
-		"audio":         map[string]any{"narration": map[string]any{"src": composeMediaFileURL(audioPath)}, "music": map[string]any{"src": "bundled.wav"}},
-		"videoSrc":      filepath.Join(workspace, "assets", "clip.mp4"),
-		"backgroundSrc": remote,
-		"productImage":  "assets/still.png",
-		"scenes":        []any{map[string]any{"src": remote, "backgroundSrc": "assets/clip.mp4"}},
-		"clips":         []any{map[string]any{"src": "assets/still.png"}},
-		"soundtrack":    map[string]any{"src": audioPath},
-		"music":         map[string]any{"src": "data:audio/wav;base64,unchanged"},
-		"metadata":      map[string]any{"src": ".env"},
+		"cuts":     []any{map[string]any{"type": "media", "source": "assets/clip.mp4", "media_kind": "video", "title": ".env"}},
+		"audio":    map[string]any{"narration": map[string]any{"src": composeMediaFileURL(audioPath)}, "music": map[string]any{"src": "bundled.wav"}},
+		"scenes":   []any{map[string]any{"type": "media", "source": remote, "media_kind": "video"}},
+		"metadata": map[string]any{"src": ".env"},
 	}
 	original, _ := json.Marshal(props)
 	result, err := stageRemotionMedia(original, composer, public)
@@ -74,23 +68,15 @@ func TestStageRemotionMediaPaths(t *testing.T) {
 	}
 	cut := got["cuts"].([]any)[0].(map[string]any)
 	assertAsset(cut["source"], video)
-	assertAsset(cut["backgroundVideo"], video)
-	assertAsset(cut["backgroundImage"], png)
-	assertAsset(cut["images"].([]any)[0], png)
 	audio := got["audio"].(map[string]any)
 	assertAsset(audio["narration"].(map[string]any)["src"], wav)
 	assertAsset(audio["music"].(map[string]any)["src"], wav)
-	assertAsset(got["videoSrc"], video)
-	assertAsset(got["productImage"], png)
-	assertAsset(got["soundtrack"].(map[string]any)["src"], wav)
-	assertAsset(got["clips"].([]any)[0].(map[string]any)["src"], png)
 	scene := got["scenes"].([]any)[0].(map[string]any)
-	assertAsset(scene["backgroundSrc"], video)
-	if got["backgroundSrc"] != remote || scene["src"] != remote || got["music"].(map[string]any)["src"] != "data:audio/wav;base64,unchanged" || got["metadata"].(map[string]any)["src"] != ".env" || cut["text"] != ".env" {
+	if scene["source"] != remote || got["metadata"].(map[string]any)["src"] != ".env" || cut["title"] != ".env" {
 		t.Fatalf("non-media props or remote URLs changed: %s", result)
 	}
 	entries, err := os.ReadDir(public)
-	if err != nil || len(entries) != 6 {
+	if err != nil || len(entries) != 3 {
 		t.Fatalf("unexpected staged files: %v %v", entries, err)
 	}
 	for _, entry := range entries {
@@ -181,7 +167,7 @@ fs.copyFileSync('../source.mp4', process.argv[5]);
 			composeDeliveryMedia(t, filepath.Join(workspace, "tone.wav"), true)
 			composeRuntimeFixture(t, filepath.Join(workspace, ".env"), "secret")
 			composeRuntimeFixture(t, filepath.Join(workspace, ".remotion_props.json"), "user-owned props")
-			props := map[string]any{"cuts": []any{map[string]any{"source": "source.mp4"}}, "audio": map[string]any{"narration": map[string]any{"src": composeMediaFileURL(filepath.Join(workspace, "tone.wav"))}}}
+			props := map[string]any{"cuts": []any{map[string]any{"type": "media", "source": "source.mp4", "media_kind": "video"}}, "audio": map[string]any{"narration": map[string]any{"src": composeMediaFileURL(filepath.Join(workspace, "tone.wav"))}}}
 			before, _ := json.Marshal(props)
 			_, _, err := doRemotionRender(composeRequest{RawProps: props}, filepath.Join(workspace, "output.mp4"), 15*time.Second)
 			if (err != nil) != fail {
@@ -229,7 +215,7 @@ func TestRemotionLocalMediaOfflineRender(t *testing.T) {
 	composeDeliveryMedia(t, filepath.Join(workspace, "clip.mp4"), false)
 	composeDeliveryMedia(t, filepath.Join(workspace, "tone.wav"), true)
 	props := map[string]any{
-		"cuts":  []any{map[string]any{"id": "local-video", "source": "clip.mp4", "in_seconds": 0, "out_seconds": 0.2}},
+		"cuts":  []any{map[string]any{"id": "local-video", "type": "media", "source": "clip.mp4", "media_kind": "video", "in_seconds": 0, "out_seconds": 0.2}},
 		"audio": map[string]any{"narration": map[string]any{"src": composeMediaFileURL(filepath.Join(workspace, "tone.wav"))}},
 	}
 	props["timeout_seconds"] = 120

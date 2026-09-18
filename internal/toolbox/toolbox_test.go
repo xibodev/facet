@@ -659,7 +659,6 @@ func TestToolAliasesAndInlineJSON(t *testing.T) {
 func TestVideoComposeDirectProps(t *testing.T) {
 	// 1. Test direct Explainer props estimate
 	explainerProps := `{
-		"theme": "flat-motion-graphics",
 		"cuts": [
 			{"id": "sc1", "type": "hero_title", "in_seconds": 0, "out_seconds": 4, "text": "The Universe"}
 		],
@@ -672,10 +671,8 @@ func TestVideoComposeDirectProps(t *testing.T) {
 
 	// 2. Test direct Scene Plan JSON estimate
 	scenePlan := `{
-		"version": "1.0",
-		"style_playbook": "flat-motion-graphics",
 		"scenes": [
-			{"id": "sc1", "type": "text_card", "description": "Intro to space", "start_seconds": 0, "end_seconds": 5}
+			{"id": "sc1", "type": "text_card", "text": "Intro to space", "start_seconds": 0, "end_seconds": 5}
 		],
 		"output": "renders/final.mp4"
 	}`

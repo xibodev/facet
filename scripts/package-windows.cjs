@@ -11,13 +11,15 @@ const {createHash}=require('node:crypto');
  const version=JSON.parse(await fs.readFile(path.join(repo,'package.json'),'utf8')).version;
  const out=path.resolve(process.argv[2]||path.join(repo,'build','release'));
  const stage=path.join(out,`facet-${version}-windows-amd64`);
+ await fs.rm(stage,{recursive:true,force:true});
  await fs.mkdir(path.join(stage,'bin'),{recursive:true});
  const env={...process.env,GOOS:'windows',GOARCH:'amd64',CGO_ENABLED:'0'};
  for(const command of ['facet','facet-ui','facet-module'])execFileSync('go',['build','-trimpath','-o',path.join(stage,'bin',`${command}.exe`),`./cmd/${command}`],{cwd:repo,env,stdio:'inherit'});
- const tracked=execFileSync('git',['ls-files','-z'],{cwd:repo,encoding:'utf8'}).split('\0').filter(Boolean);
+ const tracked=execFileSync('git',['ls-files','-z','--cached','--others','--exclude-standard'],{cwd:repo,encoding:'utf8'}).split('\0').filter(Boolean);
  for(const file of tracked){
-  if(!/^(skills|packs|agents|schemas)\//.test(file)&&!/^remotion-composer\/(src\/|package(?:-lock)?\.json$|tsconfig\.json$)/.test(file))continue;
+  if(!/^(skills|packs|agents|schemas)\//.test(file)&&!/^remotion-composer\/(src\/|package(?:-lock)?\.json$|tsconfig\.json$|legacy-composer-manifest\.json$)/.test(file))continue;
   if(/(^|\/)(node_modules|\.env[^/]*|\.git)(\/|$)/.test(file))throw Error(`Unsafe package entry: ${file}`);
+  try{await fs.access(path.join(repo,file));}catch(error){if(error.code==='ENOENT')continue;throw error;}
   const target=path.join(stage,'bundle',file);await fs.mkdir(path.dirname(target),{recursive:true});await fs.copyFile(path.join(repo,file),target);
  }
  for(const file of ['LICENSE','THIRD_PARTY_NOTICES.md'])await fs.copyFile(path.join(repo,file),path.join(stage,file));

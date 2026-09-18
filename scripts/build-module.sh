@@ -51,7 +51,9 @@ cp -r remotion-composer/src "$out/remotion-composer/"
 #
 # Required files fail the build. tsconfig.json is required too -- the composer
 # is TypeScript.
-cp remotion-composer/package.json remotion-composer/package-lock.json    remotion-composer/tsconfig.json "$out/remotion-composer/"
+cp remotion-composer/package.json remotion-composer/package-lock.json \
+  remotion-composer/tsconfig.json remotion-composer/legacy-composer-manifest.json \
+  "$out/remotion-composer/"
 
 # public/ is genuinely optional: it holds staged media that a fresh checkout
 # may not have. Optional stays optional, but the reason is now stated rather
@@ -72,7 +74,7 @@ fi
 # describe succeeds with or without the composer manifests, so it cannot be the
 # only check -- that is the same "a successful exit is not acceptance" mistake
 # this repo has made before.
-for required in package.json package-lock.json tsconfig.json; do
+for required in package.json package-lock.json tsconfig.json legacy-composer-manifest.json; do
   if [ ! -f "$out/remotion-composer/$required" ]; then
     echo "FATAL: $out/remotion-composer/$required is missing; the bundle cannot render" >&2
     exit 1

@@ -44,7 +44,8 @@ func TestInstalledBundleGuidanceIsCurrent(t *testing.T) {
 		// binaries, identical request, different videos.
 		filepath.Join("remotion-composer", "src", "Root.tsx"),
 		filepath.Join("remotion-composer", "src", "Explainer.tsx"),
-		filepath.Join("remotion-composer", "src", "explainerMetadata.ts"),
+		filepath.Join("remotion-composer", "src", "contract.ts"),
+		filepath.Join("remotion-composer", "legacy-composer-manifest.json"),
 		filepath.Join("remotion-composer", "package.json"),
 	} {
 		want, err := os.ReadFile(filepath.Join(repo, rel))

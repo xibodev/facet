@@ -16,7 +16,12 @@ def product_file(name):
     return parts[0] in {"skills", "packs", "agents", "schemas"} or (
         parts[0] == "remotion-composer" and (
             len(parts) > 2 and parts[1] in {"src", "public"}
-            or name in {"remotion-composer/package.json", "remotion-composer/package-lock.json", "remotion-composer/tsconfig.json"}
+            or name in {
+                "remotion-composer/package.json",
+                "remotion-composer/package-lock.json",
+                "remotion-composer/tsconfig.json",
+                "remotion-composer/legacy-composer-manifest.json",
+            }
         )
     )
 
@@ -34,7 +39,10 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     suffix = ".exe" if args.os == "windows" else ""
     env = dict(os.environ, GOOS=args.os, GOARCH=args.arch, CGO_ENABLED="0")
-    tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=repo).decode().split("\0")
+    tracked = subprocess.check_output(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=repo,
+    ).decode().split("\0")
     with tempfile.TemporaryDirectory(prefix="facet-package-") as temp:
         temp = Path(temp)
         installer = out / f"facet-installer-{version}.zip"
@@ -70,6 +78,8 @@ def main():
             for name in sorted(filter(None, tracked)):
                 if product_file(name):
                     source = repo / name
+                    if not source.exists():
+                        continue
                     if source.is_symlink():
                         raise ValueError(f"Refusing bundle symlink: {name}")
                     z.write(source, "bundle/" + name)

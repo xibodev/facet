@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const lock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
+const composerManifest = JSON.parse(readFileSync(new URL('../remotion-composer/legacy-composer-manifest.json', import.meta.url), 'utf8'));
 assert.equal(lock.version, manifest.version);
 assert.equal(lock.packages[''].version, manifest.version);
 assert.deepEqual(lock.packages[''].devDependencies, manifest.devDependencies);
@@ -34,11 +35,20 @@ for (const file of [
   'package.json', 'bin/facet-cli.js', 'bin/facet-ui-cli.js',
   'skills/facet/SKILL.md', 'packs/explainer/SKILL.md',
   'remotion-composer/package.json', 'remotion-composer/package-lock.json',
-  'remotion-composer/tsconfig.json', 'remotion-composer/src/index.tsx',
+  'remotion-composer/tsconfig.json', 'remotion-composer/legacy-composer-manifest.json',
+  'remotion-composer/src/index.tsx', 'remotion-composer/src/contract.ts',
   'README.md', 'LICENSE',
 ]) assert.ok(files.has(file), `Missing npm content: ${file}`);
 for (const prefix of ['schemas/', 'web/']) {
   assert.ok([...files].some(file => file.startsWith(prefix)), `Missing npm content: ${prefix}`);
+}
+const composerSource = [...files]
+  .filter(file => file.startsWith('remotion-composer/src/'))
+  .map(file => file.slice('remotion-composer/'.length))
+  .sort();
+assert.deepEqual(composerSource, [...composerManifest.allowedSourcePaths].sort());
+for (const legacyPath of composerManifest.bannedLegacyPaths) {
+  assert.ok(!files.has(`remotion-composer/${legacyPath}`), `Legacy composer path returned: ${legacyPath}`);
 }
 for (const file of files) {
   assert.doesNotMatch(file, /(^|\/)(node_modules|\.git|\.env(?:\.[^/]*)?|\.quality-run)(\/|$)/);

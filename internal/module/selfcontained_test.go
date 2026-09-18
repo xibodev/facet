@@ -30,6 +30,8 @@ func TestPackagedModuleCarriesItsDeclaredContent(t *testing.T) {
 		filepath.Join("packs", "explainer", "SCENE-TYPES.md"),
 		filepath.Join("packs", "explainer", "NARRATED-WALKTHROUGH.md"),
 		filepath.Join("remotion-composer", "src", "Root.tsx"),
+		filepath.Join("remotion-composer", "src", "contract.ts"),
+		filepath.Join("remotion-composer", "legacy-composer-manifest.json"),
 	} {
 		if _, err := os.Stat(filepath.Join(pkg, rel)); err != nil {
 			t.Errorf("the packaged module is missing declared content: %s\n"+

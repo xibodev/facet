@@ -8,8 +8,7 @@ The candidate integration gate is local and non-certifying. Reproduce it with:
 go test -short ./... -count=1 -timeout=6m
 go vet ./...
 node --test "bin/*.test.js" "scripts/*.test.mjs"
-node --test "remotion-composer/src/*.test.mjs"
-node remotion-composer/node_modules/typescript/bin/tsc --noEmit --project remotion-composer/tsconfig.json
+npm --prefix remotion-composer test
 pwsh -NoProfile -File scripts/test-install.ps1
 node scripts/release-package-smoke.mjs
 node scripts/studio-repair-smoke.mjs

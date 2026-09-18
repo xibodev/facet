@@ -46,11 +46,63 @@ func TestRequiredRetainedPortLegalNotice(t *testing.T) {
 		"supplied-footage source editing",
 		"audio mixing/normalization",
 		"technical output review",
-		"no donor skills, pipelines, schemas, fixtures, composer source, or product guidance",
+		"no donor skills, pipelines, schemas, fixtures, or product guidance",
+		"composer implementation in `remotion-composer/src` is independently authored by Facet",
 	}
 	for _, text := range required {
 		if !strings.Contains(notice, text) {
 			t.Errorf("THIRD_PARTY_NOTICES.md omits required legal attribution %q", text)
+		}
+	}
+}
+
+func TestLegacyComposerManifestGuardsCurrentSource(t *testing.T) {
+	var manifest struct {
+		AllowedSourcePaths []string `json:"allowedSourcePaths"`
+		BannedLegacyPaths  []string `json:"bannedLegacyPaths"`
+		BannedLegacyTokens []string `json:"bannedLegacyTokens"`
+	}
+	data, err := os.ReadFile(filepath.Join("remotion-composer", "legacy-composer-manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	var actual []string
+	var source strings.Builder
+	err = filepath.WalkDir(filepath.Join("remotion-composer", "src"), func(name string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		relative, err := filepath.Rel("remotion-composer", name)
+		if err != nil {
+			return err
+		}
+		actual = append(actual, filepath.ToSlash(relative))
+		content, err := os.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		source.Write(content)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(actual)
+	sort.Strings(manifest.AllowedSourcePaths)
+	if strings.Join(actual, "\n") != strings.Join(manifest.AllowedSourcePaths, "\n") {
+		t.Fatalf("composer source differs from the clean-room allowlist:\ngot %v\nwant %v", actual, manifest.AllowedSourcePaths)
+	}
+	for _, name := range manifest.BannedLegacyPaths {
+		if _, err := os.Stat(filepath.Join("remotion-composer", filepath.FromSlash(name))); !os.IsNotExist(err) {
+			t.Errorf("banned legacy composer path returned: %s", name)
+		}
+	}
+	for _, token := range manifest.BannedLegacyTokens {
+		if strings.Contains(source.String(), token) {
+			t.Errorf("banned legacy composer token returned: %s", token)
 		}
 	}
 }
@@ -500,7 +552,7 @@ func isProductTextFile(name string) bool {
 
 func trackedFiles(t *testing.T) []string {
 	t.Helper()
-	command := exec.Command("git", "ls-files", "-z")
+	command := exec.Command("git", "ls-files", "-z", "--cached", "--others", "--exclude-standard")
 	raw, err := command.Output()
 	if err != nil {
 		t.Fatalf("list tracked files: %v", err)
@@ -509,6 +561,9 @@ func trackedFiles(t *testing.T) []string {
 	files := make([]string, 0, len(parts))
 	for _, name := range parts {
 		if name != "" {
+			if _, err := os.Stat(filepath.FromSlash(name)); os.IsNotExist(err) {
+				continue
+			}
 			files = append(files, filepath.ToSlash(name))
 		}
 	}

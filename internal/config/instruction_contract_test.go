@@ -34,7 +34,7 @@ func TestRepositoryInstructionContract(t *testing.T) {
 			}
 		}
 		if file == "packs/explainer/SKILL.md" {
-			for _, required := range []string{"Narration, music, and captions are optional", "Estimate before rendering", "review the final file"} {
+			for _, required := range []string{"Narration and music are optional", "Estimate before rendering", "review the final MP4"} {
 				if !strings.Contains(text, required) {
 					t.Errorf("%s lacks %q", file, required)
 				}

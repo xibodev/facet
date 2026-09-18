@@ -18,15 +18,16 @@ notices, provision of Corresponding Source when conveying covered works, and
 the source-code offer for users interacting with modified covered software over
 a network.
 
-After this cleanup, no donor skills, pipelines, schemas, fixtures, composer
-source, or product guidance are shipped from that donor.
+After this cleanup, no donor skills, pipelines, schemas, fixtures, or product
+guidance are shipped from that donor.
 
 Facet invokes user-installed FFmpeg and ffprobe executables at runtime; it does
 not vendor or distribute those binaries. The terms for the user's FFmpeg build
 remain independent. See <https://ffmpeg.org/legal.html>.
 
-The Remotion composer and its npm dependencies retain their respective
-licenses. Their package identities and versions are recorded in
+The composer implementation in `remotion-composer/src` is independently
+authored by Facet. Remotion and the composer's npm dependencies retain their
+respective licenses; their package identities and versions are recorded in
 `remotion-composer/package-lock.json`.
 
 Optional tools such as HyperFrames, Piper, and gflow are installed or supplied

@@ -787,17 +787,19 @@ var schemas = map[string]any{
 		"output_path": map[string]any{"type": "string"}, "transition": map[string]any{"enum": []string{"cut", "crossfade", "fade"}, "default": "cut"}, "transition_duration": map[string]any{"type": "number", "default": 0.5},
 		"auto_normalize": map[string]any{"type": "boolean", "default": false}, "layout": map[string]any{"enum": []string{"side_by_side", "vertical_stack", "picture_in_picture"}},
 	}},
-	"video_compose": map[string]any{"type": "object", "additionalProperties": false, "description": "Accepts an operation envelope (default compose), direct Remotion props with nonempty cuts, or a scene plan with nonempty scenes. Direct cuts take precedence over scenes and operation. Direct Explainer props support width, height, fps and duration_seconds; defaults are 1920x1080 at 30 fps, with one second padding after the last cut only when duration_seconds is omitted. Metadata validation runs in Remotion, not in estimates; estimates do not deeply validate props or prove a render will succeed.", "properties": map[string]any{
+	"video_compose": map[string]any{"type": "object", "additionalProperties": false, "description": "Accepts an operation envelope (default compose), direct Facet Explainer props with nonempty cuts, or a scene plan with nonempty scenes. The Remotion composer supports only text_card, hero_title, stat_card, and media. Direct cuts take precedence over scenes and operation. Width, height, fps, and duration_seconds are explicit; defaults are 1920x1080 at 30 fps and the last cut end. Metadata validation runs in Remotion, not in estimates; estimates route work but do not prove a render will succeed.", "properties": map[string]any{
 		"operation": map[string]any{"enum": []string{"compose", "render", "remotion_render", "burn_subtitles", "overlay", "encode"}}, "input_path": map[string]any{"type": "string"}, "output_path": map[string]any{"type": "string"},
 		"edit_decisions": map[string]any{"type": "object"}, "asset_manifest": map[string]any{"type": "object"}, "audio_path": map[string]any{"type": "string"}, "subtitle_path": map[string]any{"type": "string"},
-		"output": stringSchema(), "composition_id": stringSchema(), "composition": stringSchema(), "theme": stringSchema(), "playbook": stringSchema(), "themeConfig": map[string]any{"type": "object"}, "style_playbook": stringSchema(),
+		"output": stringSchema(), "composition_id": map[string]any{"const": "Explainer"}, "composition": map[string]any{"const": "Explainer"},
 		"width":            map[string]any{"type": "integer", "minimum": 2, "maximum": 9007199254740991, "multipleOf": 2, "default": 1920, "description": "Direct Explainer props: positive even safe integer pixels."},
 		"height":           map[string]any{"type": "integer", "minimum": 2, "maximum": 9007199254740991, "multipleOf": 2, "default": 1080, "description": "Direct Explainer props: positive even safe integer pixels."},
 		"fps":              map[string]any{"type": "number", "exclusiveMinimum": 0, "default": 30, "description": "Direct Explainer props: positive finite frame rate, used for metadata and scene timing."},
-		"duration_seconds": map[string]any{"type": "number", "exclusiveMinimum": 0, "description": "Direct Explainer props: exact duration; duration_seconds * fps must be a positive safe integer frame count. Cuts must fit within it and span at least one frame after boundary rounding. Omit for last cut out_seconds + 1 second (60 seconds with no cuts in Remotion)."},
-		"cuts":             map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "object", "required": []string{"in_seconds", "out_seconds"}, "properties": map[string]any{"in_seconds": map[string]any{"type": "number", "minimum": 0}, "out_seconds": map[string]any{"type": "number", "exclusiveMinimum": 0}}}},
-		"scenes":           map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "object", "required": []string{"start_seconds", "end_seconds"}}},
-		"overlays":         map[string]any{"type": "array", "items": map[string]any{"type": "object"}}, "captions": map[string]any{}, "audio": map[string]any{}, "subtitle_style": map[string]any{"type": "object"},
+		"duration_seconds": map[string]any{"type": "number", "exclusiveMinimum": 0, "description": "Direct Explainer props: exact duration; duration_seconds * fps must be a positive safe integer frame count. Cuts must fit within it and span at least one frame after boundary rounding. Omit to end at the last cut."},
+		"backgroundColor":  stringSchema(),
+		"cuts":             map[string]any{"type": "array", "minItems": 1, "items": explainerCutSchema("in_seconds", "out_seconds")},
+		"scenes":           map[string]any{"type": "array", "minItems": 1, "items": explainerCutSchema("start_seconds", "end_seconds")},
+		"audio":            explainerAudioSchema(),
+		"overlays":         map[string]any{"type": "array", "items": map[string]any{"type": "object"}}, "captions": map[string]any{}, "subtitle_style": map[string]any{"type": "object"},
 		"codec": stringSchema(), "crf": map[string]any{"type": "integer"}, "preset": stringSchema(), "profile": stringSchema(), "remotion_timeout_ms": map[string]any{"type": "integer"}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1},
 	}},
 	"subtitle_gen": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"segments"}, "properties": map[string]any{
@@ -994,6 +996,55 @@ func objectSchema(required []string, properties map[string]any) map[string]any {
 	return map[string]any{"type": "object", "additionalProperties": false, "required": required, "properties": properties}
 }
 func stringSchema() map[string]any { return map[string]any{"type": "string"} }
+func nonBlankStringSchema() map[string]any {
+	return map[string]any{"type": "string", "minLength": 1}
+}
+func explainerCutSchema(start, end string) map[string]any {
+	common := func(extra map[string]any) map[string]any {
+		properties := map[string]any{
+			"id": stringSchema(), "type": nonBlankStringSchema(),
+			start:             map[string]any{"type": "number", "minimum": 0},
+			end:               map[string]any{"type": "number", "exclusiveMinimum": 0},
+			"backgroundColor": stringSchema(), "color": stringSchema(),
+		}
+		for key, value := range extra {
+			properties[key] = value
+		}
+		return properties
+	}
+	return map[string]any{"oneOf": []any{
+		objectSchema([]string{"type", start, end, "text"}, common(map[string]any{
+			"type": map[string]any{"const": "text_card"}, "text": nonBlankStringSchema(),
+			"fontSize": map[string]any{"type": "number", "exclusiveMinimum": 0},
+		})),
+		objectSchema([]string{"type", start, end, "text"}, common(map[string]any{
+			"type": map[string]any{"const": "hero_title"}, "text": nonBlankStringSchema(),
+			"subtitle": nonBlankStringSchema(),
+		})),
+		objectSchema([]string{"type", start, end, "stat"}, common(map[string]any{
+			"type": map[string]any{"const": "stat_card"}, "stat": nonBlankStringSchema(),
+			"label": nonBlankStringSchema(),
+		})),
+		objectSchema([]string{"type", start, end, "source", "media_kind"}, common(map[string]any{
+			"type": map[string]any{"const": "media"}, "source": nonBlankStringSchema(),
+			"media_kind": map[string]any{"enum": []string{"image", "video"}},
+			"fit":        map[string]any{"enum": []string{"contain", "cover"}},
+			"title":      nonBlankStringSchema(), "muted": map[string]any{"type": "boolean"},
+		})),
+	}}
+}
+func explainerAudioSchema() map[string]any {
+	track := func() map[string]any {
+		return objectSchema([]string{"src"}, map[string]any{
+			"src":    nonBlankStringSchema(),
+			"volume": map[string]any{"type": "number", "minimum": 0, "maximum": 1},
+			"loop":   map[string]any{"type": "boolean"},
+		})
+	}
+	return map[string]any{"type": "object", "additionalProperties": false, "minProperties": 1, "properties": map[string]any{
+		"narration": track(), "music": track(),
+	}}
+}
 func stringArraySchema() map[string]any {
 	return map[string]any{"type": "array", "items": stringSchema()}
 }

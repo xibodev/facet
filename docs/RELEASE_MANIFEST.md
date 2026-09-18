@@ -34,6 +34,7 @@ The current tracked product inventory is intentionally small:
 | Guidance packs | `packs/` | 7 packs, 23 files | Compact method-specific guidance and package metadata |
 | Tool schemas | `schemas/tools/` | 6 files | Stateless request contracts for tools that need shipped schemas |
 | Public tools | `internal/toolbox/` registry | 35 tools | Live executable capability vocabulary |
+| Remotion composer | `remotion-composer/src/` | 5 files, 1 composition | Independently authored Facet explainer renderer |
 
 The seven guidance packs are `character-animation`, `cinematic`, `explainer`,
 `localization`, `screen-demo`, `social`, and `talking-head`. Packs describe
@@ -121,8 +122,10 @@ runtime rather than inventing a separate product contract.
 ## 7. Packaging and verification
 
 Release packaging includes canonical `skills/`, `agents/`, `packs/`,
-`schemas/`, implementation runtimes, binaries, license, and notices. Removed
-donor surfaces and workflow-oriented contracts must remain absent.
+`schemas/`, implementation runtimes, binaries, license, and notices. The
+Remotion runtime ships only the five source paths allowlisted by
+`remotion-composer/legacy-composer-manifest.json`. Removed donor surfaces and
+workflow-oriented contracts must remain absent.
 
 A release is valid only when:
 

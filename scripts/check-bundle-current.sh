@@ -49,7 +49,12 @@ for rel in \
   agents/facet-creative.md \
   skills/facet/SKILL.md \
   packs/explainer/SCENE-TYPES.md \
-  packs/explainer/NARRATED-WALKTHROUGH.md   remotion-composer/src/Root.tsx   remotion-composer/src/Explainer.tsx   remotion-composer/src/explainerMetadata.ts   remotion-composer/package.json
+  packs/explainer/NARRATED-WALKTHROUGH.md \
+  remotion-composer/src/Root.tsx \
+  remotion-composer/src/Explainer.tsx \
+  remotion-composer/src/contract.ts \
+  remotion-composer/legacy-composer-manifest.json \
+  remotion-composer/package.json
 do
   if [ ! -f "$bundle/$rel" ]; then
     echo "MISSING in bundle: $rel"

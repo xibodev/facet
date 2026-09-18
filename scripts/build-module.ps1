@@ -12,7 +12,7 @@ try {
         New-Item -ItemType Directory -Force -Path $parent | Out-Null
         Copy-Item -LiteralPath (Join-Path $repo $item) -Destination $parent -Recurse -Force
     }
-    foreach ($item in @('package.json', 'package-lock.json', 'tsconfig.json')) {
+    foreach ($item in @('package.json', 'package-lock.json', 'tsconfig.json', 'legacy-composer-manifest.json')) {
         Copy-Item -LiteralPath (Join-Path $repo "remotion-composer/$item") -Destination (Join-Path $out 'remotion-composer') -Force
     }
     $public = Join-Path $repo 'remotion-composer/public'
