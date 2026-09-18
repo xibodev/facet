@@ -68,7 +68,7 @@ def main():
             assert code == (0 if mode == "success" else 9 if mode == "child-failure" else 1), (mode, code, output)
             assert marker.exists() == (mode != "checksum"), (mode, output)
             if marker.exists():
-                assert marker.read_text() == str(root), "bootstrap changed user's working directory"
+                assert Path(marker.read_text()).resolve() == root.resolve(), "bootstrap changed user's working directory"
             assert not list(scratch.iterdir()), "temporary files leaked"
         result = subprocess.run(["bash", "-c", command], env=env, capture_output=True, start_new_session=True)
         assert result.returncode != 0 and b"needs a terminal" in result.stderr, result
