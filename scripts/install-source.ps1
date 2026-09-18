@@ -20,7 +20,7 @@ $ScriptDir = Split-Path -Parent $PSScriptRoot
 foreach ($file in @('go.mod', 'cmd/facet/main.go', 'cmd/facet-ui/main.go', 'skills/facet/SKILL.md', 'packs/explainer/SKILL.md', 'remotion-composer/package.json', 'remotion-composer/package-lock.json', 'remotion-composer/src/index.tsx')) {
     if (-not (Test-Path -LiteralPath (Join-Path $ScriptDir $file) -PathType Leaf)) { throw $sourceHelp }
 }
-$BundleFolders = @('skills', 'packs', 'pipeline_defs', 'schemas', 'styles', 'remotion-composer', 'agents')
+$BundleFolders = @('skills', 'packs', 'schemas', 'remotion-composer', 'agents')
 foreach ($folder in $BundleFolders) {
     if (-not (Test-Path -LiteralPath (Join-Path $ScriptDir $folder) -PathType Container)) { throw $sourceHelp }
 }

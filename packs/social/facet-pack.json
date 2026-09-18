@@ -1,7 +1,7 @@
 {
   "name": "@xibodev/facet-pack-social",
   "version": "1.0.0",
-  "description": "Short-form vertical video, viral clips, podcast repurposing, and caption burn-in pipeline.",
+  "description": "Facet-owned guidance for short-form source repurposing.",
   "kind": "content",
   "requirements": {
     "probes": ["facet.probe.ffmpeg.v1"]
@@ -16,17 +16,7 @@
       {
         "id": "social",
         "path": "SKILL.md",
-        "description": "Entry skill for producing short-form vertical clips and repurposed content"
-      }
-    ],
-    "pipelines": [
-      {
-        "id": "clip-factory",
-        "path": "pipelines/clip-factory.yaml"
-      },
-      {
-        "id": "podcast-repurpose",
-        "path": "pipelines/podcast-repurpose.yaml"
+        "description": "Entry guidance for Facet social-video production"
       }
     ]
   }

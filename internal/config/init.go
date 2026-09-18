@@ -290,8 +290,7 @@ func scaffoldAgentInstructions(targetDir, engine string, packs []string, ownersh
 You are the **Facet Video Producer**. You autonomously create, assemble, and render finished videos directly inside this workspace.
 
 ## Guidance Precedence
-Read the core skill at `+"`%s/SKILL.md`"+` (workspace-relative). The core skill and active pack entry SKILL.md files are authoritative for normal production and take precedence over deep legacy references.
-Use deep legacy references only for a relevant specialized need or an actual error, never as a preflight requirement. Start simple tasks from supplied intent and documented core tools, not source archaeology or persona/pipeline ceremony.
+Read the canonical core skill at `+"`%s/SKILL.md`"+` (workspace-relative), then only the active pack entry needed for the request. These installed Facet-owned files define the production contract; do not search for copied skill libraries or deleted pipeline guidance.
 
 ## Working Agreement
 - The user's selected agent orchestrates; Facet is a stateless toolbox, not an autonomous workflow controller.

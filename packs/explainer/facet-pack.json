@@ -1,14 +1,14 @@
 {
   "name": "@xibodev/facet-pack-explainer",
   "version": "1.0.0",
-  "description": "2D animated explainer pipeline with motion graphics, text cards, charts, and Remotion composition.",
+  "description": "Facet-owned guidance for 2D explainers and motion graphics.",
   "kind": "content",
   "requirements": {
     "probes": ["facet.probe.ffmpeg.v1", "facet.probe.node.v1"],
     "runtimes": ["remotion"]
   },
   "declarations": {
-    "suggestedTools": ["edgetts", "media_probe", "output_review", "frame_sample"],
+    "suggestedTools": ["video_compose", "media_probe", "frame_sample", "output_review"],
     "networkIntent": "none",
     "filesystemIntent": "project-local"
   },
@@ -17,28 +17,8 @@
       {
         "id": "explainer",
         "path": "SKILL.md",
-        "description": "Entry skill for producing 2D animated explainers with Remotion"
-      },
-      {
-        "id": "explainer-producer",
-        "path": "skills/executive-producer.md",
-        "description": "Executive Producer for multi-stage animated explainer pipeline"
+        "description": "Entry guidance for Facet explainer production"
       }
-    ],
-    "pipelines": [
-      {
-        "id": "animated-explainer",
-        "path": "pipelines/animated-explainer.yaml"
-      }
-    ],
-    "schemas": [
-      "schemas/script.schema.json",
-      "schemas/scene_plan.schema.json"
-    ],
-    "styles": [
-      "styles/clean-professional.yaml",
-      "styles/flat-motion-graphics.yaml",
-      "styles/minimalist-diagram.yaml"
     ]
   }
 }

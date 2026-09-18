@@ -1,7 +1,7 @@
 {
   "name": "@xibodev/facet",
   "version": "1.0.4",
-  "description": "Autonomous Video Production Engine & Studio for Agentic CLIs",
+  "description": "Agent-first video production tools, guidance, and Studio",
   "main": "bin/facet-cli.js",
   "bin": {
     "facet": "bin/facet-cli.js",
@@ -11,9 +11,7 @@
     "bin",
     "skills",
     "packs",
-    "pipeline_defs",
     "schemas",
-    "styles",
     "remotion-composer/src",
     "remotion-composer/public",
     "remotion-composer/package.json",

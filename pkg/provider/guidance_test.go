@@ -20,7 +20,7 @@ func TestGuidanceLoadsSelectedPackOutsideCheckout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(parts) != 1 || !strings.Contains(parts[0].Content, "Selected pack: explainer") || !strings.Contains(parts[0].Content, "Facet Video Producer") {
+	if len(parts) != 1 || !strings.Contains(parts[0].Content, "Selected pack: explainer") || !strings.Contains(parts[0].Content, "Facet production contract") {
 		t.Fatalf("missing canonical guidance: %#v", parts)
 	}
 }

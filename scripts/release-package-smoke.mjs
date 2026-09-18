@@ -37,7 +37,7 @@ for (const file of [
   'remotion-composer/tsconfig.json', 'remotion-composer/src/index.tsx',
   'README.md', 'LICENSE',
 ]) assert.ok(files.has(file), `Missing npm content: ${file}`);
-for (const prefix of ['pipeline_defs/', 'schemas/', 'styles/', 'web/']) {
+for (const prefix of ['schemas/', 'web/']) {
   assert.ok([...files].some(file => file.startsWith(prefix)), `Missing npm content: ${prefix}`);
 }
 for (const file of files) {

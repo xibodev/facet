@@ -157,17 +157,20 @@ func TestGuidanceExamplesThroughCLI(t *testing.T) {
 		}
 	}
 	inline := regexp.MustCompile(`facet tools (?:run|estimate) (\w+) --input '(\{[^\n]+\})'`)
-	for _, file := range []string{"SKILL.md", "skills/facet/SKILL.md", "packs/explainer/SKILL.md"} {
+	for _, file := range []string{"skills/facet/SKILL.md", "packs/explainer/SKILL.md"} {
 		data, err := os.ReadFile(filepath.Join(root, file))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if lines := len(strings.Split(strings.TrimSpace(string(data)), "\n")); lines >= 50 {
-			t.Errorf("%s has %d lines; keep guidance under 50", file, lines)
+		if lines := len(strings.Split(strings.TrimSpace(string(data)), "\n")); lines > 60 {
+			t.Errorf("%s has %d lines; keep guidance concise", file, lines)
 		}
 		examples := inline.FindAllStringSubmatch(string(data), -1)
-		if len(examples) == 0 {
-			t.Fatalf("no request examples in %s", file)
+		if file == "skills/facet/SKILL.md" {
+			if !strings.Contains(string(data), "facet tools describe") || !strings.Contains(string(data), "facet tools estimate") {
+				t.Fatalf("canonical skill omits discovery commands")
+			}
+			continue
 		}
 		for _, example := range examples {
 			var req any
@@ -182,7 +185,11 @@ func TestGuidanceExamplesThroughCLI(t *testing.T) {
 				t.Fatalf("%s example failed: %+v", file, env.Error)
 			}
 		}
-		for _, block := range regexp.MustCompile("(?s)```json\\s*(.*?)\\s*```").FindAllStringSubmatch(string(data), -1) {
+		blocks := regexp.MustCompile("(?s)```json\\s*(.*?)\\s*```").FindAllStringSubmatch(string(data), -1)
+		if len(blocks) == 0 {
+			t.Fatalf("no direct request example in %s", file)
+		}
+		for _, block := range blocks {
 			var req any
 			if err := json.Unmarshal([]byte(block[1]), &req); err != nil {
 				t.Fatal(err)

@@ -76,7 +76,7 @@ func (t capabilityTool) Name() string { return "facet_" + t.operation }
 func (t capabilityTool) Description() string {
 	switch t.operation {
 	case "guidance":
-		return "Read bundled Facet guidance, schemas and pipeline definitions by canonical path (skills/, packs/, agents/, schemas/, pipeline_defs/, styles/)."
+		return "Read bundled Facet guidance and schemas by canonical path (skills/, packs/, agents/, schemas/)."
 	case "estimate":
 		return "Estimate a Facet operation without executing it."
 	default:

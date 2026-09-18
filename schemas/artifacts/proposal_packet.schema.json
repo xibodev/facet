@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "openmontage/artifacts/proposal_packet",
+  "$id": "facet/artifacts/proposal_packet",
   "title": "Proposal Packet",
   "description": "Pre-production proposal containing concept options, production plan, cost estimate, and approval gate. The user reviews and approves this before any assets are generated or money is spent.",
   "type": "object",
@@ -22,7 +22,7 @@
             "description": "The structural approach to telling this story"
           },
           "visual_approach": { "type": "string", "description": "Primary visual strategy — specific enough to guide scene planning" },
-          "suggested_playbook": { "type": "string", "description": "Style playbook name from styles/" },
+          "suggested_playbook": { "type": "string", "description": "Suggested visual direction or theme identifier" },
           "target_audience": { "type": "string", "description": "Specific audience segment this angle serves best" },
           "target_platform": {
             "type": "string",
@@ -158,11 +158,11 @@
         "composition_mode": {
           "type": "string",
           "enum": ["templated", "atelier"],
-          "description": "Locked at proposal — HOW the composition is built (orthogonal to render_runtime). templated=assemble stock cut.type scenes (Explainer/CinematicRenderer); atelier=hand-author a project-local composition from scratch with no creative-component reuse. Default atelier for hero work. See AGENT_GUIDE.md → 'Composition Authoring Mode' and skills/meta/bespoke-composition.md. The decision MUST be logged in decision_log with category='composition_mode' and BOTH options presented."
+          "description": "Records how the composition will be built. templated uses supported scene types; atelier uses a project-local composition. The agent must explain the material tradeoff before changing this choice."
         },
         "art_direction": {
           "type": "string",
-          "description": "Required when composition_mode='atelier'. Short note (or path to art-direction.md) committing to a fresh visual language for THIS piece — palette, type, motion, signature device. Per skills/meta/bespoke-composition.md step 1, written down BEFORE authoring scenes."
+          "description": "Required when composition_mode='atelier'. A short note or project-relative path describing palette, type, motion, and the piece's distinguishing visual device."
         },
         "taste_profile": { "$ref": "#/$defs/taste_profile" },
         "music_source": {

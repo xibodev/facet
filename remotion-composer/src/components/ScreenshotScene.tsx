@@ -11,16 +11,15 @@ import { resolveAsset } from "../lib/resolveAsset";
 /**
  * ScreenshotScene — approach-1 synthetic UI demo.
  *
- * Takes any screenshot as a frozen backdrop and animates scripted overlays
+ * Takes a screenshot as a frozen backdrop and animates scripted overlays
  * (cursor, click pulses, typing, chat bubbles, highlight rings, callouts)
- * on top at normalized coordinates. Viewer-indistinguishable from a real
- * screen recording for ~15-30s focused demos.
+ * on top at normalized coordinates. This is a synthetic presentation, not
+ * evidence of real product behavior.
  *
  * Coordinate system: everything is 0-1 normalized against the rendered
  * backdrop rectangle (not the raw canvas), so overlays track the image
  * correctly regardless of letterboxing.
  *
- * See .agents/skills/synthetic-ui-recording/SKILL.md for authoring guidance.
  */
 
 // ---------- Types ----------
