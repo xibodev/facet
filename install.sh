@@ -76,7 +76,8 @@ choose() (
         IFS= read -rsn1 key || exit 1
         case "$key" in
             $'\033')
-                suffix=''; IFS= read -rsn2 -t 0.15 suffix || true
+                # macOS ships Bash 3.2, whose read timeout must be an integer.
+                suffix=''; IFS= read -rsn2 -t 1 suffix || true
                 case "$suffix" in '[A') index=$(((index+${#values[@]}-1)%${#values[@]}));; '[B') index=$(((index+1)%${#values[@]}));; *) printf '\nInstallation cancelled.\n' >&2; exit 1;; esac;;
             ' ') if [[ $multiple == 1 ]]; then checked[index]=$((1-checked[index])); fi;;
             '')
