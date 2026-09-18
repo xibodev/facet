@@ -13,18 +13,20 @@ Use Facet with your agentic CLI. The interactive installer supports OpenCode, Co
 Run the command for your platform in a terminal:
 
 ```powershell
-# Windows (PowerShell 7)
+# Windows (PowerShell)
 irm https://xibodev.github.io/facet/install.ps1 | iex
 ```
 
 ```bash
 # Linux / macOS
-curl -fsSL https://xibodev.github.io/facet/install.sh | bash
+curl -fsSL https://xibodev.github.io/facet/install.sh | sh
 ```
 
-The website bootstrap downloads and checksum-verifies the v1.0.3 installer package, then launches its interactive installer. That installer selects the matching prebuilt Windows, Linux, or macOS bundle for x64 or ARM64.
+The website bootstrap downloads and checksum-verifies the v1.0.4 installer package, then launches its interactive installer. That installer selects the matching prebuilt Windows, Linux, or macOS bundle for x64 or ARM64.
 
-**Manual/offline download:** [Download the installer ZIP](https://github.com/xibodev/facet/releases/download/v1.0.3/facet-installer-1.0.3.zip), extract it, and run `pwsh -File ./install.ps1` or `bash ./install.sh` from the extracted folder. Keep its `installer/` directory beside the scripts. [Release assets and SHA-256 checksums](https://github.com/xibodev/facet/releases/tag/v1.0.3) are also available. Only the website bootstrap is designed for piping; the extracted installer requires its companion files.
+**Manual/offline download:** [Download the installer ZIP](https://github.com/xibodev/facet/releases/download/v1.0.4/facet-installer-1.0.4.zip), extract it, and run `./install.ps1` in PowerShell or `bash ./install.sh` from the extracted folder. Keep its `installer/` directory beside the scripts. [Release assets and SHA-256 checksums](https://github.com/xibodev/facet/releases/tag/v1.0.4) are also available. Only the website bootstrap is designed for piping; the extracted installer requires its companion files.
+
+Use arrow keys and Enter to choose your CLI, and Space to toggle optional tools. Rerun setup to add components, repair, or update. For a v1.0.3 project, accept the explicit backup migration prompt and choose **update**. Use `FACET_PLAIN=1` for plain prompts.
 
 The installer lets you select your CLI, project folder, and optional dependencies. It installs prebuilt Facet binaries and registers the Facet skill in your CLI's project directory, preserving existing user instructions and configuration. Start a new agent session in that project after setup.
 

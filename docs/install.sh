@@ -4,8 +4,8 @@
 # mistaken for prompt input. Interactive input is explicitly taken from the TTY.
 facet_bootstrap() (
     set -eu
-    version=1.0.3
-    expected=108bcf2353c5b20e09b81189ad7006689464f23083fc5dd88e5bc948c15edc2c
+    version=1.0.4
+    expected=1d30c34a0958c50459d2341f5f479f2089c28f931a52e6503d6fceb9b801b3b7
     url="https://github.com/xibodev/facet/releases/download/v$version/facet-installer-$version.zip"
     case "$(uname -s)" in Linux|Darwin) ;; *) printf '%s\n' 'Use the PowerShell command on Windows.' >&2; exit 1;; esac
     noninteractive=0

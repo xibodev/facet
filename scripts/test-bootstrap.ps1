@@ -24,11 +24,11 @@ try {
         }
     } finally { $zip.Dispose() }
     $hash = (Get-FileHash $archive).Hash.ToLowerInvariant()
-    $script:bootstrapSource = $source.Replace('108bcf2353c5b20e09b81189ad7006689464f23083fc5dd88e5bc948c15edc2c',$hash)
+    $script:bootstrapSource = $source.Replace('1d30c34a0958c50459d2341f5f479f2089c28f931a52e6503d6fceb9b801b3b7',$hash)
     $script:archive = $archive
     $script:lastDownload = ''
     function Invoke-RestMethod { param($Uri); if ($Uri -ne 'https://xibodev.github.io/facet/install.ps1') { throw 'Unexpected bootstrap URL' }; $script:bootstrapSource }
-    function Invoke-WebRequest { param($Uri,$OutFile,$TimeoutSec); if ($Uri -ne 'https://github.com/xibodev/facet/releases/download/v1.0.3/facet-installer-1.0.3.zip') { throw 'Unexpected release URL' }; $script:lastDownload=$OutFile; Copy-Item -LiteralPath $script:archive -Destination $OutFile }
+    function Invoke-WebRequest { param($Uri,$OutFile,$TimeoutSec); if ($Uri -ne 'https://github.com/xibodev/facet/releases/download/v1.0.4/facet-installer-1.0.4.zip') { throw 'Unexpected release URL' }; $script:lastDownload=$OutFile; Copy-Item -LiteralPath $script:archive -Destination $OutFile }
     function Read-Host { param($Prompt); 'answer' }
     $env:FACET_BOOTSTRAP_TEST = Join-Path $root 'called'
     irm https://xibodev.github.io/facet/install.ps1 | iex
@@ -38,7 +38,7 @@ try {
     $script:bootstrapSource = $script:bootstrapSource.Replace($hash,('0'*64))
     try { irm https://xibodev.github.io/facet/install.ps1 | iex; throw 'Expected checksum failure' } catch { if ($_.Exception.Message -notmatch 'checksum mismatch') { throw } }
     if ((Test-Path $env:FACET_BOOTSTRAP_TEST) -or (Test-Path (Split-Path -Parent $script:lastDownload))) { throw 'Bad checksum executed child or leaked temporary files' }
-    $script:bootstrapSource = $source.Replace('108bcf2353c5b20e09b81189ad7006689464f23083fc5dd88e5bc948c15edc2c',$hash)
+    $script:bootstrapSource = $source.Replace('1d30c34a0958c50459d2341f5f479f2089c28f931a52e6503d6fceb9b801b3b7',$hash)
     $env:FACET_BOOTSTRAP_FAIL = '1'
     try { irm https://xibodev.github.io/facet/install.ps1 | iex; throw 'Expected child failure' } catch { if ($_.Exception.Message -notmatch 'Child failure') { throw } }
     if (Test-Path (Split-Path -Parent $script:lastDownload)) { throw 'Child failure leaked temporary files' }

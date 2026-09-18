@@ -11,8 +11,8 @@
     $ProgressPreference = 'SilentlyContinue'
     if ($env:OS -ne 'Windows_NT') { throw 'Use the curl command on Linux/macOS.' }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $version = '1.0.3'
-    $expected = '108bcf2353c5b20e09b81189ad7006689464f23083fc5dd88e5bc948c15edc2c'
+    $version = '1.0.4'
+    $expected = '1d30c34a0958c50459d2341f5f479f2089c28f931a52e6503d6fceb9b801b3b7'
     $url = "https://github.com/xibodev/facet/releases/download/v$version/facet-installer-$version.zip"
     $temp = Join-Path ([IO.Path]::GetTempPath()) ('facet-bootstrap-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $temp | Out-Null
