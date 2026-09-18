@@ -232,7 +232,7 @@ func doFrameSampleContext(ctx context.Context, op string, data []byte) (any, []s
 	if err = os.MkdirAll(r.OutputDir, 0755); err != nil {
 		return nil, nil, failure("command_failed", "evidence directory could not be created", map[string]any{"error": bounded(err.Error())})
 	}
-	stageDir, err := os.MkdirTemp(r.OutputDir, ".videokit-frames-*")
+	stageDir, err := os.MkdirTemp(r.OutputDir, ".facet-frames-*")
 	if err != nil {
 		return nil, nil, failure("command_failed", "frame staging directory could not be created", map[string]any{"error": bounded(err.Error())})
 	}

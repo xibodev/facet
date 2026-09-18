@@ -1308,7 +1308,7 @@ func samePath(a, b string) bool {
 
 func temporaryOutput(path string) (string, func(), error) {
 	ext := filepath.Ext(path)
-	file, err := os.CreateTemp(filepath.Dir(path), ".videokit-*"+ext)
+	file, err := os.CreateTemp(filepath.Dir(path), ".facet-*"+ext)
 	if err != nil {
 		return "", nil, failure("command_failed", "temporary output could not be created", map[string]any{"error": bounded(err.Error())})
 	}
@@ -1330,7 +1330,7 @@ func finalizeOutput(temp, output string, overwrite bool) error {
 		}
 		return nil
 	}
-	backupFile, err := os.CreateTemp(filepath.Dir(output), ".videokit-backup-*")
+	backupFile, err := os.CreateTemp(filepath.Dir(output), ".facet-backup-*")
 	if err != nil {
 		return failure("command_failed", "replacement backup could not be prepared", map[string]any{"error": bounded(err.Error())})
 	}
@@ -1381,7 +1381,7 @@ func publishFileSet(staged, outputs []string, overwrite bool) error {
 	if overwrite {
 		for i, output := range outputs {
 			if _, err := os.Stat(output); err == nil {
-				backupFile, createErr := os.CreateTemp(filepath.Dir(output), ".videokit-frame-backup-*")
+				backupFile, createErr := os.CreateTemp(filepath.Dir(output), ".facet-frame-backup-*")
 				if createErr != nil {
 					rollback()
 					return failure("command_failed", "frame backup could not be prepared", map[string]any{"path": output, "error": bounded(createErr.Error())})

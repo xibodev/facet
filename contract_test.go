@@ -14,9 +14,9 @@ import (
 var productPathPattern = regexp.MustCompile("`((?:skills|packs|agents|schemas|styles|pipeline_defs|\\.agents)/[^`\\s,;:)]+)")
 
 func TestProductContractContainsNoBannedTerms(t *testing.T) {
-	banned := []string{
-		"Open" + "Montage",
-		"Video" + " Kit",
+	banned := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)open[\s._-]*` + "montage"),
+		regexp.MustCompile(`(?i)video[\s._-]*` + "kit"),
 	}
 	var violations []string
 	err := fs.WalkDir(Assets, ".", func(name string, entry fs.DirEntry, err error) error {
@@ -27,10 +27,9 @@ func TestProductContractContainsNoBannedTerms(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		lower := strings.ToLower(string(data))
-		for _, term := range banned {
-			if strings.Contains(lower, strings.ToLower(term)) {
-				violations = append(violations, "embedded:"+name+": "+term)
+		for _, pattern := range banned {
+			if pattern.Match(data) {
+				violations = append(violations, "embedded:"+name+": "+pattern.String())
 			}
 		}
 		return nil
@@ -56,10 +55,9 @@ func TestProductContractContainsNoBannedTerms(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		lower := strings.ToLower(string(data))
-		for _, term := range banned {
-			if strings.Contains(lower, strings.ToLower(term)) {
-				violations = append(violations, filepath.ToSlash(name)+": "+term)
+		for _, pattern := range banned {
+			if pattern.Match(data) {
+				violations = append(violations, filepath.ToSlash(name)+": "+pattern.String())
 			}
 		}
 		return nil
@@ -184,6 +182,73 @@ func TestRemovedDonorSurfacesStayRemoved(t *testing.T) {
 	}
 }
 
+func TestReleasePackagingExcludesRemovedProductSurfaces(t *testing.T) {
+	checks := map[string][]string{
+		"scripts/package-release.py": {
+			`"PROVENANCE.md"`,
+			`"pipeline_defs"`,
+			`"styles"`,
+		},
+		".dockerignore": {
+			"!pipeline_defs/",
+			"!pipeline_defs/**",
+			"!styles/",
+			"!styles/**",
+		},
+	}
+	var violations []string
+	for name, removed := range checks {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, term := range removed {
+			if strings.Contains(string(data), term) {
+				violations = append(violations, name+": "+term)
+			}
+		}
+	}
+	sort.Strings(violations)
+	if len(violations) != 0 {
+		t.Fatalf("release packaging still includes removed product surfaces:\n%s", strings.Join(violations, "\n"))
+	}
+}
+
+func TestStudioProjectionUsesCanonicalContract(t *testing.T) {
+	files := []string{"web/DESIGN.md", "web/web.go"}
+	banned := []string{
+		"working and supported",
+		"FROZEN.md",
+		"six evidence stages",
+		"permission prompts are disabled",
+	}
+	var violations []string
+	for _, name := range files {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lower := strings.ToLower(string(data))
+		for _, term := range banned {
+			if strings.Contains(lower, strings.ToLower(term)) {
+				violations = append(violations, name+": "+term)
+			}
+		}
+	}
+	sort.Strings(violations)
+	if len(violations) != 0 {
+		t.Fatalf("Studio projection contradicts the canonical contract:\n%s", strings.Join(violations, "\n"))
+	}
+}
+
+func TestProductTextGuardCoversShippingDefinitions(t *testing.T) {
+	for _, name := range []string{".dockerignore", "Dockerfile", "scripts/package-release.py"} {
+		if !isProductTextFile(name) {
+			t.Errorf("product text guard skips %s", name)
+		}
+	}
+}
+
 func checkPackPath(packDir, manifestPath, name string, violations *[]string) {
 	clean := filepath.Clean(filepath.FromSlash(name))
 	if name == "" || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
@@ -214,8 +279,16 @@ func checkMarkdownProductPaths(name string, violations *[]string) {
 }
 
 func isProductTextFile(name string) bool {
-	switch strings.ToLower(filepath.Ext(name)) {
-	case ".cjs", ".css", ".go", ".html", ".js", ".json", ".md", ".mjs", ".ps1", ".sh", ".ts", ".tsv", ".tsx", ".txt", ".yaml", ".yml":
+	switch strings.ToLower(filepath.Base(name)) {
+	case ".dockerignore", ".gitignore":
+		return true
+	}
+	ext := strings.ToLower(filepath.Ext(name))
+	if ext == "" {
+		return true
+	}
+	switch ext {
+	case ".cjs", ".css", ".go", ".html", ".js", ".json", ".md", ".mjs", ".ps1", ".py", ".sh", ".ts", ".tsv", ".tsx", ".txt", ".yaml", ".yml":
 		return true
 	default:
 		return false
