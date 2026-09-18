@@ -1,4 +1,4 @@
-"""Package prebuilt Facet and its installer for one OS/architecture (CI only)."""
+"""Package prebuilt Facet and the script installer distribution contract."""
 import argparse
 import hashlib
 import json
@@ -26,6 +26,7 @@ def main():
     parser.add_argument("--os", required=True, choices=["windows", "linux", "darwin"])
     parser.add_argument("--arch", required=True, choices=["amd64", "arm64"])
     parser.add_argument("--out", required=True)
+    parser.add_argument("--installer-only", action="store_true", help="assemble scripts for script-level tests without compiling product binaries")
     args = parser.parse_args()
     repo = Path(__file__).resolve().parent.parent
     version = json.loads((repo / "package.json").read_text())["version"]
@@ -34,17 +35,31 @@ def main():
     suffix = ".exe" if args.os == "windows" else ""
     env = dict(os.environ, GOOS=args.os, GOARCH=args.arch, CGO_ENABLED="0")
     tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=repo).decode().split("\0")
-    # Include installer changes before committing when checking the package locally.
     with tempfile.TemporaryDirectory(prefix="facet-package-") as temp:
         temp = Path(temp)
+        installer = out / f"facet-installer-{version}.zip"
+        with zipfile.ZipFile(installer, "w", compression=zipfile.ZIP_DEFLATED) as z:
+            for name in ["install.ps1", "install.sh", "installer/manifest.tsv", "installer/verify.html", "installer/README.md"]:
+                content = (repo / name).read_text(encoding="utf-8")
+                if name.endswith("manifest.tsv"):
+                    rows = [line.split("\t") for line in content.splitlines()]
+                    for row in rows:
+                        if row[:2] == ["release", "facet"]:
+                            row[2] = version
+                    content = "\n".join("\t".join(row) for row in rows) + "\n"
+                info = zipfile.ZipInfo(name)
+                info.create_system = 3
+                info.external_attr = (0o100755 if name.endswith(".sh") else 0o100644) << 16
+                z.writestr(info, content, compress_type=zipfile.ZIP_DEFLATED)
+        if args.installer_only:
+            (out / "installer-checksums.txt").write_text(f"{hashlib.sha256(installer.read_bytes()).hexdigest()}  {installer.name}\n", encoding="utf-8")
+            print(installer)
+            return
         binaries = []
-        for command in ["facet", "facet-ui", "facet-module", "facet-install"]:
+        for command in ["facet", "facet-ui", "facet-module"]:
             path = temp / (command + suffix)
             subprocess.run(["go", "build", "-trimpath", "-ldflags", f"-X main.version={version}", "-o", str(path), f"./cmd/{command}"], cwd=repo, env=env, check=True)
             binaries.append(path)
-        installer = out / f"facet-install-{version}-{args.os}-{args.arch}{suffix}"
-        installer.write_bytes(binaries[-1].read_bytes())
-        installer.chmod(0o755)
         archive = out / f"facet-{version}-{args.os}-{args.arch}.zip"
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as z:
             for binary in binaries:

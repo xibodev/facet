@@ -6,8 +6,9 @@ on:
     branches: [staging]
     paths:
       - '.github/workflows/release.yml'
-      - 'cmd/facet-install/**'
-      - 'internal/installer/**'
+      - 'install.ps1'
+      - 'install.sh'
+      - 'installer/**'
       - 'scripts/package-release.py'
       - 'scripts/test-prebuilt-install.py'
   workflow_dispatch:
@@ -44,20 +45,31 @@ jobs:
         shell: bash
         run: |
           python -c 'import json,os; v=json.load(open("package.json"))["version"]; ref=os.environ["GITHUB_REF"]; assert not ref.startswith("refs/tags/") or ref == "refs/tags/v"+v, "Tag must match package.json"'
-      - name: Installer tests
-        run: go test ./internal/installer ./cmd/facet-install
+      - name: Installer syntax
+        shell: bash
+        run: bash -n install.sh
       - name: Package native binaries and content
         run: python scripts/package-release.py --os ${{ matrix.os }} --arch ${{ matrix.arch }} --out build/release
       - name: Validate native package and project integration
         run: python scripts/test-prebuilt-install.py --os ${{ matrix.os }} --arch ${{ matrix.arch }} --release-dir build/release
-      - name: Install FFmpeg for package integration test (Linux x64)
-        if: matrix.os == 'linux' && matrix.arch == 'amd64'
+      - name: Install FFmpeg for package integration test (Linux)
+        if: matrix.os == 'linux'
         run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends ffmpeg
+      - name: Install FFmpeg (macOS)
+        if: matrix.os == 'darwin'
+        run: brew install ffmpeg
+      - name: Install FFmpeg (Windows x64)
+        if: matrix.os == 'windows' && matrix.arch == 'amd64'
+        run: choco install ffmpeg --yes --no-progress
       - name: Exercise four project integrations and media check
-        if: matrix.os == 'linux' && matrix.arch == 'amd64'
+        if: matrix.os != 'windows' || matrix.arch == 'amd64'
         env:
           FACET_INSTALL_SMOKE: '1'
         run: python scripts/test-prebuilt-install.py --os ${{ matrix.os }} --arch ${{ matrix.arch }} --release-dir build/release
+      - name: Clean Linux installation with all optional components
+        if: matrix.os == 'linux' && matrix.arch == 'amd64'
+        run: |
+          docker run --rm --mount "type=bind,source=$GITHUB_WORKSPACE,target=/source,readonly" --workdir /source ubuntu:24.04 bash -c 'export FACET_DOCKER_RELEASE_DIR=/source/build/release; bash scripts/test-installer-docker.sh'
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.os }}-${{ matrix.arch }}
@@ -79,9 +91,9 @@ jobs:
           path: release
           merge-multiple: true
       - name: Combine checksums
-        run: python -c 'from pathlib import Path; p=Path("release"); (p/"SHA256SUMS.txt").write_text("".join(f.read_text() for f in sorted(p.glob("checksums-*.txt"))),encoding="utf-8")'
+        run: python -c 'from pathlib import Path; p=Path("release"); lines={line for f in p.glob("checksums-*.txt") for line in f.read_text().splitlines()}; (p/"SHA256SUMS.txt").write_text("\n".join(sorted(lines))+"\n",encoding="utf-8")'
       - name: Create draft release (never replace existing assets)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "Facet $GITHUB_REF_NAME" release/facet-* release/SHA256SUMS.txt install-release.ps1
+          gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "Facet $GITHUB_REF_NAME" release/facet-* release/SHA256SUMS.txt

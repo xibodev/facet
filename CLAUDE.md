@@ -11,6 +11,7 @@ Facet equips the user's selected agent with video-production tools and a local S
 - Inspect the actual output and disclose failures, substitutions, timing differences and unverified claims. A successful process exit is not creative acceptance.
 
 ## Development And Verification
+- Installation is owned by `install.ps1` / `install.sh` and their shared manifest, outside product execution. Installer acceptance tests are required release-cutting CI gates, including clean Linux Docker installation and native platform checks. Do not substitute one-off local checks for those gates.
 - Questions, audits and software maintenance are not video-production requests. Do not start media generation in response to them.
 - Keep the Go toolbox mechanical and stateless; preserve project files and user configuration.
 - Edit canonical guidance and generation templates, not global installed instruction bundles. Project initialization must preserve unmanaged user instructions.

@@ -1,7 +1,7 @@
 # Parser and preflight regression tests; no dependencies, builds or user-profile writes.
 param()
 $ErrorActionPreference = 'Stop'
-$installer = Join-Path (Split-Path -Parent $PSScriptRoot) 'install.ps1'
+$installer = Join-Path $PSScriptRoot 'install-source.ps1'
 $tokens = $null
 $errors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($installer, [ref]$tokens, [ref]$errors)

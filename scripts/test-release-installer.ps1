@@ -1,14 +1,10 @@
-#requires -Version 7.0
-# Parser/contract checks only. Native installer coverage is internal/installer.
+# Parse the script-owned Windows installer and check preflight without writes.
 $ErrorActionPreference = 'Stop'
-$path = Join-Path (Split-Path -Parent $PSScriptRoot) 'install-release.ps1'
-$tokens = $null; $errors = $null
-[void][Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
+$path = Join-Path (Split-Path -Parent $PSScriptRoot) 'install.ps1'
+$tokens=$null; $errors=$null
+[void][Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
 if ($errors.Count) { throw ($errors | Out-String) }
-try {
-    & $path -NonInteractive
-    throw 'Expected missing-arguments failure.'
-} catch {
-    if ($_.Exception.Message -notmatch 'requires -Target and -ProjectDir|Download the native') { throw }
+try { & $path -NonInteractive; throw 'Expected preflight failure.' } catch {
+    if ($_.Exception.Message -notmatch 'requires -Target and -ProjectDir|Use install.sh') { throw }
 }
-'Bootstrap parser and noninteractive preflight passed.'
+'Script installer parser and preflight passed.'

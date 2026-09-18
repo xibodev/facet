@@ -10,7 +10,19 @@ Facet combines media tools, production packs, and a project workspace. Your agen
 
 Use Facet with your agentic CLI. The interactive installer supports OpenCode, Codex, Claude Code, and GitHub Copilot CLI, and lets you choose the optional production tools you need.
 
-**Release availability:** The new CLI-only installer is awaiting release validation and publication. The published v1.0.2 release contains a Windows x64 bundle, but does not include this installer yet. Check the [release assets](https://github.com/xibodev/facet/releases) for available downloads.
+Download [the v1.0.3 installer package](https://github.com/xibodev/facet/releases/download/v1.0.3/facet-installer-1.0.3.zip) and extract it into a folder. Open a terminal in that folder and run:
+
+```powershell
+# Windows (PowerShell 7)
+pwsh -File ./install.ps1
+```
+
+```bash
+# Linux / macOS
+bash ./install.sh
+```
+
+The scripts select the matching prebuilt Windows, Linux, or macOS bundle for x64 or ARM64. [Release assets and SHA-256 checksums](https://github.com/xibodev/facet/releases/tag/v1.0.3) are available for manual/offline downloads. Keep the `installer/` folder beside the scripts; do not pipe them into a shell.
 
 The installer lets you select your CLI, project folder, and optional dependencies. It installs prebuilt Facet binaries and registers the Facet skill in your CLI's project directory, preserving existing user instructions and configuration. Start a new agent session in that project after setup.
 

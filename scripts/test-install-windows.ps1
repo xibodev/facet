@@ -2,7 +2,7 @@
 param([switch]$KeepArtifacts)
 $ErrorActionPreference = 'Stop'
 if ($env:OS -ne 'Windows_NT') { throw 'Windows integration test requires Windows.' }
-$installer = Join-Path (Split-Path -Parent $PSScriptRoot) 'install.ps1'
+$installer = Join-Path $PSScriptRoot 'install-source.ps1'
 $root = Join-Path ([IO.Path]::GetTempPath()) ('facet-install-integration-' + [guid]::NewGuid())
 Write-Host "Isolated test root: $root"
 $saved = @{}

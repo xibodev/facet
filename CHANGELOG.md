@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.3
+
+- Script-owned interactive installation for OpenCode, Codex, Claude Code, and GitHub Copilot CLI, using prebuilt Windows, Linux, and macOS binaries on x64 and ARM64.
+- Shared dependency/host manifest and selectable Remotion, Piper, gflow, and HyperFrames runtimes with approximate download sizes.
+- Checksummed product downloads, project-local launchers, preserved user instructions, and local media verification. Contributor source builds moved to `scripts/install-source.*`.
+- Native script integration tests and clean Ubuntu Docker installation with real rendering are release-cutting CI gates.
+- Agentic CLI use is recommended; Facet Standalone is experimental. Optional media providers report their own configuration requirements.
+
+Scope: core integration checks cover the native platforms; complete optional-runtime installation and rendering are exercised on Windows x64 locally and Ubuntu x64 in Docker. External paid generation and every renderer/platform combination are not certified. Piper is unavailable on Windows ARM64 in this installer.
+
 ## 1.0.2 Candidate (Unreleased)
 
 - Install the full production bundle and locked composer dependencies from source;

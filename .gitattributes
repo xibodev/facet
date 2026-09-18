@@ -8,3 +8,6 @@
 # `-text` disables all newline translation for these paths, so the bytes on
 # disk are the bytes that were committed, on every platform.
 fixtures/** -text
+
+*.sh text eol=lf
+installer/*.tsv text eol=lf

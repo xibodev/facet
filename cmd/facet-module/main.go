@@ -19,7 +19,7 @@ func main() {
 	}
 	env := module.Usage("usage: facet-module module describe [--json] | invoke <capability> --input <json-or-file>")
 	if len(args) >= 1 && args[0] == "describe" && (len(args) == 1 || (len(args) == 2 && args[1] == "--json")) {
-		env = module.Describe("1.0.2")
+		env = module.Describe("1.0.3")
 	}
 	if len(args) == 4 && args[0] == "invoke" && args[2] == "--input" {
 		body := []byte(args[3])

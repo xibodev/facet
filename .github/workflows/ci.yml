@@ -94,7 +94,7 @@ jobs:
           printf 'defaults:\n  voice: keep-custom-voice\n' > "$HOME/.config/facet/config.yaml"
           cp "$HOME/.config/facet/config.yaml" "$HOME/config-before.yaml"
           cd "$HOME/work"
-          bash "$GITHUB_WORKSPACE/install.sh"
+          bash "$GITHUB_WORKSPACE/scripts/install-source.sh"
           cmp "$HOME/config-before.yaml" "$HOME/.config/facet/config.yaml"
           "$HOME/.facet/bin/facet" init --help
           test -z "$(ls -A)"
