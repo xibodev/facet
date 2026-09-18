@@ -310,7 +310,9 @@ Use `+"`facet tools describe <tool>`"+` for schemas and `+"`facet tools estimate
 - Review: `+"`"+`facet tools run output_review --input '{"rendered_file":"renders/final.mp4"}'`+"`"+`; configure expected profile/audio for the brief and visually inspect samples.
 
 ## Renderer And Provider Contract
-- Direct Remotion props: nonempty cuts with id, type, source, in_seconds, out_seconds; optional theme and audio.narration.src. Set width, height, fps and duration_seconds for an explicit export profile; cuts must fit the duration and whole frames. Defaults remain 1920x1080/30fps with one second after the last cut. Omit audio for silence.
+- Direct Remotion props use a nonempty, ordered cuts array with exactly four scene primitives: `+"`text_card`"+` requires `+"`text`"+`; `+"`hero_title`"+` requires `+"`text`"+`; `+"`stat_card`"+` requires `+"`stat`"+`; `+"`media`"+` requires `+"`source`"+` and `+"`media_kind`"+` (`+"`image`"+` or `+"`video`"+`).
+- Every cut requires `+"`type`"+`, `+"`in_seconds`"+`, and `+"`out_seconds`"+`; `+"`id`"+` is optional, and `+"`source`"+` is required only for `+"`media`"+` cuts. Set width, height, fps, and duration_seconds for an explicit export profile; cuts must fit the duration and whole frames.
+- Defaults remain 1920x1080/30fps. Omit `+"`duration_seconds`"+` to end exactly at the last cut, with no padding. Omit audio for silence; narration uses `+"`audio.narration.src`"+`.
 - Set output to renders/final.mp4; direct cuts select Remotion regardless of operation. The explainer pack has a complete request example. An estimate is not proof the renderer or media works.
 - Use `+"`gflow_image`"+` or `+"`gflow_video`"+`, never a generic gflow tool. Both need the gflow binary on PATH and authenticated provider access; configured only checks the binary.
 - Real gflow estimates have null estimated_cost (unknown). Explain provider/model and obtain paid consent; missing dependencies or credentials are errors, not permission to use mocks.

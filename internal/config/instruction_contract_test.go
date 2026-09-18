@@ -81,6 +81,24 @@ func TestGeneratedInstructionContract(t *testing.T) {
 							t.Errorf("%s lacks %q", file, required)
 						}
 					}
+					for _, required := range []string{
+						"exactly four scene primitives",
+						"`text_card` requires `text`",
+						"`hero_title` requires `text`",
+						"`stat_card` requires `stat`",
+						"`media` requires `source` and `media_kind` (`image` or `video`)",
+						"Every cut requires `type`, `in_seconds`, and `out_seconds`",
+						"`id` is optional",
+						"`source` is required only for `media` cuts",
+						"Omit `duration_seconds` to end exactly at the last cut, with no padding",
+					} {
+						if !strings.Contains(text, required) {
+							t.Errorf("%s lacks composer contract %q", file, required)
+						}
+					}
+					if strings.Contains(strings.ToLower(text), "theme") {
+						t.Errorf("%s documents unsupported theme", file)
+					}
 					for _, pack := range packs.packs {
 						if !strings.Contains(text, "`"+engine.root+pack+"/SKILL.md`") {
 							t.Errorf("%s lacks engine-local %s entry", file, pack)
