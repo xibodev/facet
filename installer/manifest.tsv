@@ -1,6 +1,6 @@
 kind	id	version	value	windows	linux	darwin	size	capability
 contract	layout	1	bin-bundle	-	-	-	-	Prebuilt Facet with canonical bundle
-release	facet	1.0.3	xibodev/facet	-	-	-	-	Facet release repository
+release	facet	1.0.4	xibodev/facet	-	-	-	-	Facet release repository
 host	opencode	-	.opencode/skills	-	-	-	-	OpenCode
 host	codex	-	.agents/skills	-	-	-	-	Codex
 host	claude	-	.claude/skills	-	-	-	-	Claude Code

@@ -46,9 +46,9 @@ if ($answers.Count -or (Test-Path -LiteralPath $env:FACET_TEST_PROJECT)) { throw
             pid, fd = pty.fork()
             if pid == 0:
                 os.chdir(root)
-                command = "set -o pipefail; " + ("curl -fsSL https://xibodev.github.io/facet/install.sh" if args.website else "cat " + shlex.quote(str(REPO / "docs/install.sh"))) + " | bash"
+                command = "set -o pipefail; " + ("curl -fsSL https://xibodev.github.io/facet/install.sh" if args.website else "cat " + shlex.quote(str(REPO / "docs/install.sh"))) + (" | bash" if args.website else " | sh")
                 os.execve("/bin/bash", ["bash", "-c", command], os.environ.copy())
-            prompts = [(b"CLI:", b"codex\n"), (b"Project directory", (str(project)+"\n").encode()), (b"Select numbers", b"none\n"), (b"Continue?", b"n\n")]
+            prompts = [(b"CLI:", b"codex\n"), (b"Project directory", (str(project)+"\n").encode()), (b"none", b"none\n"), (b"Continue?", b"n\n")]
             output = b""
             index = 0
             deadline = time.monotonic() + 240

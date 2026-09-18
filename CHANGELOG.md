@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.4
+
+- Arrow-key CLI/action menus, Space-toggle optional dependencies, numbered stages,
+  concise progress, retained diagnostic logs, and plain/noninteractive fallback.
+- Repeat setup reuses configured dependencies. Add, repair, and update build
+  isolated replacement runtimes and preserve working project bindings on failure.
+- Explicit migration of v1.0.3 integrations keeps the original skill and state in
+  a project backup; modified managed files are never silently overwritten.
+- Windows PowerShell 5.1 compatibility, POSIX-shell web bootstrap, pipe-friendly
+  environment options, retrying downloads, and verified product-download caching.
+- Release tests cover terminal interaction, repeat setup, repair, legacy migration,
+  dependency failure recovery, and clean Linux Docker rendering.
+
+Windows rich-menu rendering still needs interactive user acceptance. Uninstall
+is not implemented; old runtime generations and migration backups are retained.
+Automatic Linux system dependencies target apt-based distributions.
+
 ## 1.0.3
 
 - Script-owned interactive installation for OpenCode, Codex, Claude Code, and GitHub Copilot CLI, using prebuilt Windows, Linux, and macOS binaries on x64 and ARM64.

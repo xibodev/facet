@@ -25,21 +25,22 @@ def main():
         temp = Path(temp)
         with zipfile.ZipFile(installer) as z:
             z.extractall(temp / "installer")
-        def install(project, destination, payload=archive, checksums=None, expect_success=True, interactive=None):
+        def install(project, destination, payload=archive, checksums=None, expect_success=True, interactive=None, action="add", components="none", extra_env=None, migrate=False):
             checksums = checksums or release / f"checksums-{args.os}-{args.arch}.txt"
             if args.os == "windows":
-                command = ["pwsh", "-NoProfile", "-File", str(temp / "installer/install.ps1"),
+                command = [os.environ.get("FACET_TEST_POWERSHELL", "pwsh"), "-NoProfile", "-File", str(temp / "installer/install.ps1"),
                            "-Target", project.name, "-ProjectDir", str(project), "-InstallDir", str(destination),
-                           "-ArchivePath", str(payload), "-ChecksumPath", str(checksums), "-Components", "none"]
+                           "-ArchivePath", str(payload), "-ChecksumPath", str(checksums), "-Components", components, "-Action", action]
                 if interactive is None: command += ["-NonInteractive"]
             else:
                 command = ["bash", str(temp / "installer/install.sh"), "--target", project.name,
                            "--project", str(project), "--install-dir", str(destination), "--archive", str(payload),
-                           "--checksums", str(checksums), "--components", "none"]
+                           "--checksums", str(checksums), "--components", components, "--action", action]
                 if interactive is None: command += ["--yes"]
             if os.environ.get("FACET_INSTALL_SKIP_MEDIA") == "1":
                 command += ["-SkipVerify" if args.os == "windows" else "--skip-verify"]
-            result = subprocess.run(command, input=interactive, text=True, capture_output=True)
+            if migrate: command += ["-MigrateLegacy" if args.os == "windows" else "--migrate-legacy"]
+            result = subprocess.run(command, input=interactive, text=True, capture_output=True, env=dict(os.environ, FACET_LOG_DIR=str(temp / "logs"), **(extra_env or {})))
             if (result.returncode == 0) != expect_success:
                 raise AssertionError(f"Unexpected installer result {result.returncode}:\n{result.stdout}\n{result.stderr}")
             return result
@@ -64,7 +65,49 @@ def main():
                 assert (project / "AGENTS.md").read_text() == "Keep user instructions."
                 assert (project / ".facet-install/packs/explainer/SKILL.md").is_file()
                 assert not (project / config / "skills/facet/packs").exists()
+                rerun = install(project, temp / "release")
+                assert "Reusing configured dependencies" in rerun.stdout
+                assert "configuration: --" not in rerun.stdout and "[STREAM]" not in rerun.stdout
+                launcher = project / ".facet-install" / ("run-facet.ps1" if args.os == "windows" else "run-facet.sh")
+                before = launcher.read_bytes()
+                repair = install(project, temp / "release", action="repair")
+                assert launcher.read_bytes() != before, "Repair did not rebind to isolated runtime"
+                assert (temp / "release/bin" / ("facet" + suffix)).exists(), "Repair destroyed shared runtime"
+                if host == "opencode":
+                    install(project, temp / "release", action="update")
+                    assert (project / "AGENTS.md").read_text() == "Keep user instructions."
+                skill = project / config / "skills/facet/SKILL.md"
+                original = skill.read_bytes()
+                skill.write_bytes(original + b"\nUser customization\n")
                 install(project, temp / "release", expect_success=False)
+                assert skill.read_bytes() == original + b"\nUser customization\n"
+                skill.write_bytes(original)
+                if host == "claude":
+                    ownership = project / ".facet-install" / ("managed-files.json" if args.os == "windows" else "managed-files.sha256")
+                    ownership.unlink()
+                    (project / ".facet-install/custom-note.txt").write_text("retain legacy customization")
+                    install(project, temp / "release", expect_success=False)
+                    install(project, temp / "release", migrate=True)
+                    backups = list(project.glob(".facet-backup-*/state/custom-note.txt"))
+                    assert len(backups) == 1 and backups[0].read_text() == "retain legacy customization"
+                if host == "codex":
+                    # Fail the dependency subprocess after selecting an addition.
+                    # A new runtime generation must be discarded, with the old
+                    # project's launcher and working runtime still usable.
+                    if os.environ.get("FACET_INSTALL_SKIP_MEDIA") != "1":
+                        fake = temp / "failed-npm"
+                        fake.mkdir()
+                        shim = fake / ("npm.cmd" if args.os == "windows" else "npm")
+                        shim.write_text("@echo off\r\nexit /b 23\r\n" if args.os == "windows" else "#!/bin/sh\nexit 23\n")
+                        shim.chmod(0o755)
+                        before = launcher.read_bytes()
+                        generations = set(temp.glob("release-generation-*"))
+                        failure = install(project, temp / "release", components="remotion", expect_success=False,
+                                          extra_env={"PATH": str(fake) + os.pathsep + os.environ["PATH"]})
+                        assert "failed" in (failure.stdout + failure.stderr).lower()
+                        assert launcher.read_bytes() == before, "Failed addition replaced project binding"
+                        assert set(temp.glob("release-generation-*")) == generations, "Failed addition left a partial generation"
+                        install(project, temp / "release")
             bad_sums = temp / "bad-sums.txt"
             bad_sums.write_text("0" * 64 + "  " + archive.name + "\n")
             bad_project = temp / "bad-project" / "codex"

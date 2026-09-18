@@ -1,6 +1,6 @@
 # Script installer contract
 
-Installation policy belongs to the root `install.ps1` (Windows, PowerShell 7)
+Installation policy belongs to the root `install.ps1` (Windows PowerShell 5.1 or PowerShell 7)
 and `install.sh` (Linux/macOS, Bash). Neither invokes `facet init`, `facet doctor`,
 or an application-owned setup wizard. No compiled installer is distributed.
 
@@ -49,16 +49,51 @@ Use `-ArchivePath` and `-ChecksumPath` on Windows, or `--archive` and
 dependencies can still require network access. `-SkipVerify` / `--skip-verify`
 explicitly reports media readiness as unverified.
 
-Both scripts leave existing instruction/config files alone, refuse occupied
-skill/state locations, and allow a verified product installation to serve another
-project. They create a project-local launcher that selects the installed binary
+Both scripts leave existing instruction/config files alone and allow a verified
+product installation to serve another project. They create a project-local launcher that selects the installed binary
 and runtime paths without changing the user's shell profile or persistent PATH.
 System package-manager dependency installs may update PATH themselves.
 
 Pack resources live in `.facet-install/packs/`, outside the host's recursive
 skill discovery tree. Only the core `facet` skill is registered. Existing
-projects with `.facet-install/` are not automatically updated or uninstalled in
-this first version; those operations are not advertised as implemented.
+projects with ownership hashes can be rerun with `--action add|repair|update`
+(`-Action` on Windows). Add preserves existing component choices and adds the
+selected ones. Repair builds a separate runtime generation; update can rebind to
+another explicit release version. A project is rebound only after setup checks
+pass, and earlier runtime generations remain available to other projects.
+Modified or additional files in managed project directories are preserved by
+refusing an automatic replacement. Uninstall is not implemented.
+
+Older v1.0.3 integrations lack file ownership hashes. Interactive setup offers a
+separate opt-in migration, or automation can pass `--migrate-legacy` /
+`-MigrateLegacy`. The entire old skill and state directory are retained in a
+`.facet-backup-*` project folder, including customizations. Review that backup
+before deleting it. No account authentication is attempted.
+
+Normal output is concise progress. Detailed, URL-redacted subprocess output is
+retained under `~/.facet/logs`; use `--verbose` / `-Verbose` for live detail or
+`FACET_LOG_DIR` to select a log directory. Downloads retry transient failures;
+verified product archives are cached under `~/.facet/cache`. Configured runtimes
+are reused without running npm ci again. Adding dependencies to an existing
+runtime builds a sibling generation instead of modifying one used by another
+project. System package-manager actions cannot be rolled back by Facet.
+
+Interactive terminals use Up/Down and Enter for CLI/action selection, and Space
+to toggle optional components. Completed answers remain visible above numbered
+installation stages. Use `--plain` / `-Plain`, `FACET_PLAIN=1`, or `NO_COLOR` for
+plain prompts. Redirected terminals also use plain prompts; noninteractive flags
+do not invoke the menu. The Unix menu is driven by a real pseudo-terminal test
+in release CI, including cursor restoration after cancellation.
+
+Pipe-friendly configuration variables are `FACET_TARGET`, `FACET_PROJECT`,
+`FACET_INSTALL_DIR`, `FACET_COMPONENTS`, `FACET_ACTION`, and `FACET_YES=1`.
+The website bootstraps remain pinned to the last published installer until a
+new release is validated and published; local changes do not upgrade that pin.
+
+Supported automatic system-dependency setup is Windows with winget, macOS with
+Homebrew, and apt-based Linux distributions. Other Linux distributions can use
+preinstalled dependencies; automatic system provisioning for them is not yet
+implemented. Download sizes are planning ranges, not exact disk-space budgets.
 
 ## Tests
 
@@ -70,9 +105,11 @@ runners; local probes supplement rather than replace the release gates.
 
 `scripts/test-prebuilt-install.py` runs the platform's real script against a
 real native archive. Set `FACET_INSTALL_SMOKE=1` with FFmpeg installed to exercise
-all four host placements, interactive selection, repeat/conflict refusal,
-preserved instructions, invalid checksums, traversal, duplicate entries, links,
-modified installations, and local encode/probe/decode checks.
+all four host placements, interactive selection, repeat/reuse, isolated repair,
+explicit legacy migration with backups, failed dependency-add rollback, modified
+file preservation, invalid checksums, traversal, duplicate entries, links,
+modified installations, and local encode/probe/decode checks. Windows CI runs
+this lifecycle suite under both Windows PowerShell 5.1 and PowerShell 7.
 
 `scripts/test-installer-wsl.sh` is a narrower local adapter: native Linux Facet,
 Windows FFmpeg version probes, and explicitly skipped media verification. It is

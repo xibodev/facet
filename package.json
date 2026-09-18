@@ -1,6 +1,6 @@
 {
   "name": "@xibodev/facet",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Autonomous Video Production Engine & Studio for Agentic CLIs",
   "main": "bin/facet-cli.js",
   "bin": {

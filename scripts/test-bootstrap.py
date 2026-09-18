@@ -33,7 +33,7 @@ def main():
         scratch = root / "scratch"
         scratch.mkdir()
         env = dict(os.environ, PATH=str(root) + ":" + os.environ["PATH"], BOOTSTRAP=str(bootstrap), ARCHIVE=str(archive), MARKER=str(marker), TMPDIR=str(scratch))
-        command = "set -o pipefail; curl -fsSL https://xibodev.github.io/facet/install.sh | bash"
+        command = "set -o pipefail; curl -fsSL https://xibodev.github.io/facet/install.sh | sh"
         for mode, child_exit in [("success", 0), ("checksum", 0), ("child-failure", 9)]:
             bootstrap.write_text(original.replace(DIGEST, "0" * 64 if mode == "checksum" else digest))
             marker.unlink(missing_ok=True)

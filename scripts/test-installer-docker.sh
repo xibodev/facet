@@ -20,6 +20,10 @@ sudo -H -u tester env FACET_DOCKER_VERSION="$version" FACET_DOCKER_RELEASE_DIR="
         --archive "${archive[0]}" --checksums "$release_dir/checksums-linux-amd64.txt" \
         --components remotion,piper,gflow,hyperframes
     /work/project/.facet-install/run-facet.sh version
+    # A repeat must reuse dependencies. The regression suite then exercises repair.
+    bash installer/install.sh --yes --target codex --project /work/project --install-dir /work/release \
+        --archive "${archive[0]}" --checksums "$release_dir/checksums-linux-amd64.txt" --components none
+    export PATH="/work/release/dependencies/node/bin:$PATH"
     FACET_INSTALL_SMOKE=1 python3 /source/scripts/test-prebuilt-install.py --os linux --arch amd64 \
         --release-dir "$release_dir"
 '

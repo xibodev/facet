@@ -50,6 +50,9 @@ jobs:
       - name: Installer syntax
         shell: bash
         run: bash -n install.sh
+      - name: Terminal menu interaction
+        if: runner.os != 'Windows'
+        run: python3 scripts/test-installer-menu.py
       - name: Package native binaries and content
         run: python scripts/package-release.py --os ${{ matrix.os }} --arch ${{ matrix.arch }} --out build/release
       - name: Validate native package and project integration
@@ -68,6 +71,12 @@ jobs:
         env:
           FACET_INSTALL_SMOKE: '1'
         run: python scripts/test-prebuilt-install.py --os ${{ matrix.os }} --arch ${{ matrix.arch }} --release-dir build/release
+      - name: Windows PowerShell 5.1 lifecycle acceptance
+        if: matrix.os == 'windows' && matrix.arch == 'amd64'
+        env:
+          FACET_INSTALL_SMOKE: '1'
+          FACET_TEST_POWERSHELL: powershell.exe
+        run: python scripts/test-prebuilt-install.py --os windows --arch amd64 --release-dir build/release
       - name: Clean Linux installation with all optional components
         if: matrix.os == 'linux' && matrix.arch == 'amd64'
         run: |

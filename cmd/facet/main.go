@@ -18,7 +18,7 @@ import (
 	"github.com/xibodev/facet/internal/toolbox"
 )
 
-const Version = "1.0.3"
+const Version = "1.0.4"
 
 func printUsage() {
 	fmt.Println(`Facet - Autonomous Video Production Engine & Agent Toolbox
