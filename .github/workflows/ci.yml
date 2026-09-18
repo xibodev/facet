@@ -51,6 +51,9 @@ jobs:
         run: |
           choco install ffmpeg --yes --no-progress
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $binary = Get-ChildItem "$env:ChocolateyInstall/lib/ffmpeg" -Filter ffmpeg.exe -Recurse | Select-Object -First 1
+          if (-not $binary) { throw 'FFmpeg installation did not provide its executable.' }
+          $binary.DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Verify FFmpeg
         run: ffmpeg -version
       - name: Verify FFprobe
