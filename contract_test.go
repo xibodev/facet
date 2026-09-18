@@ -30,6 +30,45 @@ func TestDonorGuardChecksTrackedPathNames(t *testing.T) {
 	}
 }
 
+func TestRequiredRetainedPortLegalNotice(t *testing.T) {
+	data, err := os.ReadFile("THIRD_PARTY_NOTICES.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	notice := strings.Join(strings.Fields(string(data)), " ")
+	required := []string{
+		"Open" + "Montage",
+		"https://github.com/calesthio/" + "Open" + "Montage",
+		"cd9f3c1f03368be87b140af494914b8ee4e3c7a4",
+		"AGPL-3.0",
+		"toolbox contract/registry/process execution",
+		"media probe/frame sampling/scene detection",
+		"supplied-footage source editing",
+		"audio mixing/normalization",
+		"technical output review",
+		"no donor skills, pipelines, schemas, fixtures, composer source, or product guidance",
+	}
+	for _, text := range required {
+		if !strings.Contains(notice, text) {
+			t.Errorf("THIRD_PARTY_NOTICES.md omits required legal attribution %q", text)
+		}
+	}
+}
+
+func TestDonorTermExceptionIsLimitedToThirdPartyNotices(t *testing.T) {
+	tests := map[string]bool{
+		"THIRD_PARTY_NOTICES.md":        true,
+		"docs/THIRD_PARTY_NOTICES.md":   false,
+		"THIRD_PARTY_NOTICES.md.backup": false,
+		"README.md":                     false,
+	}
+	for name, want := range tests {
+		if got := isLegalNotice(name); got != want {
+			t.Errorf("isLegalNotice(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
 func TestProductContractContainsNoBannedTerms(t *testing.T) {
 	banned := []*regexp.Regexp{
 		regexp.MustCompile(`(?i)open[\s._-]*` + "montage"),
@@ -60,6 +99,9 @@ func TestProductContractContainsNoBannedTerms(t *testing.T) {
 		if !isProductTextFile(name) {
 			continue
 		}
+		if isLegalNotice(name) {
+			continue
+		}
 		data, err := os.ReadFile(filepath.FromSlash(name))
 		if err != nil {
 			t.Fatal(err)
@@ -74,6 +116,10 @@ func TestProductContractContainsNoBannedTerms(t *testing.T) {
 	if len(violations) != 0 {
 		t.Fatalf("banned donor product terms remain:\n%s", strings.Join(violations, "\n"))
 	}
+}
+
+func isLegalNotice(name string) bool {
+	return filepath.ToSlash(name) == "THIRD_PARTY_NOTICES.md"
 }
 
 func donorPathViolations(names []string, banned []*regexp.Regexp) []string {
