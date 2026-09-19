@@ -431,9 +431,6 @@ func CreateNewProject(name, slug, baseDir, engine string, packs []string, rootDi
 	if engine == "" {
 		engine = "studio"
 	}
-	if len(packs) == 0 {
-		packs = []string{"explainer"}
-	}
 
 	opts := config.InitOptions{
 		ProjectDir: targetDir,
@@ -457,7 +454,7 @@ func OpenExistingProject(targetPath, engine string, rootDir ...string) (*Catalog
 	}
 
 	// Try reading facet.lock.json to discover engine and packs
-	packs := []string{"explainer"}
+	var packs []string
 	lockPath := filepath.Join(targetPath, "facet.lock.json")
 	if data, err := os.ReadFile(lockPath); err == nil {
 		var lock config.ProjectLock

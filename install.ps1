@@ -9,10 +9,11 @@ Authentication is owned by the selected CLI. No product setup command is used.
 [CmdletBinding()]
 param(
     [string]$Version = $env:FACET_VERSION,
-    [ValidateSet('opencode','codex','claude','copilot')][string]$Target,
+    [ValidateSet('opencode','codex','claude','copilot','studio')][string]$Target,
     [string]$ProjectDir = $env:FACET_PROJECT,
     [string]$InstallDir = $env:FACET_INSTALL_DIR,
     [string]$Components = $env:FACET_COMPONENTS,
+    [Alias('ProductionMethod')][string[]]$Pack,
     [ValidateSet('add','repair','update')][string]$Action = 'add',
     [switch]$MigrateLegacy,
     [switch]$Plain,
@@ -38,6 +39,8 @@ if ($env:FACET_YES -eq '1') { $NonInteractive = $true }
 if ($env:FACET_ACTION -and -not $PSBoundParameters.ContainsKey('Action')) { $Action = $env:FACET_ACTION }
 if ($Action -notin @('add','repair','update')) { throw 'Action must be add, repair, or update.' }
 $componentsExplicit = -not [string]::IsNullOrWhiteSpace($Components)
+$packsExplicit = $PSBoundParameters.ContainsKey('Pack') -or -not [string]::IsNullOrWhiteSpace($env:FACET_PACKS)
+if (-not $Pack -and $env:FACET_PACKS) { $Pack = @($env:FACET_PACKS.Split(',') | Where-Object { $_.Trim() } | ForEach-Object { $_.Trim() }) }
 $logRoot = if ($env:FACET_LOG_DIR) { $env:FACET_LOG_DIR } else { Join-Path $HOME '.facet/logs' }
 New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
 $logFile = Join-Path $logRoot ('install-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N') + '.log')
@@ -222,8 +225,8 @@ if (-not $Target) {
     Write-Host "  Detected CLIs: $(@($detected | ForEach-Object id) -join ', ')"
     $hostRows=@($manifest | Where-Object kind -EQ 'host')
     $labels=@($hostRows | ForEach-Object { "$($_.capability)" + $(if (Get-Command $_.id -ErrorAction SilentlyContinue) {' - detected'} else {' - not detected'}) })
-    $Target = Select-Choice 'Which CLI should use Facet?' $labels @($hostRows | ForEach-Object id) @($defaultHost)
-    if ($Target -match '^[1-4]$') { $Target=$hostRows[[int]$Target-1].id }
+    $Target = Select-Choice 'Which agent should use Facet?' $labels @($hostRows | ForEach-Object id) @($defaultHost)
+    if ($Target -match '^[1-5]$') { $Target=$hostRows[[int]$Target-1].id }
 }
 $hostDef = Definition $Target
 if ($hostDef.kind -ne 'host') { throw 'Unsupported CLI.' }
@@ -233,6 +236,19 @@ if (-not $Components) {
     $savedState = Join-Path $ProjectDir '.facet-install/installation.json'
     if (Test-Path $savedState) { $Components = (([IO.File]::ReadAllText($savedState) | ConvertFrom-Json).components -join ',') }
     if (-not $Components) { $Components='remotion' }
+}
+if (-not $packsExplicit) {
+    $savedState = Join-Path $ProjectDir '.facet-install/installation.json'
+    if (Test-Path $savedState) {
+        $saved = [IO.File]::ReadAllText($savedState) | ConvertFrom-Json
+        if ($saved.PSObject.Properties.Name -contains 'packs') { $Pack = @($saved.packs) }
+    }
+}
+$selectedPacks = @($Pack | Where-Object { $_ } | ForEach-Object { $_.Split(',') } | ForEach-Object { $_.Trim().ToLowerInvariant() } | Where-Object { $_ })
+if (@($selectedPacks | Select-Object -Unique).Count -ne $selectedPacks.Count) { throw 'Duplicate production method.' }
+foreach ($id in $selectedPacks) {
+    $def = Definition $id
+    if ($def.kind -ne 'pack') { throw "Unknown production method: $id" }
 }
 if (-not $InstallDir) { $InstallDir = Join-Path $HOME ".facet/releases/$Version-windows-$arch" }
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
@@ -295,6 +311,8 @@ if (Test-Path -LiteralPath $state) {
     if ($Action -eq 'add') {
         $selected = @(@($previous.components) + @($selected | Where-Object { $_ -ne 'none' }) | Where-Object { $_ -ne 'none' } | Select-Object -Unique)
         if (-not $selected.Count) { $selected=@('none') }
+        $previousPacks = if ($previous.PSObject.Properties.Name -contains 'packs') { @($previous.packs) } else { @() }
+        $selectedPacks = @($previousPacks + $selectedPacks | Where-Object { $_ } | Select-Object -Unique)
         $InstallDir = $previous.installation
     }
 } else { Assert-New $skill; Assert-New $state }
@@ -312,7 +330,7 @@ if ((Test-Path -LiteralPath $InstallDir) -and -not $reuse) {
     if (-not (Test-Path -LiteralPath (Join-Path $InstallDir 'facet-install.json'))) { throw 'Existing installation is not managed by these scripts.' }
     $InstallDir += '-generation-' + [guid]::NewGuid().ToString('N').Substring(0,8)
 }
-Write-Host "`n  CLI: $Target`n  Project: $ProjectDir`n  Action: $Action`n  Components: $($selected -join ', ')`n  Runtime: $InstallDir"
+Write-Host "`n  Agent: $Target`n  Project: $ProjectDir`n  Action: $Action`n  Production methods: $(if ($selectedPacks.Count) {$selectedPacks -join ', '} else {'core only'})`n  Components: $($selected -join ', ')`n  Runtime: $InstallDir"
 Write-Host '  Existing managed runtimes are retained until a verified replacement is ready.'
 Write-Host "  Detailed log: $logFile"
 if (-not $NonInteractive -and (Ask 'Continue?' 'y') -notin @('y','yes')) { throw 'Installation cancelled.' }
@@ -461,10 +479,11 @@ try {
     $binaryLiteral = $facet.Replace("'","''")
     @('$ErrorActionPreference = ''Stop''',"`$env:PATH = '$pathLiteral' + `$env:PATH","& '$binaryLiteral' @args",'exit $LASTEXITCODE') | Set-Content -LiteralPath "$projectStage/state/run-facet.ps1" -Encoding utf8
     $launcher = (Join-Path $state 'run-facet.ps1').Replace("'","''")
-    @('', '## This installation', "- Invoke Facet with: & '$launcher' followed by the normal arguments. Use this launcher instead of bare facet in examples.", "- Resolve packs/... under $state. Read the relevant pack's SKILL.md on demand.", "- Optional components selected: $($selected -join ','). Media services report missing credentials/session requirements when used.") | Add-Content -LiteralPath "$projectStage/skill/SKILL.md"
+    $methodLine = if ($selectedPacks.Count) { "- Active production methods selected during setup: " + (($selectedPacks | ForEach-Object { "$state/packs/$_/SKILL.md" }) -join ', ') + '.' } else { '- No production-method pack is active; use the core guidance only.' }
+    @('', '## This installation', "- Invoke Facet with: & '$launcher' followed by the normal arguments. Use this launcher instead of bare facet in examples.", "- Resolve packs/... under $state. Read the relevant pack's SKILL.md on demand.", $methodLine, "- Optional components selected: $($selected -join ','). Media services report missing credentials/session requirements when used.") | Add-Content -LiteralPath "$projectStage/skill/SKILL.md"
     if ('piper' -in $selected) { "- Piper model: $(Join-Path $voices "$((Definition piper).value).onnx")" | Add-Content "$projectStage/skill/SKILL.md" }
     if ('hyperframes' -in $selected) { "- Invoke the pinned HyperFrames renderer with node `"$hfEntry`" followed by its arguments; do not use unpinned npx." | Add-Content "$projectStage/skill/SKILL.md" }
-    @{schema=1;version=$Version;installation=$InstallDir;host=$Target;components=$selected} | ConvertTo-Json | Set-Content "$projectStage/state/installation.json"
+    @{schema=1;version=$Version;installation=$InstallDir;host=$Target;components=$selected;packs=$selectedPacks} | ConvertTo-Json | Set-Content "$projectStage/state/installation.json"
     $managed = @()
     foreach ($pair in @(@{source="$projectStage/state";prefix='.facet-install'},@{source="$projectStage/skill";prefix="$($hostDef.value)/facet"})) {
         $managed += @(Get-ChildItem -LiteralPath $pair.source -Recurse -File | ForEach-Object { @{path=($pair.prefix + '/' + (Relative-Path $pair.source $_.FullName));sha256=(Get-FileHash -LiteralPath $_.FullName).Hash} })

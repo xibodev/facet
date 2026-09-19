@@ -11,8 +11,10 @@ operations, and reports what happened.
 ## Install
 
 The interactive installer supports OpenCode, Codex, Claude Code, and GitHub
-Copilot CLI. It preserves unmanaged project instructions and installs Facet's
-canonical guidance for the selected target.
+Copilot CLI, plus Facet Studio projects. It preserves unmanaged project
+instructions and installs Facet's canonical guidance for the selected target.
+Setup is core-only unless production methods are explicitly selected with the
+repeatable `--pack` / `--production-method` options (`-Pack` on PowerShell).
 
 ```powershell
 irm https://xibodev.github.io/facet/install.ps1 | iex

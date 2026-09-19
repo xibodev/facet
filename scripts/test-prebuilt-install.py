@@ -25,18 +25,20 @@ def main():
         temp = Path(temp)
         with zipfile.ZipFile(installer) as z:
             z.extractall(temp / "installer")
-        def install(project, destination, payload=archive, checksums=None, expect_success=True, interactive=None, action="add", components="none", extra_env=None, migrate=False):
+        def install(project, destination, payload=archive, checksums=None, expect_success=True, interactive=None, action="add", components="none", packs=(), extra_env=None, migrate=False):
             checksums = checksums or release / f"checksums-{args.os}-{args.arch}.txt"
             if args.os == "windows":
                 command = [os.environ.get("FACET_TEST_POWERSHELL", "pwsh"), "-NoProfile", "-File", str(temp / "installer/install.ps1"),
                            "-Target", project.name, "-ProjectDir", str(project), "-InstallDir", str(destination),
                            "-ArchivePath", str(payload), "-ChecksumPath", str(checksums), "-Components", components, "-Action", action]
                 if interactive is None: command += ["-NonInteractive"]
+                if packs: command += ["-Pack", ",".join(packs)]
             else:
                 command = ["bash", str(temp / "installer/install.sh"), "--target", project.name,
                            "--project", str(project), "--install-dir", str(destination), "--archive", str(payload),
                            "--checksums", str(checksums), "--components", components, "--action", action]
                 if interactive is None: command += ["--yes"]
+                for pack in packs: command += ["--pack", pack]
             if os.environ.get("FACET_INSTALL_SKIP_MEDIA") == "1":
                 command += ["-SkipVerify" if args.os == "windows" else "--skip-verify"]
             if migrate: command += ["-MigrateLegacy" if args.os == "windows" else "--migrate-legacy"]
@@ -60,11 +62,18 @@ def main():
                 project = temp / host
                 project.mkdir()
                 (project / "AGENTS.md").write_text("Keep user instructions.")
-                install(project, temp / "release", interactive="none\ny\n" if host == "opencode" else None)
+                packs = ("cinematic", "localization") if host == "opencode" else ()
+                install(project, temp / "release", interactive="none\ny\n" if host == "opencode" else None, packs=packs)
                 assert (project / config / "skills/facet/SKILL.md").is_file()
                 assert (project / "AGENTS.md").read_text() == "Keep user instructions."
                 assert (project / ".facet-install/packs/explainer/SKILL.md").is_file()
                 assert not (project / config / "skills/facet/packs").exists()
+                installed_guidance = (project / config / "skills/facet/SKILL.md").read_text()
+                if packs:
+                    for pack in packs:
+                        assert f".facet-install/packs/{pack}/SKILL.md" in installed_guidance
+                else:
+                    assert "No production-method pack is active" in installed_guidance
                 rerun = install(project, temp / "release")
                 assert "Reusing configured dependencies" in rerun.stdout
                 assert "configuration: --" not in rerun.stdout and "[STREAM]" not in rerun.stdout

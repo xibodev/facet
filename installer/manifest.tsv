@@ -5,6 +5,14 @@ host	opencode	-	.opencode/skills	-	-	-	-	OpenCode
 host	codex	-	.agents/skills	-	-	-	-	Codex
 host	claude	-	.claude/skills	-	-	-	-	Claude Code
 host	copilot	-	.github/skills	-	-	-	-	GitHub Copilot CLI
+host	studio	-	skills	-	-	-	-	Facet Studio
+pack	explainer	-	bundle/packs/explainer	-	-	-	-	Animated explainers and narrated walkthroughs
+pack	cinematic	-	bundle/packs/cinematic	-	-	-	-	Cinematic and documentary treatments
+pack	screen-demo	-	bundle/packs/screen-demo	-	-	-	-	Product and screen demonstrations
+pack	talking-head	-	bundle/packs/talking-head	-	-	-	-	Presenter and talking-head productions
+pack	social	-	bundle/packs/social	-	-	-	-	Short-form and content repurposing
+pack	character-animation	-	bundle/packs/character-animation	-	-	-	-	Character-led animation
+pack	localization	-	bundle/packs/localization	-	-	-	-	Localization and dubbing
 runtime	ffmpeg	-	ffmpeg	Gyan.FFmpeg	ffmpeg	ffmpeg	Varies by platform	Core media editing and inspection (includes ffprobe)
 runtime	node	24.18.0	22	OpenJS.NodeJS.LTS	nodejs	node@24	30-60 MB	Node.js/npm for selected renderers
 runtime	python	3.12	python3	Python.Python.3.12	python3 python3-venv	python@3.12	Varies by platform	Python for optional Piper only

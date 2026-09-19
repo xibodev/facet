@@ -45,13 +45,15 @@ func TestRepositoryInstructionContract(t *testing.T) {
 
 func TestGeneratedInstructionContract(t *testing.T) {
 	for _, engine := range []struct {
-		name string
-		root string
+		name        string
+		root        string
+		instruction string
 	}{
-		{"claude", ".claude/skills/"},
-		{"opencode", ".opencode/skills/"},
-		{"copilot", ".github/skills/"},
-		{"codex", ".codex/skills/"},
+		{"claude", ".claude/skills/", "CLAUDE.md"},
+		{"opencode", ".opencode/skills/", "AGENTS.md"},
+		{"copilot", ".github/skills/", ".github/copilot-instructions.md"},
+		{"codex", ".codex/skills/", "AGENTS.md"},
+		{"studio", "skills/", "AGENTS.md"},
 	} {
 		for _, packs := range []struct {
 			name  string
@@ -66,7 +68,13 @@ func TestGeneratedInstructionContract(t *testing.T) {
 				owned := loadOwnership(dir)
 				scaffoldAgentInstructions(dir, engine.name, packs.packs, owned)
 				for _, file := range []string{"CLAUDE.md", "AGENTS.md", ".github/copilot-instructions.md"} {
-					data, err := os.ReadFile(filepath.Join(dir, file))
+					data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(file)))
+					if file != engine.instruction {
+						if !os.IsNotExist(err) {
+							t.Errorf("%s wrote unrelated governing file %s", engine.name, file)
+						}
+						continue
+					}
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -119,6 +127,9 @@ func TestGeneratedInstructionContract(t *testing.T) {
 							t.Errorf("%s requires boilerplate discovery or a script matching %q", file, forbidden)
 						}
 					}
+					if len(packs.packs) == 0 && strings.Contains(strings.ToLower(text), "explainer") {
+						t.Errorf("%s core-only guidance implicitly activates explainer", file)
+					}
 				}
 			})
 		}
@@ -136,6 +147,29 @@ func TestInstructionRepairPreservesUserFiles(t *testing.T) {
 	data, err := os.ReadFile(file)
 	if err != nil || string(data) != user {
 		t.Fatalf("unmanaged instructions overwritten: %q, %v", data, err)
+	}
+}
+
+func TestInstructionEngineChangeRemovesOnlyManagedGoverningFile(t *testing.T) {
+	dir := t.TempDir()
+	owned := loadOwnership(dir)
+	scaffoldAgentInstructions(dir, "claude", nil, owned)
+	if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); err != nil {
+		t.Fatal(err)
+	}
+	const user = "Keep these user-owned Codex instructions.\n"
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(user), 0600); err != nil {
+		t.Fatal(err)
+	}
+	scaffoldAgentInstructions(dir, "copilot", nil, owned)
+	if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); !os.IsNotExist(err) {
+		t.Fatal("managed Claude instructions survived a Copilot-only projection")
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "AGENTS.md")); err != nil || string(data) != user {
+		t.Fatalf("unmanaged AGENTS.md changed: %q, %v", data, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".github", "copilot-instructions.md")); err != nil {
+		t.Fatal(err)
 	}
 }
 

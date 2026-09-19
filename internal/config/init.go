@@ -69,7 +69,6 @@ func RunInitWithWriter(projectSlug string, engine string, cfg *Config, w io.Writ
 	opts := InitOptions{
 		ProjectDir: projectSlug,
 		Engine:     engine,
-		Packs:      []string{"explainer"},
 	}
 	return RunInitWithOptions(opts, cfg, w)
 }
@@ -104,6 +103,30 @@ func RunInitWithOptions(opts InitOptions, cfg *Config, w io.Writer) (*InitResult
 			engine = "claude"
 		}
 	}
+	switch engine {
+	case "claude", "copilot", "codex", "opencode", "studio":
+	default:
+		return nil, fmt.Errorf("unsupported engine %q", engine)
+	}
+
+	packSources := make(map[string]string, len(opts.Packs))
+	normalizedPacks := make([]string, 0, len(opts.Packs))
+	for _, packName := range opts.Packs {
+		packName = strings.ToLower(strings.TrimSpace(packName))
+		if packName == "" || packName == "." || filepath.Base(packName) != packName || strings.ContainsAny(packName, `/\`) {
+			return nil, fmt.Errorf("invalid pack name %q", packName)
+		}
+		if _, exists := packSources[packName]; exists {
+			continue
+		}
+		packSource := findPackSource(packName, cfg)
+		if packSource == "" {
+			return nil, fmt.Errorf("selected pack %q was not found in the Facet bundle", packName)
+		}
+		packSources[packName] = packSource
+		normalizedPacks = append(normalizedPacks, packName)
+	}
+	opts.Packs = normalizedPacks
 
 	// Determine project directory
 	projectSlug := strings.TrimSpace(opts.ProjectDir)
@@ -119,7 +142,7 @@ func RunInitWithOptions(opts InitOptions, cfg *Config, w io.Writer) (*InitResult
 	result := &InitResult{
 		ProjectDir:  targetDir,
 		Engine:      engine,
-		Packs:       opts.Packs,
+		Packs:       append([]string(nil), opts.Packs...),
 		Projections: make(map[string]string),
 	}
 
@@ -127,11 +150,8 @@ func RunInitWithOptions(opts InitOptions, cfg *Config, w io.Writer) (*InitResult
 		fmt.Fprintf(w, "Initializing Facet workspace in: %s (engine: %s)\n", targetDir, engine)
 	}
 
-	// 1. Create standard project subdirectories
-	_ = os.MkdirAll(filepath.Join(targetDir, "assets"), 0755)
-	_ = os.MkdirAll(filepath.Join(targetDir, "artifacts"), 0755)
-	_ = os.MkdirAll(filepath.Join(targetDir, "renders"), 0755)
-	_ = os.MkdirAll(filepath.Join(targetDir, "narration"), 0755)
+	// Local Facet state is required. Production directories are created only
+	// when a selected method or tool actually needs them.
 	_ = os.MkdirAll(filepath.Join(targetDir, ".facet"), 0755)
 
 	// 2. Git exclude handling (add .facet/ to .git/info/exclude if git repository)
@@ -163,15 +183,9 @@ func RunInitWithOptions(opts InitOptions, cfg *Config, w io.Writer) (*InitResult
 		result.LinkMethod = "created"
 	}
 
-	// 5. Link pack skills
+	// 5. Link only explicitly selected production-method packs.
 	for _, packName := range opts.Packs {
-		packSource := findPackSource(packName, cfg)
-		if packSource == "" {
-			if w != nil {
-				fmt.Fprintf(w, "  Notice: pack '%s' not found locally\n", packName)
-			}
-			continue
-		}
+		packSource := packSources[packName]
 		packTarget := getSkillsTargetPath(targetDir, engine, packName)
 		method, err := linkOrCopySkillSafe(packSource, packTarget, targetDir, ownership)
 		if err != nil {
@@ -231,48 +245,11 @@ func RunInitWithOptions(opts InitOptions, cfg *Config, w io.Writer) (*InitResult
 		fmt.Fprintf(w, "  Created project configuration: %s\n", configFilePath)
 	}
 
-	// 10. Scaffold initial brief if not exists
-	briefPath := filepath.Join(targetDir, "artifacts", "brief.md")
-	if _, err := os.Stat(briefPath); os.IsNotExist(err) {
-		name := filepath.Base(targetDir)
-		if name == "" || name == "." {
-			name = "Untitled Production"
-		}
-		briefContent := fmt.Sprintf(`# Production Brief: %s
-
-## Metadata
-- Project: %s
-- Engine: %s
-- Target Resolution: %s
-- Target FPS: %d
-- Aspect Ratio: %s
-- Voice: %s
-
-## Concept & Objectives
-<!-- Describe the purpose, audience, and core message of this video -->
-
-## Selected Packs
-%s
-`, name, name, engine, projectCfg.Defaults.Resolution, projectCfg.Defaults.FPS, projectCfg.Defaults.AspectRatio, projectCfg.Defaults.Voice, formatPacksList(opts.Packs))
-		_ = os.WriteFile(briefPath, []byte(briefContent), 0644)
-	}
-
 	if w != nil {
 		fmt.Fprintln(w, "Workspace initialization complete.")
 	}
 
 	return result, nil
-}
-
-func formatPacksList(packs []string) string {
-	if len(packs) == 0 {
-		return "- None (Core Source-Edit only)"
-	}
-	var sb strings.Builder
-	for _, p := range packs {
-		sb.WriteString(fmt.Sprintf("- %s\n", p))
-	}
-	return strings.TrimRight(sb.String(), "\n")
 }
 
 func scaffoldAgentInstructions(targetDir, engine string, packs []string, ownership *OwnershipRecord) {
@@ -306,32 +283,48 @@ Use `+"`facet tools describe <tool>`"+` for schemas and `+"`facet tools estimate
 - Optional narration: `+"`"+`facet tools run edge_tts --input '{"text":"Hello","output_path":"narration/voice.mp3"}'`+"`"+`
 - Inspect: `+"`"+`facet tools run media_probe --input '{"input":"assets/source.mp4"}'`+"`"+` (also accepts input_path, not file_path).
 - Sample: `+"`"+`facet tools run frame_sample --input '{"input":"renders/final.mp4","output_dir":"artifacts/frames","strategy":{"type":"uniform","count":4}}'`+"`"+`
-- Render: `+"`facet tools run video_compose --input artifacts/explainer_props.json`"+`
+- Render: `+"`facet tools run video_compose --input artifacts/compose.json`"+`
 - Review: `+"`"+`facet tools run output_review --input '{"rendered_file":"renders/final.mp4"}'`+"`"+`; configure expected profile/audio for the brief and visually inspect samples.
 
 ## Renderer And Provider Contract
 - Direct Remotion props use a nonempty, ordered cuts array with exactly four scene primitives: `+"`text_card`"+` requires `+"`text`"+`; `+"`hero_title`"+` requires `+"`text`"+`; `+"`stat_card`"+` requires `+"`stat`"+`; `+"`media`"+` requires `+"`source`"+` and `+"`media_kind`"+` (`+"`image`"+` or `+"`video`"+`).
 - Every cut requires `+"`type`"+`, `+"`in_seconds`"+`, and `+"`out_seconds`"+`; `+"`id`"+` is optional, and `+"`source`"+` is required only for `+"`media`"+` cuts. Set width, height, fps, and duration_seconds for an explicit export profile; cuts must fit the duration and whole frames.
 - Defaults remain 1920x1080/30fps. Omit `+"`duration_seconds`"+` to end exactly at the last cut, with no padding. Omit audio for silence; narration uses `+"`audio.narration.src`"+`.
-- Set output to renders/final.mp4; direct cuts select Remotion regardless of operation. The explainer pack has a complete request example. An estimate is not proof the renderer or media works.
+- Set output to renders/final.mp4; direct cuts select Remotion regardless of operation. Active production-method packs may provide complete request examples. An estimate is not proof the renderer or media works.
 - Use `+"`gflow_image`"+` or `+"`gflow_video`"+`, never a generic gflow tool. Both need the gflow binary on PATH and authenticated provider access; configured only checks the binary.
 - Real gflow estimates have null estimated_cost (unknown). Explain provider/model and obtain paid consent; missing dependencies or credentials are errors, not permission to use mocks.
 - Read returned output/outputs paths, warnings, and review evidence; deliver the verified file with concise provenance and limitations.
 `, filepath.ToSlash(getSkillsTargetPath(".", engine, "facet")), packLines.String())
 
-	// 1. CLAUDE.md
-	claudePath := filepath.Join(targetDir, "CLAUDE.md")
-	writeInstructionFileSafe(claudePath, "CLAUDE.md", instructions, ownership)
+	selected := instructionPathForEngine(engine)
+	for _, rel := range []string{"CLAUDE.md", "AGENTS.md", ".github/copilot-instructions.md"} {
+		if rel == selected || ownership == nil {
+			continue
+		}
+		if entry, ok := ownership.ManagedEntries[rel]; ok && entry.EntryType == "instruction-file" {
+			_ = os.Remove(filepath.Join(targetDir, filepath.FromSlash(rel)))
+			delete(ownership.ManagedEntries, rel)
+		}
+	}
+	if selected == "" {
+		return
+	}
+	path := filepath.Join(targetDir, filepath.FromSlash(selected))
+	_ = os.MkdirAll(filepath.Dir(path), 0755)
+	writeInstructionFileSafe(path, selected, instructions, ownership)
+}
 
-	// 2. AGENTS.md
-	agentsPath := filepath.Join(targetDir, "AGENTS.md")
-	writeInstructionFileSafe(agentsPath, "AGENTS.md", instructions, ownership)
-
-	// 3. .github/copilot-instructions.md
-	copilotDir := filepath.Join(targetDir, ".github")
-	_ = os.MkdirAll(copilotDir, 0755)
-	copilotPath := filepath.Join(copilotDir, "copilot-instructions.md")
-	writeInstructionFileSafe(copilotPath, ".github/copilot-instructions.md", instructions, ownership)
+func instructionPathForEngine(engine string) string {
+	switch engine {
+	case "claude":
+		return "CLAUDE.md"
+	case "copilot", "github":
+		return ".github/copilot-instructions.md"
+	case "codex", "opencode", "studio":
+		return "AGENTS.md"
+	default:
+		return ""
+	}
 }
 
 func writeInstructionFileSafe(filePath, relKey, content string, ownership *OwnershipRecord) {

@@ -56,8 +56,17 @@ func TestCatalogOperations(t *testing.T) {
 
 func TestCreateProjectRefusesExistingAndEscapingDirectory(t *testing.T) {
 	root := t.TempDir()
-	if _, err := CreateNewProject("Existing", "existing", root, "studio", nil, root); err != nil {
+	project, err := CreateNewProject("Existing", "existing", root, "studio", nil, root)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if len(project.Packs) != 0 {
+		t.Fatalf("Studio default activated packs: %v", project.Packs)
+	}
+	for _, dir := range []string{"assets", "artifacts", "renders", "narration"} {
+		if _, err := os.Stat(filepath.Join(root, "existing", dir)); !os.IsNotExist(err) {
+			t.Errorf("Studio default created unsolicited %s", dir)
+		}
 	}
 	if _, err := CreateNewProject("Existing", "existing", root, "studio", nil, root); err == nil {
 		t.Fatal("existing project silently reused")

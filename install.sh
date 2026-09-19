@@ -10,22 +10,24 @@ definition() {
 [[ -f "$MANIFEST" ]] || die 'Run install.sh from the complete installer package.'
 [[ $(definition layout 3) == 1 ]] || die 'Unsupported installer manifest schema.'
 VERSION=${FACET_VERSION:-$(definition facet 3)}; TARGET=${FACET_TARGET:-}; PROJECT=${FACET_PROJECT:-}; INSTALL=${FACET_INSTALL_DIR:-}; COMPONENTS=${FACET_COMPONENTS:-}
+PACKS=${FACET_PACKS:-}; PACKS_EXPLICIT=0; [[ -z "$PACKS" ]] || PACKS_EXPLICIT=1
 ACTION=${FACET_ACTION:-add}; ACTION_EXPLICIT=${FACET_ACTION:-}; DETAIL=0; MIGRATE_LEGACY=0; PLAIN=${FACET_PLAIN:-0}
 ARCHIVE=''; SUMS=''; YES=${FACET_YES:-0}; SKIP_VERIFY=0
 while (($#)); do
     case "$1" in
-        --version|--target|--project|--install-dir|--components|--archive|--checksums|--action)
+        --version|--target|--project|--install-dir|--components|--archive|--checksums|--action|--pack|--production-method)
             (($# >= 2)) || die "Missing value for $1"
             case "$1" in
                 --version) VERSION=$2;; --target) TARGET=$2;; --project) PROJECT=$2;;
                 --install-dir) INSTALL=$2;; --components) COMPONENTS=$2;; --archive) ARCHIVE=$2;; --checksums) SUMS=$2;;
                 --action) ACTION=$2; ACTION_EXPLICIT=1;;
+                --pack|--production-method) PACKS="${PACKS:+$PACKS,}$2"; PACKS_EXPLICIT=1;;
             esac; shift 2;;
         --yes) YES=1; shift;; --skip-verify) SKIP_VERIFY=1; shift;;
         --verbose) DETAIL=1; shift;;
         --plain) PLAIN=1; shift;;
         --migrate-legacy) MIGRATE_LEGACY=1; shift;;
-        --help|-h) printf '%s\n' 'Usage: bash install.sh [--target opencode|codex|claude|copilot] [--project DIR] [--install-dir DIR] [--version VERSION] [--components remotion,piper,gflow,hyperframes|none] [--action add|repair|update] [--archive ZIP --checksums FILE] [--yes] [--skip-verify] [--verbose]'; exit 0;;
+        --help|-h) printf '%s\n' 'Usage: bash install.sh [--target opencode|codex|claude|copilot|studio] [--project DIR] [--pack NAME ...] [--production-method NAME ...] [--install-dir DIR] [--version VERSION] [--components remotion,piper,gflow,hyperframes|none] [--action add|repair|update] [--archive ZIP --checksums FILE] [--yes] [--skip-verify] [--verbose]'; exit 0;;
         *) die "Unknown option: $1";;
     esac
 done
@@ -108,7 +110,7 @@ while IFS=$'\t' read -r kind id rest; do
     fi
 done < "$MANIFEST"
 printf '  Detected CLIs:%s\n' "${detected:- none (choose one to configure)}"
-[[ -n "$TARGET" ]] || TARGET=$(choose 'Which CLI should use Facet? (opencode, codex, claude, copilot)' 0 "$default_host" "${host_options[@]}")
+[[ -n "$TARGET" ]] || TARGET=$(choose 'Which agent should use Facet? (opencode, codex, claude, copilot, studio)' 0 "$default_host" "${host_options[@]}")
 [[ $(definition "$TARGET" 1) == host ]] || die 'Unsupported CLI.'
 HOST_PATH=$(definition "$TARGET" 4)
 [[ -n "$PROJECT" ]] || PROJECT=$(ask 'Project directory' .)
@@ -116,6 +118,7 @@ absolute() { case "$1" in /*) printf '%s' "$1";; *) printf '%s/%s' "$PWD" "$1";;
 PROJECT=$(absolute "$PROJECT"); INSTALL=$(absolute "${INSTALL:-$HOME/.facet/releases/$VERSION-$OS-$ARCH}")
 if [[ -z "$COMPONENTS" && -f "$PROJECT/.facet-install/installation.tsv" ]]; then COMPONENTS=$(awk -F '\t' '$1=="components" {gsub(/ /,",",$2); print $2}' "$PROJECT/.facet-install/installation.tsv"); fi
 COMPONENTS=${COMPONENTS:-remotion}
+if [[ $PACKS_EXPLICIT == 0 && -f "$PROJECT/.facet-install/installation.tsv" ]]; then PACKS=$(awk -F '\t' '$1=="packs" {gsub(/ /,",",$2); print $2}' "$PROJECT/.facet-install/installation.tsv"); fi
 [[ "$PROJECT$INSTALL" != *$'\n'* && "$PROJECT$INSTALL" != *$'\r'* && "$PROJECT$INSTALL" != *$'\t'* ]] || die 'Control characters are unsupported in installation paths.'
 if [[ -n "$ARCHIVE" ]]; then ARCHIVE=$(absolute "$ARCHIVE"); SUMS=$(absolute "$SUMS"); fi
 printf '%s\n' 'Core: FFmpeg and FFprobe. Optional downloads (approximate; platform/cache dependent):'
@@ -139,6 +142,14 @@ for id in "${raw[@]}"; do
 done
 has() { local item; for item in "${SELECTED[@]}"; do [[ "$item" != "$1" ]] || return 0; done; return 1; }
 if has none && ((${#SELECTED[@]} != 1)); then die 'none cannot be combined with components.'; fi
+SELECTED_PACKS=()
+IFS=',' read -r -a raw_packs <<< "$PACKS"
+for id in "${raw_packs[@]}"; do
+    id=${id// /}; [[ -n "$id" ]] || continue
+    [[ $(definition "$id" 1) == pack ]] || die "Unknown production method: $id"
+    for existing in "${SELECTED_PACKS[@]:-}"; do [[ "$existing" != "$id" ]] || die 'Duplicate production method.'; done
+    SELECTED_PACKS+=("$id")
+done
 real_ancestors() {
     local path=$1
     while [[ "$path" != / && -n "$path" ]]; do
@@ -188,6 +199,10 @@ if [[ -d "$STATE" ]]; then
             if [[ "$item" != none ]] && ! has "$item"; then SELECTED+=("$item"); fi
         done
         if ((${#SELECTED[@]} > 1)) && has none; then filtered=(); for item in "${SELECTED[@]}"; do [[ "$item" == none ]] || filtered+=("$item"); done; SELECTED=("${filtered[@]}"); fi
+        for item in $(awk -F '\t' '$1=="packs" {print $2}' "$STATE/installation.tsv"); do
+            present=0; for existing in "${SELECTED_PACKS[@]:-}"; do [[ "$existing" != "$item" ]] || present=1; done
+            [[ $present == 1 ]] || SELECTED_PACKS+=("$item")
+        done
     fi
 else new_path "$SKILL"; new_path "$STATE"; fi
 case "$ACTION" in add|repair|update) ;; *) die 'Choose add, repair, or update.';; esac
@@ -203,7 +218,7 @@ if [[ -d "$INSTALL" && $REUSE == 0 ]]; then
     [[ -f "$INSTALL/.facet-receipt" ]] || die 'Existing installation is not managed by these scripts.'
     INSTALL="$INSTALL-generation-$(date +%s)-$$"
 fi
-printf '\n  CLI: %s\n  Project: %s\n  Action: %s\n  Components: %s\n  Runtime: %s\n' "$TARGET" "$PROJECT" "$ACTION" "${SELECTED[*]}" "$INSTALL"
+printf '\n  Agent: %s\n  Project: %s\n  Action: %s\n  Production methods: %s\n  Components: %s\n  Runtime: %s\n' "$TARGET" "$PROJECT" "$ACTION" "${SELECTED_PACKS[*]:-core only}" "${SELECTED[*]}" "$INSTALL"
 printf '%s\n' '  Existing runtimes are retained until a verified replacement is ready.'
 [[ $YES == 1 ]] || [[ $(ask 'Continue?' y) =~ ^(y|yes)$ ]] || die 'Installation cancelled.'
 section '[2/3] Install and verify capabilities'
@@ -434,11 +449,18 @@ chmod +x "$PROJECT_STAGE/state/run-facet.sh"
     printf '\n## This installation\n'
     printf -- '- Invoke Facet through `%s` followed by the normal arguments; use this launcher instead of bare facet in examples.\n' "$STATE/run-facet.sh"
     printf -- '- Resolve packs/... under `%s`. Read a relevant pack SKILL.md on demand.\n' "$STATE"
+    if ((${#SELECTED_PACKS[@]})); then
+        printf -- '- Active production methods selected during setup:'
+        for item in "${SELECTED_PACKS[@]}"; do printf ' `%s/packs/%s/SKILL.md`' "$STATE" "$item"; done
+        printf '.\n'
+    else
+        printf -- '- No production-method pack is active; use the core guidance only.\n'
+    fi
     printf -- '- Optional components: %s. Tools report missing media-provider configuration when used.\n' "${SELECTED[*]}"
     if has piper; then printf -- '- Piper model: `%s`.\n' "$VOICES/$(definition piper 4).onnx"; fi
     if has hyperframes; then printf -- '- Use `node "%s"` for pinned HyperFrames; avoid unpinned npx.\n' "$HF_ENTRY"; fi
 } >> "$PROJECT_STAGE/skill/SKILL.md"
-printf 'version\t%s\ninstallation\t%s\nhost\t%s\ncomponents\t%s\n' "$VERSION" "$INSTALL" "$TARGET" "${SELECTED[*]}" > "$PROJECT_STAGE/state/installation.tsv"
+printf 'version\t%s\ninstallation\t%s\nhost\t%s\ncomponents\t%s\npacks\t%s\n' "$VERSION" "$INSTALL" "$TARGET" "${SELECTED[*]}" "${SELECTED_PACKS[*]}" > "$PROJECT_STAGE/state/installation.tsv"
 (
     cd "$PROJECT_STAGE"
     find state skill -type f | while IFS= read -r file; do

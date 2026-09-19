@@ -34,14 +34,14 @@ Windows:
 
 ```powershell
 pwsh -File ./install.ps1
-pwsh -File ./install.ps1 -NonInteractive -Target codex -ProjectDir ./video -Components none
+pwsh -File ./install.ps1 -NonInteractive -Target codex -ProjectDir ./video -Components none -Pack cinematic,localization
 ```
 
 Linux/macOS:
 
 ```bash
 bash ./install.sh
-bash ./install.sh --yes --target codex --project ./video --components none
+bash ./install.sh --yes --target codex --project ./video --components none --pack cinematic --production-method localization
 ```
 
 Use `-ArchivePath` and `-ChecksumPath` on Windows, or `--archive` and
@@ -55,8 +55,10 @@ and runtime paths without changing the user's shell profile or persistent PATH.
 System package-manager dependency installs may update PATH themselves.
 
 Pack resources live in `.facet-install/packs/`, outside the host's recursive
-skill discovery tree. Only the core `facet` skill is registered. Existing
-projects with ownership hashes can be rerun with `--action add|repair|update`
+skill discovery tree. Only the core `facet` skill is registered; repeat
+`--pack` / `--production-method` (or pass `-Pack` on PowerShell) to activate
+named methods in its installed guidance. With no selection, setup is core-only.
+Existing projects with ownership hashes can be rerun with `--action add|repair|update`
 (`-Action` on Windows). Add preserves existing component choices and adds the
 selected ones. Repair builds a separate runtime generation; update can rebind to
 another explicit release version. A project is rebound only after setup checks
@@ -86,7 +88,7 @@ do not invoke the menu. The Unix menu is driven by a real pseudo-terminal test
 in release CI, including cursor restoration after cancellation.
 
 Pipe-friendly configuration variables are `FACET_TARGET`, `FACET_PROJECT`,
-`FACET_INSTALL_DIR`, `FACET_COMPONENTS`, `FACET_ACTION`, and `FACET_YES=1`.
+`FACET_INSTALL_DIR`, `FACET_COMPONENTS`, `FACET_PACKS`, `FACET_ACTION`, and `FACET_YES=1`.
 The website bootstraps remain pinned to the last published installer until a
 new release is validated and published; local changes do not upgrade that pin.
 
