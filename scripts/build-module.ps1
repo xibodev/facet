@@ -7,12 +7,12 @@ Push-Location $repo
 try {
     & go build -o (Join-Path $out 'xibodev.facet.exe') ./cmd/facet
     if ($LASTEXITCODE -ne 0) { throw 'Module build failed' }
-    foreach ($item in @('agents/facet-creative.md', 'skills/facet', 'packs/explainer', 'schemas/artifacts', 'remotion-composer/src')) {
+    foreach ($item in @('agents/facet-creative.md', 'skills/facet', 'packs/explainer', 'remotion-composer/src')) {
         $parent = Join-Path $out (Split-Path $item -Parent)
         New-Item -ItemType Directory -Force -Path $parent | Out-Null
         Copy-Item -LiteralPath (Join-Path $repo $item) -Destination $parent -Recurse -Force
     }
-    foreach ($item in @('package.json', 'package-lock.json', 'tsconfig.json')) {
+    foreach ($item in @('package.json', 'package-lock.json', 'tsconfig.json', 'legacy-composer-manifest.json')) {
         Copy-Item -LiteralPath (Join-Path $repo "remotion-composer/$item") -Destination (Join-Path $out 'remotion-composer') -Force
     }
     $public = Join-Path $repo 'remotion-composer/public'

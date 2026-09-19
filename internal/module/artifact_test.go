@@ -20,7 +20,7 @@ var hexDigest = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 func TestArtifactsSatisfyHostValidation(t *testing.T) {
 	env := Invoke(CapToolsRun, []byte(`{
 	  "tool":"frame_sample",
-	  "input":{"input":"../../projects/cinematic-documentary/assets/video/shot1_raw.mp4",
+	  "input":{"input":"../../assets/source.mp4",
 	           "output_dir":"../../.quality-run/arttest","strategy":{"type":"uniform","count":2},
 	           "overwrite":true}
 	}`))
@@ -64,7 +64,7 @@ func TestArtifactsSatisfyHostValidation(t *testing.T) {
 func TestArtifactDigestMatchesTheFile(t *testing.T) {
 	env := Invoke(CapToolsRun, []byte(`{
 	  "tool":"frame_sample",
-	  "input":{"input":"../../projects/cinematic-documentary/assets/video/shot1_raw.mp4",
+	  "input":{"input":"../../assets/source.mp4",
 	           "output_dir":"../../.quality-run/arttest2","strategy":{"type":"uniform","count":1},
 	           "overwrite":true}
 	}`))
@@ -82,7 +82,7 @@ func TestArtifactDigestMatchesTheFile(t *testing.T) {
 func TestReadOnlyToolReportsNoArtifacts(t *testing.T) {
 	env := Invoke(CapToolsRun, []byte(`{
 	  "tool":"media_probe",
-	  "input":{"input":"../../projects/cinematic-documentary/assets/video/shot1_raw.mp4"}
+	  "input":{"input":"../../assets/source.mp4"}
 	}`))
 	if !env.OK {
 		t.Skipf("probe unavailable: %+v", env.Error)

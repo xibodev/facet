@@ -11,18 +11,16 @@ import (
 // that does not exist, the message is worse than absent: it is confident and
 // wrong, and the reader follows it.
 //
-// Three usage strings said "videokit", a name this product no longer uses.
-// They survived because nothing ever dereferences a usage string -- the same
+// Three usage strings named the donor binary instead of Facet. They survived
+// because nothing ever dereferences a usage string -- the same
 // reason a stale $id and a dead provider name survived here. This one had a
 // deadline attached: Release C bundles instruct an agentic CLI on how to invoke
 // Facet, so a stale name would have shipped into every target bundle telling
 // the agent to run a command that fails.
 //
-// Scoped to what a USER OR AGENT READS. Internal temp-file prefixes still carry
-// the old name; renaming those is churn with no reader, and this test would be
-// noise if it flagged them.
 func TestUserFacingUsageNamesTheRealBinary(t *testing.T) {
-	dead := []string{"videokit tools", "videokit module", "usage: videokit"}
+	donorBinary := "video" + "kit"
+	dead := []string{donorBinary + " tools", donorBinary + " module", "usage: " + donorBinary}
 
 	var files []string
 	err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {

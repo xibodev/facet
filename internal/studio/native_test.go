@@ -67,7 +67,7 @@ func TestNativeConversationVisibleContentAndGuidance(t *testing.T) {
 		t.Fatalf("response not rendered: %#v", events)
 	}
 	joined := strings.Join(prompts, "\n")
-	if !strings.Contains(joined, "Facet Video Producer") || !strings.Contains(joined, "facet_guidance") {
+	if !strings.Contains(joined, "Facet production contract") || !strings.Contains(joined, "facet_guidance") {
 		t.Fatal("canonical capability guidance missing from actual model request")
 	}
 }

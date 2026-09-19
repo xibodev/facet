@@ -153,16 +153,10 @@ func layoutFor(t Target) Compatibility {
 
 // Source is the canonical asset tree a bundle is projected from.
 type Source struct {
-	// SkillsDir and PacksDir are canonical product truth. The builder READS
-	// them; it never rewrites their semantics.
-	//
-	// SkillsDir is the CORE skill (skills/facet). SkillsRoot is the whole
-	// skills tree, because a pipeline's required_skills reference siblings
-	// like pipelines/explainer/compose-director and meta/reviewer that live
-	// outside the core skill.
-	SkillsDir  string
-	SkillsRoot string
-	PacksDir   string
+	// SkillsDir and PacksDir are canonical product truth. The builder reads
+	// them and projects the same semantics into every target.
+	SkillsDir string
+	PacksDir  string
 	// Tools is the public vocabulary, supplied by the caller so the builder
 	// never holds a second copy of it.
 	Tools []string
@@ -218,42 +212,6 @@ func Build(src Source, t Target, outDir string) (*Manifest, error) {
 			return nil, fmt.Errorf("projecting pack %s: %w", p, err)
 		}
 		entries = append(entries, got...)
-	}
-
-	// Skills that shipped PIPELINES require.
-	//
-	// A pipeline declares required_skills like `pipelines/explainer/compose-director`
-	// and `meta/reviewer`, which live in the skills tree OUTSIDE the core skill.
-	// Shipping the pipeline without them produced a bundle whose guidance
-	// referenced 11 files that were not there -- a contract with nothing behind
-	// it, failing silently: the agent does not error, it improvises.
-	//
-	// Measured before this fix: 113 of 160 skill files shipped, and every one
-	// of the explainer pipeline's required skills was missing.
-	//
-	// DERIVED from the projected pipelines rather than a hardcoded list, so a
-	// new pipeline cannot reference a skill the bundle forgets to carry.
-	required, err := requiredSkills(outDir)
-	if err != nil {
-		return nil, fmt.Errorf("reading pipeline requirements: %w", err)
-	}
-	for _, ref := range required {
-		srcPath, ok := resolveSkill(src.SkillsRoot, ref)
-		if !ok {
-			// A pipeline naming a skill that does not exist is a broken
-			// bundle, not a warning. Refuse rather than ship guidance that
-			// points at nothing.
-			return nil, fmt.Errorf("pipeline requires skill %q, which does not resolve under %s", ref, src.SkillsRoot)
-		}
-		content, err := os.ReadFile(srcPath)
-		if err != nil {
-			return nil, fmt.Errorf("reading required skill %s: %w", ref, err)
-		}
-		dest := filepath.Join("skills", filepath.FromSlash(ref)+".md")
-		if err := writeFile(filepath.Join(outDir, dest), content); err != nil {
-			return nil, fmt.Errorf("projecting required skill %s: %w", ref, err)
-		}
-		entries = append(entries, entryFor(dest, content, "required-skill"))
 	}
 
 	// Tool wiring: the instruction file that tells the agent Facet exists and
@@ -495,86 +453,4 @@ func renderToolWiring(t Target, c Compatibility, src Source) string {
 	b.WriteString("first, then the pack matching the requested style.\n")
 
 	return b.String()
-}
-
-// requiredSkills collects every `required_skills` entry from the pipeline YAML
-// already projected into the bundle.
-//
-// Read from the BUNDLE rather than the source tree: what must be satisfied is
-// what actually shipped. Reading the source could satisfy a pipeline the bundle
-// does not contain, or miss one it does.
-//
-// Deliberately a line scanner rather than a YAML parse. The requirement is a
-// flat list under one key, a parser would pull a dependency in for that, and
-// this cannot silently reinterpret a pipeline -- it either sees the lines or it
-// does not, and the resolve step below fails loudly if it saw the wrong thing.
-func requiredSkills(bundleDir string) ([]string, error) {
-	seen := map[string]bool{}
-	var out []string
-
-	err := filepath.Walk(bundleDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() || !strings.HasSuffix(path, ".yaml") {
-			return nil
-		}
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		inBlock := false
-		for _, line := range strings.Split(string(raw), "\n") {
-			trimmed := strings.TrimRight(line, "\r")
-			if strings.HasPrefix(trimmed, "required_skills:") {
-				inBlock = true
-				continue
-			}
-			if inBlock {
-				if strings.HasPrefix(trimmed, "  - ") {
-					ref := strings.TrimSpace(strings.TrimPrefix(trimmed, "  - "))
-					// A nested `name:` key is a step, not a skill reference.
-					if ref == "" || strings.Contains(ref, ":") {
-						continue
-					}
-					if !seen[ref] {
-						seen[ref] = true
-						out = append(out, ref)
-					}
-					continue
-				}
-				// Any line that is not a list item ends the block.
-				if strings.TrimSpace(trimmed) != "" {
-					inBlock = false
-				}
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(out)
-	return out, nil
-}
-
-// resolveSkill maps a pipeline's skill reference to a file in the skills tree.
-//
-// Two layouts exist and both are legitimate: a flat `meta/reviewer.md` and a
-// directory `some/skill/SKILL.md`. Trying both is why a reference like
-// `meta/reviewer` resolves even though it is not a directory.
-func resolveSkill(skillsRoot, ref string) (string, bool) {
-	if skillsRoot == "" {
-		return "", false
-	}
-	candidates := []string{
-		filepath.Join(skillsRoot, filepath.FromSlash(ref)+".md"),
-		filepath.Join(skillsRoot, filepath.FromSlash(ref), "SKILL.md"),
-	}
-	for _, c := range candidates {
-		if st, err := os.Stat(c); err == nil && !st.IsDir() {
-			return c, true
-		}
-	}
-	return "", false
 }

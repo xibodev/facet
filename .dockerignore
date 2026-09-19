@@ -12,12 +12,8 @@
 !skills/**
 !packs/
 !packs/**
-!pipeline_defs/
-!pipeline_defs/**
 !schemas/
 !schemas/**
-!styles/
-!styles/**
 !remotion-composer/
 !remotion-composer/**
 !scripts/

@@ -26,11 +26,15 @@ func TestRepositoryInstructionContract(t *testing.T) {
 				t.Errorf("%s retains a numbered turn or stale request key matching %q", file, forbidden)
 			}
 		}
-		if !regexp.MustCompile(`(?i)\bnarration\b[^.\n]*(?:optional|depend|unwanted)|\bno narration\b`).MatchString(text) {
-			t.Errorf("%s must make narration conditional on the request", file)
+		if file == canonical {
+			for _, required := range []string{"stateless toolbox", "explicit human consent", "unknown", "mock: true", "creative acceptance", "matching pack"} {
+				if !strings.Contains(text, required) {
+					t.Errorf("%s lacks %q", file, required)
+				}
+			}
 		}
-		if file != "CLAUDE.md" {
-			for _, required := range []string{"authoritative for normal production", "take precedence over deep legacy references", "supplied intent", "core", "pack entry", "relevant specialized need or an actual error", "never", "preflight requirement", "source archaeology", "persona/pipeline ceremony", "explicit consent", "plan"} {
+		if file == "packs/explainer/SKILL.md" {
+			for _, required := range []string{"Narration and music are optional", "Estimate before rendering", "review the final MP4"} {
 				if !strings.Contains(text, required) {
 					t.Errorf("%s lacks %q", file, required)
 				}
@@ -72,10 +76,28 @@ func TestGeneratedInstructionContract(t *testing.T) {
 					} else {
 						t.Logf("%s: %d lines", file, lines)
 					}
-					for _, required := range []string{"explicit consent", "silent-video", "mock:true", "gflow_image", "gflow_video", "strategy", "1920x1080/30fps", "`" + engine.root + "facet/SKILL.md`", "workspace-relative", "core skill and active pack entry SKILL.md", "authoritative for normal production", "take precedence over deep legacy references", "relevant specialized need or an actual error", "never as a preflight requirement", "supplied intent", "documented core tools", "not source archaeology or persona/pipeline ceremony", "briefly explain the plan"} {
+					for _, required := range []string{"explicit consent", "silent-video", "mock:true", "gflow_image", "gflow_video", "strategy", "1920x1080/30fps", "`" + engine.root + "facet/SKILL.md`", "workspace-relative", "canonical core skill", "active pack entry", "Facet-owned files define the production contract", "briefly explain the plan"} {
 						if !strings.Contains(text, required) {
 							t.Errorf("%s lacks %q", file, required)
 						}
+					}
+					for _, required := range []string{
+						"exactly four scene primitives",
+						"`text_card` requires `text`",
+						"`hero_title` requires `text`",
+						"`stat_card` requires `stat`",
+						"`media` requires `source` and `media_kind` (`image` or `video`)",
+						"Every cut requires `type`, `in_seconds`, and `out_seconds`",
+						"`id` is optional",
+						"`source` is required only for `media` cuts",
+						"Omit `duration_seconds` to end exactly at the last cut, with no padding",
+					} {
+						if !strings.Contains(text, required) {
+							t.Errorf("%s lacks composer contract %q", file, required)
+						}
+					}
+					if strings.Contains(strings.ToLower(text), "theme") {
+						t.Errorf("%s documents unsupported theme", file)
 					}
 					for _, pack := range packs.packs {
 						if !strings.Contains(text, "`"+engine.root+pack+"/SKILL.md`") {

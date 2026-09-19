@@ -1,7 +1,7 @@
 {
   "name": "@xibodev/facet-pack-animation",
   "version": "1.0.0",
-  "description": "2D character animation, SVG rigging, pose libraries, and action cycle pipelines for Facet.",
+  "description": "Facet guidance for 2D character animation, SVG rigging, poses, and action cycles.",
   "keywords": ["facet", "facet-pack", "animation", "character", "svg", "video"],
   "author": "Facet Authors",
   "license": "Apache-2.0",
