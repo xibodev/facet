@@ -78,7 +78,10 @@ Packs describe methods and requirements; they do not install providers or
 promise that every optional route is available. `facet routes assess` joins
 the selected method to live canonical operations, input availability,
 dependencies, network use, and charge effects. It never executes, stores
-workflow state, or chooses a provider.
+workflow state, or chooses a provider. A route is feasible only when concrete
+file inputs exist, every operation request has a valid canonical shape, the
+entry request passes normal estimate validation, and intermediate artifact
+bindings are constructible.
 
 ## Project and delivery boundaries
 

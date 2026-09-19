@@ -1,7 +1,10 @@
 package routes
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -24,25 +27,41 @@ type MethodAssessment struct {
 }
 
 type RouteAssessment struct {
-	ID                     string                `json:"id"`
-	Title                  string                `json:"title"`
-	Summary                string                `json:"summary"`
-	Status                 string                `json:"status"`
-	RequiredInputs         []Input               `json:"required_inputs"`
-	MissingInputs          []string              `json:"missing_inputs"`
-	Operations             []OperationAssessment `json:"operations"`
-	MissingDependencies    []DependencyCondition `json:"missing_dependencies"`
-	UnverifiedDependencies []DependencyCondition `json:"unverified_dependencies"`
-	Network                bool                  `json:"network"`
-	MayCharge              bool                  `json:"may_charge"`
-	Reasons                []string              `json:"reasons"`
+	ID                       string                  `json:"id"`
+	Title                    string                  `json:"title"`
+	Summary                  string                  `json:"summary"`
+	Status                   string                  `json:"status"`
+	RequiredInputs           []Input                 `json:"required_inputs"`
+	MissingInputs            []string                `json:"missing_inputs"`
+	InvalidInputs            []string                `json:"invalid_inputs"`
+	MissingOperationRequests []string                `json:"missing_operation_requests"`
+	InvalidOperationRequests []OperationRequestIssue `json:"invalid_operation_requests"`
+	Operations               []OperationAssessment   `json:"operations"`
+	Bindings                 []BindingAssessment     `json:"bindings"`
+	MissingDependencies      []DependencyCondition   `json:"missing_dependencies"`
+	UnverifiedDependencies   []DependencyCondition   `json:"unverified_dependencies"`
+	Network                  bool                    `json:"network"`
+	MayCharge                bool                    `json:"may_charge"`
+	Reasons                  []string                `json:"reasons"`
 }
 
 type OperationAssessment struct {
-	ID           string                  `json:"id"`
-	Title        string                  `json:"title"`
-	Effects      toolbox.V2Effects       `json:"effects"`
-	Requirements []toolbox.V2Requirement `json:"requirements"`
+	ID            string                  `json:"id"`
+	Title         string                  `json:"title"`
+	Effects       toolbox.V2Effects       `json:"effects"`
+	Requirements  []toolbox.V2Requirement `json:"requirements"`
+	RequestStatus string                  `json:"request_status"`
+}
+
+type OperationRequestIssue struct {
+	Operation string `json:"operation"`
+	Message   string `json:"message"`
+}
+
+type BindingAssessment struct {
+	Binding       Binding `json:"binding"`
+	Constructible bool    `json:"constructible"`
+	Reason        string  `json:"reason,omitempty"`
 }
 
 type DependencyCondition struct {
@@ -129,21 +148,34 @@ func assessRoute(route Route, operations map[string]toolbox.V2Operation, request
 	result := RouteAssessment{
 		ID: route.ID, Title: route.Title, Summary: route.Summary,
 		Status: StatusFeasible, RequiredInputs: route.RequiredInputs,
-		MissingInputs: []string{}, Operations: []OperationAssessment{},
+		MissingInputs: []string{}, InvalidInputs: []string{},
+		MissingOperationRequests: []string{}, InvalidOperationRequests: []OperationRequestIssue{},
+		Operations: []OperationAssessment{}, Bindings: []BindingAssessment{},
 		MissingDependencies:    []DependencyCondition{},
 		UnverifiedDependencies: []DependencyCondition{},
 		Reasons:                []string{},
 	}
 
+	inputReady := map[string]bool{}
 	for _, input := range route.RequiredInputs {
 		value, ok := request.Inputs[input.Name]
 		if !ok || missingValue(value) {
 			result.MissingInputs = append(result.MissingInputs, input.Name)
 			result.Reasons = append(result.Reasons, "required input "+input.Name+" is not supplied")
 			makeConditional(&result)
+			continue
 		}
+		if reason := validateInput(input, value); reason != "" {
+			result.InvalidInputs = append(result.InvalidInputs, input.Name)
+			result.Reasons = append(result.Reasons, "required input "+input.Name+" "+reason)
+			makeConditional(&result)
+			continue
+		}
+		inputReady[input.Name] = true
 	}
 
+	operationReady := map[string]bool{}
+	operationRequests := map[string]json.RawMessage{}
 	for _, operationID := range route.Operations {
 		operation, ok := operations[operationID]
 		if !ok {
@@ -151,9 +183,39 @@ func assessRoute(route Route, operations map[string]toolbox.V2Operation, request
 			result.Status = StatusUnavailable
 			continue
 		}
+		requestStatus := "missing"
+		operationRequest, hasRequest := request.OperationRequests[route.ID+":"+operation.ID]
+		if !hasRequest {
+			operationRequest, hasRequest = request.OperationRequests[operation.ID]
+		}
+		if !hasRequest || missingValue(operationRequest) {
+			result.MissingOperationRequests = append(result.MissingOperationRequests, operation.ID)
+			result.Reasons = append(result.Reasons, "canonical "+operation.ID+" request is not supplied")
+			makeConditional(&result)
+		} else {
+			operationRequests[operation.ID] = operationRequest
+			var err error
+			if operation.ID == route.EntryOperation {
+				err = toolbox.ValidateRequest(operation.ID, operationRequest)
+			} else {
+				err = toolbox.ValidateRequestShape(operation.ID, operationRequest)
+			}
+			if err != nil {
+				requestStatus = "invalid"
+				result.InvalidOperationRequests = append(result.InvalidOperationRequests, OperationRequestIssue{
+					Operation: operation.ID, Message: err.Error(),
+				})
+				result.Reasons = append(result.Reasons, operation.ID+" request is invalid: "+err.Error())
+				makeConditional(&result)
+			} else {
+				requestStatus = "valid"
+				operationReady[operation.ID] = true
+			}
+		}
 		result.Operations = append(result.Operations, OperationAssessment{
 			ID: operation.ID, Title: operation.Title,
 			Effects: operation.Effects, Requirements: operation.Requirements,
+			RequestStatus: requestStatus,
 		})
 		result.Network = result.Network || operation.Effects.Network
 		result.MayCharge = result.MayCharge || operation.Effects.MayCharge
@@ -183,9 +245,141 @@ func assessRoute(route Route, operations map[string]toolbox.V2Operation, request
 		}
 	}
 
+	for _, binding := range route.Bindings {
+		item := BindingAssessment{Binding: binding}
+		var sourceValue json.RawMessage
+		switch {
+		case binding.FromInput != "":
+			sourceValue = request.Inputs[binding.FromInput]
+			item.Constructible = inputReady[binding.FromInput]
+			if !item.Constructible {
+				item.Reason = "source input " + binding.FromInput + " is not concrete"
+			}
+		case binding.FromOperation != "":
+			sourceValue, item.Constructible = requestField(
+				operationRequests[binding.FromOperation], binding.FromParameter,
+			)
+			item.Constructible = item.Constructible && operationReady[binding.FromOperation]
+			if !item.Constructible {
+				item.Reason = "source operation " + binding.FromOperation + " has no valid request with " + binding.FromParameter
+			}
+		default:
+			item.Reason = "binding has no source"
+		}
+		if item.Constructible {
+			targetValue, present := requestField(operationRequests[binding.ToOperation], binding.ToParameter)
+			if !operationReady[binding.ToOperation] || !present {
+				item.Constructible = false
+				item.Reason = "target operation " + binding.ToOperation + " has no valid request with " + binding.ToParameter
+			} else if !bindingValuesMatch(sourceValue, targetValue) {
+				item.Constructible = false
+				item.Reason = "target parameter does not reference the bound source value"
+			}
+		}
+		if !item.Constructible {
+			result.Reasons = append(result.Reasons,
+				"binding to "+binding.ToOperation+"."+binding.ToParameter+" is not constructible: "+item.Reason)
+			makeConditional(&result)
+		}
+		result.Bindings = append(result.Bindings, item)
+	}
+
 	applyEffectPolicy(&result, "network", result.Network, request.AllowNetwork)
 	applyEffectPolicy(&result, "charge", result.MayCharge, request.AllowCharges)
 	return result
+}
+
+func requestField(data json.RawMessage, field string) (json.RawMessage, bool) {
+	if field == "" {
+		return nil, false
+	}
+	current := data
+	for _, part := range strings.Split(field, ".") {
+		var object map[string]json.RawMessage
+		if json.Unmarshal(current, &object) != nil {
+			return nil, false
+		}
+		value, ok := object[part]
+		if !ok || missingValue(value) {
+			return nil, false
+		}
+		current = value
+	}
+	return current, true
+}
+
+func bindingValuesMatch(source, target json.RawMessage) bool {
+	var sourceValue, targetValue any
+	if json.Unmarshal(source, &sourceValue) != nil || json.Unmarshal(target, &targetValue) != nil {
+		return false
+	}
+	return containsJSONValue(targetValue, sourceValue)
+}
+
+func containsJSONValue(candidate, wanted any) bool {
+	if reflect.DeepEqual(candidate, wanted) {
+		return true
+	}
+	switch value := candidate.(type) {
+	case []any:
+		for _, child := range value {
+			if containsJSONValue(child, wanted) {
+				return true
+			}
+		}
+	case map[string]any:
+		for _, child := range value {
+			if containsJSONValue(child, wanted) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func validateInput(input Input, value json.RawMessage) string {
+	switch input.Kind {
+	case "file":
+		var path string
+		if json.Unmarshal(value, &path) != nil || strings.TrimSpace(path) == "" {
+			return "must be a concrete file path"
+		}
+		info, err := os.Stat(path)
+		if err != nil || info.IsDir() {
+			return "does not exist as a file: " + path
+		}
+	case "files":
+		var paths []string
+		if err := json.Unmarshal(value, &paths); err != nil || len(paths) == 0 {
+			var path string
+			if json.Unmarshal(value, &path) != nil || strings.TrimSpace(path) == "" {
+				return "must contain concrete file paths"
+			}
+			paths = []string{path}
+		}
+		for _, path := range paths {
+			info, err := os.Stat(path)
+			if err != nil || info.IsDir() {
+				return "contains a file that does not exist: " + path
+			}
+		}
+	case "segments":
+		var segments []json.RawMessage
+		if err := json.Unmarshal(value, &segments); err != nil || len(segments) == 0 {
+			return "must be a nonempty segment array"
+		}
+	case "consent":
+		var approved bool
+		if err := json.Unmarshal(value, &approved); err != nil || !approved {
+			return "must be explicit true"
+		}
+	case "text":
+		var text string
+		if err := json.Unmarshal(value, &text); err != nil || strings.TrimSpace(text) == "" {
+			return "must be nonblank text"
+		}
+	}
+	return ""
 }
 
 func missingValue(value []byte) bool {

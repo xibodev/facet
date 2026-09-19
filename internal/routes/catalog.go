@@ -19,14 +19,26 @@ const (
 type Input struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	Kind        string `json:"kind"`
+}
+
+type Binding struct {
+	FromInput     string `json:"from_input,omitempty"`
+	FromOperation string `json:"from_operation,omitempty"`
+	FromParameter string `json:"from_parameter,omitempty"`
+	ArtifactKind  string `json:"artifact_kind,omitempty"`
+	ToOperation   string `json:"to_operation"`
+	ToParameter   string `json:"to_parameter"`
 }
 
 type Route struct {
-	ID             string   `json:"id"`
-	Title          string   `json:"title"`
-	Summary        string   `json:"summary"`
-	RequiredInputs []Input  `json:"required_inputs"`
-	Operations     []string `json:"operations"`
+	ID             string    `json:"id"`
+	Title          string    `json:"title"`
+	Summary        string    `json:"summary"`
+	RequiredInputs []Input   `json:"required_inputs"`
+	EntryOperation string    `json:"entry_operation"`
+	Operations     []string  `json:"operations"`
+	Bindings       []Binding `json:"bindings"`
 }
 
 type Method struct {
@@ -44,46 +56,81 @@ func Catalog() []Method {
 	methods := []Method{
 		method("animation", "Animation", "Motion-graphics and asset-led animation.", "explainer",
 			route("remotion-animation", "Local Remotion animation", "Animate supplied visual assets locally.",
-				inputs("script", "visual_assets"), "video_compose", "output_review"),
+				inputs("script", "visual_assets"), "video_compose", []string{"video_compose", "output_review"},
+				artifact("video_compose", "output", "render_video", "output_review", "input")),
 			route("openai-image-animation", "OpenAI-assisted animation", "Generate still visuals with the explicitly named provider, then animate locally.",
-				inputs("script"), "openai_image", "video_compose", "output_review")),
+				inputs("script"), "openai_image", []string{"openai_image", "video_compose", "output_review"},
+				artifact("openai_image", "output_path", "image", "video_compose", "cuts"),
+				artifact("video_compose", "output", "render_video", "output_review", "input"))),
 		method("avatar", "Avatar", "Presenter-led and consented avatar productions.", "talking-head",
 			route("supplied-avatar-edit", "Supplied avatar edit", "Edit supplied presenter or avatar footage without generating an identity.",
-				inputs("presenter_media", "consent"), "source_edit", "audio_mix", "output_review"),
+				inputs("presenter_media", "consent"), "source_edit", []string{"source_edit", "audio_mix", "output_review"},
+				artifact("source_edit", "output", "render_video", "audio_mix", "video"),
+				artifact("audio_mix", "output", "render_video", "output_review", "input")),
 			route("edge-voice-avatar", "Edge voice with supplied avatar", "Synthesize speech with the explicitly named free network voice and edit supplied avatar footage.",
-				inputs("presenter_media", "script", "consent"), "edge_tts", "source_edit", "audio_mix", "output_review")),
+				inputs("presenter_media", "script", "consent"), "edge_tts", []string{"edge_tts", "source_edit", "output_review"},
+				artifact("edge_tts", "output_path", "narration", "source_edit", "replacement_audio"),
+				artifact("source_edit", "output", "render_video", "output_review", "input"))),
 		method("character-animation", "Character animation", "Character-led animation from supplied artwork, poses, or rigs.", "character-animation",
 			route("character-remotion", "Local character composition", "Animate supplied character assets in the local composer.",
-				inputs("character_assets", "action_plan"), "video_compose", "audio_mix", "output_review")),
+				inputs("character_assets", "action_plan"), "video_compose", []string{"video_compose", "audio_mix", "output_review"},
+				artifact("video_compose", "output", "render_video", "audio_mix", "video"),
+				artifact("audio_mix", "output", "render_video", "output_review", "input"))),
 		method("content-repurpose", "Content repurpose", "Short-form, vertical, and excerpted edits from supplied media.", "social",
 			route("source-repurpose", "Local source repurpose", "Inspect, select, reframe, caption, and review supplied footage.",
-				inputs("source_media"), "media_probe", "scene_detect", "source_edit", "subtitle_gen", "output_review")),
+				inputs("source_media", "transcript_segments"), "source_edit", []string{"source_edit", "subtitle_gen", "ffmpeg_caption_burn", "output_review"},
+				inputBinding("transcript_segments", "subtitle_gen", "segments"),
+				artifact("source_edit", "output", "render_video", "ffmpeg_caption_burn", "input_path"),
+				artifact("subtitle_gen", "output_path", "captions", "ffmpeg_caption_burn", "srt_path"),
+				artifact("ffmpeg_caption_burn", "output_path", "render_video", "output_review", "input"))),
 		method("documentary-cinematic", "Documentary and cinematic", "Source-led documentary, archival, montage, and cinematic editing.", "cinematic",
 			route("source-documentary", "Source-led documentary edit", "Assemble and grade supplied or licensed material locally.",
-				inputs("source_media"), "media_probe", "video_stitch", "color_grade", "audio_mix", "output_review"),
+				inputs("source_media"), "video_stitch", []string{"video_stitch", "color_grade", "audio_mix", "output_review"},
+				artifact("video_stitch", "output_path", "render_video", "color_grade", "input_path"),
+				artifact("color_grade", "output_path", "render_video", "audio_mix", "video"),
+				artifact("audio_mix", "output", "render_video", "output_review", "input")),
 			route("wikimedia-documentary", "Wikimedia-augmented documentary", "Search the explicitly named public archive before local assembly.",
-				inputs("research_query"), "wikimedia", "video_stitch", "color_grade", "audio_mix", "output_review")),
+				inputs("research_query"), "wikimedia", []string{"wikimedia", "video_stitch", "color_grade", "audio_mix", "output_review"},
+				artifact("wikimedia", "output_path", "render_video", "video_stitch", "clips"),
+				artifact("video_stitch", "output_path", "render_video", "color_grade", "input_path"),
+				artifact("color_grade", "output_path", "render_video", "audio_mix", "video"),
+				artifact("audio_mix", "output", "render_video", "output_review", "input"))),
 		method("explainer", "Explainer", "Text-, metric-, and supplied-media-led explanation.", "explainer",
 			route("local-explainer", "Local Remotion explainer", "Compose supplied script and visuals with the local renderer.",
-				inputs("script", "visuals"), "video_compose", "output_review"),
+				inputs("script", "visuals"), "video_compose", []string{"video_compose", "output_review"},
+				artifact("video_compose", "output", "render_video", "output_review", "input")),
 			route("flux-image-explainer", "FLUX-assisted explainer", "Generate stills with the explicitly named provider, then compose locally.",
-				inputs("script"), "flux_image", "video_compose", "output_review")),
+				inputs("script"), "flux_image", []string{"flux_image", "video_compose", "output_review"},
+				artifact("flux_image", "output_path", "image", "video_compose", "cuts"),
+				artifact("video_compose", "output", "render_video", "output_review", "input"))),
 		method("localization", "Localization", "Subtitle, dubbing, and localized variants of existing video.", "localization",
 			route("subtitle-localization", "Provided-translation subtitle route", "Create and burn supplied translated timed text.",
-				inputs("source_media", "translated_segments"), "subtitle_gen", "remotion_caption_burn", "output_review"),
+				inputs("source_media", "translated_segments"), "subtitle_gen", []string{"subtitle_gen", "ffmpeg_caption_burn", "output_review"},
+				inputBinding("source_media", "ffmpeg_caption_burn", "input_path"),
+				artifact("subtitle_gen", "output_path", "captions", "ffmpeg_caption_burn", "srt_path"),
+				artifact("ffmpeg_caption_burn", "output_path", "render_video", "output_review", "input")),
 			route("edge-dub-localization", "Edge voice dubbing route", "Synthesize the supplied translated script with the explicitly named voice service.",
-				inputs("source_media", "translated_script"), "edge_tts", "audio_mix", "source_edit", "output_review")),
+				inputs("source_media", "translated_script"), "edge_tts", []string{"edge_tts", "audio_mix", "output_review"},
+				inputBinding("source_media", "audio_mix", "video"),
+				artifact("edge_tts", "output_path", "narration", "audio_mix", "source"),
+				artifact("audio_mix", "output", "render_video", "output_review", "input"))),
 		method("music-led", "Music-led", "Edits paced around supplied or locally discovered music.", "cinematic",
 			route("local-music-edit", "Local music-led edit", "Choose local music, edit supplied media, mix, and review.",
-				inputs("source_media", "music"), "music_library", "source_edit", "audio_mix", "output_review")),
+				inputs("source_media", "music"), "source_edit", []string{"source_edit", "audio_mix", "output_review"},
+				artifact("source_edit", "output", "render_video", "audio_mix", "video"),
+				inputBinding("music", "audio_mix", "music"),
+				artifact("audio_mix", "output", "render_video", "output_review", "input"))),
 		method("product-demo", "Product demo", "Recorded or synthetic software and product walkthroughs.", "screen-demo",
 			route("recorded-product-demo", "Recorded product demo", "Edit a real product capture and add optional supplied captions.",
-				inputs("screen_recording"), "media_probe", "source_edit", "remotion_caption_burn", "output_review"),
+				inputs("screen_recording"), "source_edit", []string{"source_edit", "output_review"},
+				artifact("source_edit", "output", "render_video", "output_review", "input")),
 			route("synthetic-product-demo", "Synthetic product presentation", "Compose a clearly presentational product sequence locally.",
-				inputs("script", "visual_assets"), "video_compose", "output_review")),
+				inputs("script", "visual_assets"), "video_compose", []string{"video_compose", "output_review"},
+				artifact("video_compose", "output", "render_video", "output_review", "input"))),
 		method("source-edit", "Source edit", "Mechanical editing of supplied footage and audio.", "cinematic",
 			route("source-edit-local", "Local source edit", "Inspect, edit, mix, and review supplied media locally.",
-				inputs("source_media"), "media_probe", "source_edit", "audio_mix", "output_review")),
+				inputs("source_media"), "source_edit", []string{"source_edit", "output_review"},
+				artifact("source_edit", "output", "render_video", "output_review", "input"))),
 	}
 	sort.Slice(methods, func(i, j int) bool { return methods[i].ID < methods[j].ID })
 	return methods
@@ -93,19 +140,46 @@ func method(id, title, summary, pack string, routes ...Route) Method {
 	return Method{ID: id, Title: title, Summary: summary, Pack: pack, Routes: routes}
 }
 
-func route(id, title, summary string, required []Input, operations ...string) Route {
+func route(id, title, summary string, required []Input, entry string, operations []string, bindings ...Binding) Route {
 	return Route{
 		ID: id, Title: title, Summary: summary,
-		RequiredInputs: required, Operations: operations,
+		RequiredInputs: required, EntryOperation: entry,
+		Operations: operations, Bindings: bindings,
 	}
+}
+
+func artifact(fromOperation, fromParameter, kind, toOperation, toParameter string) Binding {
+	return Binding{
+		FromOperation: fromOperation, FromParameter: fromParameter, ArtifactKind: kind,
+		ToOperation: toOperation, ToParameter: toParameter,
+	}
+}
+
+func inputBinding(fromInput, toOperation, toParameter string) Binding {
+	return Binding{FromInput: fromInput, ToOperation: toOperation, ToParameter: toParameter}
 }
 
 func inputs(names ...string) []Input {
 	out := make([]Input, 0, len(names))
 	for _, name := range names {
-		out = append(out, Input{Name: name, Description: inputDescription(name)})
+		out = append(out, Input{Name: name, Description: inputDescription(name), Kind: inputKind(name)})
 	}
 	return out
+}
+
+func inputKind(name string) string {
+	switch name {
+	case "source_media", "presenter_media", "screen_recording", "music":
+		return "file"
+	case "visual_assets", "visuals", "character_assets":
+		return "files"
+	case "translated_segments", "transcript_segments":
+		return "segments"
+	case "consent":
+		return "consent"
+	default:
+		return "text"
+	}
 }
 
 func inputDescription(name string) string {
@@ -121,6 +195,7 @@ func inputDescription(name string) string {
 		"source_media":        "Supplied or licensed source footage and audio",
 		"translated_script":   "Human-reviewed translated narration text",
 		"translated_segments": "Human-reviewed translated text with timing",
+		"transcript_segments": "Transcript text with start and end timing",
 		"visual_assets":       "Supplied or licensed images, graphics, or UI captures",
 		"visuals":             "Supplied or licensed visuals, or an explicit generation choice",
 	}
@@ -146,9 +221,49 @@ func ValidateCatalog() error {
 			return fmt.Errorf("method %q has no pack", method.ID)
 		}
 		for _, route := range method.Routes {
+			if len(route.Operations) == 0 || route.EntryOperation != route.Operations[0] {
+				return fmt.Errorf("method %q route %q has invalid entry operation %q", method.ID, route.ID, route.EntryOperation)
+			}
 			for _, operation := range route.Operations {
 				if _, ok := live[operation]; !ok {
 					return fmt.Errorf("method %q route %q references unavailable operation %q", method.ID, route.ID, operation)
+				}
+			}
+			routeOperations := map[string]int{}
+			for index, operation := range route.Operations {
+				routeOperations[operation] = index
+			}
+			requiredInputs := map[string]bool{}
+			for _, input := range route.RequiredInputs {
+				requiredInputs[input.Name] = true
+			}
+			targeted := map[string]bool{}
+			for _, binding := range route.Bindings {
+				if binding.ToParameter == "" || (binding.FromOperation != "" && binding.FromParameter == "") {
+					return fmt.Errorf("method %q route %q has incomplete binding parameters", method.ID, route.ID)
+				}
+				targetIndex, targetExists := routeOperations[binding.ToOperation]
+				if !targetExists {
+					return fmt.Errorf("method %q route %q binds to operation %q outside the route", method.ID, route.ID, binding.ToOperation)
+				}
+				targeted[binding.ToOperation] = true
+				if binding.FromInput != "" && !requiredInputs[binding.FromInput] {
+					return fmt.Errorf("method %q route %q binds undeclared input %q", method.ID, route.ID, binding.FromInput)
+				}
+				if binding.FromOperation != "" {
+					source, ok := live[binding.FromOperation]
+					if !ok || !stringIn(source.Produces, binding.ArtifactKind) {
+						return fmt.Errorf("method %q route %q has unconstructible %q binding from %q", method.ID, route.ID, binding.ArtifactKind, binding.FromOperation)
+					}
+					sourceIndex, sourceExists := routeOperations[binding.FromOperation]
+					if !sourceExists || sourceIndex >= targetIndex {
+						return fmt.Errorf("method %q route %q binding from %q does not precede %q", method.ID, route.ID, binding.FromOperation, binding.ToOperation)
+					}
+				}
+			}
+			for _, operation := range route.Operations[1:] {
+				if !targeted[operation] {
+					return fmt.Errorf("method %q route %q has no binding for downstream operation %q", method.ID, route.ID, operation)
 				}
 			}
 		}
@@ -157,27 +272,30 @@ func ValidateCatalog() error {
 }
 
 type Request struct {
-	Method       string                     `json:"method,omitempty"`
-	Methods      []string                   `json:"methods,omitempty"`
-	Inputs       map[string]json.RawMessage `json:"inputs,omitempty"`
-	AllowNetwork *bool                      `json:"allow_network,omitempty"`
-	AllowCharges *bool                      `json:"allow_charges,omitempty"`
+	Method            string                     `json:"method,omitempty"`
+	Methods           []string                   `json:"methods,omitempty"`
+	Inputs            map[string]json.RawMessage `json:"inputs,omitempty"`
+	OperationRequests map[string]json.RawMessage `json:"operation_requests,omitempty"`
+	AllowNetwork      *bool                      `json:"allow_network,omitempty"`
+	AllowCharges      *bool                      `json:"allow_charges,omitempty"`
 }
 
 func (r *Request) UnmarshalJSON(data []byte) error {
 	var wire struct {
-		Method          string          `json:"method"`
-		Methods         []string        `json:"methods"`
-		Inputs          json.RawMessage `json:"inputs"`
-		AvailableInputs []string        `json:"available_inputs"`
-		AllowNetwork    *bool           `json:"allow_network"`
-		AllowCharges    *bool           `json:"allow_charges"`
+		Method            string                     `json:"method"`
+		Methods           []string                   `json:"methods"`
+		Inputs            json.RawMessage            `json:"inputs"`
+		OperationRequests map[string]json.RawMessage `json:"operation_requests"`
+		AvailableInputs   []string                   `json:"available_inputs"`
+		AllowNetwork      *bool                      `json:"allow_network"`
+		AllowCharges      *bool                      `json:"allow_charges"`
 	}
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
 	}
 	r.Method, r.Methods = wire.Method, wire.Methods
 	r.AllowNetwork, r.AllowCharges = wire.AllowNetwork, wire.AllowCharges
+	r.OperationRequests = wire.OperationRequests
 	r.Inputs = map[string]json.RawMessage{}
 	if len(wire.Inputs) != 0 && string(wire.Inputs) != "null" {
 		var object map[string]json.RawMessage
@@ -199,4 +317,33 @@ func (r *Request) UnmarshalJSON(data []byte) error {
 		r.Inputs[name] = json.RawMessage(`true`)
 	}
 	return nil
+}
+
+func packOperations(pack string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, method := range Catalog() {
+		if method.Pack != pack {
+			continue
+		}
+		for _, route := range method.Routes {
+			for _, operation := range route.Operations {
+				if !seen[operation] {
+					seen[operation] = true
+					out = append(out, operation)
+				}
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func stringIn(values []string, value string) bool {
+	for _, candidate := range values {
+		if candidate == value {
+			return true
+		}
+	}
+	return false
 }

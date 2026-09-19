@@ -10,6 +10,8 @@ terminology, reading level, subtitle format, voice requirements, and whether
 timing may change.
 Assess `localization` against the source and human-reviewed translated text;
 Facet does not provide an implicit translation or voice provider.
+Use the canonical `ffmpeg_caption_burn` operation for burned subtitles. The
+legacy `remotion_caption_burn` name is only a compatibility alias.
 
 Work from an accurate transcript and timestamps. Preserve meaning rather than
 translating mechanically, fit subtitles to readable timing and safe regions,

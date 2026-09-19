@@ -8,8 +8,9 @@
     "probes": ["facet.probe.ffmpeg.v1"]
   },
   "declarations": {
-    "suggestedTools": ["edge_tts", "media_probe", "subtitle_gen", "remotion_caption_burn", "audio_mix", "output_review"],
+    "suggestedTools": ["audio_mix", "edge_tts", "ffmpeg_caption_burn", "output_review", "subtitle_gen"],
     "networkIntent": "provider-optional",
+    "costIntent": "none",
     "filesystemIntent": "project-local"
   },
   "exports": {

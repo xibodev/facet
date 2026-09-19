@@ -9,8 +9,9 @@
     "runtimes": ["remotion"]
   },
   "declarations": {
-    "suggestedTools": ["video_compose", "media_probe", "frame_sample", "output_review"],
-    "networkIntent": "none",
+    "suggestedTools": ["flux_image", "openai_image", "output_review", "video_compose"],
+    "networkIntent": "provider-optional",
+    "costIntent": "may-charge-optional",
     "filesystemIntent": "project-local"
   },
   "exports": {

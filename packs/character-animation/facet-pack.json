@@ -8,8 +8,9 @@
     "probes": ["facet.probe.ffmpeg.v1"]
   },
   "declarations": {
-    "suggestedTools": ["media_probe", "frame_sample", "video_compose", "audio_mix", "output_review"],
-    "networkIntent": "provider-optional",
+    "suggestedTools": ["audio_mix", "output_review", "video_compose"],
+    "networkIntent": "none",
+    "costIntent": "none",
     "filesystemIntent": "project-local"
   },
   "exports": {

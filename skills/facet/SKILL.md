@@ -35,10 +35,9 @@ Prefer supplied assets and local operations when they satisfy the brief.
 ## Tool use
 
 ```sh
-facet version
 facet routes list
 facet routes describe explainer
-facet routes assess --input '{"method":"explainer","inputs":{"script":"approved","visuals":["supplied.png"]}}'
+facet routes assess --input assessment.json
 facet tools list
 facet tools describe media_probe
 facet tools estimate video_compose --input request.json
@@ -48,10 +47,11 @@ facet tools run output_review --input review.json
 
 Route assessment is advisory and stateless. It reports missing inputs, live
 operations, dependencies, network use, and charge effects; it never executes,
-persists workflow state, or selects a provider. Use JSON request files and the
-live tool registry. `media_probe` accepts `input` or `input_path`;
-`frame_sample` uses a strategy object. Provider generation uses the
-specifically named Facet tool and must not be silently rerouted.
+stores state, or selects a provider. Feasibility requires existing file inputs,
+canonical `operation_requests` for every step, entry estimate validation, and
+constructible downstream bindings.
+Use JSON request files and the live registry. `media_probe` accepts `input` or
+`input_path`; provider generation must use the specifically named Facet tool.
 
 For Remotion, use nonempty `cuts` with flat scene fields and explicit timing.
 The explainer pack documents scene types and narrated timing. Estimates do not

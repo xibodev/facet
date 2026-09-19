@@ -8,8 +8,9 @@
     "probes": ["facet.probe.ffmpeg.v1"]
   },
   "declarations": {
-    "suggestedTools": ["media_probe", "scene_detect", "source_edit", "subtitle_gen", "audio_mix", "output_review"],
+    "suggestedTools": ["ffmpeg_caption_burn", "output_review", "source_edit", "subtitle_gen"],
     "networkIntent": "none",
+    "costIntent": "none",
     "filesystemIntent": "project-local"
   },
   "exports": {

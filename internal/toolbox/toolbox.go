@@ -28,6 +28,7 @@ var names = []string{
 	"direct_clip_search",
 	"edge_tts",
 	"elevenlabs_tts",
+	"ffmpeg_caption_burn",
 	"flux_image",
 	"frame_sample",
 	"frame_sampler",
@@ -44,7 +45,6 @@ var names = []string{
 	"pexels_video",
 	"piper_tts",
 	"pixabay_video",
-	"remotion_caption_burn",
 	"scene_detect",
 	"silence_cutter",
 	"sora_video",
@@ -165,8 +165,8 @@ func executionFor(tool string) Execution {
 		network = true
 	case "piper_tts":
 		provider = "piper"
-	case "remotion_caption_burn":
-		provider = "remotion"
+	case "ffmpeg_caption_burn":
+		provider = "ffmpeg"
 	case "sora_video":
 		provider = "openai"
 		network = true
@@ -368,6 +368,8 @@ func canonicalToolName(tool string) string {
 		return "piper_tts"
 	case "subtitle-gen", "subtitles":
 		return "subtitle_gen"
+	case "remotion_caption_burn", "remotion-caption-burn", "subtitle_burn", "subtitle-burn", "caption-burn":
+		return "ffmpeg_caption_burn"
 	case "scene-detect":
 		return "scene_detect"
 	case "silence-cutter":
@@ -594,7 +596,7 @@ func summary(name string) map[string]any {
 		deps = append(deps, dependency("ffmpeg"), dependency("ffprobe"))
 	case "color_grade":
 		deps = append(deps, dependency("ffmpeg"))
-	case "video_compose", "remotion_caption_burn":
+	case "video_compose":
 		// The Remotion composer is a real dependency and was never declared.
 		//
 		// Verified on a fresh install: video_compose reported configured:true
@@ -602,6 +604,8 @@ func summary(name string) map[string]any {
 		// dependency_missing because the composer had no node_modules. A tool
 		// that cannot render must not report itself ready.
 		deps = append(deps, dependency("ffmpeg"), dependency("node"), composerDependency())
+	case "ffmpeg_caption_burn":
+		deps = append(deps, dependency("ffmpeg"))
 	case "hyperframes_compose":
 		deps = append(deps, dependency("npx"), dependency("ffmpeg"))
 	case "music_library":
@@ -685,41 +689,41 @@ func dependenciesAvailable(deps []any) bool {
 }
 
 var capabilities = map[string]string{
-	"audio_mix":             "audio mixing",
-	"audio_mixer":           "audio mixing",
-	"audio_probe":           "audio metadata inspection",
-	"color_grade":           "FFmpeg LUT and color grading tool",
-	"direct_clip_search":    "stock clip search and download",
-	"edge_tts":              "free keyless Microsoft Edge neural text-to-speech synthesis",
-	"elevenlabs_tts":        "cloud text-to-speech synthesis",
-	"flux_image":            "cloud AI image generation via FLUX",
-	"frame_sample":          "review frame extraction",
-	"frame_sampler":         "frame extraction and sampling",
-	"gflow_image":           "Google Flow Imagen 4 / Nano Banana 2 image generation",
-	"gflow_video":           "Google Flow Veo 3.1 cinematic video generation and 4K upsampling",
-	"hyperframes_compose":   "HTML/CSS/GSAP video composition",
-	"image_selector":        "image provider discovery, facts, and explainable ranking",
-	"kling_video":           "cloud AI video generation via Kling",
-	"media_probe":           "media inspection",
-	"music_library":         "local music discovery and indexing",
-	"openai_image":          "cloud AI image generation via OpenAI DALL-E / GPT Image",
-	"openai_tts":            "cloud text-to-speech synthesis",
-	"output_review":         "technical output review",
-	"pexels_video":          "stock video search and download",
-	"piper_tts":             "local text-to-speech synthesis",
-	"pixabay_video":         "stock video search and download",
-	"remotion_caption_burn": "animated caption burning",
-	"scene_detect":          "scene cut and shot boundary detection",
-	"silence_cutter":        "silence detection and jump cut editing",
-	"sora_video":            "cloud AI video generation via Sora",
-	"source_edit":           "supplied-footage editing",
-	"subtitle_gen":          "subtitle generation (SRT/VTT/JSON)",
-	"video_compose":         "video composition orchestration",
-	"video_selector":        "video provider discovery, facts, duration limits, and explainable ranking",
-	"video_stitch":          "multi-clip assembly and transitions",
-	"video_trimmer":         "video trimming, speed, and concatenation",
-	"visual_qa":             "visual quality assurance and inspection",
-	"wikimedia":             "Wikimedia Commons stock search and download",
+	"audio_mix":           "audio mixing",
+	"audio_mixer":         "audio mixing",
+	"audio_probe":         "audio metadata inspection",
+	"color_grade":         "FFmpeg LUT and color grading tool",
+	"direct_clip_search":  "stock clip search and download",
+	"edge_tts":            "free keyless Microsoft Edge neural text-to-speech synthesis",
+	"elevenlabs_tts":      "cloud text-to-speech synthesis",
+	"flux_image":          "cloud AI image generation via FLUX",
+	"frame_sample":        "review frame extraction",
+	"frame_sampler":       "frame extraction and sampling",
+	"gflow_image":         "Google Flow Imagen 4 / Nano Banana 2 image generation",
+	"gflow_video":         "Google Flow Veo 3.1 cinematic video generation and 4K upsampling",
+	"hyperframes_compose": "HTML/CSS/GSAP video composition",
+	"image_selector":      "image provider discovery, facts, and explainable ranking",
+	"kling_video":         "cloud AI video generation via Kling",
+	"media_probe":         "media inspection",
+	"music_library":       "local music discovery and indexing",
+	"openai_image":        "cloud AI image generation via OpenAI DALL-E / GPT Image",
+	"openai_tts":          "cloud text-to-speech synthesis",
+	"output_review":       "technical output review",
+	"pexels_video":        "stock video search and download",
+	"piper_tts":           "local text-to-speech synthesis",
+	"pixabay_video":       "stock video search and download",
+	"ffmpeg_caption_burn": "FFmpeg subtitle and caption burning",
+	"scene_detect":        "scene cut and shot boundary detection",
+	"silence_cutter":      "silence detection and jump cut editing",
+	"sora_video":          "cloud AI video generation via Sora",
+	"source_edit":         "supplied-footage editing",
+	"subtitle_gen":        "subtitle generation (SRT/VTT/JSON)",
+	"video_compose":       "video composition orchestration",
+	"video_selector":      "video provider discovery, facts, duration limits, and explainable ranking",
+	"video_stitch":        "multi-clip assembly and transitions",
+	"video_trimmer":       "video trimming, speed, and concatenation",
+	"visual_qa":           "visual quality assurance and inspection",
+	"wikimedia":           "Wikimedia Commons stock search and download",
 }
 
 func description(name string) map[string]any {
@@ -807,10 +811,10 @@ var schemas = map[string]any{
 		"output_path": map[string]any{"type": "string"}, "max_chars_per_line": map[string]any{"type": "integer", "default": 42}, "max_words_per_cue": map[string]any{"type": "integer", "default": 8},
 		"highlight_style": map[string]any{"enum": []string{"none", "word_by_word", "karaoke"}, "default": "none"}, "corrections": map[string]any{"type": "object"},
 	}},
-	"remotion_caption_burn": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"input_path", "output_path"}, "properties": map[string]any{
+	"ffmpeg_caption_burn": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"input_path", "output_path"}, "properties": map[string]any{
 		"input_path": map[string]any{"type": "string"}, "output_path": map[string]any{"type": "string"}, "segments": map[string]any{"type": "array"},
 		"srt_path": map[string]any{"type": "string"}, "words_per_page": map[string]any{"type": "integer", "default": 4}, "font_size": map[string]any{"type": "integer", "default": 52},
-		"highlight_color": map[string]any{"type": "string", "default": "#22D3EE"}, "force_ffmpeg": map[string]any{"type": "boolean", "default": false},
+		"highlight_color": map[string]any{"type": "string", "default": "#22D3EE"},
 	}},
 	"silence_cutter": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"input_path"}, "properties": map[string]any{
 		"input_path": map[string]any{"type": "string"}, "output_path": map[string]any{"type": "string"}, "mode": map[string]any{"enum": []string{"remove", "speed_up", "mark"}, "default": "remove"},
@@ -949,11 +953,11 @@ var resultSchemas = map[string]any{
 	"subtitle_gen": objectSchema([]string{"format", "cue_count", "output"}, map[string]any{
 		"format": stringSchema(), "cue_count": map[string]any{"type": "integer"}, "output": stringSchema(),
 	}),
-	"remotion_caption_burn": objectSchema([]string{"method", "output"}, map[string]any{"method": stringSchema(), "output": stringSchema()}),
-	"silence_cutter":        objectSchema([]string{"mode"}, map[string]any{"mode": stringSchema(), "output": stringSchema()}),
-	"hyperframes_compose":   objectSchema([]string{"operation"}, map[string]any{"operation": stringSchema()}),
-	"audio_mix":             mediaOutputResultSchema([]string{"loudnorm"}),
-	"audio_mixer":           mediaOutputResultSchema([]string{"loudnorm"}),
+	"ffmpeg_caption_burn": objectSchema([]string{"method", "output"}, map[string]any{"method": map[string]any{"const": "ffmpeg"}, "output": stringSchema()}),
+	"silence_cutter":      objectSchema([]string{"mode"}, map[string]any{"mode": stringSchema(), "output": stringSchema()}),
+	"hyperframes_compose": objectSchema([]string{"operation"}, map[string]any{"operation": stringSchema()}),
+	"audio_mix":           mediaOutputResultSchema([]string{"loudnorm"}),
+	"audio_mixer":         mediaOutputResultSchema([]string{"loudnorm"}),
 	"music_library": objectSchema([]string{"library_dir", "exists", "track_count", "tracks"}, map[string]any{
 		"library_dir": stringSchema(), "exists": map[string]any{"type": "boolean"}, "track_count": map[string]any{"type": "integer"}, "total_duration_seconds": map[string]any{"type": "number"}, "tracks": map[string]any{"type": "array"},
 	}),
@@ -1104,8 +1108,8 @@ func executeContext(ctx context.Context, tool, op string, data []byte) (any, []s
 		return doVideoComposeContext(ctx, op, data)
 	case "subtitle_gen":
 		return doSubtitleGen(op, data)
-	case "remotion_caption_burn":
-		return doRemotionCaptionBurnContext(ctx, op, data)
+	case "ffmpeg_caption_burn":
+		return doFFmpegCaptionBurnContext(ctx, op, data)
 	case "silence_cutter":
 		return doSilenceCutterContext(ctx, op, data)
 	case "hyperframes_compose":
@@ -1677,6 +1681,219 @@ func Parameters(tool string) map[string]any {
 		}
 	}
 	return map[string]any{"type": "object"}
+}
+
+// ValidateRequest validates a concrete request through the canonical estimate
+// path. Estimates execute no production work, but they do enforce semantic
+// requirements such as real input files and operation-specific constraints.
+func ValidateRequest(tool string, data []byte) error {
+	tool = canonicalToolName(tool)
+	if !known(tool) {
+		return fmt.Errorf("unknown canonical operation %q", tool)
+	}
+	_, _, err := execute(tool, "estimate", data)
+	return err
+}
+
+// ValidateRequestShape validates a request against the canonical JSON schema
+// without requiring intermediate files to exist yet.
+func ValidateRequestShape(tool string, data []byte) error {
+	tool = canonicalToolName(tool)
+	schema, ok := schemas[tool]
+	if !ok {
+		return fmt.Errorf("unknown canonical operation %q", tool)
+	}
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return fmt.Errorf("invalid JSON: %w", err)
+	}
+	if reason := schemaMismatch(schema, value, "$"); reason != "" {
+		return fmt.Errorf("%s", reason)
+	}
+	return nil
+}
+
+func schemaMismatch(rawSchema, value any, path string) string {
+	schema, ok := rawSchema.(map[string]any)
+	if !ok {
+		return ""
+	}
+	if branches, ok := schema["anyOf"].([]any); ok {
+		matched := false
+		for _, branch := range branches {
+			if schemaMismatch(branch, value, path) == "" {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return path + " does not satisfy any allowed request shape"
+		}
+	}
+	if branches, ok := schema["oneOf"].([]any); ok {
+		matches := 0
+		for _, branch := range branches {
+			if schemaMismatch(branch, value, path) == "" {
+				matches++
+			}
+		}
+		if matches != 1 {
+			return fmt.Sprintf("%s matches %d oneOf request shapes", path, matches)
+		}
+	}
+	if condition, ok := schema["if"]; ok && schemaMismatch(condition, value, path) == "" {
+		if thenSchema, ok := schema["then"]; ok {
+			if reason := schemaMismatch(thenSchema, value, path); reason != "" {
+				return reason
+			}
+		}
+	}
+	if expected, ok := schema["const"]; ok && !schemaValueEqual(expected, value) {
+		return fmt.Sprintf("%s must equal %v", path, expected)
+	}
+	if values, ok := schema["enum"].([]string); ok {
+		text, _ := value.(string)
+		if !contains(values, text) {
+			return fmt.Sprintf("%s must be one of %v", path, values)
+		}
+	}
+	if _, hasType := schema["type"]; !hasType {
+		if required := schemaStrings(schema["required"]); len(required) != 0 {
+			object, ok := value.(map[string]any)
+			if !ok {
+				return path + " must be an object"
+			}
+			for _, name := range required {
+				if _, exists := object[name]; !exists {
+					return path + "." + name + " is required"
+				}
+			}
+		}
+	}
+	switch schema["type"] {
+	case "object":
+		object, ok := value.(map[string]any)
+		if !ok {
+			return path + " must be an object"
+		}
+		for _, name := range schemaStrings(schema["required"]) {
+			if _, exists := object[name]; !exists {
+				return path + "." + name + " is required"
+			}
+		}
+		properties, _ := schema["properties"].(map[string]any)
+		for name, child := range object {
+			childSchema, exists := properties[name]
+			if !exists {
+				if schema["additionalProperties"] == false {
+					return path + "." + name + " is not allowed"
+				}
+				continue
+			}
+			if reason := schemaMismatch(childSchema, child, path+"."+name); reason != "" {
+				return reason
+			}
+		}
+	case "array":
+		items, ok := value.([]any)
+		if !ok {
+			return path + " must be an array"
+		}
+		if min, ok := numberValue(schema["minItems"]); ok && float64(len(items)) < min {
+			return fmt.Sprintf("%s must contain at least %.0f items", path, min)
+		}
+		if itemSchema, ok := schema["items"]; ok {
+			for i, item := range items {
+				if reason := schemaMismatch(itemSchema, item, fmt.Sprintf("%s[%d]", path, i)); reason != "" {
+					return reason
+				}
+			}
+		}
+	case "string":
+		text, ok := value.(string)
+		if !ok {
+			return path + " must be a string"
+		}
+		if min, ok := numberValue(schema["minLength"]); ok && float64(len(text)) < min {
+			return fmt.Sprintf("%s must contain at least %.0f characters", path, min)
+		}
+	case "integer":
+		number, ok := numberValue(value)
+		if !ok || math.Trunc(number) != number {
+			return path + " must be an integer"
+		}
+		if reason := numericMismatch(schema, number, path); reason != "" {
+			return reason
+		}
+	case "number":
+		number, ok := numberValue(value)
+		if !ok {
+			return path + " must be a number"
+		}
+		if reason := numericMismatch(schema, number, path); reason != "" {
+			return reason
+		}
+	case "boolean":
+		if _, ok := value.(bool); !ok {
+			return path + " must be a boolean"
+		}
+	}
+	return ""
+}
+
+func numericMismatch(schema map[string]any, number float64, path string) string {
+	if minimum, ok := numberValue(schema["minimum"]); ok && number < minimum {
+		return fmt.Sprintf("%s must be at least %v", path, minimum)
+	}
+	if minimum, ok := numberValue(schema["exclusiveMinimum"]); ok && number <= minimum {
+		return fmt.Sprintf("%s must be greater than %v", path, minimum)
+	}
+	if maximum, ok := numberValue(schema["maximum"]); ok && number > maximum {
+		return fmt.Sprintf("%s must be at most %v", path, maximum)
+	}
+	if maximum, ok := numberValue(schema["exclusiveMaximum"]); ok && number >= maximum {
+		return fmt.Sprintf("%s must be less than %v", path, maximum)
+	}
+	if multiple, ok := numberValue(schema["multipleOf"]); ok && math.Mod(number, multiple) != 0 {
+		return fmt.Sprintf("%s must be a multiple of %v", path, multiple)
+	}
+	return ""
+}
+
+func schemaStrings(value any) []string {
+	switch values := value.(type) {
+	case []string:
+		return values
+	case []any:
+		out := make([]string, 0, len(values))
+		for _, value := range values {
+			if text, ok := value.(string); ok {
+				out = append(out, text)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+func numberValue(value any) (float64, bool) {
+	switch number := value.(type) {
+	case int:
+		return float64(number), true
+	case int64:
+		return float64(number), true
+	case float64:
+		return number, true
+	}
+	return 0, false
+}
+
+func schemaValueEqual(left, right any) bool {
+	if l, ok := numberValue(left); ok {
+		r, rok := numberValue(right)
+		return rok && l == r
+	}
+	return reflect.DeepEqual(left, right)
 }
 
 // Run executes a tool operation in 'run' mode with raw JSON input.
