@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -124,5 +125,36 @@ func TestLaunchErrorsPropagate(t *testing.T) {
 				t.Fatalf("wanted exit %d; got %d: %s", want, code, out)
 			}
 		})
+	}
+}
+
+func TestParseInitArgsSupportsRepeatablePackAliases(t *testing.T) {
+	got, err := parseInitArgs([]string{
+		"demo",
+		"--engine", "codex",
+		"--pack", "cinematic",
+		"--production-method=screen-demo",
+		"--pack=localization",
+		"--no-launch",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ProjectDir != "demo" || got.Engine != "codex" || !got.NoLaunch {
+		t.Fatalf("unexpected options: %+v", got)
+	}
+	want := []string{"cinematic", "screen-demo", "localization"}
+	if !reflect.DeepEqual(got.Packs, want) {
+		t.Fatalf("packs = %v, want %v", got.Packs, want)
+	}
+}
+
+func TestParseInitArgsDefaultsToCoreOnly(t *testing.T) {
+	got, err := parseInitArgs([]string{"demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Packs) != 0 {
+		t.Fatalf("default packs = %v, want core only", got.Packs)
 	}
 }

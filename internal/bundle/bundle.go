@@ -146,7 +146,7 @@ func layoutFor(t Target) Compatibility {
 	case TargetCopilot:
 		base.InstallRoot = ".github"
 	case TargetCodex:
-		base.InstallRoot = ".codex"
+		base.InstallRoot = ".agents"
 	}
 	return base
 }

@@ -10,22 +10,24 @@ definition() {
 [[ -f "$MANIFEST" ]] || die 'Run install.sh from the complete installer package.'
 [[ $(definition layout 3) == 1 ]] || die 'Unsupported installer manifest schema.'
 VERSION=${FACET_VERSION:-$(definition facet 3)}; TARGET=${FACET_TARGET:-}; PROJECT=${FACET_PROJECT:-}; INSTALL=${FACET_INSTALL_DIR:-}; COMPONENTS=${FACET_COMPONENTS:-}
+PACKS=${FACET_PACKS:-}; PACKS_EXPLICIT=0; [[ -z "$PACKS" ]] || PACKS_EXPLICIT=1
 ACTION=${FACET_ACTION:-add}; ACTION_EXPLICIT=${FACET_ACTION:-}; DETAIL=0; MIGRATE_LEGACY=0; PLAIN=${FACET_PLAIN:-0}
 ARCHIVE=''; SUMS=''; YES=${FACET_YES:-0}; SKIP_VERIFY=0
 while (($#)); do
     case "$1" in
-        --version|--target|--project|--install-dir|--components|--archive|--checksums|--action)
+        --version|--target|--project|--install-dir|--components|--archive|--checksums|--action|--pack|--production-method)
             (($# >= 2)) || die "Missing value for $1"
             case "$1" in
                 --version) VERSION=$2;; --target) TARGET=$2;; --project) PROJECT=$2;;
                 --install-dir) INSTALL=$2;; --components) COMPONENTS=$2;; --archive) ARCHIVE=$2;; --checksums) SUMS=$2;;
                 --action) ACTION=$2; ACTION_EXPLICIT=1;;
+                --pack|--production-method) PACKS="${PACKS:+$PACKS,}$2"; PACKS_EXPLICIT=1;;
             esac; shift 2;;
         --yes) YES=1; shift;; --skip-verify) SKIP_VERIFY=1; shift;;
         --verbose) DETAIL=1; shift;;
         --plain) PLAIN=1; shift;;
         --migrate-legacy) MIGRATE_LEGACY=1; shift;;
-        --help|-h) printf '%s\n' 'Usage: bash install.sh [--target opencode|codex|claude|copilot] [--project DIR] [--install-dir DIR] [--version VERSION] [--components remotion,piper,gflow,hyperframes|none] [--action add|repair|update] [--archive ZIP --checksums FILE] [--yes] [--skip-verify] [--verbose]'; exit 0;;
+        --help|-h) printf '%s\n' 'Usage: bash install.sh [--target opencode|codex|claude|copilot|studio] [--project DIR] [--pack NAME ...] [--production-method NAME ...] [--install-dir DIR] [--version VERSION] [--components remotion,piper,gflow,hyperframes|none] [--action add|repair|update|uninstall] [--archive ZIP --checksums FILE] [--yes] [--skip-verify] [--verbose]'; exit 0;;
         *) die "Unknown option: $1";;
     esac
 done
@@ -108,14 +110,17 @@ while IFS=$'\t' read -r kind id rest; do
     fi
 done < "$MANIFEST"
 printf '  Detected CLIs:%s\n' "${detected:- none (choose one to configure)}"
-[[ -n "$TARGET" ]] || TARGET=$(choose 'Which CLI should use Facet? (opencode, codex, claude, copilot)' 0 "$default_host" "${host_options[@]}")
+[[ -n "$TARGET" ]] || TARGET=$(choose 'Which agent should use Facet? (opencode, codex, claude, copilot, studio)' 0 "$default_host" "${host_options[@]}")
 [[ $(definition "$TARGET" 1) == host ]] || die 'Unsupported CLI.'
 HOST_PATH=$(definition "$TARGET" 4)
+INSTRUCTION_REL=$(definition "$TARGET-instructions" 4)
+[[ -n "$INSTRUCTION_REL" && "$INSTRUCTION_REL" != /* && "$INSTRUCTION_REL" != *..* && "$INSTRUCTION_REL" != *\\* ]] || die 'Invalid governing instruction path.'
 [[ -n "$PROJECT" ]] || PROJECT=$(ask 'Project directory' .)
 absolute() { case "$1" in /*) printf '%s' "$1";; *) printf '%s/%s' "$PWD" "$1";; esac; }
 PROJECT=$(absolute "$PROJECT"); INSTALL=$(absolute "${INSTALL:-$HOME/.facet/releases/$VERSION-$OS-$ARCH}")
 if [[ -z "$COMPONENTS" && -f "$PROJECT/.facet-install/installation.tsv" ]]; then COMPONENTS=$(awk -F '\t' '$1=="components" {gsub(/ /,",",$2); print $2}' "$PROJECT/.facet-install/installation.tsv"); fi
 COMPONENTS=${COMPONENTS:-remotion}
+if [[ $PACKS_EXPLICIT == 0 && -f "$PROJECT/.facet-install/installation.tsv" ]]; then PACKS=$(awk -F '\t' '$1=="packs" {gsub(/ /,",",$2); print $2}' "$PROJECT/.facet-install/installation.tsv"); fi
 [[ "$PROJECT$INSTALL" != *$'\n'* && "$PROJECT$INSTALL" != *$'\r'* && "$PROJECT$INSTALL" != *$'\t'* ]] || die 'Control characters are unsupported in installation paths.'
 if [[ -n "$ARCHIVE" ]]; then ARCHIVE=$(absolute "$ARCHIVE"); SUMS=$(absolute "$SUMS"); fi
 printf '%s\n' 'Core: FFmpeg and FFprobe. Optional downloads (approximate; platform/cache dependent):'
@@ -139,6 +144,14 @@ for id in "${raw[@]}"; do
 done
 has() { local item; for item in "${SELECTED[@]}"; do [[ "$item" != "$1" ]] || return 0; done; return 1; }
 if has none && ((${#SELECTED[@]} != 1)); then die 'none cannot be combined with components.'; fi
+SELECTED_PACKS=()
+IFS=',' read -r -a raw_packs <<< "$PACKS"
+for id in "${raw_packs[@]}"; do
+    id=${id// /}; [[ -n "$id" ]] || continue
+    [[ $(definition "$id" 1) == pack ]] || die "Unknown production method: $id"
+    for existing in "${SELECTED_PACKS[@]:-}"; do [[ "$existing" != "$id" ]] || die 'Duplicate production method.'; done
+    SELECTED_PACKS+=("$id")
+done
 real_ancestors() {
     local path=$1
     while [[ "$path" != / && -n "$path" ]]; do
@@ -155,11 +168,28 @@ canonical_parent() {
     printf '%s%s' "$(cd -- "$path" && pwd -P)" "$suffix"
 }
 PROJECT=$(canonical_parent "$PROJECT"); INSTALL=$(canonical_parent "$INSTALL")
-SKILL="$PROJECT/$HOST_PATH/facet"; STATE="$PROJECT/.facet-install"
+SKILL="$PROJECT/$HOST_PATH/facet"; STATE="$PROJECT/.facet-install"; INSTRUCTION="$PROJECT/$INSTRUCTION_REL"
 new_path() { [[ ! -e "$1" && ! -L "$1" ]] || die "Preserving existing entry: $1"; real_ancestors "$(dirname -- "$1")"; }
+valid_project_receipt() {
+    local receipt=$1
+    [[ -f "$receipt" && ! -L "$receipt" ]] || return 1
+    awk -F '\t' '
+        $1=="version" {version=$2; versions++}
+        $1=="installation" {installation=$2; installations++}
+        $1=="host" {host=$2; hosts++}
+        $1=="components" {components++}
+        $1=="packs" {packs++}
+        END {
+            exit !(versions==1 && installations==1 && hosts==1 && components==1 && packs==1 &&
+                version!="" && installation ~ /^\// && host ~ /^(opencode|codex|claude|copilot|studio)$/)
+        }
+    ' "$receipt"
+}
 PREVIOUS=0
 LEGACY_MIGRATION=0
-if [[ -d "$STATE" ]]; then
+INSTRUCTION_OWNED=0
+STATE_RESIDUE=0
+if valid_project_receipt "$STATE/installation.tsv"; then
     real_ancestors "$STATE"
     [[ $(awk -F '\t' '$1=="host" {print $2}' "$STATE/installation.tsv") == "$TARGET" ]] || die 'Project is configured for another CLI.'
     if [[ ! -f "$STATE/managed-files.sha256" ]]; then
@@ -175,11 +205,28 @@ if [[ -d "$STATE" ]]; then
         real_ancestors "$(dirname "$PROJECT/$file")"
     done < "$STATE/managed-files.sha256"
     (cd "$PROJECT" && shasum -a 256 -c "$STATE/managed-files.sha256") >/dev/null || die 'Preserving modified project files.'
-    expected_count=$(wc -l < "$STATE/managed-files.sha256" | tr -d ' ')
-    actual_count=$(find "$STATE" "$SKILL" -type f ! -path "$STATE/managed-files.sha256" | wc -l | tr -d ' ')
-    [[ "$actual_count" == "$expected_count" ]] || die 'Preserving extra files in managed project directories.'
+    if [[ "$ACTION" != uninstall ]]; then
+        expected_skill_count=0
+        while IFS= read -r line; do
+            file=${line#*  }
+            [[ "$file" != "$HOST_PATH/facet/"* ]] || expected_skill_count=$((expected_skill_count+1))
+        done < "$STATE/managed-files.sha256"
+        actual_skill_count=0
+        [[ ! -d "$SKILL" ]] || actual_skill_count=$(find "$SKILL" -type f | wc -l | tr -d ' ')
+        [[ "$actual_skill_count" == "$expected_skill_count" ]] || die 'Preserving extra files in the managed skill directory.'
+    fi
+    fi
+    if [[ -f "$STATE/instruction-section.tsv" ]]; then
+        owned_instruction=$(awk -F '\t' '$1=="path" {print $2}' "$STATE/instruction-section.tsv")
+        owned_hash=$(awk -F '\t' '$1=="sha256" {print $2}' "$STATE/instruction-section.tsv")
+        [[ "$owned_instruction" == "$INSTRUCTION_REL" && "$owned_hash" =~ ^[a-f0-9]{64}$ ]] || die 'Invalid governing instruction ownership record.'
+        [[ -f "$INSTRUCTION" && ! -L "$INSTRUCTION" ]] || die 'Managed governing instruction is missing or replaced.'
+        INSTRUCTION_OWNED=1
     fi
     PREVIOUS=1
+    if [[ "$ACTION" == uninstall ]]; then
+        INSTALL=$(awk -F '\t' '$1=="installation" {print $2}' "$STATE/installation.tsv")
+    fi
     if [[ $YES != 1 && -z "$ACTION_EXPLICIT" ]]; then ACTION=$(choose 'What should setup do?' 0 add add 'Add components - keep existing tools' repair 'Repair - verify a replacement' update 'Update - switch to selected version'); fi
     if [[ "$ACTION" == add ]]; then
         [[ $(awk -F '\t' '$1=="version" {print $2}' "$STATE/installation.tsv") == "$VERSION" ]] || die 'Choose update to change product version.'
@@ -188,26 +235,45 @@ if [[ -d "$STATE" ]]; then
             if [[ "$item" != none ]] && ! has "$item"; then SELECTED+=("$item"); fi
         done
         if ((${#SELECTED[@]} > 1)) && has none; then filtered=(); for item in "${SELECTED[@]}"; do [[ "$item" == none ]] || filtered+=("$item"); done; SELECTED=("${filtered[@]}"); fi
+        for item in $(awk -F '\t' '$1=="packs" {print $2}' "$STATE/installation.tsv"); do
+            present=0; for existing in "${SELECTED_PACKS[@]:-}"; do [[ "$existing" != "$item" ]] || present=1; done
+            [[ $present == 1 ]] || SELECTED_PACKS+=("$item")
+        done
     fi
-else new_path "$SKILL"; new_path "$STATE"; fi
-case "$ACTION" in add|repair|update) ;; *) die 'Choose add, repair, or update.';; esac
-real_ancestors "$INSTALL"
+else
+    [[ "$ACTION" != uninstall ]] || die 'This project has no Facet installation to uninstall.'
+    new_path "$SKILL"
+    if [[ -e "$STATE" || -L "$STATE" ]]; then
+        [[ -d "$STATE" && ! -L "$STATE" ]] || die "Preserving unsafe partial installer state: $STATE"
+        real_ancestors "$STATE"
+        [[ -z $(find "$STATE" -type l -print) ]] || die "Preserving linked partial installer state: $STATE"
+        STATE_RESIDUE=1
+    else
+        new_path "$STATE"
+    fi
+fi
+case "$ACTION" in add|repair|update|uninstall) ;; *) die 'Choose add, repair, update, or uninstall.';; esac
 REUSE=0
-if [[ -f "$INSTALL/components.tsv" && "$ACTION" != repair ]]; then
-    REUSE=1
-    for item in "${SELECTED[@]}"; do
-        [[ "$item" == none ]] || grep -qx "$item" "$INSTALL/components.tsv" || REUSE=0
-    done
+if [[ "$ACTION" != uninstall ]]; then
+    real_ancestors "$INSTALL"
+    if [[ -f "$INSTALL/components.tsv" && "$ACTION" != repair ]]; then
+        REUSE=1
+        for item in "${SELECTED[@]}"; do
+            [[ "$item" == none ]] || grep -qx "$item" "$INSTALL/components.tsv" || REUSE=0
+        done
+    fi
+    if [[ -d "$INSTALL" && $REUSE == 0 ]]; then
+        [[ -f "$INSTALL/.facet-receipt" ]] || die 'Existing installation is not managed by these scripts.'
+        INSTALL="$INSTALL-generation-$(date +%s)-$$"
+    fi
 fi
-if [[ -d "$INSTALL" && $REUSE == 0 ]]; then
-    [[ -f "$INSTALL/.facet-receipt" ]] || die 'Existing installation is not managed by these scripts.'
-    INSTALL="$INSTALL-generation-$(date +%s)-$$"
-fi
-printf '\n  CLI: %s\n  Project: %s\n  Action: %s\n  Components: %s\n  Runtime: %s\n' "$TARGET" "$PROJECT" "$ACTION" "${SELECTED[*]}" "$INSTALL"
+printf '\n  Agent: %s\n  Project: %s\n  Action: %s\n  Production methods: %s\n  Components: %s\n  Runtime: %s\n' "$TARGET" "$PROJECT" "$ACTION" "${SELECTED_PACKS[*]:-core only}" "${SELECTED[*]}" "$INSTALL"
 printf '%s\n' '  Existing runtimes are retained until a verified replacement is ready.'
 [[ $YES == 1 ]] || [[ $(ask 'Continue?' y) =~ ^(y|yes)$ ]] || die 'Installation cancelled.'
 section '[2/3] Install and verify capabilities'
-for program in curl unzip zipinfo awk shasum; do command -v "$program" >/dev/null || die "Install required archive utility: $program"; done
+required_programs=(awk grep shasum)
+if [[ "$ACTION" != uninstall ]]; then required_programs+=(curl unzip zipinfo); fi
+for program in "${required_programs[@]}"; do command -v "$program" >/dev/null || die "Install required archive utility: $program"; done
 LOG_DIR=${FACET_LOG_DIR:-$HOME/.facet/logs}; mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/install-$(date +%Y%m%d-%H%M%S)-$$.log"
 TEMP=$(mktemp -d); STAGE=''; PROJECT_STAGE=''; COMMITTED=0; NEW_RUNTIME=1
@@ -217,6 +283,11 @@ cleanup() {
     if [[ $COMMITTED == 0 && -n "$PROJECT_STAGE" ]]; then
         if [[ -d "$PROJECT_STAGE/old-state" ]]; then rm -rf "$STATE"; mv "$PROJECT_STAGE/old-state" "$STATE"; fi
         if [[ -d "$PROJECT_STAGE/old-skill" ]]; then rm -rf "$SKILL"; mv "$PROJECT_STAGE/old-skill" "$SKILL"; fi
+        if [[ -f "$PROJECT_STAGE/old-instruction" ]]; then
+            mkdir -p "$(dirname -- "$INSTRUCTION")"; cp "$PROJECT_STAGE/old-instruction" "$INSTRUCTION"
+        elif [[ -f "$PROJECT_STAGE/instruction-was-absent" ]]; then
+            rm -f -- "$INSTRUCTION"
+        fi
     fi
     [[ -z "$STAGE" ]] || rm -rf -- "$STAGE"; [[ -z "$PROJECT_STAGE" ]] || rm -rf -- "$PROJECT_STAGE"; rm -rf -- "$TEMP"
     if [[ $COMMITTED == 0 && $NEW_RUNTIME == 1 ]]; then rm -rf -- "$INSTALL"; fi
@@ -237,6 +308,85 @@ step() {
 }
 fetch() { curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --connect-timeout 20 --proto '=https' --tlsv1.2 --max-time 900 --output "$2" "$1"; }
 hash_file() { shasum -a 256 "$1" | awk '{print $1}'; }
+FACET_SECTION_START='<!-- facet:managed:start -->'
+FACET_SECTION_END='<!-- facet:managed:end -->'
+extract_instruction_section() {
+    local file=$1 out=$2 starts ends
+    [[ -f "$file" ]] || return 1
+    starts=$(grep -Fxc "$FACET_SECTION_START" "$file" || true)
+    ends=$(grep -Fxc "$FACET_SECTION_END" "$file" || true)
+    if [[ $starts == 0 && $ends == 0 ]]; then return 1; fi
+    [[ $starts == 1 && $ends == 1 ]] || die "Malformed Facet section in $INSTRUCTION_REL"
+    awk -v start="$FACET_SECTION_START" -v end="$FACET_SECTION_END" '
+        $0==start {inside=1}
+        inside {print}
+        $0==end && inside {found=1; exit}
+        END {if(!found) exit 1}
+    ' "$file" > "$out" || die "Malformed Facet section in $INSTRUCTION_REL"
+}
+merge_instruction_section() {
+    local existing=$1 section=$2 out=$3 starts ends
+    if [[ ! -e "$existing" ]]; then cp "$section" "$out"; return; fi
+    [[ -f "$existing" && ! -L "$existing" ]] || die "Preserving unsafe governing instruction: $INSTRUCTION_REL"
+    starts=$(grep -Fxc "$FACET_SECTION_START" "$existing" || true)
+    ends=$(grep -Fxc "$FACET_SECTION_END" "$existing" || true)
+    if [[ $starts == 0 && $ends == 0 ]]; then
+        cat "$existing" > "$out"
+        [[ ! -s "$existing" ]] || printf '\n' >> "$out"
+        cat "$section" >> "$out"
+        return
+    fi
+    [[ $INSTRUCTION_OWNED == 1 ]] || die "Preserving unmanaged Facet section in $INSTRUCTION_REL"
+    [[ $starts == 1 && $ends == 1 ]] || die "Malformed Facet section in $INSTRUCTION_REL"
+    awk -v start="$FACET_SECTION_START" -v end="$FACET_SECTION_END" -v replacement="$section" '
+        BEGIN {
+            while ((getline line < replacement) > 0) section = section line ORS
+            close(replacement)
+        }
+        $0==start {
+            printf "%s", section
+            inside=1
+            next
+        }
+        inside && $0==end {inside=0; next}
+        !inside {print}
+    ' "$existing" > "$out"
+}
+remove_instruction_section() {
+    local existing=$1 out=$2
+    awk -v start="$FACET_SECTION_START" -v end="$FACET_SECTION_END" '
+        $0==start {inside=1; next}
+        inside && $0==end {inside=0; next}
+        !inside {print}
+    ' "$existing" > "$out"
+}
+if [[ "$ACTION" == uninstall ]]; then
+    [[ $PREVIOUS == 1 && -f "$STATE/managed-files.sha256" ]] || die 'This project has no ownership-verified Facet installation to uninstall.'
+    [[ $INSTRUCTION_OWNED == 1 ]] || die 'This project has no ownership-verified Facet instruction section to uninstall.'
+    extract_instruction_section "$INSTRUCTION" "$TEMP/current-instruction-section" || die 'Managed Facet instruction section is missing.'
+    [[ $(hash_file "$TEMP/current-instruction-section") == "$owned_hash" ]] || die 'Preserving modified Facet instruction section.'
+    cp "$STATE/managed-files.sha256" "$TEMP/uninstall-files.sha256"
+    while IFS= read -r line; do
+        file=${line#*  }
+        case "$file" in
+            .facet-install/*|"$HOST_PATH/facet/"*) ;;
+            *) die "Invalid uninstall ownership path: $file";;
+        esac
+    done < "$TEMP/uninstall-files.sha256"
+    remove_instruction_section "$INSTRUCTION" "$TEMP/instruction-without-facet"
+    mv "$TEMP/instruction-without-facet" "$INSTRUCTION"
+    while IFS= read -r line; do
+        file=${line#*  }
+        rm -f -- "$PROJECT/$file"
+    done < "$TEMP/uninstall-files.sha256"
+    rm -f -- "$STATE/managed-files.sha256"
+    [[ ! -d "$SKILL" ]] || find "$SKILL" -depth -type d -empty -exec rmdir {} \;
+    [[ ! -d "$STATE" ]] || find "$STATE" -depth -type d -empty -exec rmdir {} \;
+    COMMITTED=1
+    printf '\nFacet was removed from this project. User instructions and unmanaged files were preserved.\n'
+    printf 'Shared runtime retained at: %s\n' "$INSTALL"
+    exit 0
+fi
 verify_checksum() {
     local expected
     expected=$(awk -v name="$3" '{sub(/\r$/, "")} $2==name || $2=="*"name {print tolower($1);n++} END{if(n!=1)exit 1}' "$2") || die "Checksum entry missing or duplicated: $3"
@@ -417,7 +567,14 @@ verify_media() (
     fi
 )
 if [[ $SKIP_VERIFY == 0 ]]; then step 'Verify selected local capabilities' verify_media; else printf '%s\n' 'Verification skipped: media readiness is unverified.'; fi
-if [[ $PREVIOUS == 0 ]]; then new_path "$SKILL"; new_path "$STATE"; fi
+if [[ $PREVIOUS == 0 ]]; then
+    new_path "$SKILL"
+    [[ $STATE_RESIDUE == 1 ]] || new_path "$STATE"
+fi
+if [[ $INSTRUCTION_OWNED == 1 ]]; then
+    extract_instruction_section "$INSTRUCTION" "$TEMP/current-instruction-section" || die 'Managed Facet instruction section is missing.'
+    [[ $(hash_file "$TEMP/current-instruction-section") == "$owned_hash" ]] || die 'Preserving modified Facet instruction section.'
+fi
 section '[3/3] Connect your CLI'
 printf '%s\n' "${SELECTED[@]}" > "$INSTALL/components.tsv"
 mkdir -p "$PROJECT"; PROJECT_STAGE=$(mktemp -d "$PROJECT/.facet-stage-XXXXXX")
@@ -434,11 +591,35 @@ chmod +x "$PROJECT_STAGE/state/run-facet.sh"
     printf '\n## This installation\n'
     printf -- '- Invoke Facet through `%s` followed by the normal arguments; use this launcher instead of bare facet in examples.\n' "$STATE/run-facet.sh"
     printf -- '- Run `facet routes list` and `facet routes assess --input <json>` before choosing a method. Resolve packs/... under `%s` and read only the relevant pack SKILL.md.\n' "$STATE"
+    if ((${#SELECTED_PACKS[@]})); then
+        printf -- '- Active production methods selected during setup:'
+        for item in "${SELECTED_PACKS[@]}"; do printf ' `%s/packs/%s/SKILL.md`' "$STATE" "$item"; done
+        printf '.\n'
+    else
+        printf -- '- No production-method pack is active; use the core guidance only.\n'
+    fi
     printf -- '- Optional components: %s. Tools report missing media-provider configuration when used.\n' "${SELECTED[*]}"
     if has piper; then printf -- '- Piper model: `%s`.\n' "$VOICES/$(definition piper 4).onnx"; fi
     if has hyperframes; then printf -- '- Use `node "%s"` for pinned HyperFrames; avoid unpinned npx.\n' "$HF_ENTRY"; fi
 } >> "$PROJECT_STAGE/skill/SKILL.md"
-printf 'version\t%s\ninstallation\t%s\nhost\t%s\ncomponents\t%s\n' "$VERSION" "$INSTALL" "$TARGET" "${SELECTED[*]}" > "$PROJECT_STAGE/state/installation.tsv"
+printf 'version\t%s\ninstallation\t%s\nhost\t%s\ncomponents\t%s\npacks\t%s\n' "$VERSION" "$INSTALL" "$TARGET" "${SELECTED[*]}" "${SELECTED_PACKS[*]}" > "$PROJECT_STAGE/state/installation.tsv"
+{
+    printf '%s\n' "$FACET_SECTION_START"
+    printf '## Facet\n'
+    printf -- '- Facet manages only this bounded section; keep project-specific instructions outside it.\n'
+    printf -- '- Read core guidance at `%s/facet/SKILL.md`.\n' "$HOST_PATH"
+    printf -- '- Invoke Facet through `%s/run-facet.sh`.\n' "$STATE"
+    if ((${#SELECTED_PACKS[@]})); then
+        printf -- '- Active production methods:'
+        for item in "${SELECTED_PACKS[@]}"; do printf ' `%s/packs/%s/SKILL.md`' "$STATE" "$item"; done
+        printf '.\n'
+    else
+        printf -- '- No production-method pack is active; use core guidance only.\n'
+    fi
+    printf '%s\n' "$FACET_SECTION_END"
+} > "$PROJECT_STAGE/instruction-section"
+merge_instruction_section "$INSTRUCTION" "$PROJECT_STAGE/instruction-section" "$PROJECT_STAGE/instruction"
+printf 'path\t%s\nsha256\t%s\n' "$INSTRUCTION_REL" "$(hash_file "$PROJECT_STAGE/instruction-section")" > "$PROJECT_STAGE/state/instruction-section.tsv"
 (
     cd "$PROJECT_STAGE"
     find state skill -type f | while IFS= read -r file; do
@@ -448,9 +629,22 @@ printf 'version\t%s\ninstallation\t%s\nhost\t%s\ncomponents\t%s\n' "$VERSION" "$
 ) > "$PROJECT_STAGE/managed-files.sha256"
 mv "$PROJECT_STAGE/managed-files.sha256" "$PROJECT_STAGE/state/managed-files.sha256"
 mkdir -p "$(dirname "$SKILL")"
-if [[ $PREVIOUS == 1 ]]; then mv "$STATE" "$PROJECT_STAGE/old-state"; mv "$SKILL" "$PROJECT_STAGE/old-skill"; fi
+if [[ $PREVIOUS == 1 ]]; then
+    mv "$STATE" "$PROJECT_STAGE/old-state"
+    mv "$SKILL" "$PROJECT_STAGE/old-skill"
+elif [[ $STATE_RESIDUE == 1 ]]; then
+    mv "$STATE" "$PROJECT_STAGE/old-state"
+    while IFS= read -r -d '' entry; do
+        name=$(basename -- "$entry")
+        [[ ! -e "$PROJECT_STAGE/state/$name" && ! -L "$PROJECT_STAGE/state/$name" ]] || die "Preserving colliding partial installer state: .facet-install/$name"
+        cp -R -- "$entry" "$PROJECT_STAGE/state/$name"
+    done < <(find "$PROJECT_STAGE/old-state" -mindepth 1 -maxdepth 1 -print0)
+fi
 mv "$PROJECT_STAGE/state" "$STATE"
 mv "$PROJECT_STAGE/skill" "$SKILL"
+mkdir -p "$(dirname -- "$INSTRUCTION")"
+if [[ -f "$INSTRUCTION" ]]; then cp "$INSTRUCTION" "$PROJECT_STAGE/old-instruction"; else touch "$PROJECT_STAGE/instruction-was-absent"; fi
+mv "$PROJECT_STAGE/instruction" "$INSTRUCTION"
 if [[ $LEGACY_MIGRATION == 1 ]]; then
     backup=$(mktemp -d "$PROJECT/.facet-backup-XXXXXX")
     mv "$PROJECT_STAGE/old-state" "$backup/state"; mv "$PROJECT_STAGE/old-skill" "$backup/skill"

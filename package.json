@@ -28,6 +28,7 @@
   },
   "scripts": {
     "test:launchers": "node --test bin/launchers.test.js",
+    "test:installer": "node --test scripts/installer-selection.test.mjs",
     "doctor": "node bin/facet-cli.js doctor",
     "ui": "node bin/facet-ui-cli.js",
     "check-pr": "release-harness check-pr",

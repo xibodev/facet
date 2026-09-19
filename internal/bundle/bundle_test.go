@@ -54,7 +54,7 @@ func TestBundleCarriesIdentityAndProvenance(t *testing.T) {
 func TestEachTargetGetsItsNativeShape(t *testing.T) {
 	want := map[Target]struct{ instruction, root string }{
 		TargetClaude:   {"CLAUDE.md", ".claude"},
-		TargetCodex:    {"AGENTS.md", ".codex"},
+		TargetCodex:    {"AGENTS.md", ".agents"},
 		TargetCopilot:  {"copilot-instructions.md", ".github"},
 		TargetOpenCode: {"AGENTS.md", ".opencode"},
 	}
