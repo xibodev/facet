@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	facet "github.com/xibodev/facet"
 	"github.com/xibodev/facet/internal/config"
 	"github.com/xibodev/facet/internal/toolbox"
 )
@@ -215,10 +216,6 @@ func capabilitySchemas() (req map[string]any, res map[string]any) {
 		"binaries": map[string]any{
 			"type": "object", "additionalProperties": str,
 		},
-		// Opt-in handle for long-running work. Absent or false means block
-		// until the work completes, which is what every existing consumer
-		// expects.
-		"async": map[string]any{"type": "boolean"},
 	})
 	passthrough := obj([]string{"capability", "tool", "output"}, map[string]any{
 		"capability": str, "tool": map[string]any{"type": "string"},
@@ -226,9 +223,6 @@ func capabilitySchemas() (req map[string]any, res map[string]any) {
 	})
 
 	req = map[string]any{
-		"creative.jobs.status.request/v1": obj([]string{"job_id"}, map[string]any{
-			"request_id": str, "job_id": str,
-		}),
 		"creative.tools.list.request/v1": obj(nil, map[string]any{"request_id": str}),
 		"creative.tools.describe.request/v1": obj([]string{"tool"}, map[string]any{
 			"request_id": str, "tool": str,
@@ -239,15 +233,6 @@ func capabilitySchemas() (req map[string]any, res map[string]any) {
 		"creative.artifact.inspect.request/v1": toolCall,
 	}
 	res = map[string]any{
-		"creative.jobs.status.result/v1": obj([]string{"capability", "job"}, map[string]any{
-			"capability": str,
-			"job": obj([]string{"job_id", "state"}, map[string]any{
-				"job_id":  str,
-				"state":   map[string]any{"enum": []string{"running", "succeeded", "failed"}},
-				"percent": map[string]any{"type": []string{"number", "null"}},
-				"detail":  map[string]any{"type": "string"},
-			}),
-		}),
 		"creative.tools.list.result/v1":       passthrough,
 		"creative.tools.describe.result/v1":   passthrough,
 		"creative.tools.estimate.result/v1":   passthrough,
@@ -541,11 +526,10 @@ func rawCapabilityList() []Capability {
 			// schemas alongside stateless tool operations.
 			ArtifactSchemas: []string{ArtifactKindOutput},
 			Skills:          []string{"facet-core"},
-			// A render takes 30s at 720p and 83s at 1080p, so this capability
-			// may return a job handle rather than a finished result and the
-			// host polls it instead of showing a blank cockpit.
-			LongRunning:    true,
-			PollCapability: CapJobsStatus,
+			// The host launches a fresh process for every invocation. Facet's
+			// in-memory jobs cannot survive that boundary, so this capability
+			// blocks and reports the finished result instead of advertising a
+			// poll target that the next process can only reject as unknown_job.
 			// Declared pessimistically: this capability dispatches any tool,
 			// including chargeable ones, so it declares the worst case.
 			//
@@ -582,20 +566,6 @@ func rawCapabilityList() []Capability {
 			Effects: Effects{
 				Local: true, Network: false, ExternalWrites: true,
 				Provider: "ffmpeg", CostKnown: true,
-			},
-		},
-		{
-			ID:    CapJobsStatus,
-			Title: "Poll a long-running job",
-			Summary: "Report the state of a long-running invocation. Deterministic, local, " +
-				"free, and never runs work or bills.",
-			RequestSchema:   "creative.jobs.status.request/v1",
-			ResultSchema:    "creative.jobs.status.result/v1",
-			ArtifactSchemas: []string{},
-			Skills:          []string{"facet-core"},
-			Effects: Effects{
-				Local: true, Network: false, ExternalWrites: false,
-				Provider: "local", CostKnown: true,
 			},
 		},
 		{
@@ -650,18 +620,17 @@ func skills(warnings *[]string) []Skill {
 			summary: "Canonical producer guidance: plan, estimate, render, review, disclose.",
 			parts:   []string{"skills", "facet", "SKILL.md"},
 		},
-		{
-			id: "facet-explainer-walkthrough", title: "Narrated explainer, end to end",
-			summary: "The order a narrated video is produced in: narration first because " +
-				"the audio decides the length, then cuts matched to it, render, verify.",
-			parts: []string{"packs", "explainer", "NARRATED-WALKTHROUGH.md"},
-		},
-		{
-			id: "facet-explainer-scene-types", title: "Explainer scene types",
-			summary: "Every scene type the Explainer composition renders and the field " +
-				"each one requires; a missing field renders an empty frame.",
-			parts: []string{"packs", "explainer", "SCENE-TYPES.md"},
-		},
+	}
+	for _, pack := range facet.RetainedPacks() {
+		for _, guidance := range pack.Guidance {
+			declared = append(declared, struct {
+				id, title, summary string
+				parts              []string
+			}{
+				id: guidance.ID, title: guidance.Title, summary: guidance.Summary,
+				parts: strings.Split(guidance.Path, "/"),
+			})
+		}
 	}
 
 	out := make([]Skill, 0, len(declared))

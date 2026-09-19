@@ -7,7 +7,7 @@ Push-Location $repo
 try {
     & go build -o (Join-Path $out 'xibodev.facet.exe') ./cmd/facet
     if ($LASTEXITCODE -ne 0) { throw 'Module build failed' }
-    foreach ($item in @('agents/facet-creative.md', 'skills/facet', 'packs/explainer', 'remotion-composer/src')) {
+    foreach ($item in @('agents/facet-creative.md', 'skills/facet', 'packs', 'remotion-composer/src')) {
         $parent = Join-Path $out (Split-Path $item -Parent)
         New-Item -ItemType Directory -Force -Path $parent | Out-Null
         Copy-Item -LiteralPath (Join-Path $repo $item) -Destination $parent -Recurse -Force

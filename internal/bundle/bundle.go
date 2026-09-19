@@ -28,6 +28,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	facet "github.com/xibodev/facet"
 )
 
 // ManifestSchema identifies the bundle manifest format.
@@ -201,11 +203,11 @@ func Build(src Source, t Target, outDir string) (*Manifest, error) {
 	entries = append(entries, got...)
 
 	// Packs project one directory per pack.
-	packNames, err := subdirs(src.PacksDir)
-	if err != nil {
-		return nil, fmt.Errorf("reading packs: %w", err)
-	}
+	packNames := facet.PackNames()
 	for _, p := range packNames {
+		if p == "" || filepath.Base(p) != p {
+			return nil, fmt.Errorf("invalid retained pack id %q", p)
+		}
 		dest := filepath.Join("skills", p)
 		got, err := copyTree(filepath.Join(src.PacksDir, p), filepath.Join(outDir, dest), dest, "pack")
 		if err != nil {
@@ -296,21 +298,6 @@ func writeFile(path string, content []byte) error {
 		return err
 	}
 	return os.WriteFile(path, content, 0o644)
-}
-
-func subdirs(dir string) ([]string, error) {
-	ents, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-	var out []string
-	for _, e := range ents {
-		if e.IsDir() {
-			out = append(out, e.Name())
-		}
-	}
-	sort.Strings(out)
-	return out, nil
 }
 
 // copyTree projects a canonical directory into the bundle, returning an entry
