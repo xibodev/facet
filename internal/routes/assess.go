@@ -203,6 +203,9 @@ func assessRoute(route Route, operations map[string]toolbox.V2Operation, request
 			} else {
 				err = toolbox.ValidateRequestShape(operation.ID, operationRequest)
 			}
+			if err == nil {
+				err = validateRequestConstraints(route, operation.ID, operationRequest)
+			}
 			if err != nil {
 				requestStatus = "invalid"
 				result.InvalidOperationRequests = append(result.InvalidOperationRequests, OperationRequestIssue{
@@ -290,6 +293,29 @@ func assessRoute(route Route, operations map[string]toolbox.V2Operation, request
 	applyEffectPolicy(&result, "network", result.Network, request.AllowNetwork)
 	applyEffectPolicy(&result, "charge", result.MayCharge, request.AllowCharges)
 	return result
+}
+
+func validateRequestConstraints(route Route, operation string, data json.RawMessage) error {
+	for _, constraint := range route.RequestConstraints {
+		if constraint.Operation != operation {
+			continue
+		}
+		value, present := requestField(data, constraint.Parameter)
+		if !present {
+			return fmt.Errorf(
+				"route %s requires %s.%s to equal %q",
+				route.ID, operation, constraint.Parameter, constraint.Equals,
+			)
+		}
+		var actual string
+		if json.Unmarshal(value, &actual) != nil || actual != constraint.Equals {
+			return fmt.Errorf(
+				"route %s requires %s.%s to equal %q",
+				route.ID, operation, constraint.Parameter, constraint.Equals,
+			)
+		}
+	}
+	return nil
 }
 
 func requestField(data json.RawMessage, field string) (json.RawMessage, bool) {

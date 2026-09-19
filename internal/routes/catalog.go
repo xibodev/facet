@@ -36,14 +36,21 @@ type Binding struct {
 	TargetSemantics string `json:"target_semantics"`
 }
 
+type RequestConstraint struct {
+	Operation string `json:"operation"`
+	Parameter string `json:"parameter"`
+	Equals    string `json:"equals"`
+}
+
 type Route struct {
-	ID             string    `json:"id"`
-	Title          string    `json:"title"`
-	Summary        string    `json:"summary"`
-	RequiredInputs []Input   `json:"required_inputs"`
-	EntryOperation string    `json:"entry_operation"`
-	Operations     []string  `json:"operations"`
-	Bindings       []Binding `json:"bindings"`
+	ID                 string              `json:"id"`
+	Title              string              `json:"title"`
+	Summary            string              `json:"summary"`
+	RequiredInputs     []Input             `json:"required_inputs"`
+	EntryOperation     string              `json:"entry_operation"`
+	Operations         []string            `json:"operations"`
+	RequestConstraints []RequestConstraint `json:"request_constraints,omitempty"`
+	Bindings           []Binding           `json:"bindings"`
 }
 
 type Method struct {
@@ -94,12 +101,14 @@ func Catalog() []Method {
 				artifact("video_stitch", "output_path", "render_video", "color_grade", "input_path"),
 				artifact("color_grade", "output_path", "render_video", "audio_mix", "video"),
 				artifact("audio_mix", "output", "render_video", "output_review", "input")),
-			route("wikimedia-documentary", "Wikimedia-augmented documentary", "Search the explicitly named public archive before local assembly.",
-				inputs("research_query"), "wikimedia", []string{"wikimedia", "video_stitch", "color_grade", "audio_mix", "output_review"},
-				arrayItemArtifact("wikimedia", "output_path", "render_video", "video_stitch", "clips"),
-				artifact("video_stitch", "output_path", "render_video", "color_grade", "input_path"),
-				artifact("color_grade", "output_path", "render_video", "audio_mix", "video"),
-				artifact("audio_mix", "output", "render_video", "output_review", "input"))),
+			requireRequestValue(
+				route("wikimedia-documentary", "Wikimedia-augmented documentary", "Search the explicitly named public archive for video before local assembly.",
+					inputs("research_query"), "wikimedia", []string{"wikimedia", "video_stitch", "color_grade", "audio_mix", "output_review"},
+					arrayItemArtifact("wikimedia", "output_path", "render_video", "video_stitch", "clips"),
+					artifact("video_stitch", "output_path", "render_video", "color_grade", "input_path"),
+					artifact("color_grade", "output_path", "render_video", "audio_mix", "video"),
+					artifact("audio_mix", "output", "render_video", "output_review", "input")),
+				"wikimedia", "kind", "video")),
 		method("explainer", "Explainer", "Text-, metric-, and supplied-media-led explanation.", "explainer",
 			route("local-explainer", "Local Remotion explainer", "Compose supplied script and visuals with the local renderer.",
 				inputs("script", "visuals"), "video_compose", []string{"video_compose", "output_review"},
@@ -151,6 +160,15 @@ func route(id, title, summary string, required []Input, entry string, operations
 		RequiredInputs: required, EntryOperation: entry,
 		Operations: operations, Bindings: bindings,
 	}
+}
+
+func requireRequestValue(route Route, operation, parameter, value string) Route {
+	route.RequestConstraints = append(route.RequestConstraints, RequestConstraint{
+		Operation: operation,
+		Parameter: parameter,
+		Equals:    value,
+	})
+	return route
 }
 
 func artifact(fromOperation, fromParameter, kind, toOperation, toParameter string) Binding {
@@ -253,6 +271,14 @@ func ValidateCatalog() error {
 			routeOperations := map[string]int{}
 			for index, operation := range route.Operations {
 				routeOperations[operation] = index
+			}
+			for _, constraint := range route.RequestConstraints {
+				if _, ok := routeOperations[constraint.Operation]; !ok {
+					return fmt.Errorf("method %q route %q constrains operation %q outside the route", method.ID, route.ID, constraint.Operation)
+				}
+				if strings.TrimSpace(constraint.Parameter) == "" || strings.TrimSpace(constraint.Equals) == "" {
+					return fmt.Errorf("method %q route %q has incomplete request constraint for %q", method.ID, route.ID, constraint.Operation)
+				}
 			}
 			requiredInputs := map[string]bool{}
 			for _, input := range route.RequiredInputs {

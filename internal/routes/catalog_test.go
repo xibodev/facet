@@ -186,6 +186,28 @@ func TestCatalogDeclaresEntryRequestsAndConstructibleBindings(t *testing.T) {
 	}
 }
 
+func TestWikimediaDocumentaryCatalogRequiresVideoRequests(t *testing.T) {
+	method, ok := Find("documentary-cinematic")
+	if !ok {
+		t.Fatal("documentary-cinematic method is missing")
+	}
+	for _, route := range method.Routes {
+		if route.ID != "wikimedia-documentary" {
+			continue
+		}
+		want := []RequestConstraint{{
+			Operation: "wikimedia",
+			Parameter: "kind",
+			Equals:    "video",
+		}}
+		if !reflect.DeepEqual(route.RequestConstraints, want) {
+			t.Fatalf("Wikimedia route constraints = %#v, want %#v", route.RequestConstraints, want)
+		}
+		return
+	}
+	t.Fatal("wikimedia-documentary route is missing")
+}
+
 func TestEntryRequestRequiresCanonicalShapeBeforeEstimate(t *testing.T) {
 	methods := []Method{{
 		ID: "explainer", Title: "Explainer", Pack: "explainer",
@@ -211,6 +233,77 @@ func TestEntryRequestRequiresCanonicalShapeBeforeEstimate(t *testing.T) {
 	}
 	if len(route.InvalidOperationRequests) != 1 || route.InvalidOperationRequests[0].Operation != "video_compose" {
 		t.Fatalf("malformed cuts were not rejected by canonical schema: %#v", route.InvalidOperationRequests)
+	}
+}
+
+func TestWikimediaDocumentaryRequiresExplicitVideoKind(t *testing.T) {
+	methods := []Method{{
+		ID: "documentary-cinematic", Title: "Documentary", Pack: "cinematic",
+		Routes: []Route{
+			requireRequestValue(
+				route(
+					"wikimedia-documentary",
+					"Wikimedia documentary",
+					"Use Wikimedia video in a documentary.",
+					nil,
+					"wikimedia",
+					[]string{"wikimedia"},
+				),
+				"wikimedia",
+				"kind",
+				"video",
+			),
+		},
+	}}
+	operations := operationMap([]toolbox.V2Operation{{ID: "wikimedia", Produces: []string{"render_video"}}})
+	for _, kind := range []string{"", "image", "any"} {
+		name := kind
+		if name == "" {
+			name = "missing"
+		}
+		t.Run(name, func(t *testing.T) {
+			entryRequest := map[string]any{
+				"query":       "ocean",
+				"output_path": "stock.bin",
+			}
+			if kind != "" {
+				entryRequest["kind"] = kind
+			}
+			raw, err := json.Marshal(entryRequest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := assess(methods, operations, Request{
+				Method: "documentary-cinematic",
+				OperationRequests: map[string]json.RawMessage{
+					"wikimedia": raw,
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			route := got.Methods[0].Routes[0]
+			if route.Status != StatusConditional {
+				t.Fatalf("kind %q status = %q, want conditional: %#v", kind, route.Status, route)
+			}
+			if len(route.InvalidOperationRequests) != 1 {
+				t.Fatalf("kind %q did not violate route constraint: %#v", kind, route.InvalidOperationRequests)
+			}
+		})
+	}
+
+	got, err := assess(methods, operations, Request{
+		Method: "documentary-cinematic",
+		OperationRequests: map[string]json.RawMessage{
+			"wikimedia": json.RawMessage(`{"query":"ocean","kind":"video","output_path":"stock.mp4"}`),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := got.Methods[0].Routes[0]
+	if route.Status != StatusFeasible || len(route.InvalidOperationRequests) != 0 {
+		t.Fatalf("explicit video request was not feasible: %#v", route)
 	}
 }
 
