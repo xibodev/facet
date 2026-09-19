@@ -7,13 +7,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
 
 var expectedToolNames = []string{
 	"audio_mix",
-	"audio_mixer",
 	"audio_probe",
 	"color_grade",
 	"direct_clip_search",
@@ -21,7 +21,6 @@ var expectedToolNames = []string{
 	"elevenlabs_tts",
 	"flux_image",
 	"frame_sample",
-	"frame_sampler",
 	"gflow_image",
 	"gflow_video",
 	"hyperframes_compose",
@@ -623,11 +622,13 @@ func TestAllToolEstimates(t *testing.T) {
 func TestToolAliasesAndInlineJSON(t *testing.T) {
 	// 1. Test alias mapping in describe
 	for alias, expected := range map[string]string{
-		"edgetts": "edge_tts",
-		"edit":    "source_edit",
-		"probe":   "media_probe",
-		"review":  "output_review",
-		"compose": "video_compose",
+		"audio_mixer":   "audio_mix",
+		"edgetts":       "edge_tts",
+		"edit":          "source_edit",
+		"frame_sampler": "frame_sample",
+		"probe":         "media_probe",
+		"review":        "output_review",
+		"compose":       "video_compose",
 	} {
 		env, ok := CLI([]string{"tools", "describe", alias})
 		if !ok || !env.OK {
@@ -638,9 +639,25 @@ func TestToolAliasesAndInlineJSON(t *testing.T) {
 		}
 	}
 
+	// Compatibility aliases remain invokable with their legacy request shape,
+	// but the envelope identifies the canonical operation.
+	dir := t.TempDir()
+	input := filepath.Join(dir, "input.mp4")
+	if err := os.WriteFile(input, []byte("not decoded during estimate"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	legacyFrameRequest := `{"input_path":` + strconv.Quote(input) + `,"strategy":"count","count":2,"output_dir":` + strconv.Quote(filepath.Join(dir, "frames")) + `}`
+	env, ok := CLI([]string{"tools", "estimate", "frame_sampler", "--input", legacyFrameRequest})
+	if !ok || !env.OK {
+		t.Fatalf("estimate through compatibility alias failed: %#v", env)
+	}
+	if env.Tool != "frame_sample" {
+		t.Fatalf("compatibility alias reported %q, want canonical frame_sample", env.Tool)
+	}
+
 	// 2. Test inline JSON execution for estimate
 	inlineJSON := `{"text": "Hello world from inline json", "output": "narration/test.mp3"}`
-	env, ok := CLI([]string{"tools", "estimate", "edgetts", "--input", inlineJSON})
+	env, ok = CLI([]string{"tools", "estimate", "edgetts", "--input", inlineJSON})
 	if !ok || !env.OK {
 		t.Fatalf("estimate with inline JSON failed: %#v", env)
 	}

@@ -33,7 +33,7 @@ The current tracked product inventory is intentionally small:
 | Creative boundary | `agents/facet-creative.md` | 1 file | Separates agent judgment from Facet execution |
 | Guidance packs | `packs/` | 7 packs, 23 files | Compact method-specific guidance and package metadata |
 | Tool schemas | `schemas/tools/` | 6 files | Stateless request contracts for tools that need shipped schemas |
-| Public tools | `internal/toolbox/` registry | 35 tools | Live executable capability vocabulary |
+| Public tools | `internal/toolbox/` registry | 33 canonical tools | Live executable capability vocabulary; compatibility aliases are invocation-only |
 | Remotion composer | `remotion-composer/src/` | 5 files, 1 composition | Independently authored Facet explainer renderer |
 
 The seven guidance packs are `character-animation`, `cinematic`, `explainer`,

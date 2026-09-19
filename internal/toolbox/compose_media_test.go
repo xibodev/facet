@@ -167,7 +167,7 @@ fs.copyFileSync('../source.mp4', process.argv[5]);
 			composeDeliveryMedia(t, filepath.Join(workspace, "tone.wav"), true)
 			composeRuntimeFixture(t, filepath.Join(workspace, ".env"), "secret")
 			composeRuntimeFixture(t, filepath.Join(workspace, ".remotion_props.json"), "user-owned props")
-			props := map[string]any{"cuts": []any{map[string]any{"type": "media", "source": "source.mp4", "media_kind": "video"}}, "audio": map[string]any{"narration": map[string]any{"src": composeMediaFileURL(filepath.Join(workspace, "tone.wav"))}}}
+			props := map[string]any{"cuts": []any{map[string]any{"type": "media", "source": "source.mp4", "media_kind": "video", "in_seconds": 0.0, "out_seconds": 1.0}}, "audio": map[string]any{"narration": map[string]any{"src": composeMediaFileURL(filepath.Join(workspace, "tone.wav"))}}}
 			before, _ := json.Marshal(props)
 			_, _, err := doRemotionRender(composeRequest{RawProps: props}, filepath.Join(workspace, "output.mp4"), 15*time.Second)
 			if (err != nil) != fail {

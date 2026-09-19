@@ -11,8 +11,8 @@ import "sort"
 // chargeability and in determinism — and a projection is exactly where it
 // would reappear, because the two layers look independent.
 //
-// The tool NAME is the Operation ID. All 35 public names are unchanged: v2 adds
-// a semantic layer beside the v1 surface, it does not rename anything.
+// The canonical tool NAME is the Operation ID. Compatibility aliases are
+// invocation-only and do not become duplicate Operations in the semantic layer.
 
 // V2Effects is an Operation's declared effects.
 //
@@ -179,7 +179,7 @@ func v2RequirementsFor(tool string) []V2Requirement {
 }
 
 // EstimatedCostKnown reports whether a NUMERIC cost amount is known for a
-// tool, which is the only thing cost_known means.
+// canonical tool, which is the only thing cost_known means.
 //
 // Exported so conformance can assert the projection reads THIS rather than
 // inferring from may_charge. In Facet's current tool set the two are exact
@@ -191,8 +191,8 @@ func EstimatedCostKnown(tool string) bool { return executionFor(tool).EstimatedC
 // NetworkFor and ExternalWriteFor expose the canonical per-tool effects so a
 // PROJECTION can derive its pessimistic union instead of restating it.
 //
-// Exported for exactly that reason: a capability that dispatches any of 35
-// tools must declare the worst case any of them can do, and a hardcoded
+// Exported for exactly that reason: a capability that dispatches any canonical
+// tool must declare the worst case any of them can do, and a hardcoded
 // literal there is a second effects table waiting to drift.
 func NetworkFor(tool string) bool       { return executionFor(tool).Network }
 func ExternalWriteFor(tool string) bool { return externalWriteFor(tool, "run") }

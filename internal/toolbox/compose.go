@@ -142,6 +142,13 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 	if err := json.Unmarshal(data, &rawMap); err == nil && rawMap != nil {
 		// 1. Direct Remotion Explainer props (contains top-level "cuts")
 		if cutsRaw, hasCuts := rawMap["cuts"].([]any); hasCuts && len(cutsRaw) > 0 {
+			cuts, err := explainerCutsFromAny(cutsRaw, "cut")
+			if err != nil {
+				return nil, nil, err
+			}
+			if err := validateExplainerCuts(cuts); err != nil {
+				return nil, nil, err
+			}
 			outPath := "renders/final.mp4"
 			if o, ok := rawMap["output"].(string); ok && strings.TrimSpace(o) != "" {
 				outPath = strings.TrimSpace(o)
@@ -154,11 +161,9 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 			}
 			if op == "estimate" {
 				last := 0.0
-				for _, c := range cutsRaw {
-					if cm, ok := c.(map[string]any); ok {
-						if v, ok := cm["out_seconds"].(float64); ok && v > last {
-							last = v
-						}
+				for _, cut := range cuts {
+					if v, ok := cut["out_seconds"].(float64); ok && v > last {
+						last = v
 					}
 				}
 				f, w, h := renderShape(rawMap, last)
@@ -168,11 +173,9 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 			// explicit duration.
 			if _, given := rawMap["duration_seconds"]; !given {
 				last := 0.0
-				for _, c := range cutsRaw {
-					if cm, ok := c.(map[string]any); ok {
-						if v, ok := cm["out_seconds"].(float64); ok && v > last {
-							last = v
-						}
+				for _, cut := range cuts {
+					if v, ok := cut["out_seconds"].(float64); ok && v > last {
+						last = v
 					}
 				}
 				if last > 0 {
@@ -202,6 +205,17 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 
 		// 2. Direct Scene Plan JSON (contains top-level "scenes")
 		if scenesRaw, hasScenes := rawMap["scenes"].([]any); hasScenes && len(scenesRaw) > 0 {
+			scenes, err := explainerCutsFromAny(scenesRaw, "scene")
+			if err != nil {
+				return nil, nil, err
+			}
+			cuts := make([]map[string]any, 0, len(scenes))
+			for _, scene := range scenes {
+				cuts = append(cuts, mapSceneToCut(scene))
+			}
+			if err := validateExplainerCuts(cuts); err != nil {
+				return nil, nil, err
+			}
 			outPath := "renders/final.mp4"
 			if o, ok := rawMap["output"].(string); ok && strings.TrimSpace(o) != "" {
 				outPath = strings.TrimSpace(o)
@@ -214,11 +228,9 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 			}
 			if op == "estimate" {
 				last := 0.0
-				for _, sc := range scenesRaw {
-					if sm, ok := sc.(map[string]any); ok {
-						if v, ok := sm["end_seconds"].(float64); ok && v > last {
-							last = v
-						}
+				for _, scene := range scenes {
+					if v, ok := scene["end_seconds"].(float64); ok && v > last {
+						last = v
 					}
 				}
 				f, w, h := renderShape(rawMap, last)
@@ -242,12 +254,6 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 			// accepts any other property, so a caller has no way to learn
 			// which fields survive. Carrying them through is the only
 			// behaviour consistent with what the schema accepts.
-			cuts := make([]map[string]any, 0, len(scenesRaw))
-			for _, s := range scenesRaw {
-				if sm, ok := s.(map[string]any); ok {
-					cuts = append(cuts, mapSceneToCut(sm))
-				}
-			}
 			remotionProps := map[string]any{
 				"cuts": cuts,
 			}
@@ -839,11 +845,35 @@ var cutRequirements = map[string][]string{
 	"media":      {"source", "media_kind"},
 }
 
+func explainerCutsFromAny(items []any, label string) ([]map[string]any, error) {
+	cuts := make([]map[string]any, 0, len(items))
+	for i, item := range items {
+		cut, ok := item.(map[string]any)
+		if !ok {
+			return nil, failure("invalid_request", fmt.Sprintf("%s %d must be an object", label, i), nil)
+		}
+		cuts = append(cuts, cut)
+	}
+	return cuts, nil
+}
+
 func validateExplainerCuts(cuts []map[string]any) error {
 	if len(cuts) == 0 {
 		return failure("invalid_request", "Explainer cuts must be a nonempty array", nil)
 	}
 	for i, cut := range cuts {
+		start, startOK := cut["in_seconds"].(float64)
+		end, endOK := cut["out_seconds"].(float64)
+		if !startOK || !finite(start) {
+			return failure("invalid_request", fmt.Sprintf("cut %d requires finite in_seconds", i), nil)
+		}
+		if !endOK || !finite(end) {
+			return failure("invalid_request", fmt.Sprintf("cut %d requires finite out_seconds", i), nil)
+		}
+		if start < 0 || end <= start {
+			return failure("invalid_request", fmt.Sprintf(
+				"cut %d must satisfy 0 <= in_seconds < out_seconds", i), nil)
+		}
 		kind, _ := cut["type"].(string)
 		required, known := cutRequirements[kind]
 		if !known {

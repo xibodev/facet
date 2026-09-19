@@ -53,7 +53,7 @@ Every package measured against one question:
 
 | Package | LOC | Verdict |
 |---|---|---|
-| `internal/toolbox` | 10331 | **DOMAIN.** 35 tools, Operations, effects, provider integrations, media implementations. The product. |
+| `internal/toolbox` | 10331 | **DOMAIN.** 33 canonical tools, compatibility aliases, Operations, effects, provider integrations, media implementations. The product. |
 | `internal/module` | 3492 | **DOMAIN.** The v2 projection — how Facet declares its semantics to a host. |
 | `internal/studio/projects.go` | 1211 | **DOMAIN.** Production workspace knowledge: renders, narration, artifact stages, evidence scanning. |
 | `internal/studio/server.go` | 1011 | **MIXED.** Static UI serving and media endpoints are domain; session token plumbing exists only to drive subprocess CLIs. |

@@ -1,12 +1,15 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/xibodev/facet/internal/toolbox"
 )
 
 // Run the actual entry point in a child so exit codes and accidental writes are tested.
@@ -82,6 +85,18 @@ func TestHelpAndInvalidInputsDoNotWrite(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestHelpDerivesCanonicalToolCount(t *testing.T) {
+	dir, home := t.TempDir(), t.TempDir()
+	out, code := runCLI(t, dir, home, "", "--help")
+	if code != 0 {
+		t.Fatalf("help exit=%d output=%s", code, out)
+	}
+	want := fmt.Sprintf("and %d tools", len(toolbox.Names()))
+	if !strings.Contains(out, want) {
+		t.Fatalf("help output does not contain live canonical count %q:\n%s", want, out)
 	}
 }
 
