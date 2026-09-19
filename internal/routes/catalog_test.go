@@ -229,6 +229,158 @@ func TestWikimediaDocumentaryCatalogRequiresVideoRequests(t *testing.T) {
 	t.Fatal("wikimedia-documentary route is missing")
 }
 
+func TestEdgeDubLocalizationUsesRealReplacementAudioContract(t *testing.T) {
+	method, ok := Find("localization")
+	if !ok {
+		t.Fatal("localization method is missing")
+	}
+	for _, route := range method.Routes {
+		if route.ID != "edge-dub-localization" {
+			continue
+		}
+		wantOperations := []string{"edge_tts", "source_edit", "output_review"}
+		if !reflect.DeepEqual(route.Operations, wantOperations) {
+			t.Fatalf("edge dub operations = %v, want %v", route.Operations, wantOperations)
+		}
+		for _, binding := range route.Bindings {
+			if binding.FromOperation != "edge_tts" {
+				continue
+			}
+			if binding.ArtifactKind != "narration" ||
+				binding.ToOperation != "source_edit" ||
+				binding.ToParameter != "replacement_audio" ||
+				binding.TargetSemantics != BindingTargetExact {
+				t.Fatalf("edge narration binding is not a real replacement-audio contract: %#v", binding)
+			}
+			return
+		}
+		t.Fatal("edge dub route has no narration artifact binding")
+	}
+	t.Fatal("edge-dub-localization route is missing")
+}
+
+func TestEdgeDubLocalizationCanBeFeasible(t *testing.T) {
+	method, ok := Find("localization")
+	if !ok {
+		t.Fatal("localization method is missing")
+	}
+	var edgeDub Route
+	for _, route := range method.Routes {
+		if route.ID == "edge-dub-localization" {
+			edgeDub = route
+			break
+		}
+	}
+	if edgeDub.ID == "" {
+		t.Fatal("edge-dub-localization route is missing")
+	}
+
+	dir := t.TempDir()
+	source := filepath.Join(dir, "source.mp4")
+	if err := os.WriteFile(source, []byte("shape-only"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	narration := filepath.Join(dir, "voice.mp3")
+	output := filepath.Join(dir, "dubbed.mp4")
+	sourceRequest := sourceEditRequest(source, output)
+	var sourcePayload map[string]any
+	if err := json.Unmarshal(sourceRequest, &sourcePayload); err != nil {
+		t.Fatal(err)
+	}
+	sourcePayload["replacement_audio"] = narration
+	sourceRequest, _ = json.Marshal(sourcePayload)
+
+	got, err := assess(
+		[]Method{{ID: method.ID, Title: method.Title, Pack: method.Pack, Routes: []Route{edgeDub}}},
+		operationMap([]toolbox.V2Operation{
+			{ID: "edge_tts", Produces: []string{"narration"}},
+			{ID: "source_edit", Produces: []string{"render_video"}},
+			{ID: "output_review"},
+		}),
+		Request{
+			Method: "localization",
+			Inputs: map[string]json.RawMessage{
+				"source_media":      json.RawMessage(mustJSONString(t, source)),
+				"translated_script": json.RawMessage(`"Hola mundo"`),
+			},
+			OperationRequests: map[string]json.RawMessage{
+				"edge_tts":      json.RawMessage(`{"text":"Hola mundo","output_path":` + mustJSONString(t, narration) + `}`),
+				"source_edit":   sourceRequest,
+				"output_review": json.RawMessage(`{"input":` + mustJSONString(t, output) + `}`),
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := got.Methods[0].Routes[0]
+	if route.Status != StatusFeasible {
+		t.Fatalf("honest edge dub route was not feasible: %#v", route)
+	}
+	for _, binding := range route.Bindings {
+		if !binding.Constructible {
+			t.Fatalf("edge dub binding was not constructible: %#v", binding)
+		}
+	}
+}
+
+func TestAllValuesCatalogBindingsAcceptScalarAndArrayFiles(t *testing.T) {
+	tests := []struct {
+		method string
+		route  string
+		input  string
+	}{
+		{method: "animation", route: "remotion-animation", input: "visual_assets"},
+		{method: "character-animation", route: "character-remotion", input: "character_assets"},
+		{method: "explainer", route: "local-explainer", input: "visuals"},
+		{method: "product-demo", route: "synthetic-product-demo", input: "visual_assets"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.route, func(t *testing.T) {
+			method, ok := Find(tc.method)
+			if !ok {
+				t.Fatalf("method %s is missing", tc.method)
+			}
+			var binding Binding
+			for _, route := range method.Routes {
+				if route.ID != tc.route {
+					continue
+				}
+				for _, candidate := range route.Bindings {
+					if candidate.FromInput == tc.input {
+						binding = candidate
+						break
+					}
+				}
+			}
+			if binding.TargetSemantics != BindingTargetAllValues {
+				t.Fatalf("%s input binding = %#v", tc.route, binding)
+			}
+			oneCut := json.RawMessage(`{"cuts":[{
+				"type":"media","source":"one.png","media_kind":"image",
+				"in_seconds":0,"out_seconds":1
+			}]}`)
+			if !bindingValuesMatch(binding, json.RawMessage(`"one.png"`), oneCut) {
+				t.Fatal("scalar file was not normalized to a singleton binding set")
+			}
+			if bindingValuesMatch(binding, json.RawMessage(`"other.png"`), oneCut) {
+				t.Fatal("mismatched scalar file satisfied all-values binding")
+			}
+
+			twoCuts := json.RawMessage(`{"cuts":[
+				{"type":"media","source":"one.png","media_kind":"image","in_seconds":0,"out_seconds":1},
+				{"type":"media","source":"two.png","media_kind":"image","in_seconds":1,"out_seconds":2}
+			]}`)
+			if !bindingValuesMatch(binding, json.RawMessage(`["one.png","two.png"]`), twoCuts) {
+				t.Fatal("file array did not satisfy all-values binding")
+			}
+			if bindingValuesMatch(binding, json.RawMessage(`["one.png","missing.png"]`), twoCuts) {
+				t.Fatal("partially consumed file array satisfied all-values binding")
+			}
+		})
+	}
+}
+
 func TestEntryRequestRequiresCanonicalShapeBeforeEstimate(t *testing.T) {
 	methods := []Method{{
 		ID: "explainer", Title: "Explainer", Pack: "explainer",

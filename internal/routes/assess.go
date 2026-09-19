@@ -379,7 +379,10 @@ func bindingValuesMatch(binding Binding, source, targetRequest json.RawMessage) 
 		}
 	case BindingTargetAllValues:
 		sources, ok := sourceValue.([]any)
-		if !ok || len(sources) == 0 {
+		if !ok {
+			sources = []any{sourceValue}
+		}
+		if len(sources) == 0 {
 			return false
 		}
 		targets := requestValues(targetRequest, binding.ToParameter)
