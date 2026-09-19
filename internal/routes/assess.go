@@ -196,7 +196,10 @@ func assessRoute(route Route, operations map[string]toolbox.V2Operation, request
 			operationRequests[operation.ID] = operationRequest
 			var err error
 			if operation.ID == route.EntryOperation {
-				err = toolbox.ValidateRequest(operation.ID, operationRequest)
+				err = toolbox.ValidateRequestShape(operation.ID, operationRequest)
+				if err == nil {
+					err = toolbox.ValidateRequest(operation.ID, operationRequest)
+				}
 			} else {
 				err = toolbox.ValidateRequestShape(operation.ID, operationRequest)
 			}
@@ -271,9 +274,9 @@ func assessRoute(route Route, operations map[string]toolbox.V2Operation, request
 			if !operationReady[binding.ToOperation] || !present {
 				item.Constructible = false
 				item.Reason = "target operation " + binding.ToOperation + " has no valid request with " + binding.ToParameter
-			} else if !bindingValuesMatch(sourceValue, targetValue) {
+			} else if !bindingValuesMatch(binding, sourceValue, targetValue) {
 				item.Constructible = false
-				item.Reason = "target parameter does not reference the bound source value"
+				item.Reason = "target parameter does not consume the bound source value with " + binding.TargetSemantics + " semantics"
 			}
 		}
 		if !item.Constructible {
@@ -308,28 +311,43 @@ func requestField(data json.RawMessage, field string) (json.RawMessage, bool) {
 	return current, true
 }
 
-func bindingValuesMatch(source, target json.RawMessage) bool {
+func bindingValuesMatch(binding Binding, source, target json.RawMessage) bool {
 	var sourceValue, targetValue any
 	if json.Unmarshal(source, &sourceValue) != nil || json.Unmarshal(target, &targetValue) != nil {
 		return false
 	}
-	return containsJSONValue(targetValue, sourceValue)
-}
-
-func containsJSONValue(candidate, wanted any) bool {
-	if reflect.DeepEqual(candidate, wanted) {
-		return true
-	}
-	switch value := candidate.(type) {
-	case []any:
-		for _, child := range value {
-			if containsJSONValue(child, wanted) {
+	switch binding.TargetSemantics {
+	case BindingTargetExact:
+		return reflect.DeepEqual(targetValue, sourceValue)
+	case BindingTargetArrayItem:
+		values, ok := targetValue.([]any)
+		if !ok {
+			return false
+		}
+		for _, value := range values {
+			if reflect.DeepEqual(value, sourceValue) {
 				return true
 			}
 		}
-	case map[string]any:
-		for _, child := range value {
-			if containsJSONValue(child, wanted) {
+	case BindingTargetVideoComposeMediaSource:
+		sourcePath, ok := sourceValue.(string)
+		if !ok || strings.TrimSpace(sourcePath) == "" {
+			return false
+		}
+		mediaKind := "video"
+		if binding.ArtifactKind == "image" {
+			mediaKind = "image"
+		}
+		cuts, ok := targetValue.([]any)
+		if !ok {
+			return false
+		}
+		for _, value := range cuts {
+			cut, ok := value.(map[string]any)
+			if !ok || cut["type"] != "media" || cut["media_kind"] != mediaKind {
+				continue
+			}
+			if cut["source"] == sourcePath {
 				return true
 			}
 		}

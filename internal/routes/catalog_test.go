@@ -167,6 +167,9 @@ func TestCatalogDeclaresEntryRequestsAndConstructibleBindings(t *testing.T) {
 			targeted := map[string]bool{}
 			for _, binding := range route.Bindings {
 				targeted[binding.ToOperation] = true
+				if binding.TargetSemantics == "" {
+					t.Errorf("%s/%s binding to %s.%s has no target semantics", method.ID, route.ID, binding.ToOperation, binding.ToParameter)
+				}
 				if binding.FromOperation != "" {
 					source := operations[binding.FromOperation]
 					if !routeContains(source.Produces, binding.ArtifactKind) {
@@ -180,6 +183,34 @@ func TestCatalogDeclaresEntryRequestsAndConstructibleBindings(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestEntryRequestRequiresCanonicalShapeBeforeEstimate(t *testing.T) {
+	methods := []Method{{
+		ID: "explainer", Title: "Explainer", Pack: "explainer",
+		Routes: []Route{{
+			ID:             "local-explainer",
+			Title:          "Local explainer",
+			EntryOperation: "video_compose",
+			Operations:     []string{"video_compose"},
+		}},
+	}}
+	got, err := assess(methods, operationMap([]toolbox.V2Operation{{ID: "video_compose"}}), Request{
+		Method: "explainer",
+		OperationRequests: map[string]json.RawMessage{
+			"video_compose": json.RawMessage(`{"cuts":[{}]}`),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := got.Methods[0].Routes[0]
+	if route.Status != StatusConditional {
+		t.Fatalf("malformed entry request status = %q, want conditional: %#v", route.Status, route)
+	}
+	if len(route.InvalidOperationRequests) != 1 || route.InvalidOperationRequests[0].Operation != "video_compose" {
+		t.Fatalf("malformed cuts were not rejected by canonical schema: %#v", route.InvalidOperationRequests)
 	}
 }
 
@@ -431,6 +462,81 @@ func TestDownstreamRequestsAndBindingsRemainConditionalUntilSupplied(t *testing.
 	}
 }
 
+func TestVideoComposeArtifactMustBeAMediaCutSource(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "clip.mp4")
+	output := filepath.Join(dir, "edited.mp4")
+	if err := os.WriteFile(source, []byte("shape-only"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	operations := operationMap([]toolbox.V2Operation{
+		{ID: "source_edit", Produces: []string{"render_video"}},
+		{ID: "video_compose"},
+	})
+	methods := []Method{{
+		ID: "animation", Title: "Animation", Pack: "explainer",
+		Routes: []Route{{
+			ID:             "source-animation",
+			Title:          "Source animation",
+			EntryOperation: "source_edit",
+			Operations:     []string{"source_edit", "video_compose"},
+			Bindings: []Binding{mediaCutArtifact(
+				"source_edit", "output", "render_video", "video_compose", "cuts",
+			)},
+		}},
+	}}
+	request := Request{
+		Method: "animation",
+		OperationRequests: map[string]json.RawMessage{
+			"source_edit": sourceEditRequest(source, output),
+			"video_compose": json.RawMessage(`{"cuts":[{
+				"type":"text_card","text":` + mustJSONString(t, output) + `,
+				"in_seconds":0,"out_seconds":1
+			}]}`),
+		},
+	}
+	got, err := assess(methods, operations, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := got.Methods[0].Routes[0]
+	if route.Status != StatusConditional || route.Bindings[0].Constructible {
+		t.Fatalf("unrelated text reference satisfied media binding: %#v", route)
+	}
+
+	request.OperationRequests["video_compose"] = json.RawMessage(`{"cuts":[{
+		"type":"media","source":` + mustJSONString(t, output) + `,"media_kind":"video",
+		"in_seconds":0,"out_seconds":1
+	}]}`)
+	got, err = assess(methods, operations, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route = got.Methods[0].Routes[0]
+	if route.Status != StatusFeasible || !route.Bindings[0].Constructible {
+		t.Fatalf("media cut source did not satisfy binding: %#v", route)
+	}
+}
+
+func TestVideoComposeMediaBindingRequiresMatchingArtifactKind(t *testing.T) {
+	binding := mediaCutArtifact("image_generator", "output_path", "image", "video_compose", "cuts")
+	source := json.RawMessage(`"generated.png"`)
+	videoCut := json.RawMessage(`[{
+		"type":"media","source":"generated.png","media_kind":"video",
+		"in_seconds":0,"out_seconds":1
+	}]`)
+	if bindingValuesMatch(binding, source, videoCut) {
+		t.Fatal("image artifact matched a video media cut")
+	}
+	imageCut := json.RawMessage(`[{
+		"type":"media","source":"generated.png","media_kind":"image",
+		"in_seconds":0,"out_seconds":1
+	}]`)
+	if !bindingValuesMatch(binding, source, imageCut) {
+		t.Fatal("image artifact did not match an image media cut source")
+	}
+}
+
 func sourceEditRequest(input, output string) json.RawMessage {
 	raw, _ := json.Marshal(map[string]any{
 		"segments": []map[string]any{{"input": input, "start": 0, "end": 1}},
@@ -442,6 +548,15 @@ func sourceEditRequest(input, output string) json.RawMessage {
 		"output": output,
 	})
 	return raw
+}
+
+func mustJSONString(t *testing.T, value string) string {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
 }
 
 func routeContains(values []string, value string) bool {

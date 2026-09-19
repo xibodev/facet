@@ -14,6 +14,10 @@ const (
 	StatusFeasible    = "feasible"
 	StatusConditional = "conditional"
 	StatusUnavailable = "unavailable"
+
+	BindingTargetExact                   = "exact"
+	BindingTargetArrayItem               = "array_item"
+	BindingTargetVideoComposeMediaSource = "video_compose_media_cut_source"
 )
 
 type Input struct {
@@ -23,12 +27,13 @@ type Input struct {
 }
 
 type Binding struct {
-	FromInput     string `json:"from_input,omitempty"`
-	FromOperation string `json:"from_operation,omitempty"`
-	FromParameter string `json:"from_parameter,omitempty"`
-	ArtifactKind  string `json:"artifact_kind,omitempty"`
-	ToOperation   string `json:"to_operation"`
-	ToParameter   string `json:"to_parameter"`
+	FromInput       string `json:"from_input,omitempty"`
+	FromOperation   string `json:"from_operation,omitempty"`
+	FromParameter   string `json:"from_parameter,omitempty"`
+	ArtifactKind    string `json:"artifact_kind,omitempty"`
+	ToOperation     string `json:"to_operation"`
+	ToParameter     string `json:"to_parameter"`
+	TargetSemantics string `json:"target_semantics"`
 }
 
 type Route struct {
@@ -60,7 +65,7 @@ func Catalog() []Method {
 				artifact("video_compose", "output", "render_video", "output_review", "input")),
 			route("openai-image-animation", "OpenAI-assisted animation", "Generate still visuals with the explicitly named provider, then animate locally.",
 				inputs("script"), "openai_image", []string{"openai_image", "video_compose", "output_review"},
-				artifact("openai_image", "output_path", "image", "video_compose", "cuts"),
+				mediaCutArtifact("openai_image", "output_path", "image", "video_compose", "cuts"),
 				artifact("video_compose", "output", "render_video", "output_review", "input"))),
 		method("avatar", "Avatar", "Presenter-led and consented avatar productions.", "talking-head",
 			route("supplied-avatar-edit", "Supplied avatar edit", "Edit supplied presenter or avatar footage without generating an identity.",
@@ -91,7 +96,7 @@ func Catalog() []Method {
 				artifact("audio_mix", "output", "render_video", "output_review", "input")),
 			route("wikimedia-documentary", "Wikimedia-augmented documentary", "Search the explicitly named public archive before local assembly.",
 				inputs("research_query"), "wikimedia", []string{"wikimedia", "video_stitch", "color_grade", "audio_mix", "output_review"},
-				artifact("wikimedia", "output_path", "render_video", "video_stitch", "clips"),
+				arrayItemArtifact("wikimedia", "output_path", "render_video", "video_stitch", "clips"),
 				artifact("video_stitch", "output_path", "render_video", "color_grade", "input_path"),
 				artifact("color_grade", "output_path", "render_video", "audio_mix", "video"),
 				artifact("audio_mix", "output", "render_video", "output_review", "input"))),
@@ -101,7 +106,7 @@ func Catalog() []Method {
 				artifact("video_compose", "output", "render_video", "output_review", "input")),
 			route("flux-image-explainer", "FLUX-assisted explainer", "Generate stills with the explicitly named provider, then compose locally.",
 				inputs("script"), "flux_image", []string{"flux_image", "video_compose", "output_review"},
-				artifact("flux_image", "output_path", "image", "video_compose", "cuts"),
+				mediaCutArtifact("flux_image", "output_path", "image", "video_compose", "cuts"),
 				artifact("video_compose", "output", "render_video", "output_review", "input"))),
 		method("localization", "Localization", "Subtitle, dubbing, and localized variants of existing video.", "localization",
 			route("subtitle-localization", "Provided-translation subtitle route", "Create and burn supplied translated timed text.",
@@ -152,11 +157,27 @@ func artifact(fromOperation, fromParameter, kind, toOperation, toParameter strin
 	return Binding{
 		FromOperation: fromOperation, FromParameter: fromParameter, ArtifactKind: kind,
 		ToOperation: toOperation, ToParameter: toParameter,
+		TargetSemantics: BindingTargetExact,
 	}
 }
 
+func arrayItemArtifact(fromOperation, fromParameter, kind, toOperation, toParameter string) Binding {
+	binding := artifact(fromOperation, fromParameter, kind, toOperation, toParameter)
+	binding.TargetSemantics = BindingTargetArrayItem
+	return binding
+}
+
+func mediaCutArtifact(fromOperation, fromParameter, kind, toOperation, toParameter string) Binding {
+	binding := artifact(fromOperation, fromParameter, kind, toOperation, toParameter)
+	binding.TargetSemantics = BindingTargetVideoComposeMediaSource
+	return binding
+}
+
 func inputBinding(fromInput, toOperation, toParameter string) Binding {
-	return Binding{FromInput: fromInput, ToOperation: toOperation, ToParameter: toParameter}
+	return Binding{
+		FromInput: fromInput, ToOperation: toOperation, ToParameter: toParameter,
+		TargetSemantics: BindingTargetExact,
+	}
 }
 
 func inputs(names ...string) []Input {
@@ -241,6 +262,22 @@ func ValidateCatalog() error {
 			for _, binding := range route.Bindings {
 				if binding.ToParameter == "" || (binding.FromOperation != "" && binding.FromParameter == "") {
 					return fmt.Errorf("method %q route %q has incomplete binding parameters", method.ID, route.ID)
+				}
+				switch binding.TargetSemantics {
+				case BindingTargetExact:
+				case BindingTargetArrayItem:
+					if binding.ToOperation != "video_stitch" || binding.ToParameter != "clips" {
+						return fmt.Errorf("method %q route %q uses array-item semantics for unsupported target %s.%s", method.ID, route.ID, binding.ToOperation, binding.ToParameter)
+					}
+				case BindingTargetVideoComposeMediaSource:
+					if binding.ToOperation != "video_compose" || binding.ToParameter != "cuts" {
+						return fmt.Errorf("method %q route %q uses media-cut semantics for unsupported target %s.%s", method.ID, route.ID, binding.ToOperation, binding.ToParameter)
+					}
+					if binding.ArtifactKind != "image" && binding.ArtifactKind != "video" && binding.ArtifactKind != "render_video" {
+						return fmt.Errorf("method %q route %q uses media-cut semantics for unsupported artifact kind %q", method.ID, route.ID, binding.ArtifactKind)
+					}
+				default:
+					return fmt.Errorf("method %q route %q has unknown binding target semantics %q", method.ID, route.ID, binding.TargetSemantics)
 				}
 				targetIndex, targetExists := routeOperations[binding.ToOperation]
 				if !targetExists {
