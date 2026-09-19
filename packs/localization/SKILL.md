@@ -8,6 +8,8 @@ description: Produce translated subtitles, narration, and localized video varian
 Use this pack for an existing video's language variants. Confirm target locale,
 terminology, reading level, subtitle format, voice requirements, and whether
 timing may change.
+Assess `localization` against the source and human-reviewed translated text;
+Facet does not provide an implicit translation or voice provider.
 
 Work from an accurate transcript and timestamps. Preserve meaning rather than
 translating mechanically, fit subtitles to readable timing and safe regions,

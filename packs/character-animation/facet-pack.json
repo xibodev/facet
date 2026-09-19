@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Facet-owned guidance for character-led 2D animation.",
   "kind": "content",
+  "methods": ["character-animation"],
   "requirements": {
     "probes": ["facet.probe.ffmpeg.v1"]
   },

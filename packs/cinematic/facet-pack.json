@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Facet-owned guidance for source-led cinematic and documentary editing.",
   "kind": "content",
+  "methods": ["documentary-cinematic", "music-led", "source-edit"],
   "requirements": {
     "probes": ["facet.probe.ffmpeg.v1", "facet.probe.ffprobe.v1"]
   },

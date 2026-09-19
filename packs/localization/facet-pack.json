@@ -3,11 +3,12 @@
   "version": "1.0.0",
   "description": "Facet-owned guidance for subtitles, dubbing, and localized variants.",
   "kind": "content",
+  "methods": ["localization"],
   "requirements": {
     "probes": ["facet.probe.ffmpeg.v1"]
   },
   "declarations": {
-    "suggestedTools": ["edge_tts", "media_probe", "subtitle_burn", "audio_mix", "output_review"],
+    "suggestedTools": ["edge_tts", "media_probe", "subtitle_gen", "remotion_caption_burn", "audio_mix", "output_review"],
     "networkIntent": "provider-optional",
     "filesystemIntent": "project-local"
   },

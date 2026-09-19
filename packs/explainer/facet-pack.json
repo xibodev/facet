@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Facet-owned guidance for 2D explainers and motion graphics.",
   "kind": "content",
+  "methods": ["animation", "explainer"],
   "requirements": {
     "probes": ["facet.probe.ffmpeg.v1", "facet.probe.node.v1"],
     "runtimes": ["remotion"]

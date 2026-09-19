@@ -433,7 +433,7 @@ chmod +x "$PROJECT_STAGE/state/run-facet.sh"
 {
     printf '\n## This installation\n'
     printf -- '- Invoke Facet through `%s` followed by the normal arguments; use this launcher instead of bare facet in examples.\n' "$STATE/run-facet.sh"
-    printf -- '- Resolve packs/... under `%s`. Read a relevant pack SKILL.md on demand.\n' "$STATE"
+    printf -- '- Run `facet routes list` and `facet routes assess --input <json>` before choosing a method. Resolve packs/... under `%s` and read only the relevant pack SKILL.md.\n' "$STATE"
     printf -- '- Optional components: %s. Tools report missing media-provider configuration when used.\n' "${SELECTED[*]}"
     if has piper; then printf -- '- Piper model: `%s`.\n' "$VOICES/$(definition piper 4).onnx"; fi
     if has hyperframes; then printf -- '- Use `node "%s"` for pinned HyperFrames; avoid unpinned npx.\n' "$HF_ENTRY"; fi

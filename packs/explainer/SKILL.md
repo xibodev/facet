@@ -6,6 +6,8 @@ description: Produce reviewed 2D explainers and motion graphics with Facet and R
 # Explainer
 
 Use this pack for concise text-, metric-, and supplied-media-led explanation.
+Confirm the route with `facet routes describe explainer` and assess it against
+the actual script and visuals before choosing any optional provider.
 Confirm the thesis, audience, duration, format, and visual direction.
 Narration and music are optional.
 

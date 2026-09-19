@@ -3,11 +3,12 @@
   "version": "1.0.0",
   "description": "Facet-owned guidance for presenter-led and consented avatar video.",
   "kind": "content",
+  "methods": ["avatar"],
   "requirements": {
     "probes": ["facet.probe.ffmpeg.v1"]
   },
   "declarations": {
-    "suggestedTools": ["edge_tts", "media_probe", "edit", "audio_mix", "output_review"],
+    "suggestedTools": ["edge_tts", "media_probe", "source_edit", "audio_mix", "output_review"],
     "networkIntent": "provider-optional",
     "filesystemIntent": "project-local"
   },

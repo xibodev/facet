@@ -13,7 +13,8 @@ state.
 
 1. Understand the outcome, audience, format, supplied assets, rights, consent,
    and material constraints.
-2. Choose the smallest suitable method and read only the matching pack.
+2. Run `facet routes list`, then assess the relevant method against supplied
+   inputs and current constraints. Read only the matching pack.
 3. Explain meaningful quality, time, provider, and cost tradeoffs.
 4. Describe uncertain tools, estimate consequential work, execute, inspect the
    actual output, revise defects, and report provenance and limitations.
@@ -35,6 +36,9 @@ Prefer supplied assets and local operations when they satisfy the brief.
 
 ```sh
 facet version
+facet routes list
+facet routes describe explainer
+facet routes assess --input '{"method":"explainer","inputs":{"script":"approved","visuals":["supplied.png"]}}'
 facet tools list
 facet tools describe media_probe
 facet tools estimate video_compose --input request.json
@@ -42,9 +46,12 @@ facet tools run video_compose --input request.json
 facet tools run output_review --input review.json
 ```
 
-Use JSON request files and the live registry. `media_probe` accepts `input` or
-`input_path`; `frame_sample` uses a strategy object. Provider generation uses
-the specifically named Facet tool and must not be silently rerouted.
+Route assessment is advisory and stateless. It reports missing inputs, live
+operations, dependencies, network use, and charge effects; it never executes,
+persists workflow state, or selects a provider. Use JSON request files and the
+live tool registry. `media_probe` accepts `input` or `input_path`;
+`frame_sample` uses a strategy object. Provider generation uses the
+specifically named Facet tool and must not be silently rerouted.
 
 For Remotion, use nonempty `cuts` with flat scene fields and explicit timing.
 The explainer pack documents scene types and narrated timing. Estimates do not
