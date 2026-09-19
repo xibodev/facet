@@ -533,6 +533,24 @@ func TestMarkdownProductPathsDistinguishesTargetInstallRoots(t *testing.T) {
 	}
 }
 
+func TestCanonicalGuidanceRequiresExplicitOutputReviewExpectations(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("skills", "facet", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	for _, required := range []string{
+		"explicit expected profile",
+		"duration",
+		"audio presence",
+		"`assumed`",
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("canonical guidance does not explain output review expectation %q", required)
+		}
+	}
+}
+
 func checkPackPath(packDir, manifestPath, name string, violations *[]string) {
 	clean := filepath.Clean(filepath.FromSlash(name))
 	if name == "" || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {

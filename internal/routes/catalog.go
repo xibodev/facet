@@ -127,10 +127,9 @@ func Catalog() []Method {
 					artifact("audio_mix", "output", "render_video", "output_review", "input")),
 				"wikimedia", "kind", "video")),
 		method("explainer", "Explainer", "Text-, metric-, and supplied-media-led explanation.", "explainer",
-			route("local-explainer", "Local Remotion explainer", "Compose supplied script and visuals with the local renderer.",
-				inputs("script", "visuals"), "video_compose", []string{"video_compose", "output_review"},
-				inputTextSequence("script", "video_compose", "cuts[].text"),
-				inputAllValues("visuals", "video_compose", "cuts[].source"),
+			route("local-explainer", "Local Remotion explainer", "Compose an approved script with optional supplied visuals using the local renderer.",
+				inputs("script"), "video_compose", []string{"video_compose", "output_review"},
+				inputTextSequence("script", "video_compose", "cuts"),
 				artifact("video_compose", "output", "render_video", "output_review", "input")),
 			route("flux-image-explainer", "FLUX-assisted explainer", "Generate stills with the explicitly named provider, then compose locally.",
 				inputs("script"), "flux_image", []string{"flux_image", "video_compose", "output_review"},
@@ -378,7 +377,8 @@ func ValidateCatalog() error {
 					}
 				case BindingTargetTextSequence:
 					input, ok := requiredInputs[binding.FromInput]
-					if !ok || input.Kind != "text" || binding.ToOperation != "video_compose" || binding.ToParameter != "cuts[].text" {
+					if !ok || input.Kind != "text" || binding.ToOperation != "video_compose" ||
+						(binding.ToParameter != "cuts" && binding.ToParameter != "cuts[].text") {
 						return fmt.Errorf("method %q route %q has invalid text-sequence input binding to %s.%s", method.ID, route.ID, binding.ToOperation, binding.ToParameter)
 					}
 				case BindingTargetVideoComposeMediaSource:

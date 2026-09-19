@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/xibodev/facet/internal/toolbox"
 )
@@ -405,15 +406,8 @@ func bindingValuesMatch(binding Binding, source, targetRequest json.RawMessage) 
 		if !ok {
 			return false
 		}
-		var parts []string
-		for _, target := range requestValues(targetRequest, binding.ToParameter) {
-			var text string
-			if json.Unmarshal(target, &text) == nil && strings.TrimSpace(text) != "" {
-				parts = append(parts, text)
-			}
-		}
-		return strings.Join(strings.Fields(strings.Join(parts, " ")), " ") ==
-			strings.Join(strings.Fields(sourceText), " ")
+		return normalizeTextSequence(strings.Join(videoComposeText(targetRequest), " ")) ==
+			normalizeTextSequence(sourceText)
 	case BindingTargetVideoComposeMediaSource:
 		sourcePath, ok := sourceValue.(string)
 		if !ok || strings.TrimSpace(sourcePath) == "" {
@@ -443,6 +437,34 @@ func bindingValuesMatch(binding Binding, source, targetRequest json.RawMessage) 
 		}
 	}
 	return false
+}
+
+func videoComposeText(request json.RawMessage) []string {
+	var value struct {
+		Cuts []map[string]json.RawMessage `json:"cuts"`
+	}
+	if json.Unmarshal(request, &value) != nil {
+		return nil
+	}
+	var parts []string
+	for _, cut := range value.Cuts {
+		for _, field := range []string{"text", "subtitle", "stat", "label", "title"} {
+			var text string
+			if json.Unmarshal(cut[field], &text) == nil && strings.TrimSpace(text) != "" {
+				parts = append(parts, text)
+			}
+		}
+	}
+	return parts
+}
+
+func normalizeTextSequence(value string) string {
+	return strings.Join(strings.Fields(strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			return unicode.ToLower(r)
+		}
+		return ' '
+	}, value)), " ")
 }
 
 func requestValues(data json.RawMessage, path string) []json.RawMessage {
