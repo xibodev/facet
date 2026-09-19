@@ -273,11 +273,10 @@ func assessRoute(route Route, operations map[string]toolbox.V2Operation, request
 			item.Reason = "binding has no source"
 		}
 		if item.Constructible {
-			targetValue, present := requestField(operationRequests[binding.ToOperation], binding.ToParameter)
-			if !operationReady[binding.ToOperation] || !present {
+			if !operationReady[binding.ToOperation] {
 				item.Constructible = false
-				item.Reason = "target operation " + binding.ToOperation + " has no valid request with " + binding.ToParameter
-			} else if !bindingValuesMatch(binding, sourceValue, targetValue) {
+				item.Reason = "target operation " + binding.ToOperation + " has no valid request"
+			} else if !bindingValuesMatch(binding, sourceValue, operationRequests[binding.ToOperation]) {
 				item.Constructible = false
 				item.Reason = "target parameter does not consume the bound source value with " + binding.TargetSemantics + " semantics"
 			}
@@ -337,15 +336,31 @@ func requestField(data json.RawMessage, field string) (json.RawMessage, bool) {
 	return current, true
 }
 
-func bindingValuesMatch(binding Binding, source, target json.RawMessage) bool {
-	var sourceValue, targetValue any
-	if json.Unmarshal(source, &sourceValue) != nil || json.Unmarshal(target, &targetValue) != nil {
+func bindingValuesMatch(binding Binding, source, targetRequest json.RawMessage) bool {
+	var sourceValue any
+	if json.Unmarshal(source, &sourceValue) != nil {
 		return false
 	}
 	switch binding.TargetSemantics {
 	case BindingTargetExact:
+		target, present := requestField(targetRequest, binding.ToParameter)
+		if !present {
+			return false
+		}
+		var targetValue any
+		if json.Unmarshal(target, &targetValue) != nil {
+			return false
+		}
 		return reflect.DeepEqual(targetValue, sourceValue)
 	case BindingTargetArrayItem:
+		target, present := requestField(targetRequest, binding.ToParameter)
+		if !present {
+			return false
+		}
+		var targetValue any
+		if json.Unmarshal(target, &targetValue) != nil {
+			return false
+		}
 		values, ok := targetValue.([]any)
 		if !ok {
 			return false
@@ -355,6 +370,47 @@ func bindingValuesMatch(binding Binding, source, target json.RawMessage) bool {
 				return true
 			}
 		}
+	case BindingTargetAnyValue:
+		for _, target := range requestValues(targetRequest, binding.ToParameter) {
+			var targetValue any
+			if json.Unmarshal(target, &targetValue) == nil && reflect.DeepEqual(targetValue, sourceValue) {
+				return true
+			}
+		}
+	case BindingTargetAllValues:
+		sources, ok := sourceValue.([]any)
+		if !ok || len(sources) == 0 {
+			return false
+		}
+		targets := requestValues(targetRequest, binding.ToParameter)
+		for _, wanted := range sources {
+			found := false
+			for _, target := range targets {
+				var targetValue any
+				if json.Unmarshal(target, &targetValue) == nil && reflect.DeepEqual(targetValue, wanted) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+		return true
+	case BindingTargetTextSequence:
+		sourceText, ok := sourceValue.(string)
+		if !ok {
+			return false
+		}
+		var parts []string
+		for _, target := range requestValues(targetRequest, binding.ToParameter) {
+			var text string
+			if json.Unmarshal(target, &text) == nil && strings.TrimSpace(text) != "" {
+				parts = append(parts, text)
+			}
+		}
+		return strings.Join(strings.Fields(strings.Join(parts, " ")), " ") ==
+			strings.Join(strings.Fields(sourceText), " ")
 	case BindingTargetVideoComposeMediaSource:
 		sourcePath, ok := sourceValue.(string)
 		if !ok || strings.TrimSpace(sourcePath) == "" {
@@ -364,7 +420,12 @@ func bindingValuesMatch(binding Binding, source, target json.RawMessage) bool {
 		if binding.ArtifactKind == "image" {
 			mediaKind = "image"
 		}
-		cuts, ok := targetValue.([]any)
+		target, present := requestField(targetRequest, binding.ToParameter)
+		if !present {
+			return false
+		}
+		var cuts []any
+		ok = json.Unmarshal(target, &cuts) == nil
 		if !ok {
 			return false
 		}
@@ -379,6 +440,40 @@ func bindingValuesMatch(binding Binding, source, target json.RawMessage) bool {
 		}
 	}
 	return false
+}
+
+func requestValues(data json.RawMessage, path string) []json.RawMessage {
+	parts := strings.Split(path, ".")
+	var walk func(json.RawMessage, int) []json.RawMessage
+	walk = func(current json.RawMessage, index int) []json.RawMessage {
+		if index == len(parts) {
+			return []json.RawMessage{current}
+		}
+		part := parts[index]
+		array := strings.HasSuffix(part, "[]")
+		name := strings.TrimSuffix(part, "[]")
+		var object map[string]json.RawMessage
+		if json.Unmarshal(current, &object) != nil {
+			return nil
+		}
+		value, ok := object[name]
+		if !ok || missingValue(value) {
+			return nil
+		}
+		if !array {
+			return walk(value, index+1)
+		}
+		var values []json.RawMessage
+		if json.Unmarshal(value, &values) != nil {
+			return nil
+		}
+		var out []json.RawMessage
+		for _, item := range values {
+			out = append(out, walk(item, index+1)...)
+		}
+		return out
+	}
+	return walk(data, 0)
 }
 
 func validateInput(input Input, value json.RawMessage) string {

@@ -18,12 +18,19 @@ const (
 	BindingTargetExact                   = "exact"
 	BindingTargetArrayItem               = "array_item"
 	BindingTargetVideoComposeMediaSource = "video_compose_media_cut_source"
+	BindingTargetAnyValue                = "any_value"
+	BindingTargetAllValues               = "all_values"
+	BindingTargetTextSequence            = "text_sequence"
+
+	InputConsumptionOperation     = "operation"
+	InputConsumptionInformational = "informational"
 )
 
 type Input struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Kind        string `json:"kind"`
+	Consumption string `json:"consumption"`
 }
 
 type Binding struct {
@@ -69,28 +76,36 @@ func Catalog() []Method {
 		method("animation", "Animation", "Motion-graphics and asset-led animation.", "explainer",
 			route("remotion-animation", "Local Remotion animation", "Animate supplied visual assets locally.",
 				inputs("script", "visual_assets"), "video_compose", []string{"video_compose", "output_review"},
+				inputTextSequence("script", "video_compose", "cuts[].text"),
+				inputAllValues("visual_assets", "video_compose", "cuts[].source"),
 				artifact("video_compose", "output", "render_video", "output_review", "input")),
 			route("openai-image-animation", "OpenAI-assisted animation", "Generate still visuals with the explicitly named provider, then animate locally.",
 				inputs("script"), "openai_image", []string{"openai_image", "video_compose", "output_review"},
+				inputBinding("script", "openai_image", "prompt"),
 				mediaCutArtifact("openai_image", "output_path", "image", "video_compose", "cuts"),
 				artifact("video_compose", "output", "render_video", "output_review", "input"))),
 		method("avatar", "Avatar", "Presenter-led and consented avatar productions.", "talking-head",
 			route("supplied-avatar-edit", "Supplied avatar edit", "Edit supplied presenter or avatar footage without generating an identity.",
 				inputs("presenter_media", "consent"), "source_edit", []string{"source_edit", "audio_mix", "output_review"},
+				inputAnyValue("presenter_media", "source_edit", "segments[].input"),
 				artifact("source_edit", "output", "render_video", "audio_mix", "video"),
 				artifact("audio_mix", "output", "render_video", "output_review", "input")),
 			route("edge-voice-avatar", "Edge voice with supplied avatar", "Synthesize speech with the explicitly named free network voice and edit supplied avatar footage.",
 				inputs("presenter_media", "script", "consent"), "edge_tts", []string{"edge_tts", "source_edit", "output_review"},
+				inputBinding("script", "edge_tts", "text"),
+				inputAnyValue("presenter_media", "source_edit", "segments[].input"),
 				artifact("edge_tts", "output_path", "narration", "source_edit", "replacement_audio"),
 				artifact("source_edit", "output", "render_video", "output_review", "input"))),
 		method("character-animation", "Character animation", "Character-led animation from supplied artwork, poses, or rigs.", "character-animation",
 			route("character-remotion", "Local character composition", "Animate supplied character assets in the local composer.",
 				inputs("character_assets", "action_plan"), "video_compose", []string{"video_compose", "audio_mix", "output_review"},
+				inputAllValues("character_assets", "video_compose", "cuts[].source"),
 				artifact("video_compose", "output", "render_video", "audio_mix", "video"),
 				artifact("audio_mix", "output", "render_video", "output_review", "input"))),
 		method("content-repurpose", "Content repurpose", "Short-form, vertical, and excerpted edits from supplied media.", "social",
 			route("source-repurpose", "Local source repurpose", "Inspect, select, reframe, caption, and review supplied footage.",
 				inputs("source_media", "transcript_segments"), "source_edit", []string{"source_edit", "subtitle_gen", "ffmpeg_caption_burn", "output_review"},
+				inputAnyValue("source_media", "source_edit", "segments[].input"),
 				inputBinding("transcript_segments", "subtitle_gen", "segments"),
 				artifact("source_edit", "output", "render_video", "ffmpeg_caption_burn", "input_path"),
 				artifact("subtitle_gen", "output_path", "captions", "ffmpeg_caption_burn", "srt_path"),
@@ -98,12 +113,14 @@ func Catalog() []Method {
 		method("documentary-cinematic", "Documentary and cinematic", "Source-led documentary, archival, montage, and cinematic editing.", "cinematic",
 			route("source-documentary", "Source-led documentary edit", "Assemble and grade supplied or licensed material locally.",
 				inputs("source_media"), "video_stitch", []string{"video_stitch", "color_grade", "audio_mix", "output_review"},
+				inputArrayItem("source_media", "video_stitch", "clips"),
 				artifact("video_stitch", "output_path", "render_video", "color_grade", "input_path"),
 				artifact("color_grade", "output_path", "render_video", "audio_mix", "video"),
 				artifact("audio_mix", "output", "render_video", "output_review", "input")),
 			requireRequestValue(
 				route("wikimedia-documentary", "Wikimedia-augmented documentary", "Search the explicitly named public archive for video before local assembly.",
 					inputs("research_query"), "wikimedia", []string{"wikimedia", "video_stitch", "color_grade", "audio_mix", "output_review"},
+					inputBinding("research_query", "wikimedia", "query"),
 					arrayItemArtifact("wikimedia", "output_path", "render_video", "video_stitch", "clips"),
 					artifact("video_stitch", "output_path", "render_video", "color_grade", "input_path"),
 					artifact("color_grade", "output_path", "render_video", "audio_mix", "video"),
@@ -112,38 +129,48 @@ func Catalog() []Method {
 		method("explainer", "Explainer", "Text-, metric-, and supplied-media-led explanation.", "explainer",
 			route("local-explainer", "Local Remotion explainer", "Compose supplied script and visuals with the local renderer.",
 				inputs("script", "visuals"), "video_compose", []string{"video_compose", "output_review"},
+				inputTextSequence("script", "video_compose", "cuts[].text"),
+				inputAllValues("visuals", "video_compose", "cuts[].source"),
 				artifact("video_compose", "output", "render_video", "output_review", "input")),
 			route("flux-image-explainer", "FLUX-assisted explainer", "Generate stills with the explicitly named provider, then compose locally.",
 				inputs("script"), "flux_image", []string{"flux_image", "video_compose", "output_review"},
+				inputBinding("script", "flux_image", "prompt"),
 				mediaCutArtifact("flux_image", "output_path", "image", "video_compose", "cuts"),
 				artifact("video_compose", "output", "render_video", "output_review", "input"))),
 		method("localization", "Localization", "Subtitle, dubbing, and localized variants of existing video.", "localization",
 			route("subtitle-localization", "Provided-translation subtitle route", "Create and burn supplied translated timed text.",
 				inputs("source_media", "translated_segments"), "subtitle_gen", []string{"subtitle_gen", "ffmpeg_caption_burn", "output_review"},
+				inputBinding("translated_segments", "subtitle_gen", "segments"),
 				inputBinding("source_media", "ffmpeg_caption_burn", "input_path"),
 				artifact("subtitle_gen", "output_path", "captions", "ffmpeg_caption_burn", "srt_path"),
 				artifact("ffmpeg_caption_burn", "output_path", "render_video", "output_review", "input")),
 			route("edge-dub-localization", "Edge voice dubbing route", "Synthesize the supplied translated script with the explicitly named voice service.",
 				inputs("source_media", "translated_script"), "edge_tts", []string{"edge_tts", "audio_mix", "output_review"},
+				inputBinding("translated_script", "edge_tts", "text"),
 				inputBinding("source_media", "audio_mix", "video"),
 				artifact("edge_tts", "output_path", "narration", "audio_mix", "source"),
 				artifact("audio_mix", "output", "render_video", "output_review", "input"))),
 		method("music-led", "Music-led", "Edits paced around supplied or locally discovered music.", "cinematic",
 			route("local-music-edit", "Local music-led edit", "Choose local music, edit supplied media, mix, and review.",
 				inputs("source_media", "music"), "source_edit", []string{"source_edit", "audio_mix", "output_review"},
+				inputAnyValue("source_media", "source_edit", "segments[].input"),
 				artifact("source_edit", "output", "render_video", "audio_mix", "video"),
-				inputBinding("music", "audio_mix", "music"),
+				inputBinding("music", "audio_mix", "music.input"),
 				artifact("audio_mix", "output", "render_video", "output_review", "input"))),
 		method("product-demo", "Product demo", "Recorded or synthetic software and product walkthroughs.", "screen-demo",
 			route("recorded-product-demo", "Recorded product demo", "Edit a real product capture and add optional supplied captions.",
 				inputs("screen_recording"), "source_edit", []string{"source_edit", "output_review"},
+				inputAnyValue("screen_recording", "source_edit", "segments[].input"),
 				artifact("source_edit", "output", "render_video", "output_review", "input")),
 			route("synthetic-product-demo", "Synthetic product presentation", "Compose a clearly presentational product sequence locally.",
 				inputs("script", "visual_assets"), "video_compose", []string{"video_compose", "output_review"},
+				inputTextSequence("script", "video_compose", "cuts[].text"),
+				inputAllValues("visual_assets", "video_compose", "cuts[].source"),
 				artifact("video_compose", "output", "render_video", "output_review", "input"))),
 		method("source-edit", "Source edit", "Mechanical editing of supplied footage and audio.", "cinematic",
 			route("source-edit-local", "Local source edit", "Inspect, edit, mix, and review supplied media locally.",
 				inputs("source_media"), "source_edit", []string{"source_edit", "output_review"},
+				inputAnyValue("source_media", "source_edit", "segments[].input"),
 				artifact("source_edit", "output", "render_video", "output_review", "input"))),
 	}
 	sort.Slice(methods, func(i, j int) bool { return methods[i].ID < methods[j].ID })
@@ -198,12 +225,48 @@ func inputBinding(fromInput, toOperation, toParameter string) Binding {
 	}
 }
 
+func inputArrayItem(fromInput, toOperation, toParameter string) Binding {
+	binding := inputBinding(fromInput, toOperation, toParameter)
+	binding.TargetSemantics = BindingTargetArrayItem
+	return binding
+}
+
+func inputAnyValue(fromInput, toOperation, toParameter string) Binding {
+	binding := inputBinding(fromInput, toOperation, toParameter)
+	binding.TargetSemantics = BindingTargetAnyValue
+	return binding
+}
+
+func inputAllValues(fromInput, toOperation, toParameter string) Binding {
+	binding := inputBinding(fromInput, toOperation, toParameter)
+	binding.TargetSemantics = BindingTargetAllValues
+	return binding
+}
+
+func inputTextSequence(fromInput, toOperation, toParameter string) Binding {
+	binding := inputBinding(fromInput, toOperation, toParameter)
+	binding.TargetSemantics = BindingTargetTextSequence
+	return binding
+}
+
 func inputs(names ...string) []Input {
 	out := make([]Input, 0, len(names))
 	for _, name := range names {
-		out = append(out, Input{Name: name, Description: inputDescription(name), Kind: inputKind(name)})
+		out = append(out, Input{
+			Name: name, Description: inputDescription(name), Kind: inputKind(name),
+			Consumption: inputConsumption(name),
+		})
 	}
 	return out
+}
+
+func inputConsumption(name string) string {
+	switch name {
+	case "action_plan", "consent":
+		return InputConsumptionInformational
+	default:
+		return InputConsumptionOperation
+	}
 }
 
 func inputKind(name string) string {
@@ -280,12 +343,21 @@ func ValidateCatalog() error {
 					return fmt.Errorf("method %q route %q has incomplete request constraint for %q", method.ID, route.ID, constraint.Operation)
 				}
 			}
-			requiredInputs := map[string]bool{}
+			requiredInputs := map[string]Input{}
 			for _, input := range route.RequiredInputs {
-				requiredInputs[input.Name] = true
+				switch input.Consumption {
+				case InputConsumptionOperation, InputConsumptionInformational:
+				default:
+					return fmt.Errorf("method %q route %q input %q has unknown consumption %q", method.ID, route.ID, input.Name, input.Consumption)
+				}
+				requiredInputs[input.Name] = input
 			}
 			targeted := map[string]bool{}
+			consumedInputs := map[string]bool{}
 			for _, binding := range route.Bindings {
+				if (binding.FromInput == "") == (binding.FromOperation == "") {
+					return fmt.Errorf("method %q route %q binding must have exactly one source", method.ID, route.ID)
+				}
 				if binding.ToParameter == "" || (binding.FromOperation != "" && binding.FromParameter == "") {
 					return fmt.Errorf("method %q route %q has incomplete binding parameters", method.ID, route.ID)
 				}
@@ -294,6 +366,20 @@ func ValidateCatalog() error {
 				case BindingTargetArrayItem:
 					if binding.ToOperation != "video_stitch" || binding.ToParameter != "clips" {
 						return fmt.Errorf("method %q route %q uses array-item semantics for unsupported target %s.%s", method.ID, route.ID, binding.ToOperation, binding.ToParameter)
+					}
+				case BindingTargetAnyValue:
+					if binding.FromInput == "" || !strings.Contains(binding.ToParameter, "[]") {
+						return fmt.Errorf("method %q route %q uses any-value semantics without an array path for %s.%s", method.ID, route.ID, binding.ToOperation, binding.ToParameter)
+					}
+				case BindingTargetAllValues:
+					input, ok := requiredInputs[binding.FromInput]
+					if !ok || input.Kind != "files" || !strings.Contains(binding.ToParameter, "[]") {
+						return fmt.Errorf("method %q route %q has invalid all-values input binding to %s.%s", method.ID, route.ID, binding.ToOperation, binding.ToParameter)
+					}
+				case BindingTargetTextSequence:
+					input, ok := requiredInputs[binding.FromInput]
+					if !ok || input.Kind != "text" || binding.ToOperation != "video_compose" || binding.ToParameter != "cuts[].text" {
+						return fmt.Errorf("method %q route %q has invalid text-sequence input binding to %s.%s", method.ID, route.ID, binding.ToOperation, binding.ToParameter)
 					}
 				case BindingTargetVideoComposeMediaSource:
 					if binding.ToOperation != "video_compose" || binding.ToParameter != "cuts" {
@@ -310,8 +396,15 @@ func ValidateCatalog() error {
 					return fmt.Errorf("method %q route %q binds to operation %q outside the route", method.ID, route.ID, binding.ToOperation)
 				}
 				targeted[binding.ToOperation] = true
-				if binding.FromInput != "" && !requiredInputs[binding.FromInput] {
-					return fmt.Errorf("method %q route %q binds undeclared input %q", method.ID, route.ID, binding.FromInput)
+				if binding.FromInput != "" {
+					input, ok := requiredInputs[binding.FromInput]
+					if !ok {
+						return fmt.Errorf("method %q route %q binds undeclared input %q", method.ID, route.ID, binding.FromInput)
+					}
+					if input.Consumption != InputConsumptionOperation {
+						return fmt.Errorf("method %q route %q binds informational input %q", method.ID, route.ID, binding.FromInput)
+					}
+					consumedInputs[binding.FromInput] = true
 				}
 				if binding.FromOperation != "" {
 					source, ok := live[binding.FromOperation]
@@ -327,6 +420,11 @@ func ValidateCatalog() error {
 			for _, operation := range route.Operations[1:] {
 				if !targeted[operation] {
 					return fmt.Errorf("method %q route %q has no binding for downstream operation %q", method.ID, route.ID, operation)
+				}
+			}
+			for _, input := range route.RequiredInputs {
+				if input.Consumption == InputConsumptionOperation && !consumedInputs[input.Name] {
+					return fmt.Errorf("method %q route %q consumable input %q has no operation binding", method.ID, route.ID, input.Name)
 				}
 			}
 		}

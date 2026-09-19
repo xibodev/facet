@@ -48,8 +48,8 @@ facet tools run output_review --input review.json
 Route assessment is advisory and stateless. It reports missing inputs, live
 operations, dependencies, network use, and charge effects; it never executes,
 stores state, or selects a provider. Feasibility requires existing file inputs,
-canonical `operation_requests` for every step, entry estimate validation, and
-constructible downstream bindings.
+canonical requests, entry estimate validation, declared consumption of every
+non-informational input (including nested/array fields), and constructible bindings.
 Use JSON request files and the live registry. `media_probe` accepts `input` or
 `input_path`; provider generation must use the specifically named Facet tool.
 

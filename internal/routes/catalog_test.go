@@ -164,9 +164,13 @@ func TestCatalogDeclaresEntryRequestsAndConstructibleBindings(t *testing.T) {
 			if len(route.Operations) == 0 || route.Operations[0] != route.EntryOperation {
 				t.Errorf("%s/%s entry %q is not the first operation: %v", method.ID, route.ID, route.EntryOperation, route.Operations)
 			}
+			consumedInputs := map[string]bool{}
 			targeted := map[string]bool{}
 			for _, binding := range route.Bindings {
 				targeted[binding.ToOperation] = true
+				if binding.FromInput != "" {
+					consumedInputs[binding.FromInput] = true
+				}
 				if binding.TargetSemantics == "" {
 					t.Errorf("%s/%s binding to %s.%s has no target semantics", method.ID, route.ID, binding.ToOperation, binding.ToParameter)
 				}
@@ -180,6 +184,23 @@ func TestCatalogDeclaresEntryRequestsAndConstructibleBindings(t *testing.T) {
 			for _, operation := range route.Operations[1:] {
 				if !targeted[operation] {
 					t.Errorf("%s/%s has no input or artifact binding for downstream operation %s", method.ID, route.ID, operation)
+				}
+			}
+			for _, input := range route.RequiredInputs {
+				switch input.Consumption {
+				case InputConsumptionOperation:
+					if !consumedInputs[input.Name] {
+						t.Errorf("%s/%s consumable input %s has no operation binding", method.ID, route.ID, input.Name)
+					}
+				case InputConsumptionInformational:
+					if input.Name != "consent" && input.Name != "action_plan" {
+						t.Errorf("%s/%s executable input %s was classified informational", method.ID, route.ID, input.Name)
+					}
+					if consumedInputs[input.Name] {
+						t.Errorf("%s/%s informational input %s has an operation binding", method.ID, route.ID, input.Name)
+					}
+				default:
+					t.Errorf("%s/%s input %s has unknown consumption %q", method.ID, route.ID, input.Name, input.Consumption)
 				}
 			}
 		}
@@ -455,6 +476,231 @@ func TestSymbolicOrMissingFilesNeverMakeRouteFeasible(t *testing.T) {
 	}
 }
 
+func TestRequiredInputMustMatchNestedArrayConsumption(t *testing.T) {
+	dir := t.TempDir()
+	required := filepath.Join(dir, "required.mp4")
+	other := filepath.Join(dir, "other.mp4")
+	for _, path := range []string{required, other} {
+		if err := os.WriteFile(path, []byte("shape-only"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	methods := []Method{{
+		ID: "source-edit", Title: "Source edit", Pack: "cinematic",
+		Routes: []Route{{
+			ID: "source-edit-local", Title: "Local source edit",
+			RequiredInputs: []Input{{
+				Name: "source_media", Kind: "file", Consumption: InputConsumptionOperation,
+			}},
+			EntryOperation: "source_edit",
+			Operations:     []string{"source_edit"},
+			Bindings: []Binding{{
+				FromInput:       "source_media",
+				ToOperation:     "source_edit",
+				ToParameter:     "segments[].input",
+				TargetSemantics: BindingTargetAnyValue,
+			}},
+		}},
+	}}
+	request := Request{
+		Method: "source-edit",
+		Inputs: map[string]json.RawMessage{
+			"source_media": json.RawMessage(mustJSONString(t, required)),
+		},
+		OperationRequests: map[string]json.RawMessage{
+			"source_edit": sourceEditRequest(other, filepath.Join(dir, "out.mp4")),
+		},
+	}
+	got, err := assess(methods, operationMap([]toolbox.V2Operation{{ID: "source_edit"}}), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := got.Methods[0].Routes[0]
+	if route.Status != StatusConditional || route.Bindings[0].Constructible {
+		t.Fatalf("unrelated source file made route feasible: %#v", route)
+	}
+
+	request.OperationRequests["source_edit"] = sourceEditRequest(required, filepath.Join(dir, "out.mp4"))
+	got, err = assess(methods, operationMap([]toolbox.V2Operation{{ID: "source_edit"}}), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route = got.Methods[0].Routes[0]
+	if route.Status != StatusFeasible || !route.Bindings[0].Constructible {
+		t.Fatalf("matching nested source binding was not feasible: %#v", route)
+	}
+}
+
+func TestRequiredInputBindingShapesMatchAndMismatch(t *testing.T) {
+	t.Run("exact scalar", func(t *testing.T) {
+		methods := []Method{{
+			ID: "archive", Title: "Archive", Pack: "cinematic",
+			Routes: []Route{{
+				ID: "archive-query", Title: "Archive query",
+				RequiredInputs: []Input{{
+					Name: "research_query", Kind: "text", Consumption: InputConsumptionOperation,
+				}},
+				EntryOperation: "wikimedia",
+				Operations:     []string{"wikimedia"},
+				Bindings: []Binding{{
+					FromInput:       "research_query",
+					ToOperation:     "wikimedia",
+					ToParameter:     "query",
+					TargetSemantics: BindingTargetExact,
+				}},
+			}},
+		}}
+		request := Request{
+			Method: "archive",
+			Inputs: map[string]json.RawMessage{"research_query": json.RawMessage(`"ocean"`)},
+			OperationRequests: map[string]json.RawMessage{
+				"wikimedia": json.RawMessage(`{"query":"forest","kind":"video"}`),
+			},
+		}
+		operations := operationMap([]toolbox.V2Operation{{ID: "wikimedia"}})
+		got, err := assess(methods, operations, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if route := got.Methods[0].Routes[0]; route.Status != StatusConditional || route.Bindings[0].Constructible {
+			t.Fatalf("mismatched exact input = %#v", route)
+		}
+		request.OperationRequests["wikimedia"] = json.RawMessage(`{"query":"ocean","kind":"video"}`)
+		got, err = assess(methods, operations, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if route := got.Methods[0].Routes[0]; route.Status != StatusFeasible || !route.Bindings[0].Constructible {
+			t.Fatalf("matching exact input = %#v", route)
+		}
+	})
+
+	t.Run("array item", func(t *testing.T) {
+		dir := t.TempDir()
+		required := filepath.Join(dir, "required.mp4")
+		other := filepath.Join(dir, "other.mp4")
+		for _, path := range []string{required, other} {
+			if err := os.WriteFile(path, []byte("shape-only"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		methods := []Method{{
+			ID: "documentary", Title: "Documentary", Pack: "cinematic",
+			Routes: []Route{{
+				ID: "source-documentary", Title: "Source documentary",
+				RequiredInputs: []Input{{
+					Name: "source_media", Kind: "file", Consumption: InputConsumptionOperation,
+				}},
+				EntryOperation: "video_stitch",
+				Operations:     []string{"video_stitch"},
+				Bindings: []Binding{{
+					FromInput:       "source_media",
+					ToOperation:     "video_stitch",
+					ToParameter:     "clips",
+					TargetSemantics: BindingTargetArrayItem,
+				}},
+			}},
+		}}
+		request := Request{
+			Method: "documentary",
+			Inputs: map[string]json.RawMessage{
+				"source_media": json.RawMessage(mustJSONString(t, required)),
+			},
+			OperationRequests: map[string]json.RawMessage{
+				"video_stitch": stitchRequest(other),
+			},
+		}
+		operations := operationMap([]toolbox.V2Operation{{ID: "video_stitch"}})
+		got, err := assess(methods, operations, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if route := got.Methods[0].Routes[0]; route.Status != StatusConditional || route.Bindings[0].Constructible {
+			t.Fatalf("mismatched array item = %#v", route)
+		}
+		request.OperationRequests["video_stitch"] = stitchRequest(required)
+		got, err = assess(methods, operations, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if route := got.Methods[0].Routes[0]; route.Status != StatusFeasible || !route.Bindings[0].Constructible {
+			t.Fatalf("matching array item = %#v", route)
+		}
+	})
+
+	t.Run("all media and text sequence", func(t *testing.T) {
+		dir := t.TempDir()
+		first := filepath.Join(dir, "first.png")
+		second := filepath.Join(dir, "second.png")
+		for _, path := range []string{first, second} {
+			if err := os.WriteFile(path, []byte("shape-only"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		methods := []Method{{
+			ID: "explainer", Title: "Explainer", Pack: "explainer",
+			Routes: []Route{{
+				ID: "local-explainer", Title: "Local explainer",
+				RequiredInputs: []Input{
+					{Name: "script", Kind: "text", Consumption: InputConsumptionOperation},
+					{Name: "visuals", Kind: "files", Consumption: InputConsumptionOperation},
+				},
+				EntryOperation: "video_compose",
+				Operations:     []string{"video_compose"},
+				Bindings: []Binding{
+					{FromInput: "script", ToOperation: "video_compose", ToParameter: "cuts[].text", TargetSemantics: BindingTargetTextSequence},
+					{FromInput: "visuals", ToOperation: "video_compose", ToParameter: "cuts[].source", TargetSemantics: BindingTargetAllValues},
+				},
+			}},
+		}}
+		request := Request{
+			Method: "explainer",
+			Inputs: map[string]json.RawMessage{
+				"script":  json.RawMessage(`"hello world"`),
+				"visuals": json.RawMessage(`[` + mustJSONString(t, first) + `,` + mustJSONString(t, second) + `]`),
+			},
+			OperationRequests: map[string]json.RawMessage{
+				"video_compose": composeRequestWithAssets("hello", []string{first}),
+			},
+		}
+		operations := operationMap([]toolbox.V2Operation{{ID: "video_compose"}})
+		got, err := assess(methods, operations, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		route := got.Methods[0].Routes[0]
+		if route.Status != StatusConditional || route.Bindings[0].Constructible || route.Bindings[1].Constructible {
+			t.Fatalf("partial text/assets made route feasible: %#v", route)
+		}
+
+		request.OperationRequests["video_compose"] = composeRequestWithAssets("hello world", []string{first, second})
+		got, err = assess(methods, operations, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		route = got.Methods[0].Routes[0]
+		if route.Status != StatusFeasible || !route.Bindings[0].Constructible || !route.Bindings[1].Constructible {
+			t.Fatalf("matching text/assets were not feasible: %#v", route)
+		}
+	})
+
+	t.Run("nested exact", func(t *testing.T) {
+		binding := Binding{
+			FromInput:       "music",
+			ToOperation:     "audio_mix",
+			ToParameter:     "music.input",
+			TargetSemantics: BindingTargetExact,
+		}
+		source := json.RawMessage(`"song.wav"`)
+		if bindingValuesMatch(binding, source, json.RawMessage(`{"music":{"input":"other.wav"}}`)) {
+			t.Fatal("mismatched nested exact value matched")
+		}
+		if !bindingValuesMatch(binding, source, json.RawMessage(`{"music":{"input":"song.wav"}}`)) {
+			t.Fatal("matching nested exact value did not match")
+		}
+	})
+}
+
 func TestRealFileAndCanonicalEntryRequestCanBeFeasible(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "clip.mp4")
@@ -614,17 +860,17 @@ func TestVideoComposeArtifactMustBeAMediaCutSource(t *testing.T) {
 func TestVideoComposeMediaBindingRequiresMatchingArtifactKind(t *testing.T) {
 	binding := mediaCutArtifact("image_generator", "output_path", "image", "video_compose", "cuts")
 	source := json.RawMessage(`"generated.png"`)
-	videoCut := json.RawMessage(`[{
+	videoCut := json.RawMessage(`{"cuts":[{
 		"type":"media","source":"generated.png","media_kind":"video",
 		"in_seconds":0,"out_seconds":1
-	}]`)
+	}]}`)
 	if bindingValuesMatch(binding, source, videoCut) {
 		t.Fatal("image artifact matched a video media cut")
 	}
-	imageCut := json.RawMessage(`[{
+	imageCut := json.RawMessage(`{"cuts":[{
 		"type":"media","source":"generated.png","media_kind":"image",
 		"in_seconds":0,"out_seconds":1
-	}]`)
+	}]}`)
 	if !bindingValuesMatch(binding, source, imageCut) {
 		t.Fatal("image artifact did not match an image media cut source")
 	}
@@ -650,6 +896,28 @@ func mustJSONString(t *testing.T, value string) string {
 		t.Fatal(err)
 	}
 	return string(raw)
+}
+
+func composeRequestWithAssets(text string, assets []string) json.RawMessage {
+	cuts := []map[string]any{{
+		"type": "text_card", "text": text, "in_seconds": 0, "out_seconds": 1,
+	}}
+	for index, asset := range assets {
+		cuts = append(cuts, map[string]any{
+			"type": "media", "source": asset, "media_kind": "image",
+			"in_seconds": float64(index + 1), "out_seconds": float64(index + 2),
+		})
+	}
+	raw, _ := json.Marshal(map[string]any{"cuts": cuts})
+	return raw
+}
+
+func stitchRequest(clip string) json.RawMessage {
+	raw, _ := json.Marshal(map[string]any{
+		"operation": "validate",
+		"clips":     []string{clip},
+	})
+	return raw
 }
 
 func routeContains(values []string, value string) bool {
