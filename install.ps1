@@ -198,6 +198,24 @@ function Assert-New([string]$Path) {
     if (Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue) { throw "Preserving existing entry: $Path" }
     Assert-RealAncestors (Split-Path -Parent $Path)
 }
+function Read-ProjectReceipt([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    try {
+        $receipt = [IO.File]::ReadAllText($Path) | ConvertFrom-Json
+        $properties = @($receipt.PSObject.Properties.Name)
+        foreach ($required in @('schema','version','installation','host','components','packs')) {
+            if ($required -notin $properties) { return $null }
+        }
+        if ($receipt.schema -ne 1 -or -not "$($receipt.version)".Trim() -or
+            -not [IO.Path]::IsPathRooted("$($receipt.installation)") -or
+            $receipt.host -notin @('opencode','codex','claude','copilot','studio')) {
+            return $null
+        }
+        return $receipt
+    } catch {
+        return $null
+    }
+}
 function Verify-Checksum([string]$Archive,[string]$Sums,[string]$Name) {
     $expected = @([IO.File]::ReadAllLines($Sums) | ForEach-Object {
         if ($_ -match '^([a-fA-F0-9]{64})\s+\*?(.+)$' -and $Matches[2] -ceq $Name) { $Matches[1] }
@@ -319,10 +337,12 @@ $instruction = Join-Path $ProjectDir $instructionRel
 $previous = $null
 $legacyMigration = $false
 $instructionOwned = $false
-if (Test-Path -LiteralPath $state) {
+$stateResidue = $false
+$projectReceipt = Read-ProjectReceipt (Join-Path $state 'installation.json')
+if ($projectReceipt) {
     Assert-RealAncestors $state
     $ownedFile = Join-Path $state 'managed-files.json'
-    $previous = [IO.File]::ReadAllText((Join-Path $state 'installation.json')) | ConvertFrom-Json
+    $previous = $projectReceipt
     if ($previous.host -ne $Target) { throw 'This project belongs to another CLI integration; select that CLI or a fresh project.' }
     if (-not (Test-Path -LiteralPath $ownedFile)) {
         if (-not $NonInteractive) { $MigrateLegacy = (Ask 'Migrate older integration? Its complete files will be kept in a project backup' 'n') -in @('y','yes') }
@@ -340,8 +360,10 @@ if (Test-Path -LiteralPath $state) {
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint -or (Get-FileHash -LiteralPath $path).Hash -ne $file.sha256) { throw "Preserving modified project file: $($file.path)" }
     }
     if ($Action -ne 'uninstall') {
-        $actualFiles = @(Get-ChildItem -LiteralPath $state,$skill -File -Recurse | Where-Object FullName -NE $ownedFile)
-        if ($actualFiles.Count -ne @($owned).Count) { throw 'Preserving extra files in installer-owned project directories.' }
+        $skillPrefix = $hostDef.value.TrimEnd('/','\') + '/facet/'
+        $expectedSkillCount = @($owned | Where-Object { $_.path.StartsWith($skillPrefix,[StringComparison]::Ordinal) }).Count
+        $actualSkillCount = if (Test-Path -LiteralPath $skill) { @(Get-ChildItem -LiteralPath $skill -File -Recurse).Count } else { 0 }
+        if ($actualSkillCount -ne $expectedSkillCount) { throw 'Preserving extra files in the managed skill directory.' }
     }
     }
     $instructionRecord = Join-Path $state 'instruction-section.json'
@@ -371,7 +393,15 @@ if (Test-Path -LiteralPath $state) {
 } else {
     if ($Action -eq 'uninstall') { throw 'This project has no Facet installation to uninstall.' }
     Assert-New $skill
-    Assert-New $state
+    $stateItem = Get-Item -LiteralPath $state -Force -ErrorAction SilentlyContinue
+    if ($stateItem) {
+        if (-not $stateItem.PSIsContainer -or $stateItem.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Preserving unsafe partial installer state: $state" }
+        Assert-RealAncestors $state
+        if (@(Get-ChildItem -LiteralPath $state -Recurse -Force | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count) { throw "Preserving linked partial installer state: $state" }
+        $stateResidue = $true
+    } else {
+        Assert-New $state
+    }
 }
 # An existing runtime is immutable during repair/additions: build a sibling
 # generation and only rebind this project after every selected check passes.
@@ -557,7 +587,10 @@ try {
         Write-Host 'Local media verification passed; external providers and host invocation were not tested.'
       }
     } else { Write-Host 'Verification skipped: media readiness is unverified.' }
-    if (-not $previous) { Assert-New $skill; Assert-New $state }
+    if (-not $previous) {
+        Assert-New $skill
+        if (-not $stateResidue) { Assert-New $state }
+    }
     Section '[3/3] Connect your CLI'
     @{version=$Version;components=$selected} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $InstallDir 'components.json') -Encoding UTF8
     New-Item -ItemType Directory -Path $ProjectDir -Force | Out-Null
@@ -599,7 +632,17 @@ try {
     New-Item -ItemType Directory -Path (Split-Path -Parent $skill) -Force | Out-Null
     $oldState="$projectStage/old-state"; $oldSkill="$projectStage/old-skill"
     try {
-        if ($previous) { Move-Item -LiteralPath $state -Destination $oldState; Move-Item -LiteralPath $skill -Destination $oldSkill }
+        if ($previous) {
+            Move-Item -LiteralPath $state -Destination $oldState
+            Move-Item -LiteralPath $skill -Destination $oldSkill
+        } elseif ($stateResidue) {
+            Move-Item -LiteralPath $state -Destination $oldState
+            foreach ($entry in @(Get-ChildItem -LiteralPath $oldState -Force)) {
+                $destination = Join-Path "$projectStage/state" $entry.Name
+                if (Test-Path -LiteralPath $destination) { throw "Preserving colliding partial installer state: .facet-install/$($entry.Name)" }
+                Copy-Item -LiteralPath $entry.FullName -Destination $destination -Recurse
+            }
+        }
         Move-Item -LiteralPath "$projectStage/state" -Destination $state
         Move-Item -LiteralPath "$projectStage/skill" -Destination $skill
         $instructionExisted = Test-Path -LiteralPath $instruction

@@ -170,10 +170,26 @@ canonical_parent() {
 PROJECT=$(canonical_parent "$PROJECT"); INSTALL=$(canonical_parent "$INSTALL")
 SKILL="$PROJECT/$HOST_PATH/facet"; STATE="$PROJECT/.facet-install"; INSTRUCTION="$PROJECT/$INSTRUCTION_REL"
 new_path() { [[ ! -e "$1" && ! -L "$1" ]] || die "Preserving existing entry: $1"; real_ancestors "$(dirname -- "$1")"; }
+valid_project_receipt() {
+    local receipt=$1
+    [[ -f "$receipt" && ! -L "$receipt" ]] || return 1
+    awk -F '\t' '
+        $1=="version" {version=$2; versions++}
+        $1=="installation" {installation=$2; installations++}
+        $1=="host" {host=$2; hosts++}
+        $1=="components" {components++}
+        $1=="packs" {packs++}
+        END {
+            exit !(versions==1 && installations==1 && hosts==1 && components==1 && packs==1 &&
+                version!="" && installation ~ /^\// && host ~ /^(opencode|codex|claude|copilot|studio)$/)
+        }
+    ' "$receipt"
+}
 PREVIOUS=0
 LEGACY_MIGRATION=0
 INSTRUCTION_OWNED=0
-if [[ -d "$STATE" ]]; then
+STATE_RESIDUE=0
+if valid_project_receipt "$STATE/installation.tsv"; then
     real_ancestors "$STATE"
     [[ $(awk -F '\t' '$1=="host" {print $2}' "$STATE/installation.tsv") == "$TARGET" ]] || die 'Project is configured for another CLI.'
     if [[ ! -f "$STATE/managed-files.sha256" ]]; then
@@ -189,10 +205,15 @@ if [[ -d "$STATE" ]]; then
         real_ancestors "$(dirname "$PROJECT/$file")"
     done < "$STATE/managed-files.sha256"
     (cd "$PROJECT" && shasum -a 256 -c "$STATE/managed-files.sha256") >/dev/null || die 'Preserving modified project files.'
-    expected_count=$(wc -l < "$STATE/managed-files.sha256" | tr -d ' ')
     if [[ "$ACTION" != uninstall ]]; then
-        actual_count=$(find "$STATE" "$SKILL" -type f ! -path "$STATE/managed-files.sha256" | wc -l | tr -d ' ')
-        [[ "$actual_count" == "$expected_count" ]] || die 'Preserving extra files in managed project directories.'
+        expected_skill_count=0
+        while IFS= read -r line; do
+            file=${line#*  }
+            [[ "$file" != "$HOST_PATH/facet/"* ]] || expected_skill_count=$((expected_skill_count+1))
+        done < "$STATE/managed-files.sha256"
+        actual_skill_count=0
+        [[ ! -d "$SKILL" ]] || actual_skill_count=$(find "$SKILL" -type f | wc -l | tr -d ' ')
+        [[ "$actual_skill_count" == "$expected_skill_count" ]] || die 'Preserving extra files in the managed skill directory.'
     fi
     fi
     if [[ -f "$STATE/instruction-section.tsv" ]]; then
@@ -221,7 +242,15 @@ if [[ -d "$STATE" ]]; then
     fi
 else
     [[ "$ACTION" != uninstall ]] || die 'This project has no Facet installation to uninstall.'
-    new_path "$SKILL"; new_path "$STATE"
+    new_path "$SKILL"
+    if [[ -e "$STATE" || -L "$STATE" ]]; then
+        [[ -d "$STATE" && ! -L "$STATE" ]] || die "Preserving unsafe partial installer state: $STATE"
+        real_ancestors "$STATE"
+        [[ -z $(find "$STATE" -type l -print) ]] || die "Preserving linked partial installer state: $STATE"
+        STATE_RESIDUE=1
+    else
+        new_path "$STATE"
+    fi
 fi
 case "$ACTION" in add|repair|update|uninstall) ;; *) die 'Choose add, repair, update, or uninstall.';; esac
 REUSE=0
@@ -538,7 +567,10 @@ verify_media() (
     fi
 )
 if [[ $SKIP_VERIFY == 0 ]]; then step 'Verify selected local capabilities' verify_media; else printf '%s\n' 'Verification skipped: media readiness is unverified.'; fi
-if [[ $PREVIOUS == 0 ]]; then new_path "$SKILL"; new_path "$STATE"; fi
+if [[ $PREVIOUS == 0 ]]; then
+    new_path "$SKILL"
+    [[ $STATE_RESIDUE == 1 ]] || new_path "$STATE"
+fi
 if [[ $INSTRUCTION_OWNED == 1 ]]; then
     extract_instruction_section "$INSTRUCTION" "$TEMP/current-instruction-section" || die 'Managed Facet instruction section is missing.'
     [[ $(hash_file "$TEMP/current-instruction-section") == "$owned_hash" ]] || die 'Preserving modified Facet instruction section.'
@@ -597,7 +629,17 @@ printf 'path\t%s\nsha256\t%s\n' "$INSTRUCTION_REL" "$(hash_file "$PROJECT_STAGE/
 ) > "$PROJECT_STAGE/managed-files.sha256"
 mv "$PROJECT_STAGE/managed-files.sha256" "$PROJECT_STAGE/state/managed-files.sha256"
 mkdir -p "$(dirname "$SKILL")"
-if [[ $PREVIOUS == 1 ]]; then mv "$STATE" "$PROJECT_STAGE/old-state"; mv "$SKILL" "$PROJECT_STAGE/old-skill"; fi
+if [[ $PREVIOUS == 1 ]]; then
+    mv "$STATE" "$PROJECT_STAGE/old-state"
+    mv "$SKILL" "$PROJECT_STAGE/old-skill"
+elif [[ $STATE_RESIDUE == 1 ]]; then
+    mv "$STATE" "$PROJECT_STAGE/old-state"
+    while IFS= read -r -d '' entry; do
+        name=$(basename -- "$entry")
+        [[ ! -e "$PROJECT_STAGE/state/$name" && ! -L "$PROJECT_STAGE/state/$name" ]] || die "Preserving colliding partial installer state: .facet-install/$name"
+        cp -R -- "$entry" "$PROJECT_STAGE/state/$name"
+    done < <(find "$PROJECT_STAGE/old-state" -mindepth 1 -maxdepth 1 -print0)
+fi
 mv "$PROJECT_STAGE/state" "$STATE"
 mv "$PROJECT_STAGE/skill" "$SKILL"
 mkdir -p "$(dirname -- "$INSTRUCTION")"

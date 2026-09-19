@@ -171,6 +171,23 @@ def main():
                     else:
                         other_version = subprocess.check_output(["bash", str(other_launcher), "version"], text=True).strip()
                     assert other_version == "facet v" + version
+                install(project, temp / "release")
+                assert unmanaged_state.read_text() == f"Keep uninstall note for {host}."
+                assert skill.is_file()
+                assert instruction.read_text().count("<!-- facet:managed:start -->") == 1
+            partial_project = temp / "partial-state" / "codex"
+            partial_state = partial_project / ".facet-install"
+            partial_state.mkdir(parents=True)
+            (partial_state / "keep.txt").write_text("preserve partial state")
+            install(partial_project, temp / "release")
+            assert (partial_state / "keep.txt").read_text() == "preserve partial state"
+            stale_project = temp / "stale-state" / "codex"
+            stale_state = stale_project / ".facet-install"
+            stale_state.mkdir(parents=True)
+            stale_receipt = "installation.json" if args.os == "windows" else "installation.tsv"
+            (stale_state / stale_receipt).write_text("not a valid receipt")
+            install(stale_project, temp / "release", expect_success=False)
+            assert (stale_state / stale_receipt).read_text() == "not a valid receipt"
             bad_sums = temp / "bad-sums.txt"
             bad_sums.write_text("0" * 64 + "  " + archive.name + "\n")
             bad_project = temp / "bad-project" / "codex"

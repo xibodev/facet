@@ -171,7 +171,9 @@ func TestInstructionRepairPreservesUserFiles(t *testing.T) {
 	if err := os.WriteFile(file, append(data, []byte("\nLater user edit.\n")...), 0600); err != nil {
 		t.Fatal(err)
 	}
-	saveOwnership(dir, owned)
+	if err := saveOwnership(dir, owned); err != nil {
+		t.Fatal(err)
+	}
 	owned = loadOwnership(dir)
 	if err := scaffoldAgentInstructions(dir, "opencode", []string{"explainer"}, owned); err != nil {
 		t.Fatal(err)
@@ -220,7 +222,9 @@ func TestInstructionManagedSectionRejectsTampering(t *testing.T) {
 	if err := scaffoldAgentInstructions(dir, "codex", nil, owned); err != nil {
 		t.Fatal(err)
 	}
-	saveOwnership(dir, owned)
+	if err := saveOwnership(dir, owned); err != nil {
+		t.Fatal(err)
+	}
 	owned = loadOwnership(dir)
 	file := filepath.Join(dir, "AGENTS.md")
 	data, err := os.ReadFile(file)

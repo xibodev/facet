@@ -18,12 +18,17 @@ convention. Setup is core-only unless production methods are explicitly selected
 with the repeatable `--pack` / `--production-method` options (`-Pack` on PowerShell).
 `facet init` uses the same bounded-section ownership model: user text outside the
 section is preserved, managed-section edits stop a rewrite, and changing adapters
-removes only the prior Facet section.
+removes only the prior Facet section. Init also reconciles owned skill projections:
+adapter switches and pack deselection remove only projections whose recorded type,
+link target, or copied-tree hash still matches. Replaced or modified paths stop with
+an explicit preservation error.
 
 To remove a script-installed project integration without deleting a shared
 runtime, rerun the matching installer with `--action uninstall` or
 `-Action uninstall`. Uninstall verifies ownership before removing managed skills,
 state, and the Facet instruction section; modified and unmanaged content is kept.
+A later reinstall accepts preserved, non-colliding `.facet-install` content while
+rejecting unsafe links and stale files that conflict with managed state.
 
 ```powershell
 irm https://xibodev.github.io/facet/install.ps1 | iex

@@ -72,6 +72,10 @@ then removes only that project's managed skill files, state files, ownership
 record, and Facet section. Modified managed content blocks uninstall; unmanaged
 files and instruction text remain in place. The shared runtime is never removed
 because another project may still use it.
+Reinstall detection is based on a valid project installation receipt, not merely
+the presence of `.facet-install`. Non-colliding unmanaged residue is preserved and
+merged back transactionally; linked residue or stale entries that collide with
+managed state stop setup without deleting the preserved files.
 
 ```powershell
 pwsh -File ./install.ps1 -NonInteractive -Target codex -ProjectDir ./video -Action uninstall
