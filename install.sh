@@ -584,6 +584,7 @@ cp -R "$INSTALL/bundle/packs" "$PROJECT_STAGE/state/packs"
     printf '#!/usr/bin/env bash\n'
     printf 'export PATH=%q:"$PATH"\n' "$DEPS/node/bin:$DEPS/gflow:$DEPS/piper/bin:$(dirname "$(command -v ffmpeg)")"
     if command -v node >/dev/null; then printf 'export PATH=%q:"$PATH"\n' "$(dirname "$(command -v node)")"; fi
+    if has piper; then printf 'export FACET_PIPER_MODEL=%q\n' "$VOICES/$(definition piper 4).onnx"; fi
     printf 'exec %q "$@"\n' "$FACET"
 } > "$PROJECT_STAGE/state/run-facet.sh"
 chmod +x "$PROJECT_STAGE/state/run-facet.sh"

@@ -601,7 +601,14 @@ try {
     foreach ($cmd in @('ffmpeg','ffprobe','node','npm.cmd')) { $found=@(Get-Command $cmd -CommandType Application -ErrorAction SilentlyContinue); if ($found.Count) { $paths += Split-Path -Parent $found[0].Source } }
     $pathLiteral = (($paths -join ';') + ';').Replace("'","''")
     $binaryLiteral = $facet.Replace("'","''")
-    @('$ErrorActionPreference = ''Stop''',"`$env:PATH = '$pathLiteral' + `$env:PATH","& '$binaryLiteral' @args",'exit $LASTEXITCODE') | Set-Content -LiteralPath "$projectStage/state/run-facet.ps1" -Encoding utf8
+    $launcherLines = @('$ErrorActionPreference = ''Stop''',"`$env:PATH = '$pathLiteral' + `$env:PATH")
+    if ('piper' -in $selected) {
+        $modelLiteral = (Join-Path $voices "$((Definition piper).value).onnx").Replace("'","''")
+        $launcherLines += "`$env:FACET_PIPER_MODEL = '$modelLiteral'"
+    }
+    $launcherLines += "& '$binaryLiteral' @args"
+    $launcherLines += 'exit $LASTEXITCODE'
+    $launcherLines | Set-Content -LiteralPath "$projectStage/state/run-facet.ps1" -Encoding utf8
     $launcher = (Join-Path $state 'run-facet.ps1').Replace("'","''")
     $methodLine = if ($selectedPacks.Count) { "- Active production methods selected during setup: " + (($selectedPacks | ForEach-Object { "$state/packs/$_/SKILL.md" }) -join ', ') + '.' } else { '- No production-method pack is active; use the core guidance only.' }
     @('', '## This installation', "- Invoke Facet with: & '$launcher' followed by the normal arguments. Use this launcher instead of bare facet in examples.", "- Run facet routes list and facet routes assess --input <json> before choosing a method. Resolve packs/... under $state and read only the relevant pack's SKILL.md.", $methodLine, "- Optional components selected: $($selected -join ','). Media services report missing credentials/session requirements when used.") | Add-Content -LiteralPath "$projectStage/skill/SKILL.md"
