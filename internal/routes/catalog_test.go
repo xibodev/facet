@@ -332,9 +332,9 @@ func TestAllValuesCatalogBindingsAcceptScalarAndArrayFiles(t *testing.T) {
 	}{
 		{method: "animation", route: "remotion-animation", input: "visual_assets"},
 		{method: "character-animation", route: "character-remotion", input: "character_assets"},
-		{method: "explainer", route: "local-explainer", input: "visuals"},
 		{method: "product-demo", route: "synthetic-product-demo", input: "visual_assets"},
 	}
+
 	for _, tc := range tests {
 		t.Run(tc.route, func(t *testing.T) {
 			method, ok := Find(tc.method)
@@ -378,6 +378,57 @@ func TestAllValuesCatalogBindingsAcceptScalarAndArrayFiles(t *testing.T) {
 				t.Fatal("partially consumed file array satisfied all-values binding")
 			}
 		})
+	}
+}
+
+func TestLocalExplainerAcceptsTextOnlyTitleAndSubtitle(t *testing.T) {
+	method, ok := Find("explainer")
+	if !ok {
+		t.Fatal("explainer method is missing")
+	}
+	request := Request{
+		Method: "explainer",
+		Inputs: map[string]json.RawMessage{
+			"script": json.RawMessage(`"Facet staging test — Agent-first video production"`),
+		},
+		OperationRequests: map[string]json.RawMessage{
+			"video_compose": json.RawMessage(`{
+				"composition_id":"Explainer",
+				"width":1920,
+				"height":1080,
+				"fps":30,
+				"duration_seconds":5,
+				"cuts":[{
+					"type":"hero_title",
+					"in_seconds":0,
+					"out_seconds":5,
+					"text":"Facet staging test",
+					"subtitle":"Agent-first video production"
+				}],
+				"output":"renders/facet-staging-test.mp4"
+			}`),
+			"output_review": json.RawMessage(`{"input":"renders/facet-staging-test.mp4"}`),
+		},
+	}
+	got, err := assess(
+		[]Method{method},
+		operationMap([]toolbox.V2Operation{{ID: "video_compose"}, {ID: "output_review"}}),
+		request,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := got.Methods[0].Routes[0]
+	if route.Status != StatusFeasible {
+		t.Fatalf("text-only title card route = %s, want feasible: %#v", route.Status, route)
+	}
+	if len(route.RequiredInputs) != 1 || route.RequiredInputs[0].Name != "script" {
+		t.Fatalf("required inputs = %#v, want script only", route.RequiredInputs)
+	}
+	for _, binding := range route.Bindings {
+		if !binding.Constructible {
+			t.Fatalf("binding was not constructible: %#v", binding)
+		}
 	}
 }
 
