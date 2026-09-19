@@ -27,7 +27,7 @@ while (($#)); do
         --verbose) DETAIL=1; shift;;
         --plain) PLAIN=1; shift;;
         --migrate-legacy) MIGRATE_LEGACY=1; shift;;
-        --help|-h) printf '%s\n' 'Usage: bash install.sh [--target opencode|codex|claude|copilot|studio] [--project DIR] [--pack NAME ...] [--production-method NAME ...] [--install-dir DIR] [--version VERSION] [--components remotion,piper,gflow,hyperframes|none] [--action add|repair|update] [--archive ZIP --checksums FILE] [--yes] [--skip-verify] [--verbose]'; exit 0;;
+        --help|-h) printf '%s\n' 'Usage: bash install.sh [--target opencode|codex|claude|copilot|studio] [--project DIR] [--pack NAME ...] [--production-method NAME ...] [--install-dir DIR] [--version VERSION] [--components remotion,piper,gflow,hyperframes|none] [--action add|repair|update|uninstall] [--archive ZIP --checksums FILE] [--yes] [--skip-verify] [--verbose]'; exit 0;;
         *) die "Unknown option: $1";;
     esac
 done
@@ -190,8 +190,10 @@ if [[ -d "$STATE" ]]; then
     done < "$STATE/managed-files.sha256"
     (cd "$PROJECT" && shasum -a 256 -c "$STATE/managed-files.sha256") >/dev/null || die 'Preserving modified project files.'
     expected_count=$(wc -l < "$STATE/managed-files.sha256" | tr -d ' ')
-    actual_count=$(find "$STATE" "$SKILL" -type f ! -path "$STATE/managed-files.sha256" | wc -l | tr -d ' ')
-    [[ "$actual_count" == "$expected_count" ]] || die 'Preserving extra files in managed project directories.'
+    if [[ "$ACTION" != uninstall ]]; then
+        actual_count=$(find "$STATE" "$SKILL" -type f ! -path "$STATE/managed-files.sha256" | wc -l | tr -d ' ')
+        [[ "$actual_count" == "$expected_count" ]] || die 'Preserving extra files in managed project directories.'
+    fi
     fi
     if [[ -f "$STATE/instruction-section.tsv" ]]; then
         owned_instruction=$(awk -F '\t' '$1=="path" {print $2}' "$STATE/instruction-section.tsv")
@@ -201,6 +203,9 @@ if [[ -d "$STATE" ]]; then
         INSTRUCTION_OWNED=1
     fi
     PREVIOUS=1
+    if [[ "$ACTION" == uninstall ]]; then
+        INSTALL=$(awk -F '\t' '$1=="installation" {print $2}' "$STATE/installation.tsv")
+    fi
     if [[ $YES != 1 && -z "$ACTION_EXPLICIT" ]]; then ACTION=$(choose 'What should setup do?' 0 add add 'Add components - keep existing tools' repair 'Repair - verify a replacement' update 'Update - switch to selected version'); fi
     if [[ "$ACTION" == add ]]; then
         [[ $(awk -F '\t' '$1=="version" {print $2}' "$STATE/installation.tsv") == "$VERSION" ]] || die 'Choose update to change product version.'
@@ -214,25 +219,32 @@ if [[ -d "$STATE" ]]; then
             [[ $present == 1 ]] || SELECTED_PACKS+=("$item")
         done
     fi
-else new_path "$SKILL"; new_path "$STATE"; fi
-case "$ACTION" in add|repair|update) ;; *) die 'Choose add, repair, or update.';; esac
-real_ancestors "$INSTALL"
-REUSE=0
-if [[ -f "$INSTALL/components.tsv" && "$ACTION" != repair ]]; then
-    REUSE=1
-    for item in "${SELECTED[@]}"; do
-        [[ "$item" == none ]] || grep -qx "$item" "$INSTALL/components.tsv" || REUSE=0
-    done
+else
+    [[ "$ACTION" != uninstall ]] || die 'This project has no Facet installation to uninstall.'
+    new_path "$SKILL"; new_path "$STATE"
 fi
-if [[ -d "$INSTALL" && $REUSE == 0 ]]; then
-    [[ -f "$INSTALL/.facet-receipt" ]] || die 'Existing installation is not managed by these scripts.'
-    INSTALL="$INSTALL-generation-$(date +%s)-$$"
+case "$ACTION" in add|repair|update|uninstall) ;; *) die 'Choose add, repair, update, or uninstall.';; esac
+REUSE=0
+if [[ "$ACTION" != uninstall ]]; then
+    real_ancestors "$INSTALL"
+    if [[ -f "$INSTALL/components.tsv" && "$ACTION" != repair ]]; then
+        REUSE=1
+        for item in "${SELECTED[@]}"; do
+            [[ "$item" == none ]] || grep -qx "$item" "$INSTALL/components.tsv" || REUSE=0
+        done
+    fi
+    if [[ -d "$INSTALL" && $REUSE == 0 ]]; then
+        [[ -f "$INSTALL/.facet-receipt" ]] || die 'Existing installation is not managed by these scripts.'
+        INSTALL="$INSTALL-generation-$(date +%s)-$$"
+    fi
 fi
 printf '\n  Agent: %s\n  Project: %s\n  Action: %s\n  Production methods: %s\n  Components: %s\n  Runtime: %s\n' "$TARGET" "$PROJECT" "$ACTION" "${SELECTED_PACKS[*]:-core only}" "${SELECTED[*]}" "$INSTALL"
 printf '%s\n' '  Existing runtimes are retained until a verified replacement is ready.'
 [[ $YES == 1 ]] || [[ $(ask 'Continue?' y) =~ ^(y|yes)$ ]] || die 'Installation cancelled.'
 section '[2/3] Install and verify capabilities'
-for program in curl unzip zipinfo awk shasum; do command -v "$program" >/dev/null || die "Install required archive utility: $program"; done
+required_programs=(awk grep shasum)
+if [[ "$ACTION" != uninstall ]]; then required_programs+=(curl unzip zipinfo); fi
+for program in "${required_programs[@]}"; do command -v "$program" >/dev/null || die "Install required archive utility: $program"; done
 LOG_DIR=${FACET_LOG_DIR:-$HOME/.facet/logs}; mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/install-$(date +%Y%m%d-%H%M%S)-$$.log"
 TEMP=$(mktemp -d); STAGE=''; PROJECT_STAGE=''; COMMITTED=0; NEW_RUNTIME=1
@@ -311,6 +323,41 @@ merge_instruction_section() {
         !inside {print}
     ' "$existing" > "$out"
 }
+remove_instruction_section() {
+    local existing=$1 out=$2
+    awk -v start="$FACET_SECTION_START" -v end="$FACET_SECTION_END" '
+        $0==start {inside=1; next}
+        inside && $0==end {inside=0; next}
+        !inside {print}
+    ' "$existing" > "$out"
+}
+if [[ "$ACTION" == uninstall ]]; then
+    [[ $PREVIOUS == 1 && -f "$STATE/managed-files.sha256" ]] || die 'This project has no ownership-verified Facet installation to uninstall.'
+    [[ $INSTRUCTION_OWNED == 1 ]] || die 'This project has no ownership-verified Facet instruction section to uninstall.'
+    extract_instruction_section "$INSTRUCTION" "$TEMP/current-instruction-section" || die 'Managed Facet instruction section is missing.'
+    [[ $(hash_file "$TEMP/current-instruction-section") == "$owned_hash" ]] || die 'Preserving modified Facet instruction section.'
+    cp "$STATE/managed-files.sha256" "$TEMP/uninstall-files.sha256"
+    while IFS= read -r line; do
+        file=${line#*  }
+        case "$file" in
+            .facet-install/*|"$HOST_PATH/facet/"*) ;;
+            *) die "Invalid uninstall ownership path: $file";;
+        esac
+    done < "$TEMP/uninstall-files.sha256"
+    remove_instruction_section "$INSTRUCTION" "$TEMP/instruction-without-facet"
+    mv "$TEMP/instruction-without-facet" "$INSTRUCTION"
+    while IFS= read -r line; do
+        file=${line#*  }
+        rm -f -- "$PROJECT/$file"
+    done < "$TEMP/uninstall-files.sha256"
+    rm -f -- "$STATE/managed-files.sha256"
+    [[ ! -d "$SKILL" ]] || find "$SKILL" -depth -type d -empty -exec rmdir {} \;
+    [[ ! -d "$STATE" ]] || find "$STATE" -depth -type d -empty -exec rmdir {} \;
+    COMMITTED=1
+    printf '\nFacet was removed from this project. User instructions and unmanaged files were preserved.\n'
+    printf 'Shared runtime retained at: %s\n' "$INSTALL"
+    exit 0
+fi
 verify_checksum() {
     local expected
     expected=$(awk -v name="$3" '{sub(/\r$/, "")} $2==name || $2=="*"name {print tolower($1);n++} END{if(n!=1)exit 1}' "$2") || die "Checksum entry missing or duplicated: $3"

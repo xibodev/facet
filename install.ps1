@@ -14,7 +14,7 @@ param(
     [string]$InstallDir = $env:FACET_INSTALL_DIR,
     [string]$Components = $env:FACET_COMPONENTS,
     [Alias('ProductionMethod')][string[]]$Pack,
-    [ValidateSet('add','repair','update')][string]$Action = 'add',
+    [ValidateSet('add','repair','update','uninstall')][string]$Action = 'add',
     [switch]$MigrateLegacy,
     [switch]$Plain,
     [string]$ArchivePath,
@@ -37,7 +37,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 if (-not $Target -and $env:FACET_TARGET) { $Target = $env:FACET_TARGET }
 if ($env:FACET_YES -eq '1') { $NonInteractive = $true }
 if ($env:FACET_ACTION -and -not $PSBoundParameters.ContainsKey('Action')) { $Action = $env:FACET_ACTION }
-if ($Action -notin @('add','repair','update')) { throw 'Action must be add, repair, or update.' }
+if ($Action -notin @('add','repair','update','uninstall')) { throw 'Action must be add, repair, update, or uninstall.' }
 $componentsExplicit = -not [string]::IsNullOrWhiteSpace($Components)
 $packsExplicit = $PSBoundParameters.ContainsKey('Pack') -or -not [string]::IsNullOrWhiteSpace($env:FACET_PACKS)
 if (-not $Pack -and $env:FACET_PACKS) { $Pack = @($env:FACET_PACKS.Split(',') | Where-Object { $_.Trim() } | ForEach-Object { $_.Trim() }) }
@@ -339,8 +339,10 @@ if (Test-Path -LiteralPath $state) {
         $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint -or (Get-FileHash -LiteralPath $path).Hash -ne $file.sha256) { throw "Preserving modified project file: $($file.path)" }
     }
-    $actualFiles = @(Get-ChildItem -LiteralPath $state,$skill -File -Recurse | Where-Object FullName -NE $ownedFile)
-    if ($actualFiles.Count -ne @($owned).Count) { throw 'Preserving extra files in installer-owned project directories.' }
+    if ($Action -ne 'uninstall') {
+        $actualFiles = @(Get-ChildItem -LiteralPath $state,$skill -File -Recurse | Where-Object FullName -NE $ownedFile)
+        if ($actualFiles.Count -ne @($owned).Count) { throw 'Preserving extra files in installer-owned project directories.' }
+    }
     }
     $instructionRecord = Join-Path $state 'instruction-section.json'
     if (Test-Path -LiteralPath $instructionRecord) {
@@ -365,20 +367,27 @@ if (Test-Path -LiteralPath $state) {
         $selectedPacks = @($previousPacks + $selectedPacks | Where-Object { $_ } | Select-Object -Unique)
         $InstallDir = $previous.installation
     }
-} else { Assert-New $skill; Assert-New $state }
-Assert-RealAncestors $InstallDir
+    if ($Action -eq 'uninstall') { $InstallDir = $previous.installation }
+} else {
+    if ($Action -eq 'uninstall') { throw 'This project has no Facet installation to uninstall.' }
+    Assert-New $skill
+    Assert-New $state
+}
 # An existing runtime is immutable during repair/additions: build a sibling
 # generation and only rebind this project after every selected check passes.
 $reuse = $false
-$runtimeState = Join-Path $InstallDir 'components.json'
-if (Test-Path -LiteralPath $runtimeState) {
-    $ready = [IO.File]::ReadAllText($runtimeState) | ConvertFrom-Json
-    $missing = @($selected | Where-Object { $_ -ne 'none' -and $_ -notin @($ready.components) })
-    $reuse = $Action -ne 'repair' -and $ready.version -eq $Version -and -not $missing.Count
-}
-if ((Test-Path -LiteralPath $InstallDir) -and -not $reuse) {
-    if (-not (Test-Path -LiteralPath (Join-Path $InstallDir 'facet-install.json'))) { throw 'Existing installation is not managed by these scripts.' }
-    $InstallDir += '-generation-' + [guid]::NewGuid().ToString('N').Substring(0,8)
+if ($Action -ne 'uninstall') {
+    Assert-RealAncestors $InstallDir
+    $runtimeState = Join-Path $InstallDir 'components.json'
+    if (Test-Path -LiteralPath $runtimeState) {
+        $ready = [IO.File]::ReadAllText($runtimeState) | ConvertFrom-Json
+        $missing = @($selected | Where-Object { $_ -ne 'none' -and $_ -notin @($ready.components) })
+        $reuse = $Action -ne 'repair' -and $ready.version -eq $Version -and -not $missing.Count
+    }
+    if ((Test-Path -LiteralPath $InstallDir) -and -not $reuse) {
+        if (-not (Test-Path -LiteralPath (Join-Path $InstallDir 'facet-install.json'))) { throw 'Existing installation is not managed by these scripts.' }
+        $InstallDir += '-generation-' + [guid]::NewGuid().ToString('N').Substring(0,8)
+    }
 }
 Write-Host "`n  Agent: $Target`n  Project: $ProjectDir`n  Action: $Action`n  Production methods: $(if ($selectedPacks.Count) {$selectedPacks -join ', '} else {'core only'})`n  Components: $($selected -join ', ')`n  Runtime: $InstallDir"
 Write-Host '  Existing managed runtimes are retained until a verified replacement is ready.'
@@ -394,6 +403,37 @@ $newRuntime = -not (Test-Path -LiteralPath $InstallDir)
 $committed = $false
 New-Item -ItemType Directory -Path $temp | Out-Null
 try {
+    if ($Action -eq 'uninstall') {
+        if (-not $previous -or -not (Test-Path -LiteralPath $ownedFile) -or -not $instructionOwned) { throw 'This project has no ownership-verified Facet installation to uninstall.' }
+        $skillPrefix = $hostDef.value.TrimEnd('/','\') + '/facet/'
+        foreach ($file in $owned) {
+            if (-not ($file.path.StartsWith('.facet-install/',[StringComparison]::Ordinal) -or $file.path.StartsWith($skillPrefix,[StringComparison]::Ordinal))) {
+                throw "Invalid uninstall ownership path: $($file.path)"
+            }
+        }
+        $content = [IO.File]::ReadAllText($instruction)
+        $match = Find-FacetSection $content $instructionRel
+        if (-not $match -or (Text-Hash $match.Value) -cne $record.sha256) { throw 'Preserving modified Facet instruction section.' }
+        $withoutFacet = $content.Substring(0,$match.Index) + $content.Substring($match.Index + $match.Length)
+        [IO.File]::WriteAllText($instruction,$withoutFacet,[Text.UTF8Encoding]::new($false))
+        foreach ($file in $owned) {
+            Remove-Item -LiteralPath (Join-Path $ProjectDir $file.path) -Force
+        }
+        Remove-Item -LiteralPath $ownedFile -Force
+        foreach ($root in @($skill,$state)) {
+            if (Test-Path -LiteralPath $root) {
+                $directories = @(Get-ChildItem -LiteralPath $root -Directory -Recurse -Force | Sort-Object { $_.FullName.Length } -Descending)
+                foreach ($directory in $directories) {
+                    if (-not @(Get-ChildItem -LiteralPath $directory.FullName -Force).Count) { Remove-Item -LiteralPath $directory.FullName -Force }
+                }
+                if (-not @(Get-ChildItem -LiteralPath $root -Force).Count) { Remove-Item -LiteralPath $root -Force }
+            }
+        }
+        $committed=$true
+        Write-Host "`nFacet was removed from this project. User instructions and unmanaged files were preserved." -ForegroundColor Green
+        Write-Host "Shared runtime retained at: $InstallDir"
+        return
+    }
     $name = "facet-$Version-windows-$arch.zip"
     if (-not $ArchivePath -and -not $reuse) {
         $base = "https://github.com/$((Definition facet).value)/releases/download/v$Version"

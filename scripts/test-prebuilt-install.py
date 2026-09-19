@@ -65,6 +65,7 @@ def main():
                 "copilot": (".github/skills", ".github/copilot-instructions.md"),
                 "studio": ("skills", "AGENTS.md"),
             }
+            installed_projects = {}
             for host, (skill_root, instruction_name) in adapters.items():
                 project = temp / host
                 project.mkdir()
@@ -141,6 +142,35 @@ def main():
                         assert launcher.read_bytes() == before, "Failed addition replaced project binding"
                         assert set(temp.glob("release-generation-*")) == generations, "Failed addition left a partial generation"
                         install(project, temp / "release")
+                installed_projects[host] = (project, skill_root, instruction_name, instruction, launcher)
+            remaining_hosts = list(installed_projects)
+            for host in list(installed_projects):
+                project, skill_root, instruction_name, instruction, launcher = installed_projects[host]
+                skill = project / skill_root / "facet/SKILL.md"
+                original = skill.read_bytes()
+                skill.write_bytes(original + b"\nModified before uninstall\n")
+                install(project, temp / "release", action="uninstall", expect_success=False)
+                assert skill.read_bytes() == original + b"\nModified before uninstall\n"
+                skill.write_bytes(original)
+                unmanaged_state = project / ".facet-install/user-note.txt"
+                unmanaged_state.write_text(f"Keep uninstall note for {host}.")
+                remaining_hosts.remove(host)
+                install(project, temp / "release", action="uninstall")
+                assert not skill.exists()
+                assert unmanaged_state.read_text() == f"Keep uninstall note for {host}."
+                instruction_text = instruction.read_text()
+                assert "<!-- facet:managed:start -->" not in instruction_text
+                assert "<!-- facet:managed:end -->" not in instruction_text
+                assert f"Keep user instructions for {host}." in instruction_text
+                assert not (project / ".facet-install" / ("managed-files.json" if args.os == "windows" else "managed-files.sha256")).exists()
+                assert (temp / "release/bin" / ("facet" + suffix)).exists(), "Uninstall removed the shared runtime"
+                if remaining_hosts:
+                    other_launcher = installed_projects[remaining_hosts[0]][4]
+                    if args.os == "windows":
+                        other_version = subprocess.check_output([os.environ.get("FACET_TEST_POWERSHELL", "pwsh"), "-NoProfile", "-File", str(other_launcher), "version"], text=True).strip()
+                    else:
+                        other_version = subprocess.check_output(["bash", str(other_launcher), "version"], text=True).strip()
+                    assert other_version == "facet v" + version
             bad_sums = temp / "bad-sums.txt"
             bad_sums.write_text("0" * 64 + "  " + archive.name + "\n")
             bad_project = temp / "bad-project" / "codex"

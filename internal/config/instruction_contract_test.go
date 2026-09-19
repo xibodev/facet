@@ -66,7 +66,17 @@ func TestGeneratedInstructionContract(t *testing.T) {
 			t.Run(engine.name+"/"+packs.name, func(t *testing.T) {
 				dir := t.TempDir()
 				owned := loadOwnership(dir)
-				scaffoldAgentInstructions(dir, engine.name, packs.packs, owned)
+				selected := filepath.Join(dir, filepath.FromSlash(engine.instruction))
+				if err := os.MkdirAll(filepath.Dir(selected), 0755); err != nil {
+					t.Fatal(err)
+				}
+				const userInstructions = "Keep adapter-specific user instructions.\n"
+				if err := os.WriteFile(selected, []byte(userInstructions), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := scaffoldAgentInstructions(dir, engine.name, packs.packs, owned); err != nil {
+					t.Fatal(err)
+				}
 				for _, file := range []string{"CLAUDE.md", "AGENTS.md", ".github/copilot-instructions.md"} {
 					data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(file)))
 					if file != engine.instruction {
@@ -79,6 +89,9 @@ func TestGeneratedInstructionContract(t *testing.T) {
 						t.Fatal(err)
 					}
 					text := string(data)
+					if !strings.HasPrefix(text, userInstructions) {
+						t.Errorf("%s did not preserve pre-existing user instructions", file)
+					}
 					if lines := len(strings.Split(strings.TrimSpace(text), "\n")); lines > 50 {
 						t.Errorf("%s has %d lines", file, lines)
 					} else {
@@ -143,27 +156,55 @@ func TestInstructionRepairPreservesUserFiles(t *testing.T) {
 	if err := os.WriteFile(file, []byte(user), 0600); err != nil {
 		t.Fatal(err)
 	}
-	scaffoldAgentInstructions(dir, "opencode", nil, loadOwnership(dir))
+	owned := loadOwnership(dir)
+	if err := scaffoldAgentInstructions(dir, "opencode", nil, owned); err != nil {
+		t.Fatal(err)
+	}
 	data, err := os.ReadFile(file)
-	if err != nil || string(data) != user {
-		t.Fatalf("unmanaged instructions overwritten: %q, %v", data, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.HasPrefix(text, user) || strings.Count(text, "<!-- facet:managed:start -->") != 1 || strings.Count(text, "<!-- facet:managed:end -->") != 1 {
+		t.Fatalf("unmanaged instructions were not preserved around one Facet section: %q", text)
+	}
+	if err := os.WriteFile(file, append(data, []byte("\nLater user edit.\n")...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	saveOwnership(dir, owned)
+	owned = loadOwnership(dir)
+	if err := scaffoldAgentInstructions(dir, "opencode", []string{"explainer"}, owned); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(updated), "Later user edit.") || strings.Count(string(updated), "<!-- facet:managed:start -->") != 1 {
+		t.Fatalf("rerun did not preserve user edits outside the managed section: %q", updated)
 	}
 }
 
 func TestInstructionEngineChangeRemovesOnlyManagedGoverningFile(t *testing.T) {
 	dir := t.TempDir()
 	owned := loadOwnership(dir)
-	scaffoldAgentInstructions(dir, "claude", nil, owned)
-	if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); err != nil {
+	const claudeUser = "Keep these user-owned Claude instructions.\n"
+	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(claudeUser), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := scaffoldAgentInstructions(dir, "claude", nil, owned); err != nil {
 		t.Fatal(err)
 	}
 	const user = "Keep these user-owned Codex instructions.\n"
 	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(user), 0600); err != nil {
 		t.Fatal(err)
 	}
-	scaffoldAgentInstructions(dir, "copilot", nil, owned)
-	if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); !os.IsNotExist(err) {
-		t.Fatal("managed Claude instructions survived a Copilot-only projection")
+	if err := scaffoldAgentInstructions(dir, "copilot", nil, owned); err != nil {
+		t.Fatal(err)
+	}
+	claude, err := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	if err != nil || string(claude) != claudeUser {
+		t.Fatalf("adapter switch did not remove only the prior Facet section: %q, %v", claude, err)
 	}
 	if data, err := os.ReadFile(filepath.Join(dir, "AGENTS.md")); err != nil || string(data) != user {
 		t.Fatalf("unmanaged AGENTS.md changed: %q, %v", data, err)
@@ -173,11 +214,34 @@ func TestInstructionEngineChangeRemovesOnlyManagedGoverningFile(t *testing.T) {
 	}
 }
 
+func TestInstructionManagedSectionRejectsTampering(t *testing.T) {
+	dir := t.TempDir()
+	owned := loadOwnership(dir)
+	if err := scaffoldAgentInstructions(dir, "codex", nil, owned); err != nil {
+		t.Fatal(err)
+	}
+	saveOwnership(dir, owned)
+	owned = loadOwnership(dir)
+	file := filepath.Join(dir, "AGENTS.md")
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte(strings.Replace(string(data), "# Facet Video Production Workspace", "# User changed Facet", 1)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := scaffoldAgentInstructions(dir, "codex", nil, owned); err == nil || !strings.Contains(err.Error(), "preserving modified Facet instruction section") {
+		t.Fatalf("tampered managed section error = %v", err)
+	}
+}
+
 func TestGeneratedRequestsEstimateThroughCLI(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	t.Setenv("PATH", t.TempDir())
-	scaffoldAgentInstructions(dir, "opencode", []string{"explainer"}, loadOwnership(dir))
+	if err := scaffoldAgentInstructions(dir, "opencode", []string{"explainer"}, loadOwnership(dir)); err != nil {
+		t.Fatal(err)
+	}
 	for _, file := range []string{"assets/source.mp4", "renders/final.mp4"} {
 		if err := os.MkdirAll(filepath.Dir(file), 0755); err != nil {
 			t.Fatal(err)

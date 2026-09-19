@@ -62,13 +62,24 @@ Pack resources live in `.facet-install/packs/`, outside the host's recursive
 skill discovery tree. Only the core `facet` skill is registered; repeat
 `--pack` / `--production-method` (or pass `-Pack` on PowerShell) to activate
 named methods in its installed guidance. With no selection, setup is core-only.
-Existing projects with ownership hashes can be rerun with `--action add|repair|update`
+Existing projects with ownership hashes can be rerun with `--action add|repair|update|uninstall`
 (`-Action` on Windows). Add preserves existing component choices and adds the
 selected ones. Repair builds a separate runtime generation; update can rebind to
 another explicit release version. A project is rebound only after setup checks
 pass, and earlier runtime generations remain available to other projects.
-Modified or additional files in managed project directories are preserved by
-refusing an automatic replacement. Uninstall is not implemented.
+Uninstall verifies every recorded file and the bounded instruction-section hash,
+then removes only that project's managed skill files, state files, ownership
+record, and Facet section. Modified managed content blocks uninstall; unmanaged
+files and instruction text remain in place. The shared runtime is never removed
+because another project may still use it.
+
+```powershell
+pwsh -File ./install.ps1 -NonInteractive -Target codex -ProjectDir ./video -Action uninstall
+```
+
+```bash
+bash ./install.sh --yes --target codex --project ./video --action uninstall
+```
 
 Older v1.0.3 integrations lack file ownership hashes. Interactive setup offers a
 separate opt-in migration, or automation can pass `--migrate-legacy` /
@@ -111,10 +122,11 @@ runners; local probes supplement rather than replace the release gates.
 
 `scripts/test-prebuilt-install.py` runs the platform's real script against a
 real native archive. Set `FACET_INSTALL_SMOKE=1` with FFmpeg installed to exercise
-all four host placements, interactive selection, repeat/reuse, isolated repair,
+all five host placements, interactive selection, repeat/reuse, isolated repair,
 explicit legacy migration with backups, failed dependency-add rollback, modified
-file preservation, invalid checksums, traversal, duplicate entries, links,
-modified installations, and local encode/probe/decode checks. Windows CI runs
+file preservation, ownership-verified uninstall, shared-runtime retention,
+invalid checksums, traversal, duplicate entries, links, modified installations,
+and local encode/probe/decode checks. Windows CI runs
 this lifecycle suite under both Windows PowerShell 5.1 and PowerShell 7.
 
 `scripts/test-installer-wsl.sh` is a narrower local adapter: native Linux Facet,

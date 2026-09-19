@@ -1,12 +1,14 @@
 package config
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -45,9 +47,11 @@ type OwnershipRecord struct {
 
 // ManagedEntry represents an individual managed path or projection.
 type ManagedEntry struct {
-	EntryType string `json:"entry_type"` // "directory-junction", "symlink", "copy"
-	Target    string `json:"target"`
-	CreatedOn string `json:"created_on"`
+	EntryType      string `json:"entry_type"` // "directory-junction", "symlink", "copy", "instruction-section"
+	Target         string `json:"target"`
+	ContentSHA256  string `json:"content_sha256,omitempty"`
+	AddedSeparator bool   `json:"added_separator,omitempty"`
+	CreatedOn      string `json:"created_on"`
 }
 
 // ProjectLock represents the portable facet.lock.json pinned to a project.
@@ -201,7 +205,9 @@ func RunInitWithOptions(opts InitOptions, cfg *Config, w io.Writer) (*InitResult
 	}
 
 	// 6. Scaffold agent instruction files (CLAUDE.md, AGENTS.md, copilot-instructions.md)
-	scaffoldAgentInstructions(targetDir, engine, opts.Packs, ownership)
+	if err := scaffoldAgentInstructions(targetDir, engine, opts.Packs, ownership); err != nil {
+		return nil, err
+	}
 
 	// 7. Save ownership record
 	saveOwnership(targetDir, ownership)
@@ -252,7 +258,18 @@ func RunInitWithOptions(opts InitOptions, cfg *Config, w io.Writer) (*InitResult
 	return result, nil
 }
 
-func scaffoldAgentInstructions(targetDir, engine string, packs []string, ownership *OwnershipRecord) {
+const (
+	facetInstructionStart = "<!-- facet:managed:start -->"
+	facetInstructionEnd   = "<!-- facet:managed:end -->"
+)
+
+var (
+	facetInstructionStartPattern = regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(facetInstructionStart) + `\r?$`)
+	facetInstructionEndPattern   = regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(facetInstructionEnd) + `\r?$`)
+	facetInstructionPattern      = regexp.MustCompile(`(?ms)^` + regexp.QuoteMeta(facetInstructionStart) + `\r?\n.*?^` + regexp.QuoteMeta(facetInstructionEnd) + `\r?$`)
+)
+
+func scaffoldAgentInstructions(targetDir, engine string, packs []string, ownership *OwnershipRecord) error {
 	var packLines strings.Builder
 	if len(packs) == 0 {
 		packLines.WriteString("- Core Source-Edit (No additional packs active)\n")
@@ -262,7 +279,8 @@ func scaffoldAgentInstructions(targetDir, engine string, packs []string, ownersh
 		}
 	}
 
-	instructions := fmt.Sprintf(`# Facet Video Production Workspace
+	instructions := fmt.Sprintf(`%s
+# Facet Video Production Workspace
 
 You are the **Facet Video Producer**. You autonomously create, assemble, and render finished videos directly inside this workspace.
 
@@ -294,24 +312,97 @@ Use `+"`facet tools describe <tool>`"+` for schemas and `+"`facet tools estimate
 - Use `+"`gflow_image`"+` or `+"`gflow_video`"+`, never a generic gflow tool. Both need the gflow binary on PATH and authenticated provider access; configured only checks the binary.
 - Real gflow estimates have null estimated_cost (unknown). Explain provider/model and obtain paid consent; missing dependencies or credentials are errors, not permission to use mocks.
 - Read returned output/outputs paths, warnings, and review evidence; deliver the verified file with concise provenance and limitations.
-`, filepath.ToSlash(getSkillsTargetPath(".", engine, "facet")), packLines.String())
+%s
+`, facetInstructionStart, filepath.ToSlash(getSkillsTargetPath(".", engine, "facet")), packLines.String(), facetInstructionEnd)
+	instructions = strings.TrimRight(instructions, "\r\n")
 
 	selected := instructionPathForEngine(engine)
+	type pendingInstruction struct {
+		rel     string
+		path    string
+		content string
+		entry   ManagedEntry
+	}
+	var removals []pendingInstruction
 	for _, rel := range []string{"CLAUDE.md", "AGENTS.md", ".github/copilot-instructions.md"} {
 		if rel == selected || ownership == nil {
 			continue
 		}
-		if entry, ok := ownership.ManagedEntries[rel]; ok && entry.EntryType == "instruction-file" {
-			_ = os.Remove(filepath.Join(targetDir, filepath.FromSlash(rel)))
-			delete(ownership.ManagedEntries, rel)
+		entry, ok := ownership.ManagedEntries[rel]
+		if !ok || entry.EntryType != "instruction-section" {
+			continue
 		}
+		path := filepath.Join(targetDir, filepath.FromSlash(rel))
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("managed Facet instruction section in %s is missing: %w", rel, err)
+		}
+		start, end, section, found, err := findFacetInstructionSection(string(content))
+		if err != nil {
+			return fmt.Errorf("%s: %w", rel, err)
+		}
+		if !found || instructionSectionHash(section) != entry.ContentSHA256 {
+			return fmt.Errorf("preserving modified Facet instruction section in %s", rel)
+		}
+		remaining := removeFacetInstructionSection(string(content), start, end, entry.AddedSeparator)
+		removals = append(removals, pendingInstruction{rel: rel, path: path, content: remaining})
 	}
 	if selected == "" {
-		return
+		return nil
 	}
-	path := filepath.Join(targetDir, filepath.FromSlash(selected))
-	_ = os.MkdirAll(filepath.Dir(path), 0755)
-	writeInstructionFileSafe(path, selected, instructions, ownership)
+	selectedPath := filepath.Join(targetDir, filepath.FromSlash(selected))
+	selectedContent, err := os.ReadFile(selectedPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read governing instructions %s: %w", selected, err)
+	}
+	existing := string(selectedContent)
+	start, end, currentSection, found, err := findFacetInstructionSection(existing)
+	if err != nil {
+		return fmt.Errorf("%s: %w", selected, err)
+	}
+	entry, owned := ownership.ManagedEntries[selected]
+	addedSeparator := false
+	merged := instructions + "\n"
+	if found {
+		if !owned || entry.EntryType != "instruction-section" {
+			return fmt.Errorf("preserving unmanaged Facet instruction section in %s", selected)
+		}
+		if instructionSectionHash(currentSection) != entry.ContentSHA256 {
+			return fmt.Errorf("preserving modified Facet instruction section in %s", selected)
+		}
+		addedSeparator = entry.AddedSeparator
+		merged = existing[:start] + instructions + existing[end:]
+	} else if owned && entry.EntryType == "instruction-section" {
+		return fmt.Errorf("managed Facet instruction section in %s is missing", selected)
+	} else if existing != "" {
+		separator := ""
+		if !strings.HasSuffix(existing, "\n") {
+			separator = "\n"
+			addedSeparator = true
+		}
+		merged = existing + separator + instructions + "\n"
+	}
+
+	for _, removal := range removals {
+		if err := os.WriteFile(removal.path, []byte(removal.content), 0644); err != nil {
+			return fmt.Errorf("remove prior Facet instruction section from %s: %w", removal.rel, err)
+		}
+		delete(ownership.ManagedEntries, removal.rel)
+	}
+	if err := os.MkdirAll(filepath.Dir(selectedPath), 0755); err != nil {
+		return fmt.Errorf("create governing instruction directory: %w", err)
+	}
+	if err := os.WriteFile(selectedPath, []byte(merged), 0644); err != nil {
+		return fmt.Errorf("write governing instructions %s: %w", selected, err)
+	}
+	ownership.ManagedEntries[selected] = ManagedEntry{
+		EntryType:      "instruction-section",
+		Target:         selectedPath,
+		ContentSHA256:  instructionSectionHash(instructions),
+		AddedSeparator: addedSeparator,
+		CreatedOn:      time.Now().UTC().Format(time.RFC3339),
+	}
+	return nil
 }
 
 func instructionPathForEngine(engine string) string {
@@ -327,28 +418,46 @@ func instructionPathForEngine(engine string) string {
 	}
 }
 
-func writeInstructionFileSafe(filePath, relKey, content string, ownership *OwnershipRecord) {
-	// If file exists, check if it's managed by Facet
-	if _, err := os.Stat(filePath); err == nil {
-		if ownership != nil {
-			if _, isManaged := ownership.ManagedEntries[relKey]; !isManaged {
-				// User owned or repo-root owned, do not overwrite!
-				return
-			}
-		} else {
-			return
-		}
+func findFacetInstructionSection(content string) (start, end int, section string, found bool, err error) {
+	starts := facetInstructionStartPattern.FindAllStringIndex(content, -1)
+	ends := facetInstructionEndPattern.FindAllStringIndex(content, -1)
+	if len(starts) == 0 && len(ends) == 0 {
+		return 0, 0, "", false, nil
 	}
+	if len(starts) != 1 || len(ends) != 1 {
+		return 0, 0, "", false, fmt.Errorf("malformed Facet instruction section")
+	}
+	loc := facetInstructionPattern.FindStringIndex(content)
+	if loc == nil {
+		return 0, 0, "", false, fmt.Errorf("malformed Facet instruction section")
+	}
+	return loc[0], loc[1], content[loc[0]:loc[1]], true, nil
+}
 
-	if err := os.WriteFile(filePath, []byte(content), 0644); err == nil {
-		if ownership != nil {
-			ownership.ManagedEntries[relKey] = ManagedEntry{
-				EntryType: "instruction-file",
-				Target:    filePath,
-				CreatedOn: time.Now().UTC().Format(time.RFC3339),
-			}
-		}
+func instructionSectionHash(content string) string {
+	content = strings.TrimRight(strings.ReplaceAll(content, "\r\n", "\n"), "\r\n")
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
+}
+
+func removeInstructionSeparator(prefix string) string {
+	if strings.HasSuffix(prefix, "\r\n") {
+		return strings.TrimSuffix(prefix, "\r\n")
 	}
+	return strings.TrimSuffix(prefix, "\n")
+}
+
+func removeFacetInstructionSection(content string, start, end int, addedSeparator bool) string {
+	prefix := content[:start]
+	if addedSeparator {
+		prefix = removeInstructionSeparator(prefix)
+	}
+	suffix := content[end:]
+	if strings.HasPrefix(suffix, "\r\n") {
+		suffix = strings.TrimPrefix(suffix, "\r\n")
+	} else {
+		suffix = strings.TrimPrefix(suffix, "\n")
+	}
+	return prefix + suffix
 }
 
 // findCoreSkillSource locates the canonical facet producer skill.
@@ -581,6 +690,7 @@ func saveOwnership(projectDir string, record *OwnershipRecord) {
 		return
 	}
 	ownPath := filepath.Join(projectDir, ".facet", "ownership.json")
+	_ = os.MkdirAll(filepath.Dir(ownPath), 0755)
 	if data, err := json.MarshalIndent(record, "", "  "); err == nil {
 		_ = os.WriteFile(ownPath, data, 0644)
 	}

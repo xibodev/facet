@@ -48,5 +48,7 @@ test('script installers manage bounded instruction sections with ownership metad
     assert.match(source, /facet:managed:start/);
     assert.match(source, /facet:managed:end/);
     assert.match(source, /instruction-section/);
+    assert.match(source, /uninstall/i);
+    assert.match(source, /shared runtime/i);
   }
 });
