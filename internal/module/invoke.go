@@ -283,10 +283,11 @@ func Invoke(capability string, raw []byte) Envelope {
 	}
 	defer releaseGrants()
 
-	tool := strings.TrimSpace(req.Tool)
+	dispatchTool := strings.TrimSpace(req.Tool)
 	if pinned != "" {
-		tool = pinned
+		dispatchTool = pinned
 	}
+	tool := toolbox.CanonicalName(dispatchTool)
 
 	// Grant gate, checked BEFORE consent.
 	//
@@ -385,7 +386,7 @@ func Invoke(capability string, raw []byte) Envelope {
 		input = absolutizeRequestPaths(input, projectRoot)
 	}
 
-	args, err := toolboxArgs(op, tool, input)
+	args, err := toolboxArgs(op, dispatchTool, input)
 	if err != nil {
 		return fail(OpInvoke, reqID, "invalid_request", err.Error(),
 			map[string]any{"capability": capability, "tool": tool}, false)
@@ -404,15 +405,9 @@ func Invoke(capability string, raw []byte) Envelope {
 	// that the async path would resolve against an empty PATH — the same
 	// declared-but-not-wired failure the grant itself was added to fix.
 	if req.Async && isLongRunning(capability) {
-		job := startJob(capability, tool)
-		grants := req.Binaries
-		go func() {
-			restore := useBinaries(grants)
-			defer restore()
-			env, ok := toolbox.CLI(args)
-			finishJob(job.JobID, project(OpInvoke, op, job.JobID, capability, tool, env, ok))
-		}()
-		return jobHandleEnvelope(reqID, capability, tool, job)
+		return startAsyncInvocation(
+			reqID, capability, tool, args, req.Binaries, toolbox.CLI,
+		)
 	}
 
 	env, ok := toolbox.CLI(args)
@@ -455,6 +450,26 @@ func Invoke(capability string, raw []byte) Envelope {
 	// so an oversized success is replaced by an error that fits rather than
 	// left to become corrupt JSON.
 	return EnforceOutputBudget(out, req.MaxOutputBytes)
+}
+
+type toolboxRunner func([]string) (toolbox.Envelope, bool)
+
+func startAsyncInvocation(
+	reqID, capability, canonicalTool string,
+	args []string,
+	grants map[string]string,
+	run toolboxRunner,
+) Envelope {
+	job := startJob(capability, canonicalTool)
+	go func() {
+		restore := useBinaries(grants)
+		defer restore()
+		env, ok := run(args)
+		finishJob(job.JobID, project(
+			OpInvoke, "run", job.JobID, capability, canonicalTool, env, ok,
+		))
+	}()
+	return jobHandleEnvelope(reqID, capability, canonicalTool, job)
 }
 
 // isLongRunning reports whether a capability may return a job handle. It must
@@ -572,12 +587,13 @@ func Estimate(capability string, raw []byte) Envelope {
 	}
 	defer releaseGrants()
 
-	tool := strings.TrimSpace(req.Tool)
+	dispatchTool := strings.TrimSpace(req.Tool)
 	if pinned != "" {
-		tool = pinned
+		dispatchTool = pinned
 	}
+	tool := toolbox.CanonicalName(dispatchTool)
 
-	args, err := toolboxArgs("estimate", tool, req.Input)
+	args, err := toolboxArgs("estimate", dispatchTool, req.Input)
 	if err != nil {
 		return fail(OpInvoke, reqID, "invalid_request", err.Error(),
 			map[string]any{"capability": capability, "tool": tool}, false)

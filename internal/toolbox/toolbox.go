@@ -1674,6 +1674,10 @@ func contains(values []string, value string) bool {
 // Names returns a defensive copy of the exact public tool catalog.
 func Names() []string { out := append([]string(nil), names...); sort.Strings(out); return out }
 
+// CanonicalName resolves compatibility aliases to the operation identity
+// reported by envelopes, listings, and module projections.
+func CanonicalName(tool string) string { return canonicalToolName(tool) }
+
 // Description returns the tool's human-readable capability description.
 func Description(tool string) string {
 	tool = canonicalToolName(tool)
