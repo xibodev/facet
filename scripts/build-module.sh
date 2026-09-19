@@ -19,7 +19,7 @@ go build -o "$out/xibodev.facet.exe" ./cmd/facet-module
 
 cp agents/facet-creative.md "$out/agents/"
 cp -r skills/facet "$out/skills/"
-cp -r packs/explainer "$out/packs/"
+cp -r packs/. "$out/packs/"
 
 # The Remotion composer SOURCE, which the descriptor declares facet_bundle as
 # holding. Omitting it left an installed bundle running a composer from a week

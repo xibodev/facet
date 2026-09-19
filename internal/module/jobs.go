@@ -15,16 +15,18 @@ import (
 // has nothing to show for the whole render and looks frozen; the operator
 // cannot tell a working render from a hung one.
 //
-// So `creative.tools.run` may return a job handle instead of a finished result,
-// and `creative.jobs.status` reports on it. The rules the host froze:
+// Earlier descriptors allowed `creative.tools.run` to return a job handle and
+// advertised `creative.jobs.status`. The internal lifecycle remains here to
+// preserve the stable unknown_job error and its focused tests, but the module
+// no longer declares or starts jobs for a per-invocation host:
 //   - the handle-returning envelope carries a PROVISIONAL execution:
 //     actual_cost null (the work has not run) and artifacts [].
 //   - the terminal poll carries the authoritative execution.
 //   - the last envelope for a request_id is cost and artifact truth.
 //
 // State lives in this process only. A module is a short-lived subprocess, so a
-// job does not survive it; that is a deliberate limit rather than an oversight,
-// and `status` says so plainly for an unknown id rather than inventing a state.
+// job does not survive it; status says so plainly for an unknown id rather than
+// inventing a state.
 
 // JobState is the lifecycle of a long-running invocation.
 type JobState string

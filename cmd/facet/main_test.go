@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -109,5 +110,25 @@ func TestLaunchErrorsPropagate(t *testing.T) {
 				t.Fatalf("wanted exit %d; got %d: %s", want, code, out)
 			}
 		})
+	}
+}
+
+func TestModuleJobStateDoesNotCrossProcesses(t *testing.T) {
+	dir, home := t.TempDir(), t.TempDir()
+	out, code := runCLI(t, dir, home, "", "module", "invoke", "creative.jobs.status", "--input",
+		`{"request_id":"req_poll","job_id":"job_from_another_process"}`)
+	if code == 0 {
+		t.Fatalf("fresh process unexpectedly knew job: %s", out)
+	}
+	var polled struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(out), &polled); err != nil {
+		t.Fatalf("decode poll refusal: %v\n%s", err, out)
+	}
+	if polled.Error.Code != "unknown_job" {
+		t.Fatalf("poll code=%q, want unknown_job: %s", polled.Error.Code, out)
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	facet "github.com/xibodev/facet"
 )
 
 // A packaged module must carry the content its descriptor declares.
@@ -24,15 +26,19 @@ func TestPackagedModuleCarriesItsDeclaredContent(t *testing.T) {
 	}
 
 	// Every content path the descriptor declares.
-	for _, rel := range []string{
+	paths := []string{
 		filepath.Join("agents", "facet-creative.md"),
 		filepath.Join("skills", "facet", "SKILL.md"),
-		filepath.Join("packs", "explainer", "SCENE-TYPES.md"),
-		filepath.Join("packs", "explainer", "NARRATED-WALKTHROUGH.md"),
 		filepath.Join("remotion-composer", "src", "Root.tsx"),
 		filepath.Join("remotion-composer", "src", "contract.ts"),
 		filepath.Join("remotion-composer", "legacy-composer-manifest.json"),
-	} {
+	}
+	for _, pack := range facet.RetainedPacks() {
+		for _, guidance := range pack.Guidance {
+			paths = append(paths, filepath.FromSlash(guidance.Path))
+		}
+	}
+	for _, rel := range paths {
 		if _, err := os.Stat(filepath.Join(pkg, rel)); err != nil {
 			t.Errorf("the packaged module is missing declared content: %s\n"+
 				"    an install without it borrows another bundle, or has nothing", rel)

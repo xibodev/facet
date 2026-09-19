@@ -34,9 +34,9 @@ type Request struct {
 	// not resolve must be ABSENT rather than empty, so "not supplied" and
 	// "supplied as nothing" stay distinguishable.
 	Binaries map[string]string `json:"binaries,omitempty"`
-	// Async asks a long-running capability to return a job handle immediately
-	// rather than blocking until the work completes. Opt-in: existing
-	// consumers, including the human-facing CLI, expect a finished result.
+	// Async is accepted for compatibility with earlier descriptors. Facet is
+	// hosted per invocation, so process-local jobs cannot be polled by the next
+	// call and execution remains synchronous.
 	Async bool `json:"async,omitempty"`
 	// Roots maps a logical root name declared in permissions.filesystem_* to a
 	// canonicalized absolute path the host supplies per invocation. A module
@@ -462,7 +462,7 @@ func Invoke(capability string, raw []byte) Envelope {
 // refuses to produce a handle would be a contract violation the host cannot
 // see until it asks.
 func isLongRunning(capability string) bool {
-	return capability == CapToolsRun
+	return false
 }
 
 // Estimate validates a request and reports expected effects and cost. It never

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	facet "github.com/xibodev/facet"
 )
 
 func testSource(t *testing.T) Source {
@@ -15,6 +17,36 @@ func testSource(t *testing.T) Source {
 		PacksDir:     filepath.Join("..", "..", "packs"),
 		Tools:        []string{"video_compose", "media_probe", "edge_tts"},
 		FacetVersion: "1.0.2-test",
+	}
+}
+
+func TestBundleProjectsOnlyCanonicalRetainedPacks(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Build(testSource(t), TargetClaude, dir); err != nil {
+		t.Fatal(err)
+	}
+	for _, pack := range facet.RetainedPacks() {
+		for _, guidance := range pack.Guidance {
+			rel, err := filepath.Rel(filepath.Join("packs", pack.ID), filepath.FromSlash(guidance.Path))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "skills", pack.ID, rel)); err != nil {
+				t.Errorf("bundle omits canonical guidance %s: %v", guidance.Path, err)
+				continue
+			}
+			got, err := os.ReadFile(filepath.Join(dir, "skills", pack.ID, rel))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := facet.Guidance(guidance.Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != want {
+				t.Errorf("bundle guidance drifted from canonical content: %s", guidance.Path)
+			}
+		}
 	}
 }
 
