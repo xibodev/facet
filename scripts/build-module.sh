@@ -13,14 +13,13 @@ set -e
 out="${1:-dist}"
 # Not rm -rf: the previous binary may be running (a host holds it open).
 # Overwriting in place is enough and does not fail on a busy directory.
-mkdir -p "$out/agents" "$out/skills" "$out/packs" "$out/schemas"
+mkdir -p "$out/agents" "$out/skills" "$out/packs"
 
 go build -o "$out/xibodev.facet.exe" ./cmd/facet-module
 
 cp agents/facet-creative.md "$out/agents/"
 cp -r skills/facet "$out/skills/"
-cp -r packs/explainer "$out/packs/"
-cp -r schemas/artifacts "$out/schemas/"
+cp -r packs/. "$out/packs/"
 
 # The Remotion composer SOURCE, which the descriptor declares facet_bundle as
 # holding. Omitting it left an installed bundle running a composer from a week
@@ -52,7 +51,9 @@ cp -r remotion-composer/src "$out/remotion-composer/"
 #
 # Required files fail the build. tsconfig.json is required too -- the composer
 # is TypeScript.
-cp remotion-composer/package.json remotion-composer/package-lock.json    remotion-composer/tsconfig.json "$out/remotion-composer/"
+cp remotion-composer/package.json remotion-composer/package-lock.json \
+  remotion-composer/tsconfig.json remotion-composer/legacy-composer-manifest.json \
+  "$out/remotion-composer/"
 
 # public/ is genuinely optional: it holds staged media that a fresh checkout
 # may not have. Optional stays optional, but the reason is now stated rather
@@ -73,7 +74,7 @@ fi
 # describe succeeds with or without the composer manifests, so it cannot be the
 # only check -- that is the same "a successful exit is not acceptance" mistake
 # this repo has made before.
-for required in package.json package-lock.json tsconfig.json; do
+for required in package.json package-lock.json tsconfig.json legacy-composer-manifest.json; do
   if [ ! -f "$out/remotion-composer/$required" ]; then
     echo "FATAL: $out/remotion-composer/$required is missing; the bundle cannot render" >&2
     exit 1

@@ -1,14 +1,16 @@
 {
   "name": "@xibodev/facet-pack-localization",
   "version": "1.0.0",
-  "description": "Multilingual dubbing, subtitle translation, and voice localization pipeline.",
+  "description": "Facet-owned guidance for subtitles, dubbing, and localized variants.",
   "kind": "content",
+  "methods": ["localization"],
   "requirements": {
     "probes": ["facet.probe.ffmpeg.v1"]
   },
   "declarations": {
-    "suggestedTools": ["edgetts", "media_probe", "edit", "subtitle_burn", "audio_mix", "output_review"],
-    "networkIntent": "none",
+    "suggestedTools": ["edge_tts", "ffmpeg_caption_burn", "output_review", "source_edit", "subtitle_gen"],
+    "networkIntent": "provider-optional",
+    "costIntent": "none",
     "filesystemIntent": "project-local"
   },
   "exports": {
@@ -16,13 +18,7 @@
       {
         "id": "localization",
         "path": "SKILL.md",
-        "description": "Entry skill for video localization, dubbing, and translated subtitles"
-      }
-    ],
-    "pipelines": [
-      {
-        "id": "localization-dub",
-        "path": "pipelines/localization-dub.yaml"
+        "description": "Entry guidance for Facet localization production"
       }
     ]
   }

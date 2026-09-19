@@ -12,10 +12,8 @@ import (
 //	capability "creative.tools.run" produced artifact kind "output",
 //	which it does not declare in artifact_schemas
 //
-// The declaration named "render_report" and "asset_manifest" — JSON schema
-// documents in schemas/artifacts/, describing things an AGENT authors. Facet
-// emits one kind: a file a tool wrote. The two vocabularies were never the
-// same, so no document schema could ever describe a rendered mp4.
+// Facet emits one kind: a file a tool wrote. Workflow-document schemas cannot
+// describe rendered media and are not part of the stateless module contract.
 func TestEveryEmittedArtifactKindIsDeclared(t *testing.T) {
 	env := Describe("test")
 	if !env.OK {

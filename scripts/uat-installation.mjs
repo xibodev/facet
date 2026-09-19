@@ -85,6 +85,8 @@ check('real-remotion-render-no-fallback', () => {
 check('installed-facet-video-compose-with-audio', () => {
   const project = fs.mkdtempSync(path.join(process.env.HOME, 'uat-toolbox-project-'));
   run('facet', ['init', project, '--engine', 'opencode', '--no-launch']);
+  fs.mkdirSync(path.join(project, 'narration'), { recursive: true });
+  fs.mkdirSync(path.join(project, 'artifacts'), { recursive: true });
   const audio = path.join(project, 'narration/fixture.wav');
   run('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=523:duration=2', audio]);
   const props = {

@@ -41,7 +41,7 @@ try {
         $facet = Join-Path $bin 'facet.exe'
         & $facet init --help
         if ($LASTEXITCODE -ne 0 -or @(Get-ChildItem -LiteralPath $work -Force).Count) { throw 'CLI help failed or wrote files.' }
-        & $facet init project --engine opencode --no-launch
+        & $facet init project --engine opencode --pack explainer --no-launch
         if ($LASTEXITCODE -ne 0) { throw 'Headless initialization failed.' }
         foreach ($file in @('.opencode/skills/facet/SKILL.md', '.opencode/skills/explainer/SKILL.md', '.facet.yaml')) {
             if (-not (Test-Path -LiteralPath (Join-Path $work "project/$file") -PathType Leaf)) { throw "Missing project file: $file" }

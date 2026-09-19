@@ -25,18 +25,20 @@ def main():
         temp = Path(temp)
         with zipfile.ZipFile(installer) as z:
             z.extractall(temp / "installer")
-        def install(project, destination, payload=archive, checksums=None, expect_success=True, interactive=None, action="add", components="none", extra_env=None, migrate=False):
+        def install(project, destination, payload=archive, checksums=None, expect_success=True, interactive=None, action="add", components="none", packs=(), extra_env=None, migrate=False):
             checksums = checksums or release / f"checksums-{args.os}-{args.arch}.txt"
             if args.os == "windows":
                 command = [os.environ.get("FACET_TEST_POWERSHELL", "pwsh"), "-NoProfile", "-File", str(temp / "installer/install.ps1"),
                            "-Target", project.name, "-ProjectDir", str(project), "-InstallDir", str(destination),
                            "-ArchivePath", str(payload), "-ChecksumPath", str(checksums), "-Components", components, "-Action", action]
                 if interactive is None: command += ["-NonInteractive"]
+                if packs: command += ["-Pack", ",".join(packs)]
             else:
                 command = ["bash", str(temp / "installer/install.sh"), "--target", project.name,
                            "--project", str(project), "--install-dir", str(destination), "--archive", str(payload),
                            "--checksums", str(checksums), "--components", components, "--action", action]
                 if interactive is None: command += ["--yes"]
+                for pack in packs: command += ["--pack", pack]
             if os.environ.get("FACET_INSTALL_SKIP_MEDIA") == "1":
                 command += ["-SkipVerify" if args.os == "windows" else "--skip-verify"]
             if migrate: command += ["-MigrateLegacy" if args.os == "windows" else "--migrate-legacy"]
@@ -56,18 +58,50 @@ def main():
         assert result == "facet v" + version, result
         # Reuse CI-provisioned FFmpeg; installer must not install system software.
         if os.environ.get("FACET_INSTALL_SMOKE") == "1":
-            for host, config in {"opencode": ".opencode", "codex": ".agents", "claude": ".claude", "copilot": ".github"}.items():
+            adapters = {
+                "opencode": (".opencode/skills", "AGENTS.md"),
+                "codex": (".agents/skills", "AGENTS.md"),
+                "claude": (".claude/skills", "CLAUDE.md"),
+                "copilot": (".github/skills", ".github/copilot-instructions.md"),
+                "studio": ("skills", "AGENTS.md"),
+            }
+            installed_projects = {}
+            for host, (skill_root, instruction_name) in adapters.items():
                 project = temp / host
                 project.mkdir()
-                (project / "AGENTS.md").write_text("Keep user instructions.")
-                install(project, temp / "release", interactive="none\ny\n" if host == "opencode" else None)
-                assert (project / config / "skills/facet/SKILL.md").is_file()
-                assert (project / "AGENTS.md").read_text() == "Keep user instructions."
+                instruction = project / instruction_name
+                instruction.parent.mkdir(parents=True, exist_ok=True)
+                original_instruction = f"Keep user instructions for {host}.\n"
+                instruction.write_text(original_instruction)
+                packs = ("cinematic", "localization") if host == "opencode" else ()
+                install(project, temp / "release", interactive="none\ny\n" if host == "opencode" else None, packs=packs)
+                assert (project / skill_root / "facet/SKILL.md").is_file()
+                instruction_text = instruction.read_text()
+                assert instruction_text.startswith(original_instruction)
+                assert instruction_text.count("<!-- facet:managed:start -->") == 1
+                assert instruction_text.count("<!-- facet:managed:end -->") == 1
+                for other_instruction in {"AGENTS.md", "CLAUDE.md", ".github/copilot-instructions.md"} - {instruction_name}:
+                    assert not (project / other_instruction).exists(), f"{host} wrote unrelated {other_instruction}"
+                ownership_name = "instruction-section.json" if args.os == "windows" else "instruction-section.tsv"
+                assert (project / ".facet-install" / ownership_name).is_file()
                 assert (project / ".facet-install/packs/explainer/SKILL.md").is_file()
-                assert not (project / config / "skills/facet/packs").exists()
+                assert not (project / skill_root / "facet/packs").exists()
+                installed_guidance = (project / skill_root / "facet/SKILL.md").read_text()
+                if packs:
+                    for pack in packs:
+                        assert f".facet-install/packs/{pack}/SKILL.md" in installed_guidance
+                else:
+                    assert "No production-method pack is active" in installed_guidance
                 rerun = install(project, temp / "release")
                 assert "Reusing configured dependencies" in rerun.stdout
                 assert "configuration: --" not in rerun.stdout and "[STREAM]" not in rerun.stdout
+                instruction.write_text(instruction.read_text() + f"\nUser follow-up for {host}.\n")
+                install(project, temp / "release")
+                assert f"User follow-up for {host}." in instruction.read_text()
+                managed = instruction.read_text().replace("## Facet", "## Facet modified", 1)
+                instruction.write_text(managed)
+                install(project, temp / "release", expect_success=False)
+                instruction.write_text(instruction.read_text().replace("## Facet modified", "## Facet", 1))
                 launcher = project / ".facet-install" / ("run-facet.ps1" if args.os == "windows" else "run-facet.sh")
                 before = launcher.read_bytes()
                 repair = install(project, temp / "release", action="repair")
@@ -75,8 +109,8 @@ def main():
                 assert (temp / "release/bin" / ("facet" + suffix)).exists(), "Repair destroyed shared runtime"
                 if host == "opencode":
                     install(project, temp / "release", action="update")
-                    assert (project / "AGENTS.md").read_text() == "Keep user instructions."
-                skill = project / config / "skills/facet/SKILL.md"
+                    assert original_instruction in instruction.read_text()
+                skill = project / skill_root / "facet/SKILL.md"
                 original = skill.read_bytes()
                 skill.write_bytes(original + b"\nUser customization\n")
                 install(project, temp / "release", expect_success=False)
@@ -108,6 +142,52 @@ def main():
                         assert launcher.read_bytes() == before, "Failed addition replaced project binding"
                         assert set(temp.glob("release-generation-*")) == generations, "Failed addition left a partial generation"
                         install(project, temp / "release")
+                installed_projects[host] = (project, skill_root, instruction_name, instruction, launcher)
+            remaining_hosts = list(installed_projects)
+            for host in list(installed_projects):
+                project, skill_root, instruction_name, instruction, launcher = installed_projects[host]
+                skill = project / skill_root / "facet/SKILL.md"
+                original = skill.read_bytes()
+                skill.write_bytes(original + b"\nModified before uninstall\n")
+                install(project, temp / "release", action="uninstall", expect_success=False)
+                assert skill.read_bytes() == original + b"\nModified before uninstall\n"
+                skill.write_bytes(original)
+                unmanaged_state = project / ".facet-install/user-note.txt"
+                unmanaged_state.write_text(f"Keep uninstall note for {host}.")
+                remaining_hosts.remove(host)
+                install(project, temp / "release", action="uninstall")
+                assert not skill.exists()
+                assert unmanaged_state.read_text() == f"Keep uninstall note for {host}."
+                instruction_text = instruction.read_text()
+                assert "<!-- facet:managed:start -->" not in instruction_text
+                assert "<!-- facet:managed:end -->" not in instruction_text
+                assert f"Keep user instructions for {host}." in instruction_text
+                assert not (project / ".facet-install" / ("managed-files.json" if args.os == "windows" else "managed-files.sha256")).exists()
+                assert (temp / "release/bin" / ("facet" + suffix)).exists(), "Uninstall removed the shared runtime"
+                if remaining_hosts:
+                    other_launcher = installed_projects[remaining_hosts[0]][4]
+                    if args.os == "windows":
+                        other_version = subprocess.check_output([os.environ.get("FACET_TEST_POWERSHELL", "pwsh"), "-NoProfile", "-File", str(other_launcher), "version"], text=True).strip()
+                    else:
+                        other_version = subprocess.check_output(["bash", str(other_launcher), "version"], text=True).strip()
+                    assert other_version == "facet v" + version
+                install(project, temp / "release")
+                assert unmanaged_state.read_text() == f"Keep uninstall note for {host}."
+                assert skill.is_file()
+                assert instruction.read_text().count("<!-- facet:managed:start -->") == 1
+            partial_project = temp / "partial-state" / "codex"
+            partial_state = partial_project / ".facet-install"
+            partial_state.mkdir(parents=True)
+            (partial_state / "keep.txt").write_text("preserve partial state")
+            install(partial_project, temp / "release")
+            assert (partial_state / "keep.txt").read_text() == "preserve partial state"
+            stale_project = temp / "stale-state" / "codex"
+            stale_state = stale_project / ".facet-install"
+            stale_state.mkdir(parents=True)
+            stale_receipt = "installation.json" if args.os == "windows" else "installation.tsv"
+            (stale_state / stale_receipt).write_text("not a valid receipt")
+            install(stale_project, temp / "release", expect_success=False)
+            assert (stale_state / stale_receipt).read_text() == "not a valid receipt"
             bad_sums = temp / "bad-sums.txt"
             bad_sums.write_text("0" * 64 + "  " + archive.name + "\n")
             bad_project = temp / "bad-project" / "codex"

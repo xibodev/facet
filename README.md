@@ -1,136 +1,122 @@
 # Facet
 
-Video production tools and guidance for your agentic CLI.
+Facet equips the user's selected agentic CLI with stateless video-production
+tools, compact production packs, and technical review. The agent owns creative
+reasoning and orchestration; Facet validates requests, executes media
+operations, and reports what happened.
 
-Facet combines media tools, production packs, and a project workspace. Your agent plans and executes editing, narration, animation, and rendering.
+[Documentation](docs/index.html) | [Installation guide](docs/docs.html) |
+[License](LICENSE)
 
-[Overview](docs/index.html) | [Installation guide](docs/docs.html) | [License](LICENSE)
+## Install
 
-## Recommended Installation
+The interactive installer supports OpenCode, Codex, Claude Code, and GitHub
+Copilot CLI, plus Facet Studio projects. It preserves unmanaged project
+instructions and adds one ownership-verified Facet section to only the selected
+target's governing file. Codex project skills use the current `.agents/skills`
+convention. Setup is core-only unless production methods are explicitly selected
+with the repeatable `--pack` / `--production-method` options (`-Pack` on PowerShell).
+`facet init` uses the same bounded-section ownership model: user text outside the
+section is preserved, managed-section edits stop a rewrite, and changing adapters
+removes only the prior Facet section. Init also reconciles owned skill projections:
+adapter switches and pack deselection remove only projections whose recorded type,
+link target, or copied-tree hash still matches. Replaced or modified paths stop with
+an explicit preservation error.
 
-Use Facet with your agentic CLI. The interactive installer supports OpenCode, Codex, Claude Code, and GitHub Copilot CLI, and lets you choose the optional production tools you need.
-
-Run the command for your platform in a terminal:
+To remove a script-installed project integration without deleting a shared
+runtime, rerun the matching installer with `--action uninstall` or
+`-Action uninstall`. Uninstall verifies ownership before removing managed skills,
+state, and the Facet instruction section; modified and unmanaged content is kept.
+A later reinstall accepts preserved, non-colliding `.facet-install` content while
+rejecting unsafe links and stale files that conflict with managed state.
 
 ```powershell
-# Windows (PowerShell)
 irm https://xibodev.github.io/facet/install.ps1 | iex
 ```
 
 ```bash
-# Linux / macOS
 curl -fsSL https://xibodev.github.io/facet/install.sh | sh
 ```
 
-The website bootstrap downloads and checksum-verifies the v1.0.4 installer package, then launches its interactive installer. That installer selects the matching prebuilt Windows, Linux, or macOS bundle for x64 or ARM64.
+The bootstrap downloads and verifies the v1.0.4 installer package. For offline
+installation, download the
+[installer ZIP](https://github.com/xibodev/facet/releases/download/v1.0.4/facet-installer-1.0.4.zip)
+and keep its `installer` directory beside the extracted scripts.
 
-**Manual/offline download:** [Download the installer ZIP](https://github.com/xibodev/facet/releases/download/v1.0.4/facet-installer-1.0.4.zip), extract it, and run `./install.ps1` in PowerShell or `bash ./install.sh` from the extracted folder. Keep its `installer/` directory beside the scripts. [Release assets and SHA-256 checksums](https://github.com/xibodev/facet/releases/tag/v1.0.4) are also available. Only the website bootstrap is designed for piping; the extracted installer requires its companion files.
+Optional components include FFmpeg/FFprobe, Remotion, Piper, gflow, and
+HyperFrames. Provider-backed operations can require credentials, account
+access, quota, or payment. Configuration checks do not prove live access.
 
-Use arrow keys and Enter to choose your CLI, and Space to toggle optional tools. Rerun setup to add components, repair, or update. For a v1.0.3 project, accept the explicit backup migration prompt and choose **update**. Use `FACET_PLAIN=1` for plain prompts.
+## Agent contract
 
-The installer lets you select your CLI, project folder, and optional dependencies. It installs prebuilt Facet binaries and registers the Facet skill in your CLI's project directory, preserving existing user instructions and configuration. Start a new agent session in that project after setup.
-
-### Optional Dependencies
-
-Local editing and rendering do not require media-provider API keys. Optional generation services may require separate credentials, account access, or credits. The installer explains optional downloads, and tools report missing configuration when you use them.
-
-- **FFmpeg and FFprobe:** core media editing and inspection.
-- **Remotion:** animated compositions and rendered captions, with its browser and Node.js/npm dependencies.
-- **Piper:** local speech synthesis, with an optional runtime and voice-model download.
-- **gflow:** optional image/video generation through its supported providers.
-- **HyperFrames:** HTML-based video rendering.
-
-The dependency selection lists approximate download sizes and what each component adds.
-
-## Using Facet with Another Agent
-
-Using a different agentic CLI? Ask your agent to inspect this repository and adapt Facet's skills and command-line tools to its own integration conventions. The installer currently supports the four CLIs listed above; other integrations are community-adapted and may need additional setup.
-
-## Start a Production
-
-Open your selected CLI in the project configured by the installer and ask it to use Facet:
-
-> Use Facet to make a short explainer about how rain forms.
-
-Provide actual file locations when editing existing footage. Review the rendered video and continue the conversation to request changes.
-
-## Standalone Status
-
-Facet Standalone is experimental. For now, we recommend using Facet through a supported agentic CLI.
-
-## Production Packs
-
-Packs supply guidance, pipeline definitions, and supporting content. They do not install every referenced tool or provider. The Facet skill directs your agent to the relevant pack for the task.
-
-| Pack | Package | Use and Conditions |
-| --- | --- | --- |
-| [Explainer](packs/explainer/facet-pack.json) | `@xibodev/facet-pack-explainer` | Animated explainers, diagrams, charts, and text cards. Requires the composer, npm dependencies, browser, and a usable speech route when narrated. |
-| [Cinematic](packs/cinematic/facet-pack.json) | `@xibodev/facet-pack-cinematic` | Cinematic/documentary montages, grading, and mixing. Requires available source assets and suitable rights; generated shots need a configured provider. |
-| [Screen Demo](packs/screen-demo/facet-pack.json) | `@xibodev/facet-pack-screendemo` | Software walkthroughs and synthetic terminal scenes. Real capture needs app access and recording/browser tooling. Synthetic scenes are not evidence of real product behavior. |
-| [Talking Head](packs/talking-head/facet-pack.json) | `@xibodev/facet-pack-talkinghead` | Presenter edits and avatar workflows. Needs presenter footage or separate avatar/lip-sync support and consent. TTS alone does not generate a talking face. |
-| [Social](packs/social/facet-pack.json) | `@xibodev/facet-pack-social` | Vertical clips, podcast highlights, and captions. Needs source footage and accurate transcript/timing data; framing and moment selection require review. |
-| [Character Animation](packs/character-animation/facet-pack.json) | `@xibodev/facet-pack-animation` | SVG rigs, poses, and action timelines. Requires assets, animation authoring, and a renderer; no character-generation model is bundled by the pack. |
-| [Localization](packs/localization/facet-pack.json) | `@xibodev/facet-pack-localization` | Translated narration, subtitles, and dubbing. Requires transcription/translation and a supported target-language voice. Cloning/lip-sync needs separate provider support and consent; check language and timing. |
-
-## Optional gflow Integration
-
-Facet's `gflow_image` and `gflow_video` tools invoke the optional [gflow CLI](https://github.com/xibodev/gflow-cli). Select it during dependency setup if you need it. gflow supports extension-free provider routes; its help and error diagnostics explain the requirements of the provider you choose.
-
-**Setup/status success is not generation evidence.** Account eligibility, credits, quotas, models, and service availability still apply. There is no zero-cost guarantee; an unknown estimate or zero-valued generic metadata is not a billing promise.
-
-Provider failures are errors, not an invitation to substitute mock media. Explicit `mock: true` is for contract tests and must never be presented as real generated content. After a timeout, check whether the remote job is still running before retrying.
-
-## Project Files and Configuration
-
-The CLI-only installer registers a project skill (for example `.opencode/skills/facet/SKILL.md`) and creates `.facet-install/` for its launcher, installation record, and pack references. Existing project configuration is preserved. Scripts, scene plans, narration, videos, and review reports are created only when that work runs. `renders/final.mp4` is a convention, not an output guaranteed by installation.
-
-Configuration discovery preserves pinned paths in `.facet.yaml` or `~/.config/facet/config.yaml`. Unpinned bundle discovery checks the current directory and two parents, then executable-relative `../bundle` and the source root, then `~/.facet/bundle`. Pack resolution prefers `paths.bundle`; Remotion discovery prefers that bundle's composer. Existing project config is loaded before reinitialization so pinned paths/defaults survive unless explicitly changed.
-
-Verify the renderer from the actual production directory, not only from the source checkout. A discovered configuration path alone does not prove a successful render.
-
-## Known Limitations
-
-- Installation and dependency diagnostics do not prove end-to-end production. Browser libraries, fonts, runtime paths, agent logins, and provider access can still fail.
-- Pack guidance can reference optional capabilities outside the native toolbox. Check the installed registry and implementation before promising a route.
-- Edge TTS is keyless but network-dependent. Other media services can require credentials and payment; quotas and model availability vary.
-- Facet Standalone is experimental; the recommended workflow uses a supported agentic CLI.
-- Automated review is partial. Watch and listen to the output, check caption timing, factual claims, consent, and asset rights. A file or sampled frame is not editorial acceptance.
-- No fixed-turn, completion-time, broadcast-quality, or release-certification claim is made here.
-
-## Technical Reference
-
-Most users can work through natural-language prompts. Integrators can expand the source-linked reference below.
-
-<details>
-<summary>CLI discovery and source contracts</summary>
+Start a new session in the configured project and ask the agent to use Facet.
+The installed `skills/facet/SKILL.md` is the canonical production contract.
+Production packs add method-specific constraints without creating workflow
+state or replacing the agent's judgment.
 
 ```text
-facet help
-facet init --help
-facet ui --help
+facet version
+facet routes list
+facet routes describe <method>
+facet routes assess --input request.json
 facet tools list
-facet tools describe video_compose
-facet tools describe output_review
-facet tools estimate <tool-name> --input request.json
-facet tools run <tool-name> --input request.json
+facet tools describe <tool>
+facet tools estimate <tool> --input request.json
+facet tools run <tool> --input request.json
 ```
 
-Use the installed catalog instead of a fixed tool count. `request.json` must match the selected tool and operation. Descriptions and standalone schemas cover different surfaces and can lag the implementation; these links are not a claim of exhaustive API coverage.
+The operating rules are:
 
-- [CLI commands and flags](cmd/facet/main.go)
-- [Tool registry, aliases, and request descriptions](internal/toolbox/toolbox.go)
-- [Composition requests and runtime invocation](internal/toolbox/compose.go)
-- [Remotion composition registration, default props, and themes](remotion-composer/src/Root.tsx)
-- [Explainer scene types and rendering](remotion-composer/src/Explainer.tsx)
-- [Artifact JSON schemas](schemas/artifacts) and [standalone tool JSON schemas](schemas/tools)
-- [Technical output review](internal/toolbox/visual_qa.go)
-- [Google Flow request validation and errors](internal/toolbox/gflow.go)
-- [Core producer guidance](skills/facet/SKILL.md) and [pipeline definitions](pipeline_defs)
+- inspect the request and supplied assets before choosing an operation;
+- estimate consequential or provider-backed work before execution;
+- require explicit human consent before paid work or publication;
+- treat unknown cost as unknown, never as free;
+- never substitute mock media for a failed production call; and
+- inspect the rendered result because process success is not creative
+  acceptance.
 
-Use source at your installed revision when debugging. The repository branch may contain changes not present in your binary.
+Facet Standalone is experimental and consumes the same embedded Facet guidance
+and pack assets. The supported product path is the installed agent bundle.
 
-</details>
+## Production packs
+
+| Pack | Purpose |
+| --- | --- |
+| Explainer | 2D motion, diagrams, charts, and text-led explanation |
+| Cinematic | Source-led documentary, montage, grading, and mixing |
+| Screen Demo | Recorded or synthetic software walkthroughs |
+| Talking Head | Presenter footage and consented avatar workflows |
+| Social | Short-form source repurposing, reframing, and captions |
+| Character Animation | Character assets, poses, motion, and assembly |
+| Localization | Translation, subtitles, dubbing, and timing review |
+
+Packs describe methods and requirements; they do not install providers or
+promise that every optional route is available. `facet routes assess` joins
+the selected method to live canonical operations, input availability,
+dependencies, network use, and charge effects. It never executes, stores
+workflow state, or chooses a provider. A route is feasible only when concrete
+file inputs exist, every operation request has a valid canonical shape, the
+entry request passes normal estimate validation, every consumable required
+input matches its declared operation request field, and intermediate artifact
+bindings are constructible. Inputs used only for policy or planning are
+explicitly marked informational in the route catalog.
+
+## Project and delivery boundaries
+
+Facet stores no mandatory workflow state. Scripts, requests, assets, renders,
+and review reports are ordinary project files created only when the work needs
+them. Pinned paths in `.facet.yaml` or the user config are preserved.
+
+Local editing does not require provider keys. gflow generation is optional,
+must be invoked through the named Facet tools, and returns unknown cost when a
+reliable price is unavailable. A `mock: true` result is test evidence only.
+
+Technical review can verify measurable properties, but it cannot approve
+story, taste, factual claims, rights, consent, or publication. Report
+unverified conditions and provider failures plainly.
 
 ## License
 
-GNU Affero General Public License, version 3 or later: [AGPL-3.0-or-later](LICENSE).
+GNU Affero General Public License, version 3 or later:
+[AGPL-3.0-or-later](LICENSE). Notices for distributed dependencies and assets
+remain in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

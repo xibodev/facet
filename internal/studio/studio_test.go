@@ -192,9 +192,31 @@ func TestStudioHelperProcess(t *testing.T) {
 	os.Exit(0)
 }
 
-func TestListProjectsRealWorkspace(t *testing.T) {
-	// Root dir is repository root (which contains projects/)
-	rootDir := filepath.Join("..", "..")
+func createStudioFixtureWorkspace(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	script := "# Script\n\n| # | t | Beat | Narration |\n|---|---|---|---|\n| 1 | 0-2 | Opening | Hello. |\n"
+	files := map[string]string{
+		"projects/documentary-sample/brief.md":                      "# Documentary sample\n",
+		"projects/documentary-sample/script.md":                     script,
+		"projects/documentary-sample/narration/voice.wav":           "audio",
+		"projects/documentary-sample/review/final-frames/frame.jpg": "image",
+		"projects/documentary-sample/review/report.json":            `{"status":"reviewed"}`,
+		"projects/documentary-sample/renders/final.mp4":             "video",
+		"projects/explainer-sample/script.md":                       script,
+		"projects/explainer-sample/narration/voice.wav":             "audio",
+		"projects/explainer-sample/qa/frame.png":                    "image",
+		"projects/explainer-sample/remotion_props.json":             `{"composition_id":"Explainer","cuts":[{"id":"one","type":"text_card","in_seconds":0,"out_seconds":2,"text":"Hello"}]}`,
+		"projects/source-edit-sample/brief.md":                      "# Source edit sample\n",
+	}
+	for name, contents := range files {
+		mustWriteTestFile(t, filepath.Join(root, filepath.FromSlash(name)), contents)
+	}
+	return root
+}
+
+func TestListProjectsFixtureWorkspace(t *testing.T) {
+	rootDir := createStudioFixtureWorkspace(t)
 	projects, err := ListProjects(rootDir)
 	if err != nil {
 		t.Fatalf("ListProjects failed: %v", err)
@@ -209,7 +231,7 @@ func TestListProjectsRealWorkspace(t *testing.T) {
 		slugs[p.Slug] = p
 	}
 
-	for _, expectedSlug := range []string{"cinematic-documentary", "finetuning-explainer", "phase2-source-edit"} {
+	for _, expectedSlug := range []string{"documentary-sample", "explainer-sample", "source-edit-sample"} {
 		p, ok := slugs[expectedSlug]
 		if !ok {
 			t.Fatalf("missing expected project slug: %s", expectedSlug)
@@ -219,16 +241,15 @@ func TestListProjectsRealWorkspace(t *testing.T) {
 		}
 	}
 
-	// Check cinematic-documentary stages
-	cine := slugs["cinematic-documentary"]
+	cine := slugs["documentary-sample"]
 	if !cine.Stages.Brief || !cine.Stages.Script || !cine.Stages.Voiceover || !cine.Stages.Review || !cine.Stages.Master {
-		t.Fatalf("unexpected stages for cinematic-documentary: %#v", cine.Stages)
+		t.Fatalf("unexpected stages for documentary-sample: %#v", cine.Stages)
 	}
 	if cine.VideoURL == "" {
-		t.Fatalf("expected video URL for cinematic-documentary")
+		t.Fatalf("expected video URL for documentary-sample")
 	}
 	if cine.ThumbnailURL == "" {
-		t.Fatalf("expected thumbnail URL for cinematic-documentary")
+		t.Fatalf("expected thumbnail URL for documentary-sample")
 	}
 }
 
@@ -269,12 +290,11 @@ func TestListProjectsEmptyProjectsRoot(t *testing.T) {
 }
 
 func TestGetProjectDetails(t *testing.T) {
-	rootDir := filepath.Join("..", "..")
+	rootDir := createStudioFixtureWorkspace(t)
 
-	// 1. Test cinematic-documentary
-	cine, err := GetProjectDetails(rootDir, "cinematic-documentary")
+	cine, err := GetProjectDetails(rootDir, "documentary-sample")
 	if err != nil {
-		t.Fatalf("GetProjectDetails(cinematic-documentary) failed: %v", err)
+		t.Fatalf("GetProjectDetails(documentary-sample) failed: %v", err)
 	}
 	if cine.Brief == "" {
 		t.Fatal("expected brief to be populated")
@@ -298,13 +318,12 @@ func TestGetProjectDetails(t *testing.T) {
 		t.Fatal("expected a master video version")
 	}
 
-	// 2. Test finetuning-explainer
-	fine, err := GetProjectDetails(rootDir, "finetuning-explainer")
+	fine, err := GetProjectDetails(rootDir, "explainer-sample")
 	if err != nil {
-		t.Fatalf("GetProjectDetails(finetuning-explainer) failed: %v", err)
+		t.Fatalf("GetProjectDetails(explainer-sample) failed: %v", err)
 	}
 	if len(fine.Beats) == 0 {
-		t.Fatal("expected beats parsed for finetuning-explainer")
+		t.Fatal("expected beats parsed for explainer-sample")
 	}
 	if len(fine.Narration) == 0 {
 		t.Fatal("expected narration audio files")
@@ -315,7 +334,7 @@ func TestGetProjectDetails(t *testing.T) {
 	if fine.RemotionProps == nil {
 		t.Fatal("expected remotion props loaded")
 	}
-	if fine.CompositionPath != "projects/finetuning-explainer/remotion_props.json" || fine.CompositionURL != "/api/media/projects/finetuning-explainer/remotion_props.json" {
+	if fine.CompositionPath != "projects/explainer-sample/remotion_props.json" || fine.CompositionURL != "/api/media/projects/explainer-sample/remotion_props.json" {
 		t.Fatalf("unexpected composition location: path=%q url=%q", fine.CompositionPath, fine.CompositionURL)
 	}
 }
@@ -341,7 +360,7 @@ func TestMarkdownTableParser(t *testing.T) {
 }
 
 func TestServerEndpoints(t *testing.T) {
-	rootDir := filepath.Join("..", "..")
+	rootDir := createStudioFixtureWorkspace(t)
 	server := NewServer(rootDir)
 	handler := server.Handler()
 
@@ -353,7 +372,7 @@ func TestServerEndpoints(t *testing.T) {
 		t.Fatalf("GET / returned %d, want 200", rec.Code)
 	}
 	if !strings.Contains(rec.Body.String(), "Facet — Video production") {
-		t.Fatalf("GET / body missing Video Kit Studio title")
+		t.Fatalf("GET / body missing Facet Studio title")
 	}
 
 	// 2. GET /non-existent
@@ -387,18 +406,18 @@ func TestServerEndpoints(t *testing.T) {
 		t.Fatalf("GET /api/engines returned %d: %s", rec.Code, rec.Body.String())
 	}
 
-	// 5. GET /api/projects/cinematic-documentary
-	req = newSecurityRequest(http.MethodGet, "/api/projects/cinematic-documentary", "")
+	// 5. GET /api/projects/documentary-sample
+	req = newSecurityRequest(http.MethodGet, "/api/projects/documentary-sample", "")
 	rec = newDeadlineResponseRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /api/projects/cinematic-documentary returned %d", rec.Code)
+		t.Fatalf("GET /api/projects/documentary-sample returned %d", rec.Code)
 	}
 	var details ProjectDetails
 	if err := json.Unmarshal(rec.Body.Bytes(), &details); err != nil {
 		t.Fatalf("failed to decode project details JSON: %v", err)
 	}
-	if details.Slug != "cinematic-documentary" {
+	if details.Slug != "documentary-sample" {
 		t.Fatalf("unexpected slug: %s", details.Slug)
 	}
 
@@ -411,15 +430,15 @@ func TestServerEndpoints(t *testing.T) {
 	}
 
 	// 7. GET /api/media/...
-	req = newSecurityRequest(http.MethodGet, "/api/media/projects/cinematic-documentary/brief.md", "")
+	req = newSecurityRequest(http.MethodGet, "/api/media/projects/documentary-sample/brief.md", "")
 	rec = newDeadlineResponseRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /api/media/projects/cinematic-documentary/brief.md returned %d", rec.Code)
+		t.Fatalf("GET /api/media/projects/documentary-sample/brief.md returned %d", rec.Code)
 	}
 
 	// 8. Range request on media file
-	req = newSecurityRequest(http.MethodGet, "/api/media/projects/cinematic-documentary/brief.md", "")
+	req = newSecurityRequest(http.MethodGet, "/api/media/projects/documentary-sample/brief.md", "")
 	req.Header.Set("Range", "bytes=0-10")
 	rec = newDeadlineResponseRecorder()
 	handler.ServeHTTP(rec, req)
@@ -1947,10 +1966,10 @@ func TestMaskSecret(t *testing.T) {
 }
 
 func TestSlugToTitle(t *testing.T) {
-	if got := slugToTitle("cinematic-documentary"); got != "Cinematic Documentary" {
+	if got := slugToTitle("documentary-sample"); got != "Documentary Sample" {
 		t.Errorf("slugToTitle failed: got %q", got)
 	}
-	if got := slugToTitle("phase2-source-edit"); got != "Phase2 Source Edit" {
+	if got := slugToTitle("source-edit-sample"); got != "Source Edit Sample" {
 		t.Errorf("slugToTitle failed: got %q", got)
 	}
 }

@@ -1,17 +1,18 @@
 ---
 name: talking-head
-description: Produce presenter-driven talking head videos, spokesperson clips, interviews, and webinars with lip-sync and neural speech using Facet.
+description: Produce presenter-led edits and consented avatar videos with Facet.
 ---
 
-# Talking Head & Avatar Production Pack
+# Talking head
 
-Use this skill when producing presenter-led videos, customer announcements, educational lectures, or spokesperson explainers.
+Use supplied presenter footage when available. Avatar generation, voice
+cloning, face modification, and lip sync require the subject's consent and
+separately available provider support; speech synthesis alone does not create a
+talking face.
+Assess `avatar` with explicit consent and supplied presenter media before using
+any network voice route.
 
-## Overview
-
-1. **Presenter & Persona:** Select avatar or actor persona, vocal identity, framing, and background.
-2. **Script & Pacing:** Write natural conversational dialogue with breathing pauses and emphasis markers.
-3. **Voice Synthesis:** Synthesize voiceover tracks with `facet tools run edgetts`.
-4. **Visual Synthesis / Cut Assembly:** Generate avatar frames or cut existing presenter takes with `facet tools run edit`.
-5. **Audio Mastering:** Clean audio, apply noise reduction, and duck ambient bed with `facet tools run audio_mix`.
-6. **Delivery QA:** Check lip-sync alignment and speech cadence via `facet tools run output_review`.
+Confirm the script, framing, identity and consent constraints, pacing, captions,
+and audio treatment. Probe source media, preserve natural delivery, edit
+without misrepresenting the speaker, and review speech clarity, synchronization,
+framing, and requested output properties.

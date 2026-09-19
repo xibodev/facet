@@ -84,7 +84,7 @@ func TestSeedToArtifactManifestProof(t *testing.T) {
 	body, _ := json.Marshal(Request{
 		RequestID: "req_proof_seed_to_manifest",
 		Tool:      "media_probe",
-		Input:     json.RawMessage(`{"input":"../../projects/cinematic-documentary/assets/video/shot1_raw.mp4"}`),
+		Input:     json.RawMessage(`{"input":"../../assets/source.mp4"}`),
 	})
 	env := Invoke(CapToolsRun, body)
 	if !env.OK {

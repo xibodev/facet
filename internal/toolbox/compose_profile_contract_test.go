@@ -19,11 +19,11 @@ func TestExplainerProfileSchemaContract(t *testing.T) {
 	if _, ok := properties["duration_seconds"].(map[string]any)["default"]; ok {
 		t.Fatal("duration default depends on cuts; it must not be a fixed schema value")
 	}
-	if !strings.Contains(schema["description"].(string), "not in estimates") {
+	if !strings.Contains(schema["description"].(string), "do not prove a render") {
 		t.Fatal("schema must disclose the renderer-only validation boundary")
 	}
 	request := map[string]any{
-		"cuts":  []any{map[string]any{"in_seconds": float64(0), "out_seconds": float64(3)}},
+		"cuts":  []any{map[string]any{"type": "text_card", "text": "Test", "in_seconds": float64(0), "out_seconds": float64(3)}},
 		"width": float64(320), "height": float64(180), "fps": float64(24), "duration_seconds": float64(3),
 	}
 	if !contractValid(schema, request) {
@@ -44,17 +44,25 @@ func TestExplainerProfileSchemaContract(t *testing.T) {
 		}
 		request[field] = original
 	}
-	// Go estimates route direct props without evaluating Remotion's cross-field rules.
+	// Go estimates apply the same cross-field rules as the reduced composer.
 	t.Setenv("PATH", t.TempDir())
-	for _, duration := range []float64{3, 0.1, 2} {
+	request["duration_seconds"] = float64(3)
+	data, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, ok := CLI([]string{"tools", "estimate", "video_compose", "--input", string(data)})
+	if !ok || !strings.Contains(string(mustProfileJSON(t, env.Result)), "video_compose_remotion_render") {
+		t.Fatalf("valid profile estimate failed: %+v", env)
+	}
+	for _, duration := range []float64{0.1, 2} {
 		request["duration_seconds"] = duration
 		data, err := json.Marshal(request)
 		if err != nil {
 			t.Fatal(err)
 		}
-		env, ok := CLI([]string{"tools", "estimate", "video_compose", "--input", string(data)})
-		if !ok || !strings.Contains(string(mustProfileJSON(t, env.Result)), "video_compose_remotion_render") {
-			t.Fatalf("estimate should route only, not claim metadata validation: %+v", env)
+		if env, ok := CLI([]string{"tools", "estimate", "video_compose", "--input", string(data)}); ok || env.OK {
+			t.Fatalf("estimate accepted cuts outside duration %v: %+v", duration, env)
 		}
 	}
 }
@@ -72,6 +80,7 @@ process.exit(23);
 		"width": 320, "height": 180, "fps": 24, "duration_seconds": 3,
 		"cuts": []map[string]any{{"id": "intro", "type": "text_card", "source": "", "in_seconds": 0, "out_seconds": 3, "text": "Test"}},
 	}
+
 	_, _, err := doVideoCompose("run", mustProfileJSON(t, request))
 	if err == nil {
 		t.Fatal("capture-only renderer must fail, never report a successful render")
@@ -87,6 +96,52 @@ process.exit(23);
 	for field, want := range map[string]float64{"width": 320, "height": 180, "fps": 24, "duration_seconds": 3} {
 		if props[field] != want {
 			t.Errorf("renderer lost %s: got %v, want %v", field, props[field], want)
+		}
+	}
+}
+
+func TestScenePlanBackgroundColorReachesRenderer(t *testing.T) {
+	workspace := composeDeliveryFixture(t, `
+const fs = require('fs');
+const arg = process.argv.find(value => value.startsWith('--props='));
+fs.copyFileSync(arg.slice('--props='.length), '../captured-scene-props.json');
+process.exit(23);
+`)
+	request := map[string]any{
+		"output":          filepath.Join(workspace, "output.mp4"),
+		"backgroundColor": "#123456",
+		"scenes": []map[string]any{{
+			"id": "intro", "type": "text_card", "text": "Test",
+			"start_seconds": 0, "end_seconds": 1,
+		}},
+	}
+
+	_, _, err := doVideoCompose("run", mustProfileJSON(t, request))
+	if err == nil {
+		t.Fatal("capture-only renderer must fail, never report a successful render")
+	}
+	data, err := os.ReadFile(filepath.Join(workspace, "captured-scene-props.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var props map[string]any
+	if err := json.Unmarshal(data, &props); err != nil {
+		t.Fatal(err)
+	}
+	if got := props["backgroundColor"]; got != "#123456" {
+		t.Fatalf("scene-plan projection backgroundColor = %v, want #123456", got)
+	}
+}
+
+func TestExplainerSchemaRejectsRemovedSceneTypes(t *testing.T) {
+	schema := contractJSON(t, schemas["video_compose"]).(map[string]any)
+	for _, request := range []map[string]any{
+		{"cuts": []any{map[string]any{"type": "bar_chart", "chartData": []any{1}, "in_seconds": float64(0), "out_seconds": float64(1)}}},
+		{"cuts": []any{map[string]any{"type": "text_card", "text": "", "in_seconds": float64(0), "out_seconds": float64(1)}}},
+		{"cuts": []any{map[string]any{"type": "media", "source": "clip.mp4", "in_seconds": float64(0), "out_seconds": float64(1)}}},
+	} {
+		if contractValid(schema, request) {
+			t.Errorf("schema accepted unsupported or blank request: %v", request)
 		}
 	}
 }

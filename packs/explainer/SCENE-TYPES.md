@@ -1,99 +1,67 @@
-# Explainer scene types
+# Facet Explainer contract
 
-Every scene type the `Explainer` composition renders, with the fields each one
-requires. **A cut whose required field is missing renders as an empty frame** —
-the render still succeeds, so a silent typo produces a video of blank scenes
-rather than an error. Check the type and its required field together.
+The Facet-owned `Explainer` composition uses a nonempty, ordered `cuts` array.
+Cuts are direct: there are no implicit transitions, padding, or generated
+intermediate scenes.
 
-Cut fields are FLAT. `type`, `text`, `title` and the rest sit directly on the
-cut object beside `in_seconds`/`out_seconds`. There is no nested `scene` object.
+## Scene primitives
 
-```json
-{"id":"c1","type":"text_card","text":"Hello","in_seconds":0,"out_seconds":3}
-```
-
-## Text and titles
-
-| type | required | optional |
+| `type` | Required fields | Optional fields |
 | --- | --- | --- |
-| `text_card` | `text` | `fontSize` |
-| `hero_title` | `text` | `heroSubtitle` or `subtitle` |
-| `section_title` | `text` | `subtitle` |
-| `callout` | `text` | `callout_type`, `title`, `backgroundColor` |
+| `text_card` | `text` | `fontSize`, `backgroundColor`, `color` |
+| `hero_title` | `text` | `subtitle`, `backgroundColor`, `color` |
+| `stat_card` | `stat` | `label`, `backgroundColor`, `color` |
+| `media` | `source`, `media_kind` (`image` or `video`) | `fit` (`contain` or `cover`), `title`, `muted`, `backgroundColor`, `color` |
 
-## Data and metrics
-
-| type | required | optional |
-| --- | --- | --- |
-| `stat_card` | `stat` | `subtitle` |
-| `stat_reveal` | `stat` | `subtitle` |
-| `kpi_grid` | `chartData` | `title` |
-| `progress_bar` | `progress` | `title` |
-| `comparison` | `leftLabel`, `rightLabel`, `leftValue`, `rightValue` | `title`, `cardBackgroundColor` |
-
-## Charts
-
-| type | required | optional |
-| --- | --- | --- |
-| `bar_chart` | `chartData` | `title` |
-| `pie_chart` | `chartData` | `title` |
-| `line_chart` | `chartSeries` | `title` |
-
-## Scenes with media or motion
-
-| type | required | optional |
-| --- | --- | --- |
-| `terminal_scene` | `steps` | `terminalTitle`, `prompt` |
-| `screenshot_scene` | `backgroundImage`, `screenshotSteps` | `screenshotSize`, `cursorStartAt` |
-| `parallax` | `backgroundImage` | — |
-| `anime_scene` | see the character-animation pack | — |
-| `provider_chip` | `text` | — |
+Every cut also requires `in_seconds` and `out_seconds`, with
+`0 <= in_seconds < out_seconds`. Cuts must be ordered, must not overlap, and
+must fit within the composition duration. Blank required strings and unknown
+types are rejected before rendering.
 
 ## Composition profile
 
-Top-level props, beside `cuts`:
+```json
+{
+  "composition_id": "Explainer",
+  "width": 1280,
+  "height": 720,
+  "fps": 30,
+  "duration_seconds": 4,
+  "cuts": [
+    {
+      "id": "intro",
+      "type": "text_card",
+      "text": "A clear explanation",
+      "in_seconds": 0,
+      "out_seconds": 4
+    }
+  ],
+  "output": "renders/final.mp4"
+}
+```
+
+Width and height default to 1920x1080 and must be positive even safe integers.
+FPS defaults to 30. `duration_seconds * fps` must be a positive whole frame
+count. When duration is omitted, the composition ends at the last cut.
+
+## Audio and local assets
+
+Narration and music are optional:
 
 ```json
-{"width":1280,"height":720,"fps":30,"duration_seconds":9,"theme":"flat-motion-graphics","cuts":[…]}
+{
+  "audio": {
+    "narration": {"src": "narration/voice.mp3", "volume": 1},
+    "music": {"src": "audio/bed.mp3", "volume": 0.2, "loop": true}
+  }
+}
 ```
 
-Dimensions must be positive even integers; `duration_seconds * fps` must be a
-whole frame count. Omitting `duration_seconds` extends to the last cut's
-`out_seconds` plus one second. Cuts need `0 <= in_seconds < out_seconds` and
-must fit inside an explicit duration — invalid timings are rejected rather than
-truncated.
+Volume is between 0 and 1. Audio does not extend the video; narration longer
+than `duration_seconds` is truncated. A composition with no audio declaration
+and no media source audio renders without an audio stream.
 
-Narration is optional:
-
-```json
-{"audio":{"narration":{"src":"narration/voice.mp3","volume":1}}}
-```
-
-Audio longer than the video does not extend it; set `duration_seconds` to cover
-the narration, or the tail is cut off.
-
-## Verify the render, not the exit code
-
-A successful render is not a correct one. Sample frames and confirm they differ:
-
-```sh
-facet tools run frame_sample --input '{"input":"renders/final.mp4","output_dir":"artifacts/frames","strategy":{"type":"uniform","count":4}}'
-```
-
-Identical frames mean the scenes did not render — usually a wrong `type`, or a
-required field that is absent or misspelled.
-
-## Output profile
-
-A Remotion render produces **h264 / yuvj420p** with `color_range=pc` — the
-full-range variant, correctly tagged, so players show the intended black and
-white levels. The ffmpeg-based tools in Facet end their filter chains with
-`format=yuv420p` and produce the studio-range variant instead.
-
-Both are correct; they are simply different renderers. When reviewing a
-Remotion render with `output_review`, expect `yuvj420p`, not `yuv420p` — a
-`pixel_format` failure against `yuv420p` means the expectation is wrong, not
-the render.
-
-Remotion's `--pixel-format` flag does not change this for h264 output;
-verified against the CLI directly.
+Local `media.source` and audio `src` paths are copied into an isolated,
+temporary Remotion public directory. Facet stages only those explicit media
+fields, rejects non-media or escaping paths, and removes the staging directory
+after the render.

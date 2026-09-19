@@ -34,9 +34,9 @@ type Request struct {
 	// not resolve must be ABSENT rather than empty, so "not supplied" and
 	// "supplied as nothing" stay distinguishable.
 	Binaries map[string]string `json:"binaries,omitempty"`
-	// Async asks a long-running capability to return a job handle immediately
-	// rather than blocking until the work completes. Opt-in: existing
-	// consumers, including the human-facing CLI, expect a finished result.
+	// Async is accepted for compatibility with earlier descriptors. Facet is
+	// hosted per invocation, so process-local jobs cannot be polled by the next
+	// call and execution remains synchronous.
 	Async bool `json:"async,omitempty"`
 	// Roots maps a logical root name declared in permissions.filesystem_* to a
 	// canonicalized absolute path the host supplies per invocation. A module
@@ -283,10 +283,11 @@ func Invoke(capability string, raw []byte) Envelope {
 	}
 	defer releaseGrants()
 
-	tool := strings.TrimSpace(req.Tool)
+	dispatchTool := strings.TrimSpace(req.Tool)
 	if pinned != "" {
-		tool = pinned
+		dispatchTool = pinned
 	}
+	tool := toolbox.CanonicalName(dispatchTool)
 
 	// Grant gate, checked BEFORE consent.
 	//
@@ -385,7 +386,7 @@ func Invoke(capability string, raw []byte) Envelope {
 		input = absolutizeRequestPaths(input, projectRoot)
 	}
 
-	args, err := toolboxArgs(op, tool, input)
+	args, err := toolboxArgs(op, dispatchTool, input)
 	if err != nil {
 		return fail(OpInvoke, reqID, "invalid_request", err.Error(),
 			map[string]any{"capability": capability, "tool": tool}, false)
@@ -404,15 +405,9 @@ func Invoke(capability string, raw []byte) Envelope {
 	// that the async path would resolve against an empty PATH — the same
 	// declared-but-not-wired failure the grant itself was added to fix.
 	if req.Async && isLongRunning(capability) {
-		job := startJob(capability, tool)
-		grants := req.Binaries
-		go func() {
-			restore := useBinaries(grants)
-			defer restore()
-			env, ok := toolbox.CLI(args)
-			finishJob(job.JobID, project(OpInvoke, op, job.JobID, capability, tool, env, ok))
-		}()
-		return jobHandleEnvelope(reqID, capability, tool, job)
+		return startAsyncInvocation(
+			reqID, capability, tool, args, req.Binaries, toolbox.CLI,
+		)
 	}
 
 	env, ok := toolbox.CLI(args)
@@ -457,12 +452,32 @@ func Invoke(capability string, raw []byte) Envelope {
 	return EnforceOutputBudget(out, req.MaxOutputBytes)
 }
 
+type toolboxRunner func([]string) (toolbox.Envelope, bool)
+
+func startAsyncInvocation(
+	reqID, capability, canonicalTool string,
+	args []string,
+	grants map[string]string,
+	run toolboxRunner,
+) Envelope {
+	job := startJob(capability, canonicalTool)
+	go func() {
+		restore := useBinaries(grants)
+		defer restore()
+		env, ok := run(args)
+		finishJob(job.JobID, project(
+			OpInvoke, "run", job.JobID, capability, canonicalTool, env, ok,
+		))
+	}()
+	return jobHandleEnvelope(reqID, capability, canonicalTool, job)
+}
+
 // isLongRunning reports whether a capability may return a job handle. It must
 // agree with the descriptor: a capability that declares long_running but
 // refuses to produce a handle would be a contract violation the host cannot
 // see until it asks.
 func isLongRunning(capability string) bool {
-	return capability == CapToolsRun
+	return false
 }
 
 // Estimate validates a request and reports expected effects and cost. It never
@@ -572,12 +587,13 @@ func Estimate(capability string, raw []byte) Envelope {
 	}
 	defer releaseGrants()
 
-	tool := strings.TrimSpace(req.Tool)
+	dispatchTool := strings.TrimSpace(req.Tool)
 	if pinned != "" {
-		tool = pinned
+		dispatchTool = pinned
 	}
+	tool := toolbox.CanonicalName(dispatchTool)
 
-	args, err := toolboxArgs("estimate", tool, req.Input)
+	args, err := toolboxArgs("estimate", dispatchTool, req.Input)
 	if err != nil {
 		return fail(OpInvoke, reqID, "invalid_request", err.Error(),
 			map[string]any{"capability": capability, "tool": tool}, false)
@@ -646,16 +662,20 @@ func project(op, toolboxOp, reqID, capability, tool string, env toolbox.Envelope
 	if warnings == nil {
 		warnings = []string{}
 	}
+	projectedTool := env.Tool
+	if projectedTool == "" {
+		projectedTool = tool
+	}
 
 	// external_writes is derived twice, independently: once by the toolbox at
 	// source, once here. They should always agree; a disagreement means one of
 	// the two is wrong and the host should not be handed a confident answer.
 	// Fail closed on disagreement — either side claiming a write wins.
-	adapterSays := writesOutput(toolboxOp, tool)
+	adapterSays := writesOutput(toolboxOp, projectedTool)
 	toolboxSays := env.Execution.ExternalWrite
 	if adapterSays != toolboxSays {
 		warnings = append(warnings,
-			"external_writes disagreement for "+tool+": toolbox reported a different "+
+			"external_writes disagreement for "+projectedTool+": toolbox reported a different "+
 				"value than the module adapter derived; declaring the write-performing "+
 				"value so approval is not bypassed")
 	}
@@ -683,7 +703,7 @@ func project(op, toolboxOp, reqID, capability, tool string, env toolbox.Envelope
 	if out.OK {
 		out.Result = map[string]any{
 			"capability": capability,
-			"tool":       tool,
+			"tool":       projectedTool,
 			"output":     env.Result,
 		}
 		return out
@@ -700,8 +720,8 @@ func project(op, toolboxOp, reqID, capability, tool string, env toolbox.Envelope
 		}
 	}
 	details["capability"] = capability
-	if tool != "" {
-		details["tool"] = tool
+	if projectedTool != "" {
+		details["tool"] = projectedTool
 	}
 	out.Error = &Error{Code: code, Message: message, Retryable: retryable, Details: details}
 	return out
@@ -914,19 +934,11 @@ func mapSlice(v any) []map[string]any {
 // It is deliberately sparse. A media type already tells the host that an mp4 is
 // video and a jpeg is an image, so repeating that adds nothing and risks
 // disagreeing with the bytes. The hint is for what a media type CANNOT express:
-// a scene plan is application/json and also a timeline, and only Facet knows
-// which JSON documents carry a time axis.
-//
 // An unknown value is ignored by the host, so naming a primitive it does not
 // own is harmless — but pointless, and it would misrepresent the artefact to
 // anything that did honour it.
 func presentationFor(path, mediaType string) string {
 	switch {
-	case strings.HasSuffix(path, "scene_plan.json"),
-		strings.HasSuffix(path, "edit_decisions.json"):
-		// Time-ranged data: every item carries start/end seconds, and a table
-		// of numbers answers "is the pacing sane" badly.
-		return "timeline"
 	case strings.HasSuffix(path, ".md"):
 		return "markdown"
 	case strings.HasSuffix(path, ".srt"), strings.HasSuffix(path, ".vtt"):

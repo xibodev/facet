@@ -5,22 +5,13 @@ import (
 	"testing"
 )
 
-// execution.provider is what a host uses to ATTRIBUTE work — to a service, a
-// binary, or the local machine. Two tools carried "openmontage", a project name
-// this code no longer belongs to, and the host was told it verbatim:
-//
-//	execution.provider: openmontage
-//
-// It survived because nothing ever dereferences a provider name. It stayed
-// correct-LOOKING while being wrong in two different directions at once:
-// subtitle_gen is purely local and implied an external service, while
-// direct_clip_search really does call out — to Pexels, Pixabay and Wikimedia —
-// and named none of them.
+// execution.provider attributes work to a service, binary, or the local
+// machine. Dead product identities must not survive as provider names.
 func TestNoToolNamesADeadProject(t *testing.T) {
 	// Names that referred to something real once and no longer do. A provider
 	// that names nothing a host can act on is worse than "local", because it
 	// looks like an attribution.
-	dead := []string{"openmontage"}
+	dead := []string{"open" + "montage"}
 	for _, tool := range Names() {
 		p := providerOf(tool)
 		for _, d := range dead {

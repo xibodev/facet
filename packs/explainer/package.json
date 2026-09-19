@@ -1,7 +1,7 @@
 {
   "name": "@xibodev/facet-pack-explainer",
   "version": "1.0.0",
-  "description": "Animated explainer video pipeline, styles, director skills, and Remotion composition assets for Facet.",
+  "description": "Facet guidance and Remotion assets for animated explainers and motion graphics.",
   "keywords": ["facet", "facet-pack", "explainer", "motion-graphics", "remotion", "video"],
   "author": "Facet Authors",
   "license": "Apache-2.0",

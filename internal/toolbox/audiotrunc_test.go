@@ -22,7 +22,7 @@ func TestTruncatedNarrationIsWarnedAbout(t *testing.T) {
 	audio := synthAudio(t, 6)
 
 	got := truncatedAudioWarning(map[string]any{
-		"audio":            map[string]any{"path": audio},
+		"audio":            map[string]any{"narration": map[string]any{"src": audio}},
 		"duration_seconds": 2.0,
 	}, 30*time.Second)
 
@@ -47,7 +47,7 @@ func TestAudioThatFitsIsNotWarnedAbout(t *testing.T) {
 	audio := synthAudio(t, 2)
 
 	if got := truncatedAudioWarning(map[string]any{
-		"audio":            map[string]any{"path": audio},
+		"audio":            map[string]any{"narration": map[string]any{"src": audio}},
 		"duration_seconds": 5.0,
 	}, 30*time.Second); got != "" {
 		t.Errorf("audio well inside the timeline warned: %q", got)
@@ -59,9 +59,9 @@ func TestAudioThatFitsIsNotWarnedAbout(t *testing.T) {
 func TestNoWarningWithoutBothDurations(t *testing.T) {
 	for name, props := range map[string]map[string]any{
 		"no audio":        {"duration_seconds": 5.0},
-		"no duration":     {"audio": map[string]any{"path": "whatever.mp3"}},
-		"missing file":    {"audio": map[string]any{"path": "does-not-exist.mp3"}, "duration_seconds": 5.0},
-		"empty path":      {"audio": map[string]any{"path": ""}, "duration_seconds": 5.0},
+		"no duration":     {"audio": map[string]any{"narration": map[string]any{"src": "whatever.mp3"}}},
+		"missing file":    {"audio": map[string]any{"narration": map[string]any{"src": "does-not-exist.mp3"}}, "duration_seconds": 5.0},
+		"empty path":      {"audio": map[string]any{"narration": map[string]any{"src": ""}}, "duration_seconds": 5.0},
 		"audio not a map": {"audio": "voice.mp3", "duration_seconds": 5.0},
 	} {
 		if got := truncatedAudioWarning(props, 30*time.Second); got != "" {

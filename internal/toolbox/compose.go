@@ -20,87 +20,24 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// composeCut is one cut in an edit decision list.
-//
-// PRESERVES UNKNOWN FIELDS. The named fields below are what Facet's Go code
-// reasons about; the composition reads SIXTY distinct cut fields --
-// heroSubtitle, leftLabel, chartData, steps, columns and the rest. Enumerating
-// nine of them meant the envelope path silently dropped the other fifty-one
-// before Remotion saw them, so a cut whose scene type needed one rendered
-// EMPTY and reported success.
-//
-// Found by a target agentic CLI reading this source: it pre-emptively rewrote
-// its scene plan to text-only types to avoid the drop. That is the correct
-// workaround and not something a user should have to derive from Go structs.
-//
-// Enumerating all sixty would be a second copy of the composition's contract,
-// drifting the first time a scene type gains a field. Round-tripping the
-// unknown ones costs nothing and cannot drift.
 type composeCut struct {
-	ID         string  `json:"id,omitempty"`
-	Source     string  `json:"source"`
-	InSeconds  float64 `json:"in_seconds"`
-	OutSeconds float64 `json:"out_seconds"`
-	Speed      float64 `json:"speed,omitempty"`
-	Type       string  `json:"type,omitempty"`
-	Text       string  `json:"text,omitempty"`
-	Title      string  `json:"title,omitempty"`
-	Subtitle   string  `json:"subtitle,omitempty"`
-
-	// Extra carries every field the composition understands that Facet does
-	// not need to interpret. Populated by UnmarshalJSON, re-emitted by
-	// MarshalJSON.
-	Extra map[string]any `json:"-"`
-}
-
-// UnmarshalJSON keeps fields the named ones do not cover.
-func (c *composeCut) UnmarshalJSON(data []byte) error {
-	type alias composeCut
-	var named alias
-	if err := json.Unmarshal(data, &named); err != nil {
-		return err
-	}
-	*c = composeCut(named)
-
-	var all map[string]any
-	if err := json.Unmarshal(data, &all); err != nil {
-		return err
-	}
-	for _, known := range []string{
-		"id", "source", "in_seconds", "out_seconds",
-		"speed", "type", "text", "title", "subtitle",
-	} {
-		delete(all, known)
-	}
-	if len(all) > 0 {
-		c.Extra = all
-	}
-	return nil
-}
-
-// MarshalJSON re-emits the preserved fields alongside the named ones, so what
-// reaches the composition is what the caller sent.
-func (c composeCut) MarshalJSON() ([]byte, error) {
-	type alias composeCut
-	encoded, err := json.Marshal(alias(c))
-	if err != nil {
-		return nil, err
-	}
-	if len(c.Extra) == 0 {
-		return encoded, nil
-	}
-	merged := map[string]any{}
-	if err := json.Unmarshal(encoded, &merged); err != nil {
-		return nil, err
-	}
-	for k, v := range c.Extra {
-		// A named field always wins: the caller's spelling of a field Facet
-		// reasons about must not be shadowed by a stray duplicate.
-		if _, taken := merged[k]; !taken {
-			merged[k] = v
-		}
-	}
-	return json.Marshal(merged)
+	ID              string  `json:"id,omitempty"`
+	Source          string  `json:"source,omitempty"`
+	InSeconds       float64 `json:"in_seconds"`
+	OutSeconds      float64 `json:"out_seconds"`
+	Speed           float64 `json:"speed,omitempty"`
+	Type            string  `json:"type,omitempty"`
+	Text            string  `json:"text,omitempty"`
+	Title           string  `json:"title,omitempty"`
+	Subtitle        string  `json:"subtitle,omitempty"`
+	Stat            string  `json:"stat,omitempty"`
+	Label           string  `json:"label,omitempty"`
+	MediaKind       string  `json:"media_kind,omitempty"`
+	Fit             string  `json:"fit,omitempty"`
+	Muted           bool    `json:"muted,omitempty"`
+	FontSize        float64 `json:"fontSize,omitempty"`
+	BackgroundColor string  `json:"backgroundColor,omitempty"`
+	Color           string  `json:"color,omitempty"`
 }
 
 type composeEditDecisions struct {
@@ -133,7 +70,6 @@ type composeRequest struct {
 	Output            string                `json:"output,omitempty"`
 	CompositionID     string                `json:"composition_id,omitempty"`
 	Composition       string                `json:"composition,omitempty"`
-	Theme             string                `json:"theme,omitempty"`
 	Cuts              []map[string]any      `json:"cuts,omitempty"`
 	Overlays          []composeOverlay      `json:"overlays,omitempty"`
 	Captions          any                   `json:"captions,omitempty"`
@@ -205,7 +141,18 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 	var rawMap map[string]any
 	if err := json.Unmarshal(data, &rawMap); err == nil && rawMap != nil {
 		// 1. Direct Remotion Explainer props (contains top-level "cuts")
-		if cutsRaw, hasCuts := rawMap["cuts"].([]any); hasCuts && len(cutsRaw) > 0 {
+		if rawCuts, hasCuts := rawMap["cuts"]; hasCuts {
+			cutsRaw, ok := rawCuts.([]any)
+			if !ok || len(cutsRaw) == 0 {
+				return nil, nil, failure("invalid_request", "cuts must be a nonempty array", nil)
+			}
+			cuts, err := explainerCutsFromAny(cutsRaw, "cut")
+			if err != nil {
+				return nil, nil, err
+			}
+			if err := validateExplainerComposition(rawMap, cuts); err != nil {
+				return nil, nil, err
+			}
 			outPath := "renders/final.mp4"
 			if o, ok := rawMap["output"].(string); ok && strings.TrimSpace(o) != "" {
 				outPath = strings.TrimSpace(o)
@@ -218,33 +165,21 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 			}
 			if op == "estimate" {
 				last := 0.0
-				for _, c := range cutsRaw {
-					if cm, ok := c.(map[string]any); ok {
-						if v, ok := cm["out_seconds"].(float64); ok && v > last {
-							last = v
-						}
+				for _, cut := range cuts {
+					if v, ok := cut["out_seconds"].(float64); ok && v > last {
+						last = v
 					}
 				}
 				f, w, h := renderShape(rawMap, last)
 				return estimateRender([]string{"video_compose_remotion_render"}, f, w, h), nil, nil
 			}
-			// A cuts plan states when it ends, exactly as a scene plan does.
-			//
-			// Without duration_seconds the composition falls back to
-			// `lastEnd + 1` — a second of tail padding. The scene path was
-			// fixed to say so; this one was not, so the same tool produced 2s
-			// from a scene plan and 3s from the equivalent cuts plan.
-			// Verified: 60 frames versus 90 for identical timings.
-			//
-			// A caller's explicit duration_seconds still wins; only an absent
-			// one is filled in.
+			// Direct cuts end at the final cut unless the caller gives a longer
+			// explicit duration.
 			if _, given := rawMap["duration_seconds"]; !given {
 				last := 0.0
-				for _, c := range cutsRaw {
-					if cm, ok := c.(map[string]any); ok {
-						if v, ok := cm["out_seconds"].(float64); ok && v > last {
-							last = v
-						}
+				for _, cut := range cuts {
+					if v, ok := cut["out_seconds"].(float64); ok && v > last {
+						last = v
 					}
 				}
 				if last > 0 {
@@ -273,7 +208,22 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 		}
 
 		// 2. Direct Scene Plan JSON (contains top-level "scenes")
-		if scenesRaw, hasScenes := rawMap["scenes"].([]any); hasScenes && len(scenesRaw) > 0 {
+		if rawScenes, hasScenes := rawMap["scenes"]; hasScenes {
+			scenesRaw, ok := rawScenes.([]any)
+			if !ok || len(scenesRaw) == 0 {
+				return nil, nil, failure("invalid_request", "scenes must be a nonempty array", nil)
+			}
+			scenes, err := explainerCutsFromAny(scenesRaw, "scene")
+			if err != nil {
+				return nil, nil, err
+			}
+			cuts := make([]map[string]any, 0, len(scenes))
+			for _, scene := range scenes {
+				cuts = append(cuts, mapSceneToCut(scene))
+			}
+			if err := validateExplainerComposition(rawMap, cuts); err != nil {
+				return nil, nil, err
+			}
 			outPath := "renders/final.mp4"
 			if o, ok := rawMap["output"].(string); ok && strings.TrimSpace(o) != "" {
 				outPath = strings.TrimSpace(o)
@@ -286,11 +236,9 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 			}
 			if op == "estimate" {
 				last := 0.0
-				for _, sc := range scenesRaw {
-					if sm, ok := sc.(map[string]any); ok {
-						if v, ok := sm["end_seconds"].(float64); ok && v > last {
-							last = v
-						}
+				for _, scene := range scenes {
+					if v, ok := scene["end_seconds"].(float64); ok && v > last {
+						last = v
 					}
 				}
 				f, w, h := renderShape(rawMap, last)
@@ -314,25 +262,17 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 			// accepts any other property, so a caller has no way to learn
 			// which fields survive. Carrying them through is the only
 			// behaviour consistent with what the schema accepts.
-			cuts := make([]map[string]any, 0, len(scenesRaw))
-			for _, s := range scenesRaw {
-				if sm, ok := s.(map[string]any); ok {
-					cuts = append(cuts, mapSceneToCut(sm))
-				}
-			}
-			theme := "flat-motion-graphics"
-			if t, ok := rawMap["style_playbook"].(string); ok && t != "" {
-				theme = t
-			}
 			remotionProps := map[string]any{
-				"theme": theme,
-				"cuts":  cuts,
+				"cuts": cuts,
 			}
 			if aud, ok := rawMap["audio"]; ok {
 				remotionProps["audio"] = aud
 			}
 			if ov, ok := rawMap["overlays"]; ok {
 				remotionProps["overlays"] = ov
+			}
+			if background, ok := rawMap["backgroundColor"]; ok {
+				remotionProps["backgroundColor"] = background
 			}
 			// Output dimensions and frame rate are the caller's, not the
 			// composition's. This branch rebuilds props from scratch, so
@@ -346,18 +286,8 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 				}
 			}
 
-			// A scene plan states when it ends. Say so explicitly, or the
-			// composition falls back to `lastEnd + 1` — a full second of tail
-			// padding — and a 2s request renders as 3s.
-			//
-			// Measured: 90 frames at 30fps for a request ending at 2s. The
-			// padding exists for a final fade that is 8 frames long, so 22 of
-			// those 30 frames serve nothing.
-			//
-			// The composition already honours duration_seconds exactly; the
-			// caller's intent simply was never passed. Only set when the
-			// caller did not, so an explicit duration still wins and the
-			// composition's own default is untouched for anyone relying on it.
+			// Scene aliases end at their final mapped cut unless the caller
+			// gives a longer explicit duration.
 			if _, given := remotionProps["duration_seconds"]; !given {
 				if end := lastCutEnd(cuts); end > 0 {
 					fps := 30.0
@@ -789,7 +719,19 @@ func truncatedAudioWarningContext(ctx context.Context, props map[string]any, tmo
 	if !ok {
 		return ""
 	}
-	path, _ := audio["path"].(string)
+	narration, ok := audio["narration"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	path, _ := narration["src"].(string)
+	if strings.HasPrefix(strings.ToLower(path), "file:") {
+		if u, err := url.Parse(path); err == nil && u.Host == "" && u.RawQuery == "" && u.Fragment == "" {
+			path = u.Path
+			if os.PathSeparator == '\\' && len(path) >= 3 && path[0] == '/' && path[2] == ':' {
+				path = path[1:]
+			}
+		}
+	}
 	if strings.TrimSpace(path) == "" || !fileExists(path) {
 		return ""
 	}
@@ -907,62 +849,284 @@ func mapSceneToCut(scene map[string]any) map[string]any {
 	return cut
 }
 
-// cutRequirements mirrors the composition's own guard conditions: a cut whose
-// type is recognised renders NOTHING unless the named field is present.
-//
-// Kept as data rather than prose because the failure it prevents is silent —
-// a well-formed mp4 with an empty frame, reported as a success. Source of
-// truth is remotion-composer/src/Explainer.tsx, where each of these appears as
-// `cut.type === "x" && cut.y`.
 var cutRequirements = map[string][]string{
-	"text_card":        {"text"},
-	"hero_title":       {"text"},
-	"callout":          {"text"},
-	"stat_card":        {"stat"},
-	"terminal_scene":   {"steps"},
-	"bar_chart":        {"chartData"},
-	"pie_chart":        {"chartData"},
-	"kpi_grid":         {"chartData"},
-	"line_chart":       {"chartSeries"},
-	"progress_bar":     {"progress"},
-	"comparison":       {"leftLabel", "rightLabel", "leftValue", "rightValue"},
-	"screenshot_scene": {"backgroundImage", "screenshotSteps"},
+	"text_card":  {"text"},
+	"hero_title": {"text"},
+	"stat_card":  {"stat"},
+	"media":      {"source", "media_kind"},
 }
 
-// blankCutWarnings names cuts that will render empty.
-//
-// A render costs 12s at 640x360 and 83s at 1080p, and the result is a valid
-// file the caller has no reason to doubt: `ok:true`, an artifact on disk, a
-// plausible byte count. Verified — a scene with `txt` instead of `text`
-// rendered blank and reported success, and only output_review's content gate
-// disagreed. That gate is a separate opt-in step, so nothing on the render
-// path itself said a word.
-//
-// Warning rather than refusing: the composition may gain a type this map does
-// not know, and refusing an unknown-but-valid cut would be worse than a
-// warning the caller can read. The names come from the request, so a typo is
-// visible in the message.
-func blankCutWarnings(cuts []map[string]any) []string {
-	var out []string
-	for i, cut := range cuts {
-		kind, _ := cut["type"].(string)
-		required, known := cutRequirements[kind]
-		if !known {
-			continue
+const maxSafeInteger = 9007199254740991
+
+func explainerCutsFromAny(items []any, label string) ([]map[string]any, error) {
+	cuts := make([]map[string]any, 0, len(items))
+	for i, item := range items {
+		cut, ok := item.(map[string]any)
+		if !ok {
+			return nil, failure("invalid_request", fmt.Sprintf("%s %d must be an object", label, i), nil)
 		}
-		var missing []string
-		for _, field := range required {
-			if v, present := cut[field]; !present || v == nil || v == "" {
-				missing = append(missing, field)
-			}
+		cuts = append(cuts, cut)
+	}
+	return cuts, nil
+}
+
+func finiteJSONNumber(value any, name string) (float64, error) {
+	var number float64
+	switch typed := value.(type) {
+	case float64:
+		number = typed
+	case float32:
+		number = float64(typed)
+	case int:
+		number = float64(typed)
+	case int8:
+		number = float64(typed)
+	case int16:
+		number = float64(typed)
+	case int32:
+		number = float64(typed)
+	case int64:
+		number = float64(typed)
+	case uint:
+		number = float64(typed)
+	case uint8:
+		number = float64(typed)
+	case uint16:
+		number = float64(typed)
+	case uint32:
+		number = float64(typed)
+	case uint64:
+		number = float64(typed)
+	default:
+		return 0, failure("invalid_request", name+" must be a finite number", nil)
+	}
+	if !finite(number) {
+		return 0, failure("invalid_request", name+" must be a finite number", nil)
+	}
+	return number, nil
+}
+
+func nonBlankJSONField(value any, name string) (string, error) {
+	text, ok := value.(string)
+	if !ok || strings.TrimSpace(text) == "" {
+		return "", failure("invalid_request", name+" must be a nonblank string", nil)
+	}
+	return text, nil
+}
+
+func optionalNonBlankJSONField(values map[string]any, field, name string) error {
+	value, present := values[field]
+	if !present {
+		return nil
+	}
+	_, err := nonBlankJSONField(value, name)
+	return err
+}
+
+func validateExplainerTrack(value any, name string) error {
+	track, ok := value.(map[string]any)
+	if !ok {
+		return failure("invalid_request", name+" must be an object", nil)
+	}
+	if _, err := nonBlankJSONField(track["src"], name+".src"); err != nil {
+		return err
+	}
+	if volume, present := track["volume"]; present {
+		number, err := finiteJSONNumber(volume, name+".volume")
+		if err != nil {
+			return err
 		}
-		if len(missing) > 0 {
-			out = append(out, fmt.Sprintf(
-				"cut %d (type %q) is missing %s and will render blank; "+
-					"check for a misspelled field", i, kind, strings.Join(missing, ", ")))
+		if number < 0 || number > 1 {
+			return failure("invalid_request", name+".volume must be between 0 and 1", nil)
 		}
 	}
-	return out
+	if loop, present := track["loop"]; present {
+		if _, ok := loop.(bool); !ok {
+			return failure("invalid_request", name+".loop must be a boolean", nil)
+		}
+	}
+	return nil
+}
+
+func validateExplainerComposition(props map[string]any, cuts []map[string]any) error {
+	if len(cuts) == 0 {
+		return failure("invalid_request", "Explainer cuts must be a nonempty array", nil)
+	}
+
+	dimension := func(name string, fallback float64) (float64, error) {
+		value, present := props[name]
+		if !present || value == nil {
+			return fallback, nil
+		}
+		number, err := finiteJSONNumber(value, name)
+		if err != nil {
+			return 0, err
+		}
+		if number <= 0 || number > maxSafeInteger || math.Trunc(number) != number || math.Mod(number, 2) != 0 {
+			return 0, failure("invalid_request", name+" must be a positive even safe integer", nil)
+		}
+		return number, nil
+	}
+	if _, err := dimension("width", 1920); err != nil {
+		return err
+	}
+	if _, err := dimension("height", 1080); err != nil {
+		return err
+	}
+
+	fps := 30.0
+	if value, present := props["fps"]; present && value != nil {
+		number, err := finiteJSONNumber(value, "fps")
+		if err != nil {
+			return err
+		}
+		fps = number
+	}
+	if fps <= 0 {
+		return failure("invalid_request", "fps must be positive", nil)
+	}
+
+	lastEnd := 0.0
+	for i, cut := range cuts {
+		end, err := finiteJSONNumber(cut["out_seconds"], fmt.Sprintf("cut %d.out_seconds", i))
+		if err != nil {
+			return err
+		}
+		if end > lastEnd {
+			lastEnd = end
+		}
+	}
+	duration := lastEnd
+	if value, present := props["duration_seconds"]; present {
+		number, err := finiteJSONNumber(value, "duration_seconds")
+		if err != nil {
+			return err
+		}
+		duration = number
+	}
+	if duration <= 0 {
+		return failure("invalid_request", "duration_seconds must be positive", nil)
+	}
+	frameCount := duration * fps
+	if frameCount <= 0 || frameCount > maxSafeInteger || math.Trunc(frameCount) != frameCount {
+		return failure("invalid_request", "duration_seconds * fps must be a positive safe integer frame count", nil)
+	}
+
+	previousEnd := 0.0
+	for i, cut := range cuts {
+		prefix := fmt.Sprintf("cut %d", i)
+		start, err := finiteJSONNumber(cut["in_seconds"], prefix+".in_seconds")
+		if err != nil {
+			return err
+		}
+		end, err := finiteJSONNumber(cut["out_seconds"], prefix+".out_seconds")
+		if err != nil {
+			return err
+		}
+		if start < 0 || end <= start {
+			return failure("invalid_request", fmt.Sprintf(
+				"cut %d must satisfy 0 <= in_seconds < out_seconds", i), nil)
+		}
+		if start < previousEnd {
+			return failure("invalid_request", prefix+" overlaps or is out of order", nil)
+		}
+		if end > duration {
+			return failure("invalid_request", prefix+".out_seconds exceeds duration_seconds", nil)
+		}
+		startFrame := math.Floor(start*fps + 1e-9)
+		endFrame := math.Ceil(end*fps - 1e-9)
+		if endFrame <= startFrame {
+			return failure("invalid_request", prefix+" must span at least one frame", nil)
+		}
+		previousEnd = end
+
+		kind, err := nonBlankJSONField(cut["type"], prefix+".type")
+		if err != nil {
+			return err
+		}
+		required, known := cutRequirements[kind]
+		if !known {
+			return failure("invalid_request", fmt.Sprintf("cut %d has unsupported type %q", i, kind), nil)
+		}
+		for _, field := range required {
+			if _, err := nonBlankJSONField(cut[field], prefix+"."+field); err != nil {
+				return err
+			}
+		}
+		if err := optionalNonBlankJSONField(cut, "backgroundColor", prefix+".backgroundColor"); err != nil {
+			return err
+		}
+		if err := optionalNonBlankJSONField(cut, "color", prefix+".color"); err != nil {
+			return err
+		}
+		switch kind {
+		case "text_card":
+			if value, present := cut["fontSize"]; present {
+				fontSize, err := finiteJSONNumber(value, prefix+".fontSize")
+				if err != nil {
+					return err
+				}
+				if fontSize <= 0 {
+					return failure("invalid_request", prefix+".fontSize must be positive", nil)
+				}
+			}
+		case "hero_title":
+			if err := optionalNonBlankJSONField(cut, "subtitle", prefix+".subtitle"); err != nil {
+				return err
+			}
+		case "stat_card":
+			if err := optionalNonBlankJSONField(cut, "label", prefix+".label"); err != nil {
+				return err
+			}
+		case "media":
+			mediaKind, _ := cut["media_kind"].(string)
+			if mediaKind != "image" && mediaKind != "video" {
+				return failure("invalid_request", fmt.Sprintf(
+					"cut %d media_kind must be \"image\" or \"video\"", i), nil)
+			}
+			if fit, present := cut["fit"]; present && fit != "contain" && fit != "cover" {
+				return failure("invalid_request", prefix+".fit must be \"contain\" or \"cover\"", nil)
+			}
+			if err := optionalNonBlankJSONField(cut, "title", prefix+".title"); err != nil {
+				return err
+			}
+			if muted, present := cut["muted"]; present {
+				if _, ok := muted.(bool); !ok {
+					return failure("invalid_request", prefix+".muted must be a boolean", nil)
+				}
+			}
+		}
+	}
+
+	if audioValue, present := props["audio"]; present {
+		audio, ok := audioValue.(map[string]any)
+		if !ok {
+			return failure("invalid_request", "audio must be an object", nil)
+		}
+		narration, hasNarration := audio["narration"]
+		music, hasMusic := audio["music"]
+		if !hasNarration && !hasMusic {
+			return failure("invalid_request", "audio must contain narration or music", nil)
+		}
+		if hasNarration {
+			if err := validateExplainerTrack(narration, "audio.narration"); err != nil {
+				return err
+			}
+		}
+		if hasMusic {
+			if err := validateExplainerTrack(music, "audio.music"); err != nil {
+				return err
+			}
+		}
+	}
+	if err := optionalNonBlankJSONField(props, "backgroundColor", "backgroundColor"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateExplainerCuts(cuts []map[string]any) error {
+	return validateExplainerComposition(map[string]any{"cuts": cuts}, cuts)
 }
 
 func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any, []string, error) {
@@ -999,45 +1163,23 @@ func doRemotionRenderContext(ctx context.Context, r composeRequest, outPath stri
 	defer cleanup()
 
 	compositionID := "Explainer"
-	if r.CompositionID != "" {
-		compositionID = r.CompositionID
-	} else if r.EditDecisions != nil && r.EditDecisions.RendererFamily != "" {
-		switch r.EditDecisions.RendererFamily {
-		case "cinematic-trailer", "documentary-montage":
-			compositionID = "CinematicRenderer"
-		case "presenter":
-			compositionID = "TalkingHead"
-		default:
-			compositionID = "Explainer"
-		}
+	if r.CompositionID != "" && r.CompositionID != compositionID {
+		return nil, nil, failure("invalid_request", "the Facet composer supports only composition_id \"Explainer\"", nil)
+	}
+	if r.EditDecisions != nil && r.EditDecisions.RendererFamily != "" && r.EditDecisions.RendererFamily != "explainer" {
+		return nil, nil, failure("invalid_request", "the Remotion runtime supports only renderer_family \"explainer\"", nil)
 	}
 
-	// Warn about cuts that will render blank BEFORE spending the render.
-	//
-	// A blank render is a valid file the caller has no reason to doubt, and
-	// the only thing that disagrees is output_review's content gate — a
-	// separate opt-in step. So the render path itself stays silent about its
-	// own most expensive silent failure unless this says something.
-	var blankWarnings []string
-	// THE ENVELOPE PATH NEEDS THIS AS MUCH AS THE DIRECT PATH, and it was the
-	// one path that did not run it -- the guard against cuts rendering blank
-	// was absent from a path that used to drop the very fields it checks for.
-	//
-	// This works only now that composeCut preserves unknown fields. Before
-	// that, chartData was gone at decode time and re-marshalling the struct
-	// could never show it missing, because it had never been there.
+	var explainerCuts []map[string]any
 	if r.RawProps == nil && r.EditDecisions != nil {
 		encoded, mErr := json.Marshal(r.EditDecisions.Cuts)
 		if mErr == nil {
-			var decoded []map[string]any
-			if json.Unmarshal(encoded, &decoded) == nil {
-				blankWarnings = blankCutWarnings(decoded)
-			}
+			_ = json.Unmarshal(encoded, &explainerCuts)
 		}
 	}
 	if r.RawProps != nil {
 		if raw, ok := r.RawProps["cuts"].([]map[string]any); ok {
-			blankWarnings = blankCutWarnings(raw)
+			explainerCuts = raw
 		} else if anyCuts, ok := r.RawProps["cuts"].([]any); ok {
 			cuts := make([]map[string]any, 0, len(anyCuts))
 			for _, c := range anyCuts {
@@ -1045,17 +1187,23 @@ func doRemotionRenderContext(ctx context.Context, r composeRequest, outPath stri
 					cuts = append(cuts, cm)
 				}
 			}
-			blankWarnings = blankCutWarnings(cuts)
+			explainerCuts = cuts
 		}
+	}
+	if len(explainerCuts) > 0 {
+		props := r.RawProps
+		if props == nil {
+			props = map[string]any{"cuts": explainerCuts}
+		}
+		if err := validateExplainerComposition(props, explainerCuts); err != nil {
+			return nil, nil, err
+		}
+	}
 
-		// Narration longer than the video is silently CUT OFF.
-		//
-		// Verified: 8.16s of narration against a 4s timeline produced a 4s
-		// file with no warning at all — half the script gone, and the run
-		// reported success. The walkthrough documents this hazard; the tool
-		// said nothing, so a caller learns it only by listening to the result.
+	var composerWarnings []string
+	if r.RawProps != nil {
 		if msg := truncatedAudioWarningContext(ctx, r.RawProps, tmo); msg != "" {
-			blankWarnings = append(blankWarnings, msg)
+			composerWarnings = append(composerWarnings, msg)
 		}
 	}
 
@@ -1177,9 +1325,7 @@ func doRemotionRenderContext(ctx context.Context, r composeRequest, outPath stri
 		return nil, nil, err
 	}
 
-	// A blank-cut warning must survive to the caller: it is the only signal on
-	// the render path that the file just produced may contain nothing.
-	warnings = append(blankWarnings, warnings...)
+	warnings = append(composerWarnings, warnings...)
 
 	return map[string]any{
 		"operation":      "remotion_render",
@@ -1351,30 +1497,17 @@ func stageRemotionMedia(data []byte, composer, publicDir string) ([]byte, error)
 		}
 		return nil
 	}
-	if err := rewrite(props, []string{"videoSrc", "backgroundSrc", "productImage"}); err != nil {
-		return nil, err
-	}
-	for _, key := range []string{"cuts", "scenes", "clips"} {
+	for _, key := range []string{"cuts", "scenes"} {
 		items, _ := props[key].([]any)
 		for _, item := range items {
 			object, _ := item.(map[string]any)
-			if err := rewrite(object, []string{"source", "src", "backgroundImage", "backgroundVideo", "backgroundSrc"}); err != nil {
+			if err := rewrite(object, []string{"source"}); err != nil {
 				return nil, err
-			}
-			images, _ := object["images"].([]any)
-			for i, image := range images {
-				if src, ok := image.(string); ok {
-					value, err := stage(src)
-					if err != nil {
-						return nil, err
-					}
-					images[i] = value
-				}
 			}
 		}
 	}
 	audio, _ := props["audio"].(map[string]any)
-	for _, layer := range []any{audio["narration"], audio["music"], props["soundtrack"], props["music"]} {
+	for _, layer := range []any{audio["narration"], audio["music"]} {
 		object, _ := layer.(map[string]any)
 		if err := rewrite(object, []string{"src"}); err != nil {
 			return nil, err
@@ -1714,14 +1847,7 @@ func buildRemotionProps(r composeRequest) ([]byte, error) {
 		return []byte("{}"), nil
 	}
 
-	encoded, err := json.Marshal(r.EditDecisions)
-	if err != nil {
-		return nil, err
-	}
-	merged := map[string]any{}
-	if err := json.Unmarshal(encoded, &merged); err != nil {
-		return nil, err
-	}
+	merged := map[string]any{"cuts": r.EditDecisions.Cuts}
 	if r.Audio != nil {
 		merged["audio"] = r.Audio
 	}

@@ -25,11 +25,17 @@ func TestRealHostRequestIsAccepted(t *testing.T) {
 	//
 	// So the fixture grants the repository root and names the media relative
 	// to it, which is what a host does.
-	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
+	projectRoot := t.TempDir()
+	wav := append([]byte{
+		'R', 'I', 'F', 'F', 36, 0, 0, 0, 'W', 'A', 'V', 'E',
+		'f', 'm', 't', ' ', 16, 0, 0, 0, 1, 0, 1, 0,
+		0x40, 0x1f, 0, 0, 0x40, 0x1f, 0, 0, 1, 0, 8, 0,
+		'd', 'a', 't', 'a', 0, 0, 0, 0,
+	})
+	if err := os.WriteFile(filepath.Join(projectRoot, "source.wav"), wav, 0600); err != nil {
 		t.Fatal(err)
 	}
-	root, err := json.Marshal(repoRoot)
+	root, err := json.Marshal(projectRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +45,7 @@ func TestRealHostRequestIsAccepted(t *testing.T) {
 	  "capability":"creative.tools.run",
 	  "request_id":"req_host",
 	  "tool":"media_probe",
-	  "input":{"input":"projects/cinematic-documentary/assets/video/shot1_raw.mp4"},
+	  "input":{"input":"source.wav"},
 	  "roots":{"project_root":{"path":` + string(root) + `,"mode":"rw"}},
 	  "grants":{"network":[],"credentials":[],"paid_providers":[],"publish":false,"subprocess":["ffprobe"]},
 	  "deadline_ms":600000,
@@ -184,7 +190,7 @@ func TestGateAgainstRealHostWireShapes(t *testing.T) {
 	// so an empty subprocess list must never deny a local tool.
 	t.Run("empty subprocess does not deny a local tool", func(t *testing.T) {
 		env := Invoke(CapToolsRun, []byte(`{"tool":"media_probe",`+
-			`"input":{"input":"../../projects/cinematic-documentary/assets/video/shot1_raw.mp4"},`+
+			`"input":{"input":"../../assets/source.mp4"},`+
 			`"grants":{"network":null,"credentials":null,"paid_providers":null,"publish":false,"subprocess":null}}`))
 		if !env.OK && env.Error.Code == "permission_denied" {
 			t.Error("a local tool was denied by an empty subprocess grant")

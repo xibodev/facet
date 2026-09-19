@@ -1,13 +1,17 @@
 package config
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 )
@@ -45,9 +49,11 @@ type OwnershipRecord struct {
 
 // ManagedEntry represents an individual managed path or projection.
 type ManagedEntry struct {
-	EntryType string `json:"entry_type"` // "directory-junction", "symlink", "copy"
-	Target    string `json:"target"`
-	CreatedOn string `json:"created_on"`
+	EntryType      string `json:"entry_type"` // "directory-junction", "symlink", "copy", "instruction-section"
+	Target         string `json:"target"`
+	ContentSHA256  string `json:"content_sha256,omitempty"`
+	AddedSeparator bool   `json:"added_separator,omitempty"`
+	CreatedOn      string `json:"created_on"`
 }
 
 // ProjectLock represents the portable facet.lock.json pinned to a project.
@@ -69,7 +75,6 @@ func RunInitWithWriter(projectSlug string, engine string, cfg *Config, w io.Writ
 	opts := InitOptions{
 		ProjectDir: projectSlug,
 		Engine:     engine,
-		Packs:      []string{"explainer"},
 	}
 	return RunInitWithOptions(opts, cfg, w)
 }
@@ -104,6 +109,30 @@ func RunInitWithOptions(opts InitOptions, cfg *Config, w io.Writer) (*InitResult
 			engine = "claude"
 		}
 	}
+	switch engine {
+	case "claude", "copilot", "codex", "opencode", "studio":
+	default:
+		return nil, fmt.Errorf("unsupported engine %q", engine)
+	}
+
+	packSources := make(map[string]string, len(opts.Packs))
+	normalizedPacks := make([]string, 0, len(opts.Packs))
+	for _, packName := range opts.Packs {
+		packName = strings.ToLower(strings.TrimSpace(packName))
+		if packName == "" || packName == "." || filepath.Base(packName) != packName || strings.ContainsAny(packName, `/\`) {
+			return nil, fmt.Errorf("invalid pack name %q", packName)
+		}
+		if _, exists := packSources[packName]; exists {
+			continue
+		}
+		packSource := findPackSource(packName, cfg)
+		if packSource == "" {
+			return nil, fmt.Errorf("selected pack %q was not found in the Facet bundle", packName)
+		}
+		packSources[packName] = packSource
+		normalizedPacks = append(normalizedPacks, packName)
+	}
+	opts.Packs = normalizedPacks
 
 	// Determine project directory
 	projectSlug := strings.TrimSpace(opts.ProjectDir)
@@ -119,7 +148,7 @@ func RunInitWithOptions(opts InitOptions, cfg *Config, w io.Writer) (*InitResult
 	result := &InitResult{
 		ProjectDir:  targetDir,
 		Engine:      engine,
-		Packs:       opts.Packs,
+		Packs:       append([]string(nil), opts.Packs...),
 		Projections: make(map[string]string),
 	}
 
@@ -127,11 +156,8 @@ func RunInitWithOptions(opts InitOptions, cfg *Config, w io.Writer) (*InitResult
 		fmt.Fprintf(w, "Initializing Facet workspace in: %s (engine: %s)\n", targetDir, engine)
 	}
 
-	// 1. Create standard project subdirectories
-	_ = os.MkdirAll(filepath.Join(targetDir, "assets"), 0755)
-	_ = os.MkdirAll(filepath.Join(targetDir, "artifacts"), 0755)
-	_ = os.MkdirAll(filepath.Join(targetDir, "renders"), 0755)
-	_ = os.MkdirAll(filepath.Join(targetDir, "narration"), 0755)
+	// Local Facet state is required. Production directories are created only
+	// when a selected method or tool actually needs them.
 	_ = os.MkdirAll(filepath.Join(targetDir, ".facet"), 0755)
 
 	// 2. Git exclude handling (add .facet/ to .git/info/exclude if git repository)
@@ -139,6 +165,16 @@ func RunInitWithOptions(opts InitOptions, cfg *Config, w io.Writer) (*InitResult
 
 	// 3. Load or initialize ownership record
 	ownership := loadOwnership(targetDir)
+
+	desiredProjections := make(map[string]bool, len(opts.Packs)+1)
+	desiredProjections[projectionKey(targetDir, getSkillsTargetPath(targetDir, engine, "facet"))] = true
+	for _, packName := range opts.Packs {
+		desiredProjections[projectionKey(targetDir, getSkillsTargetPath(targetDir, engine, packName))] = true
+	}
+	obsoleteProjections, err := planObsoleteProjections(targetDir, ownership, desiredProjections)
+	if err != nil {
+		return nil, err
+	}
 
 	// 4. Link core producer skill
 	coreSource := findCoreSkillSource(cfg)
@@ -148,49 +184,44 @@ func RunInitWithOptions(opts InitOptions, cfg *Config, w io.Writer) (*InitResult
 	if coreSource != "" {
 		method, err := linkOrCopySkillSafe(coreSource, coreTarget, targetDir, ownership)
 		if err != nil {
-			if w != nil {
-				fmt.Fprintf(w, "  Warning: could not link core skill: %v\n", err)
-			}
-		} else {
-			result.LinkMethod = method
-			result.Projections[coreTarget] = method
-			if w != nil {
-				fmt.Fprintf(w, "  Linked core skill: %s -> %s (%s)\n", coreTarget, coreSource, method)
-			}
+			return nil, fmt.Errorf("reconcile core skill projection: %w", err)
+		}
+		result.LinkMethod = method
+		result.Projections[coreTarget] = method
+		if w != nil {
+			fmt.Fprintf(w, "  Linked core skill: %s -> %s (%s)\n", coreTarget, coreSource, method)
 		}
 	} else {
 		_ = os.MkdirAll(coreTarget, 0755)
 		result.LinkMethod = "created"
 	}
 
-	// 5. Link pack skills
+	// 5. Link only explicitly selected production-method packs.
 	for _, packName := range opts.Packs {
-		packSource := findPackSource(packName, cfg)
-		if packSource == "" {
-			if w != nil {
-				fmt.Fprintf(w, "  Notice: pack '%s' not found locally\n", packName)
-			}
-			continue
-		}
+		packSource := packSources[packName]
 		packTarget := getSkillsTargetPath(targetDir, engine, packName)
 		method, err := linkOrCopySkillSafe(packSource, packTarget, targetDir, ownership)
 		if err != nil {
-			if w != nil {
-				fmt.Fprintf(w, "  Warning: could not link pack %s: %v\n", packName, err)
-			}
-		} else {
-			result.Projections[packTarget] = method
-			if w != nil {
-				fmt.Fprintf(w, "  Linked pack '%s': %s -> %s (%s)\n", packName, packTarget, packSource, method)
-			}
+			return nil, fmt.Errorf("reconcile pack %s projection: %w", packName, err)
 		}
+		result.Projections[packTarget] = method
+		if w != nil {
+			fmt.Fprintf(w, "  Linked pack '%s': %s -> %s (%s)\n", packName, packTarget, packSource, method)
+		}
+	}
+	if err := removeObsoleteProjections(targetDir, ownership, obsoleteProjections); err != nil {
+		return nil, err
 	}
 
 	// 6. Scaffold agent instruction files (CLAUDE.md, AGENTS.md, copilot-instructions.md)
-	scaffoldAgentInstructions(targetDir, engine, opts.Packs, ownership)
+	if err := scaffoldAgentInstructions(targetDir, engine, opts.Packs, ownership); err != nil {
+		return nil, err
+	}
 
 	// 7. Save ownership record
-	saveOwnership(targetDir, ownership)
+	if err := saveOwnership(targetDir, ownership); err != nil {
+		return nil, err
+	}
 
 	// 8. Write portable project lock: facet.lock.json
 	lockPath := filepath.Join(targetDir, "facet.lock.json")
@@ -231,32 +262,6 @@ func RunInitWithOptions(opts InitOptions, cfg *Config, w io.Writer) (*InitResult
 		fmt.Fprintf(w, "  Created project configuration: %s\n", configFilePath)
 	}
 
-	// 10. Scaffold initial brief if not exists
-	briefPath := filepath.Join(targetDir, "artifacts", "brief.md")
-	if _, err := os.Stat(briefPath); os.IsNotExist(err) {
-		name := filepath.Base(targetDir)
-		if name == "" || name == "." {
-			name = "Untitled Production"
-		}
-		briefContent := fmt.Sprintf(`# Production Brief: %s
-
-## Metadata
-- Project: %s
-- Engine: %s
-- Target Resolution: %s
-- Target FPS: %d
-- Aspect Ratio: %s
-- Voice: %s
-
-## Concept & Objectives
-<!-- Describe the purpose, audience, and core message of this video -->
-
-## Selected Packs
-%s
-`, name, name, engine, projectCfg.Defaults.Resolution, projectCfg.Defaults.FPS, projectCfg.Defaults.AspectRatio, projectCfg.Defaults.Voice, formatPacksList(opts.Packs))
-		_ = os.WriteFile(briefPath, []byte(briefContent), 0644)
-	}
-
 	if w != nil {
 		fmt.Fprintln(w, "Workspace initialization complete.")
 	}
@@ -264,18 +269,18 @@ func RunInitWithOptions(opts InitOptions, cfg *Config, w io.Writer) (*InitResult
 	return result, nil
 }
 
-func formatPacksList(packs []string) string {
-	if len(packs) == 0 {
-		return "- None (Core Source-Edit only)"
-	}
-	var sb strings.Builder
-	for _, p := range packs {
-		sb.WriteString(fmt.Sprintf("- %s\n", p))
-	}
-	return strings.TrimRight(sb.String(), "\n")
-}
+const (
+	facetInstructionStart = "<!-- facet:managed:start -->"
+	facetInstructionEnd   = "<!-- facet:managed:end -->"
+)
 
-func scaffoldAgentInstructions(targetDir, engine string, packs []string, ownership *OwnershipRecord) {
+var (
+	facetInstructionStartPattern = regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(facetInstructionStart) + `\r?$`)
+	facetInstructionEndPattern   = regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(facetInstructionEnd) + `\r?$`)
+	facetInstructionPattern      = regexp.MustCompile(`(?ms)^` + regexp.QuoteMeta(facetInstructionStart) + `\r?\n.*?^` + regexp.QuoteMeta(facetInstructionEnd) + `\r?$`)
+)
+
+func scaffoldAgentInstructions(targetDir, engine string, packs []string, ownership *OwnershipRecord) error {
 	var packLines strings.Builder
 	if len(packs) == 0 {
 		packLines.WriteString("- Core Source-Edit (No additional packs active)\n")
@@ -285,13 +290,13 @@ func scaffoldAgentInstructions(targetDir, engine string, packs []string, ownersh
 		}
 	}
 
-	instructions := fmt.Sprintf(`# Facet Video Production Workspace
+	instructions := fmt.Sprintf(`%s
+# Facet Video Production Workspace
 
 You are the **Facet Video Producer**. You autonomously create, assemble, and render finished videos directly inside this workspace.
 
 ## Guidance Precedence
-Read the core skill at `+"`%s/SKILL.md`"+` (workspace-relative). The core skill and active pack entry SKILL.md files are authoritative for normal production and take precedence over deep legacy references.
-Use deep legacy references only for a relevant specialized need or an actual error, never as a preflight requirement. Start simple tasks from supplied intent and documented core tools, not source archaeology or persona/pipeline ceremony.
+Read the canonical core skill at `+"`%s/SKILL.md`"+` (workspace-relative), then only the active pack entry needed for the request. These installed Facet-owned files define the production contract; do not search for copied skill libraries or deleted pipeline guidance.
 
 ## Working Agreement
 - The user's selected agent orchestrates; Facet is a stateless toolbox, not an autonomous workflow controller.
@@ -307,54 +312,163 @@ Use `+"`facet tools describe <tool>`"+` for schemas and `+"`facet tools estimate
 - Optional narration: `+"`"+`facet tools run edge_tts --input '{"text":"Hello","output_path":"narration/voice.mp3"}'`+"`"+`
 - Inspect: `+"`"+`facet tools run media_probe --input '{"input":"assets/source.mp4"}'`+"`"+` (also accepts input_path, not file_path).
 - Sample: `+"`"+`facet tools run frame_sample --input '{"input":"renders/final.mp4","output_dir":"artifacts/frames","strategy":{"type":"uniform","count":4}}'`+"`"+`
-- Render: `+"`facet tools run video_compose --input artifacts/explainer_props.json`"+`
+- Render: `+"`facet tools run video_compose --input artifacts/compose.json`"+`
 - Review: `+"`"+`facet tools run output_review --input '{"rendered_file":"renders/final.mp4"}'`+"`"+`; configure expected profile/audio for the brief and visually inspect samples.
 
 ## Renderer And Provider Contract
-- Direct Remotion props: nonempty cuts with id, type, source, in_seconds, out_seconds; optional theme and audio.narration.src. Set width, height, fps and duration_seconds for an explicit export profile; cuts must fit the duration and whole frames. Defaults remain 1920x1080/30fps with one second after the last cut. Omit audio for silence.
-- Set output to renders/final.mp4; direct cuts select Remotion regardless of operation. The explainer pack has a complete request example. An estimate is not proof the renderer or media works.
+- Direct Remotion props use a nonempty, ordered cuts array with exactly four scene primitives: `+"`text_card`"+` requires `+"`text`"+`; `+"`hero_title`"+` requires `+"`text`"+`; `+"`stat_card`"+` requires `+"`stat`"+`; `+"`media`"+` requires `+"`source`"+` and `+"`media_kind`"+` (`+"`image`"+` or `+"`video`"+`).
+- Every cut requires `+"`type`"+`, `+"`in_seconds`"+`, and `+"`out_seconds`"+`; `+"`id`"+` is optional, and `+"`source`"+` is required only for `+"`media`"+` cuts. Set width, height, fps, and duration_seconds for an explicit export profile; cuts must fit the duration and whole frames.
+- Defaults remain 1920x1080/30fps. Omit `+"`duration_seconds`"+` to end exactly at the last cut, with no padding. Omit audio for silence; narration uses `+"`audio.narration.src`"+`.
+- Set output to renders/final.mp4; direct cuts select Remotion regardless of operation. Active production-method packs may provide complete request examples. An estimate is not proof the renderer or media works.
 - Use `+"`gflow_image`"+` or `+"`gflow_video`"+`, never a generic gflow tool. Both need the gflow binary on PATH and authenticated provider access; configured only checks the binary.
 - Real gflow estimates have null estimated_cost (unknown). Explain provider/model and obtain paid consent; missing dependencies or credentials are errors, not permission to use mocks.
 - Read returned output/outputs paths, warnings, and review evidence; deliver the verified file with concise provenance and limitations.
-`, filepath.ToSlash(getSkillsTargetPath(".", engine, "facet")), packLines.String())
+%s
+`, facetInstructionStart, filepath.ToSlash(getSkillsTargetPath(".", engine, "facet")), packLines.String(), facetInstructionEnd)
+	instructions = strings.TrimRight(instructions, "\r\n")
 
-	// 1. CLAUDE.md
-	claudePath := filepath.Join(targetDir, "CLAUDE.md")
-	writeInstructionFileSafe(claudePath, "CLAUDE.md", instructions, ownership)
+	selected := instructionPathForEngine(engine)
+	type pendingInstruction struct {
+		rel     string
+		path    string
+		content string
+		entry   ManagedEntry
+	}
+	var removals []pendingInstruction
+	for _, rel := range []string{"CLAUDE.md", "AGENTS.md", ".github/copilot-instructions.md"} {
+		if rel == selected || ownership == nil {
+			continue
+		}
+		entry, ok := ownership.ManagedEntries[rel]
+		if !ok || entry.EntryType != "instruction-section" {
+			continue
+		}
+		path := filepath.Join(targetDir, filepath.FromSlash(rel))
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("managed Facet instruction section in %s is missing: %w", rel, err)
+		}
+		start, end, section, found, err := findFacetInstructionSection(string(content))
+		if err != nil {
+			return fmt.Errorf("%s: %w", rel, err)
+		}
+		if !found || instructionSectionHash(section) != entry.ContentSHA256 {
+			return fmt.Errorf("preserving modified Facet instruction section in %s", rel)
+		}
+		remaining := removeFacetInstructionSection(string(content), start, end, entry.AddedSeparator)
+		removals = append(removals, pendingInstruction{rel: rel, path: path, content: remaining})
+	}
+	if selected == "" {
+		return nil
+	}
+	selectedPath := filepath.Join(targetDir, filepath.FromSlash(selected))
+	selectedContent, err := os.ReadFile(selectedPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read governing instructions %s: %w", selected, err)
+	}
+	existing := string(selectedContent)
+	start, end, currentSection, found, err := findFacetInstructionSection(existing)
+	if err != nil {
+		return fmt.Errorf("%s: %w", selected, err)
+	}
+	entry, owned := ownership.ManagedEntries[selected]
+	addedSeparator := false
+	merged := instructions + "\n"
+	if found {
+		if !owned || entry.EntryType != "instruction-section" {
+			return fmt.Errorf("preserving unmanaged Facet instruction section in %s", selected)
+		}
+		if instructionSectionHash(currentSection) != entry.ContentSHA256 {
+			return fmt.Errorf("preserving modified Facet instruction section in %s", selected)
+		}
+		addedSeparator = entry.AddedSeparator
+		merged = existing[:start] + instructions + existing[end:]
+	} else if owned && entry.EntryType == "instruction-section" {
+		return fmt.Errorf("managed Facet instruction section in %s is missing", selected)
+	} else if existing != "" {
+		separator := ""
+		if !strings.HasSuffix(existing, "\n") {
+			separator = "\n"
+			addedSeparator = true
+		}
+		merged = existing + separator + instructions + "\n"
+	}
 
-	// 2. AGENTS.md
-	agentsPath := filepath.Join(targetDir, "AGENTS.md")
-	writeInstructionFileSafe(agentsPath, "AGENTS.md", instructions, ownership)
-
-	// 3. .github/copilot-instructions.md
-	copilotDir := filepath.Join(targetDir, ".github")
-	_ = os.MkdirAll(copilotDir, 0755)
-	copilotPath := filepath.Join(copilotDir, "copilot-instructions.md")
-	writeInstructionFileSafe(copilotPath, ".github/copilot-instructions.md", instructions, ownership)
+	for _, removal := range removals {
+		if err := os.WriteFile(removal.path, []byte(removal.content), 0644); err != nil {
+			return fmt.Errorf("remove prior Facet instruction section from %s: %w", removal.rel, err)
+		}
+		delete(ownership.ManagedEntries, removal.rel)
+	}
+	if err := os.MkdirAll(filepath.Dir(selectedPath), 0755); err != nil {
+		return fmt.Errorf("create governing instruction directory: %w", err)
+	}
+	if err := os.WriteFile(selectedPath, []byte(merged), 0644); err != nil {
+		return fmt.Errorf("write governing instructions %s: %w", selected, err)
+	}
+	ownership.ManagedEntries[selected] = ManagedEntry{
+		EntryType:      "instruction-section",
+		Target:         selectedPath,
+		ContentSHA256:  instructionSectionHash(instructions),
+		AddedSeparator: addedSeparator,
+		CreatedOn:      time.Now().UTC().Format(time.RFC3339),
+	}
+	return nil
 }
 
-func writeInstructionFileSafe(filePath, relKey, content string, ownership *OwnershipRecord) {
-	// If file exists, check if it's managed by Facet
-	if _, err := os.Stat(filePath); err == nil {
-		if ownership != nil {
-			if _, isManaged := ownership.ManagedEntries[relKey]; !isManaged {
-				// User owned or repo-root owned, do not overwrite!
-				return
-			}
-		} else {
-			return
-		}
+func instructionPathForEngine(engine string) string {
+	switch engine {
+	case "claude":
+		return "CLAUDE.md"
+	case "copilot", "github":
+		return ".github/copilot-instructions.md"
+	case "codex", "opencode", "studio":
+		return "AGENTS.md"
+	default:
+		return ""
 	}
+}
 
-	if err := os.WriteFile(filePath, []byte(content), 0644); err == nil {
-		if ownership != nil {
-			ownership.ManagedEntries[relKey] = ManagedEntry{
-				EntryType: "instruction-file",
-				Target:    filePath,
-				CreatedOn: time.Now().UTC().Format(time.RFC3339),
-			}
-		}
+func findFacetInstructionSection(content string) (start, end int, section string, found bool, err error) {
+	starts := facetInstructionStartPattern.FindAllStringIndex(content, -1)
+	ends := facetInstructionEndPattern.FindAllStringIndex(content, -1)
+	if len(starts) == 0 && len(ends) == 0 {
+		return 0, 0, "", false, nil
 	}
+	if len(starts) != 1 || len(ends) != 1 {
+		return 0, 0, "", false, fmt.Errorf("malformed Facet instruction section")
+	}
+	loc := facetInstructionPattern.FindStringIndex(content)
+	if loc == nil {
+		return 0, 0, "", false, fmt.Errorf("malformed Facet instruction section")
+	}
+	return loc[0], loc[1], content[loc[0]:loc[1]], true, nil
+}
+
+func instructionSectionHash(content string) string {
+	content = strings.TrimRight(strings.ReplaceAll(content, "\r\n", "\n"), "\r\n")
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
+}
+
+func removeInstructionSeparator(prefix string) string {
+	if strings.HasSuffix(prefix, "\r\n") {
+		return strings.TrimSuffix(prefix, "\r\n")
+	}
+	return strings.TrimSuffix(prefix, "\n")
+}
+
+func removeFacetInstructionSection(content string, start, end int, addedSeparator bool) string {
+	prefix := content[:start]
+	if addedSeparator {
+		prefix = removeInstructionSeparator(prefix)
+	}
+	suffix := content[end:]
+	if strings.HasPrefix(suffix, "\r\n") {
+		suffix = strings.TrimPrefix(suffix, "\r\n")
+	} else {
+		suffix = strings.TrimPrefix(suffix, "\n")
+	}
+	return prefix + suffix
 }
 
 // findCoreSkillSource locates the canonical facet producer skill.
@@ -458,7 +572,7 @@ func getSkillsTargetPath(targetDir, engine, skillName string) string {
 	case "copilot", "github":
 		return filepath.Join(targetDir, ".github", "skills", skillName)
 	case "codex":
-		return filepath.Join(targetDir, ".codex", "skills", skillName)
+		return filepath.Join(targetDir, ".agents", "skills", skillName)
 	default:
 		return filepath.Join(targetDir, ".claude", "skills", skillName)
 	}
@@ -470,22 +584,22 @@ func linkOrCopySkillSafe(sourceDir, targetDir, projectDir string, ownership *Own
 		return "", fmt.Errorf("failed to create parent dir %s: %w", parentDir, err)
 	}
 
-	relTarget, err := filepath.Rel(projectDir, targetDir)
-	if err != nil {
-		relTarget = targetDir
-	}
+	relTarget := projectionKey(projectDir, targetDir)
 
 	// Check if target already exists
 	if _, err := os.Lstat(targetDir); err == nil {
-		// Verify ownership before removing
-		if ownership != nil {
-			if _, isManaged := ownership.ManagedEntries[relTarget]; !isManaged {
-				// If not tracked by Facet, do NOT remove it. It belongs to the user.
-				return "", fmt.Errorf("path %s already exists and is not managed by Facet (skipping to avoid overwrite)", targetDir)
-			}
+		if ownership == nil {
+			return "", fmt.Errorf("preserving existing unmanaged projection %s", targetDir)
 		}
-		// Safe unlink
-		_ = safeRemoveLinkOrDir(targetDir)
+		entry, isManaged := ownership.ManagedEntries[relTarget]
+		if !isManaged || !isProjectionEntry(entry) {
+			return "", fmt.Errorf("preserving existing unmanaged projection %s", targetDir)
+		}
+		if err := removeManagedProjection(targetDir, entry); err != nil {
+			return "", err
+		}
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("inspect projection %s: %w", targetDir, err)
 	}
 
 	// Try Windows Directory Junction on Windows
@@ -523,45 +637,222 @@ func linkOrCopySkillSafe(sourceDir, targetDir, projectDir string, ownership *Own
 	}
 
 	if ownership != nil {
+		treeHash, err := hashProjectionTree(targetDir)
+		if err != nil {
+			return "", fmt.Errorf("hash copied projection %s: %w", targetDir, err)
+		}
 		ownership.ManagedEntries[relTarget] = ManagedEntry{
-			EntryType: "copy",
-			Target:    sourceDir,
-			CreatedOn: time.Now().UTC().Format(time.RFC3339),
+			EntryType:     "copy",
+			Target:        sourceDir,
+			ContentSHA256: treeHash,
+			CreatedOn:     time.Now().UTC().Format(time.RFC3339),
 		}
 	}
 
 	return "copy", nil
 }
 
-func safeRemoveLinkOrDir(targetDir string) error {
-	fi, err := os.Lstat(targetDir)
+func projectionKey(projectDir, targetDir string) string {
+	relTarget, err := filepath.Rel(projectDir, targetDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
+		return filepath.Clean(targetDir)
+	}
+	return filepath.Clean(relTarget)
+}
+
+func isProjectionEntry(entry ManagedEntry) bool {
+	switch entry.EntryType {
+	case "directory-junction", "symlink", "copy":
+		return true
+	default:
+		return false
+	}
+}
+
+func planObsoleteProjections(projectDir string, ownership *OwnershipRecord, desired map[string]bool) ([]string, error) {
+	var obsolete []string
+	for key, entry := range ownership.ManagedEntries {
+		cleanKey := filepath.Clean(key)
+		if !isProjectionKey(cleanKey) || desired[cleanKey] {
+			continue
 		}
-		return err
+		if !isProjectionEntry(entry) {
+			return nil, fmt.Errorf("preserving obsolete projection %s: unexpected ownership type %q", key, entry.EntryType)
+		}
+		path := filepath.Join(projectDir, key)
+		if err := verifyManagedProjection(path, entry); err != nil {
+			return nil, fmt.Errorf("preserving obsolete projection %s: %w", key, err)
+		}
+		obsolete = append(obsolete, key)
 	}
+	sort.Slice(obsolete, func(i, j int) bool { return len(obsolete[i]) > len(obsolete[j]) })
+	return obsolete, nil
+}
 
-	// Try simple Remove first (works for symlinks and modern Windows junctions)
-	if err := os.Remove(targetDir); err == nil {
-		return nil
+func isProjectionKey(key string) bool {
+	slash := filepath.ToSlash(filepath.Clean(key))
+	for _, prefix := range []string{"skills/", ".claude/skills/", ".opencode/skills/", ".github/skills/", ".agents/skills/"} {
+		if strings.HasPrefix(slash, prefix) && strings.TrimPrefix(slash, prefix) != "" {
+			return true
+		}
 	}
+	return false
+}
 
-	// On Windows, if it's a junction, rmdir safely unlinks without touching target contents
+func removeObsoleteProjections(projectDir string, ownership *OwnershipRecord, obsolete []string) error {
+	for _, key := range obsolete {
+		entry := ownership.ManagedEntries[key]
+		if err := removeManagedProjection(filepath.Join(projectDir, key), entry); err != nil {
+			return fmt.Errorf("remove obsolete projection %s: %w", key, err)
+		}
+		delete(ownership.ManagedEntries, key)
+	}
+	return nil
+}
+
+func verifyManagedProjection(targetDir string, entry ManagedEntry) error {
+	info, err := os.Lstat(targetDir)
+	if err != nil {
+		return fmt.Errorf("managed projection is missing: %w", err)
+	}
+	switch entry.EntryType {
+	case "symlink":
+		if info.Mode()&os.ModeSymlink == 0 {
+			return fmt.Errorf("managed symlink was replaced by %s", info.Mode().Type())
+		}
+		actual, err := os.Readlink(targetDir)
+		if err != nil {
+			return fmt.Errorf("read managed symlink target: %w", err)
+		}
+		if !filepath.IsAbs(actual) {
+			actual = filepath.Join(filepath.Dir(targetDir), actual)
+		}
+		match, err := sameProjectionTarget(actual, entry.Target)
+		if err != nil {
+			return err
+		}
+		if !match {
+			return fmt.Errorf("managed symlink target changed from %s to %s", entry.Target, actual)
+		}
+	case "directory-junction":
+		if runtime.GOOS != "windows" {
+			return fmt.Errorf("directory junction ownership is unsupported on %s", runtime.GOOS)
+		}
+		if info.Mode()&os.ModeIrregular == 0 {
+			return fmt.Errorf("managed directory junction was replaced")
+		}
+		actual, err := os.Readlink(targetDir)
+		if err != nil {
+			return fmt.Errorf("read managed directory junction target: %w", err)
+		}
+		match, err := sameProjectionTarget(actual, entry.Target)
+		if err != nil {
+			return err
+		}
+		if !match {
+			return fmt.Errorf("managed directory junction target changed from %s to %s", entry.Target, actual)
+		}
+	case "copy":
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("managed copied projection was replaced")
+		}
+		if entry.ContentSHA256 == "" {
+			return fmt.Errorf("managed copied projection has no content hash")
+		}
+		actual, err := hashProjectionTree(targetDir)
+		if err != nil {
+			return err
+		}
+		if actual != entry.ContentSHA256 {
+			return fmt.Errorf("modified copied projection: content hash changed")
+		}
+	default:
+		return fmt.Errorf("unexpected managed projection type %q", entry.EntryType)
+	}
+	return nil
+}
+
+func sameProjectionTarget(actual, expected string) (bool, error) {
+	actualAbs, err := filepath.Abs(actual)
+	if err != nil {
+		return false, fmt.Errorf("resolve projection target %s: %w", actual, err)
+	}
+	expectedAbs, err := filepath.Abs(expected)
+	if err != nil {
+		return false, fmt.Errorf("resolve owned projection target %s: %w", expected, err)
+	}
+	actualAbs = filepath.Clean(actualAbs)
+	expectedAbs = filepath.Clean(expectedAbs)
 	if runtime.GOOS == "windows" {
-		winDst := filepath.FromSlash(targetDir)
-		cmd := exec.Command("cmd.exe", "/c", "rmdir", winDst)
-		if err := cmd.Run(); err == nil {
+		return strings.EqualFold(actualAbs, expectedAbs), nil
+	}
+	return actualAbs == expectedAbs, nil
+}
+
+func removeManagedProjection(targetDir string, entry ManagedEntry) error {
+	if err := verifyManagedProjection(targetDir, entry); err != nil {
+		return fmt.Errorf("preserving managed projection %s: %w", targetDir, err)
+	}
+	switch entry.EntryType {
+	case "copy":
+		if err := os.RemoveAll(targetDir); err != nil {
+			return fmt.Errorf("remove verified copied projection %s: %w", targetDir, err)
+		}
+	case "symlink":
+		if err := os.Remove(targetDir); err != nil {
+			return fmt.Errorf("unlink verified projection %s: %w", targetDir, err)
+		}
+	case "directory-junction":
+		if err := os.Remove(targetDir); err == nil {
 			return nil
 		}
+		cmd := exec.Command("cmd.exe", "/c", "rmdir", filepath.FromSlash(targetDir))
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("unlink verified directory junction %s: %w: %s", targetDir, err, strings.TrimSpace(string(output)))
+		}
 	}
+	return nil
+}
 
-	// If it's a regular directory copied previously
-	if fi.IsDir() {
-		return os.RemoveAll(targetDir)
+func hashProjectionTree(root string) (string, error) {
+	hash := sha256.New()
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("copied projection contains symlink %s", filepath.ToSlash(rel))
+		}
+		kind := byte('f')
+		if entry.IsDir() {
+			kind = 'd'
+		}
+		_, _ = fmt.Fprintf(hash, "%c\x00%s\x00", kind, filepath.ToSlash(rel))
+		if entry.IsDir() {
+			return nil
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		_, copyErr := io.Copy(hash, file)
+		closeErr := file.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		return closeErr
+	})
+	if err != nil {
+		return "", err
 	}
-
-	return os.Remove(targetDir)
+	return fmt.Sprintf("%x", hash.Sum(nil)), nil
 }
 
 func loadOwnership(projectDir string) *OwnershipRecord {
@@ -582,14 +873,22 @@ func loadOwnership(projectDir string) *OwnershipRecord {
 	return record
 }
 
-func saveOwnership(projectDir string, record *OwnershipRecord) {
+func saveOwnership(projectDir string, record *OwnershipRecord) error {
 	if record == nil {
-		return
+		return nil
 	}
 	ownPath := filepath.Join(projectDir, ".facet", "ownership.json")
-	if data, err := json.MarshalIndent(record, "", "  "); err == nil {
-		_ = os.WriteFile(ownPath, data, 0644)
+	if err := os.MkdirAll(filepath.Dir(ownPath), 0755); err != nil {
+		return fmt.Errorf("create Facet ownership directory: %w", err)
 	}
+	data, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode Facet ownership record: %w", err)
+	}
+	if err := os.WriteFile(ownPath, data, 0644); err != nil {
+		return fmt.Errorf("write Facet ownership record: %w", err)
+	}
+	return nil
 }
 
 func ensureGitExclude(targetDir string) {
