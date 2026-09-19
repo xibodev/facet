@@ -113,6 +113,8 @@ printf '  Detected CLIs:%s\n' "${detected:- none (choose one to configure)}"
 [[ -n "$TARGET" ]] || TARGET=$(choose 'Which agent should use Facet? (opencode, codex, claude, copilot, studio)' 0 "$default_host" "${host_options[@]}")
 [[ $(definition "$TARGET" 1) == host ]] || die 'Unsupported CLI.'
 HOST_PATH=$(definition "$TARGET" 4)
+INSTRUCTION_REL=$(definition "$TARGET-instructions" 4)
+[[ -n "$INSTRUCTION_REL" && "$INSTRUCTION_REL" != /* && "$INSTRUCTION_REL" != *..* && "$INSTRUCTION_REL" != *\\* ]] || die 'Invalid governing instruction path.'
 [[ -n "$PROJECT" ]] || PROJECT=$(ask 'Project directory' .)
 absolute() { case "$1" in /*) printf '%s' "$1";; *) printf '%s/%s' "$PWD" "$1";; esac; }
 PROJECT=$(absolute "$PROJECT"); INSTALL=$(absolute "${INSTALL:-$HOME/.facet/releases/$VERSION-$OS-$ARCH}")
@@ -166,10 +168,11 @@ canonical_parent() {
     printf '%s%s' "$(cd -- "$path" && pwd -P)" "$suffix"
 }
 PROJECT=$(canonical_parent "$PROJECT"); INSTALL=$(canonical_parent "$INSTALL")
-SKILL="$PROJECT/$HOST_PATH/facet"; STATE="$PROJECT/.facet-install"
+SKILL="$PROJECT/$HOST_PATH/facet"; STATE="$PROJECT/.facet-install"; INSTRUCTION="$PROJECT/$INSTRUCTION_REL"
 new_path() { [[ ! -e "$1" && ! -L "$1" ]] || die "Preserving existing entry: $1"; real_ancestors "$(dirname -- "$1")"; }
 PREVIOUS=0
 LEGACY_MIGRATION=0
+INSTRUCTION_OWNED=0
 if [[ -d "$STATE" ]]; then
     real_ancestors "$STATE"
     [[ $(awk -F '\t' '$1=="host" {print $2}' "$STATE/installation.tsv") == "$TARGET" ]] || die 'Project is configured for another CLI.'
@@ -189,6 +192,13 @@ if [[ -d "$STATE" ]]; then
     expected_count=$(wc -l < "$STATE/managed-files.sha256" | tr -d ' ')
     actual_count=$(find "$STATE" "$SKILL" -type f ! -path "$STATE/managed-files.sha256" | wc -l | tr -d ' ')
     [[ "$actual_count" == "$expected_count" ]] || die 'Preserving extra files in managed project directories.'
+    fi
+    if [[ -f "$STATE/instruction-section.tsv" ]]; then
+        owned_instruction=$(awk -F '\t' '$1=="path" {print $2}' "$STATE/instruction-section.tsv")
+        owned_hash=$(awk -F '\t' '$1=="sha256" {print $2}' "$STATE/instruction-section.tsv")
+        [[ "$owned_instruction" == "$INSTRUCTION_REL" && "$owned_hash" =~ ^[a-f0-9]{64}$ ]] || die 'Invalid governing instruction ownership record.'
+        [[ -f "$INSTRUCTION" && ! -L "$INSTRUCTION" ]] || die 'Managed governing instruction is missing or replaced.'
+        INSTRUCTION_OWNED=1
     fi
     PREVIOUS=1
     if [[ $YES != 1 && -z "$ACTION_EXPLICIT" ]]; then ACTION=$(choose 'What should setup do?' 0 add add 'Add components - keep existing tools' repair 'Repair - verify a replacement' update 'Update - switch to selected version'); fi
@@ -232,6 +242,11 @@ cleanup() {
     if [[ $COMMITTED == 0 && -n "$PROJECT_STAGE" ]]; then
         if [[ -d "$PROJECT_STAGE/old-state" ]]; then rm -rf "$STATE"; mv "$PROJECT_STAGE/old-state" "$STATE"; fi
         if [[ -d "$PROJECT_STAGE/old-skill" ]]; then rm -rf "$SKILL"; mv "$PROJECT_STAGE/old-skill" "$SKILL"; fi
+        if [[ -f "$PROJECT_STAGE/old-instruction" ]]; then
+            mkdir -p "$(dirname -- "$INSTRUCTION")"; cp "$PROJECT_STAGE/old-instruction" "$INSTRUCTION"
+        elif [[ -f "$PROJECT_STAGE/instruction-was-absent" ]]; then
+            rm -f -- "$INSTRUCTION"
+        fi
     fi
     [[ -z "$STAGE" ]] || rm -rf -- "$STAGE"; [[ -z "$PROJECT_STAGE" ]] || rm -rf -- "$PROJECT_STAGE"; rm -rf -- "$TEMP"
     if [[ $COMMITTED == 0 && $NEW_RUNTIME == 1 ]]; then rm -rf -- "$INSTALL"; fi
@@ -252,6 +267,50 @@ step() {
 }
 fetch() { curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --connect-timeout 20 --proto '=https' --tlsv1.2 --max-time 900 --output "$2" "$1"; }
 hash_file() { shasum -a 256 "$1" | awk '{print $1}'; }
+FACET_SECTION_START='<!-- facet:managed:start -->'
+FACET_SECTION_END='<!-- facet:managed:end -->'
+extract_instruction_section() {
+    local file=$1 out=$2 starts ends
+    [[ -f "$file" ]] || return 1
+    starts=$(grep -Fxc "$FACET_SECTION_START" "$file" || true)
+    ends=$(grep -Fxc "$FACET_SECTION_END" "$file" || true)
+    if [[ $starts == 0 && $ends == 0 ]]; then return 1; fi
+    [[ $starts == 1 && $ends == 1 ]] || die "Malformed Facet section in $INSTRUCTION_REL"
+    awk -v start="$FACET_SECTION_START" -v end="$FACET_SECTION_END" '
+        $0==start {inside=1}
+        inside {print}
+        $0==end && inside {found=1; exit}
+        END {if(!found) exit 1}
+    ' "$file" > "$out" || die "Malformed Facet section in $INSTRUCTION_REL"
+}
+merge_instruction_section() {
+    local existing=$1 section=$2 out=$3 starts ends
+    if [[ ! -e "$existing" ]]; then cp "$section" "$out"; return; fi
+    [[ -f "$existing" && ! -L "$existing" ]] || die "Preserving unsafe governing instruction: $INSTRUCTION_REL"
+    starts=$(grep -Fxc "$FACET_SECTION_START" "$existing" || true)
+    ends=$(grep -Fxc "$FACET_SECTION_END" "$existing" || true)
+    if [[ $starts == 0 && $ends == 0 ]]; then
+        cat "$existing" > "$out"
+        [[ ! -s "$existing" ]] || printf '\n' >> "$out"
+        cat "$section" >> "$out"
+        return
+    fi
+    [[ $INSTRUCTION_OWNED == 1 ]] || die "Preserving unmanaged Facet section in $INSTRUCTION_REL"
+    [[ $starts == 1 && $ends == 1 ]] || die "Malformed Facet section in $INSTRUCTION_REL"
+    awk -v start="$FACET_SECTION_START" -v end="$FACET_SECTION_END" -v replacement="$section" '
+        BEGIN {
+            while ((getline line < replacement) > 0) section = section line ORS
+            close(replacement)
+        }
+        $0==start {
+            printf "%s", section
+            inside=1
+            next
+        }
+        inside && $0==end {inside=0; next}
+        !inside {print}
+    ' "$existing" > "$out"
+}
 verify_checksum() {
     local expected
     expected=$(awk -v name="$3" '{sub(/\r$/, "")} $2==name || $2=="*"name {print tolower($1);n++} END{if(n!=1)exit 1}' "$2") || die "Checksum entry missing or duplicated: $3"
@@ -433,6 +492,10 @@ verify_media() (
 )
 if [[ $SKIP_VERIFY == 0 ]]; then step 'Verify selected local capabilities' verify_media; else printf '%s\n' 'Verification skipped: media readiness is unverified.'; fi
 if [[ $PREVIOUS == 0 ]]; then new_path "$SKILL"; new_path "$STATE"; fi
+if [[ $INSTRUCTION_OWNED == 1 ]]; then
+    extract_instruction_section "$INSTRUCTION" "$TEMP/current-instruction-section" || die 'Managed Facet instruction section is missing.'
+    [[ $(hash_file "$TEMP/current-instruction-section") == "$owned_hash" ]] || die 'Preserving modified Facet instruction section.'
+fi
 section '[3/3] Connect your CLI'
 printf '%s\n' "${SELECTED[@]}" > "$INSTALL/components.tsv"
 mkdir -p "$PROJECT"; PROJECT_STAGE=$(mktemp -d "$PROJECT/.facet-stage-XXXXXX")
@@ -461,6 +524,23 @@ chmod +x "$PROJECT_STAGE/state/run-facet.sh"
     if has hyperframes; then printf -- '- Use `node "%s"` for pinned HyperFrames; avoid unpinned npx.\n' "$HF_ENTRY"; fi
 } >> "$PROJECT_STAGE/skill/SKILL.md"
 printf 'version\t%s\ninstallation\t%s\nhost\t%s\ncomponents\t%s\npacks\t%s\n' "$VERSION" "$INSTALL" "$TARGET" "${SELECTED[*]}" "${SELECTED_PACKS[*]}" > "$PROJECT_STAGE/state/installation.tsv"
+{
+    printf '%s\n' "$FACET_SECTION_START"
+    printf '## Facet\n'
+    printf -- '- Facet manages only this bounded section; keep project-specific instructions outside it.\n'
+    printf -- '- Read core guidance at `%s/facet/SKILL.md`.\n' "$HOST_PATH"
+    printf -- '- Invoke Facet through `%s/run-facet.sh`.\n' "$STATE"
+    if ((${#SELECTED_PACKS[@]})); then
+        printf -- '- Active production methods:'
+        for item in "${SELECTED_PACKS[@]}"; do printf ' `%s/packs/%s/SKILL.md`' "$STATE" "$item"; done
+        printf '.\n'
+    else
+        printf -- '- No production-method pack is active; use core guidance only.\n'
+    fi
+    printf '%s\n' "$FACET_SECTION_END"
+} > "$PROJECT_STAGE/instruction-section"
+merge_instruction_section "$INSTRUCTION" "$PROJECT_STAGE/instruction-section" "$PROJECT_STAGE/instruction"
+printf 'path\t%s\nsha256\t%s\n' "$INSTRUCTION_REL" "$(hash_file "$PROJECT_STAGE/instruction-section")" > "$PROJECT_STAGE/state/instruction-section.tsv"
 (
     cd "$PROJECT_STAGE"
     find state skill -type f | while IFS= read -r file; do
@@ -473,6 +553,9 @@ mkdir -p "$(dirname "$SKILL")"
 if [[ $PREVIOUS == 1 ]]; then mv "$STATE" "$PROJECT_STAGE/old-state"; mv "$SKILL" "$PROJECT_STAGE/old-skill"; fi
 mv "$PROJECT_STAGE/state" "$STATE"
 mv "$PROJECT_STAGE/skill" "$SKILL"
+mkdir -p "$(dirname -- "$INSTRUCTION")"
+if [[ -f "$INSTRUCTION" ]]; then cp "$INSTRUCTION" "$PROJECT_STAGE/old-instruction"; else touch "$PROJECT_STAGE/instruction-was-absent"; fi
+mv "$PROJECT_STAGE/instruction" "$INSTRUCTION"
 if [[ $LEGACY_MIGRATION == 1 ]]; then
     backup=$(mktemp -d "$PROJECT/.facet-backup-XXXXXX")
     mv "$PROJECT_STAGE/old-state" "$backup/state"; mv "$PROJECT_STAGE/old-skill" "$backup/skill"

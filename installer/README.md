@@ -49,9 +49,13 @@ Use `-ArchivePath` and `-ChecksumPath` on Windows, or `--archive` and
 dependencies can still require network access. `-SkipVerify` / `--skip-verify`
 explicitly reports media readiness as unverified.
 
-Both scripts leave existing instruction/config files alone and allow a verified
-product installation to serve another project. They create a project-local launcher that selects the installed binary
-and runtime paths without changing the user's shell profile or persistent PATH.
+Both scripts preserve existing instruction content and merge one bounded,
+ownership-verified Facet section into only the selected agent's governing file.
+Changes outside that section remain user-owned; a modified managed section stops
+repair/update instead of being overwritten. Codex project skills use
+`.agents/skills`. The scripts allow a verified product installation to serve
+another project and create a project-local launcher that selects the installed
+binary and runtime paths without changing the user's shell profile or persistent PATH.
 System package-manager dependency installs may update PATH themselves.
 
 Pack resources live in `.facet-install/packs/`, outside the host's recursive

@@ -115,6 +115,41 @@ function Step([string]$Label,[scriptblock]$Work) {
     }
 }
 function Relative-Path([string]$Root,[string]$Path) { return $Path.Substring($Root.TrimEnd('\','/').Length + 1).Replace('\','/') }
+$facetSectionStart = '<!-- facet:managed:start -->'
+$facetSectionEnd = '<!-- facet:managed:end -->'
+function Find-FacetSection([string]$Content,[string]$Path) {
+    $startPattern = '(?m)^' + [regex]::Escape($facetSectionStart) + '\r?$'
+    $endPattern = '(?m)^' + [regex]::Escape($facetSectionEnd) + '\r?$'
+    $starts = [regex]::Matches($Content,$startPattern).Count
+    $ends = [regex]::Matches($Content,$endPattern).Count
+    if ($starts -eq 0 -and $ends -eq 0) { return $null }
+    if ($starts -ne 1 -or $ends -ne 1) { throw "Malformed Facet section in $Path" }
+    $pattern = '(?ms)^' + [regex]::Escape($facetSectionStart) + '\r?\n.*?^' + [regex]::Escape($facetSectionEnd) + '\r?$'
+    $match = [regex]::Match($Content,$pattern)
+    if (-not $match.Success) { throw "Malformed Facet section in $Path" }
+    return $match
+}
+function Text-Hash([string]$Text) {
+    $Text = $Text.Replace("`r`n","`n").TrimEnd("`r","`n")
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($Text)))).Replace('-','').ToLowerInvariant() }
+    finally { $sha.Dispose() }
+}
+function Merge-FacetSection([string]$Path,[string]$Section,[bool]$Owned) {
+    if (-not (Test-Path -LiteralPath $Path)) { return $Section + "`n" }
+    $item = Get-Item -LiteralPath $Path -Force
+    if (-not $item.PSIsContainer -and -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        $content = [IO.File]::ReadAllText($Path)
+        $match = Find-FacetSection $content $Path
+        if (-not $match) {
+            if ($content -and -not $content.EndsWith("`n")) { $content += "`n" }
+            return $content + $Section + "`n"
+        }
+        if (-not $Owned) { throw "Preserving unmanaged Facet section in $Path" }
+        return $content.Substring(0,$match.Index) + $Section + $content.Substring($match.Index + $match.Length)
+    }
+    throw "Preserving unsafe governing instruction: $Path"
+}
 function Download([string]$Url,[string]$Destination) {
     for ($attempt=1; $attempt -le 3; $attempt++) {
         try { Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Destination -TimeoutSec 180; return } catch {
@@ -230,6 +265,9 @@ if (-not $Target) {
 }
 $hostDef = Definition $Target
 if ($hostDef.kind -ne 'host') { throw 'Unsupported CLI.' }
+$instructionDef = Definition "$Target-instructions"
+if ($instructionDef.kind -ne 'instruction' -or [IO.Path]::IsPathRooted($instructionDef.value) -or $instructionDef.value -match '(^|[/\\])\.\.([/\\]|$)') { throw 'Invalid governing instruction path.' }
+$instructionRel = $instructionDef.value
 if (-not $ProjectDir) { $ProjectDir = Ask 'Project directory' '.' }
 $ProjectDir = [IO.Path]::GetFullPath($ProjectDir)
 if (-not $Components) {
@@ -277,8 +315,10 @@ foreach ($id in $selected) {
 }
 $skill = Join-Path $ProjectDir "$($hostDef.value)/facet"
 $state = Join-Path $ProjectDir '.facet-install'
+$instruction = Join-Path $ProjectDir $instructionRel
 $previous = $null
 $legacyMigration = $false
+$instructionOwned = $false
 if (Test-Path -LiteralPath $state) {
     Assert-RealAncestors $state
     $ownedFile = Join-Path $state 'managed-files.json'
@@ -301,6 +341,16 @@ if (Test-Path -LiteralPath $state) {
     }
     $actualFiles = @(Get-ChildItem -LiteralPath $state,$skill -File -Recurse | Where-Object FullName -NE $ownedFile)
     if ($actualFiles.Count -ne @($owned).Count) { throw 'Preserving extra files in installer-owned project directories.' }
+    }
+    $instructionRecord = Join-Path $state 'instruction-section.json'
+    if (Test-Path -LiteralPath $instructionRecord) {
+        $record = [IO.File]::ReadAllText($instructionRecord) | ConvertFrom-Json
+        if ($record.path -cne $instructionRel -or $record.sha256 -notmatch '^[a-f0-9]{64}$') { throw 'Invalid governing instruction ownership record.' }
+        $instructionItem = Get-Item -LiteralPath $instruction -Force -ErrorAction Stop
+        if ($instructionItem.PSIsContainer -or $instructionItem.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Managed governing instruction is missing or replaced.' }
+        $section = Find-FacetSection ([IO.File]::ReadAllText($instruction)) $instructionRel
+        if (-not $section -or (Text-Hash $section.Value) -cne $record.sha256) { throw 'Preserving modified Facet instruction section.' }
+        $instructionOwned = $true
     }
     if (-not $NonInteractive -and -not $PSBoundParameters.ContainsKey('Action') -and -not $env:FACET_ACTION) {
         $Action = Select-Choice 'What should setup do?' @('Add components - keep existing tools','Repair - build and verify a replacement','Update - switch this project to the selected version') @('add','repair','update') @('add')
@@ -339,6 +389,7 @@ $savedPath = $env:PATH
 $temp = Join-Path ([IO.Path]::GetTempPath()) ('facet-install-' + [guid]::NewGuid().ToString('N'))
 $stage = ''; $projectStage = ''
 $oldState=''; $oldSkill=''
+$instructionTouched=$false; $instructionExisted=$false; $instructionBackup=$null
 $newRuntime = -not (Test-Path -LiteralPath $InstallDir)
 $committed = $false
 New-Item -ItemType Directory -Path $temp | Out-Null
@@ -484,6 +535,22 @@ try {
     if ('piper' -in $selected) { "- Piper model: $(Join-Path $voices "$((Definition piper).value).onnx")" | Add-Content "$projectStage/skill/SKILL.md" }
     if ('hyperframes' -in $selected) { "- Invoke the pinned HyperFrames renderer with node `"$hfEntry`" followed by its arguments; do not use unpinned npx." | Add-Content "$projectStage/skill/SKILL.md" }
     @{schema=1;version=$Version;installation=$InstallDir;host=$Target;components=$selected;packs=$selectedPacks} | ConvertTo-Json | Set-Content "$projectStage/state/installation.json"
+    $sectionLines = @(
+        $facetSectionStart,
+        '## Facet',
+        '- Facet manages only this bounded section; keep project-specific instructions outside it.',
+        "- Read core guidance at ``$($hostDef.value)/facet/SKILL.md``.",
+        "- Invoke Facet through ``$state/run-facet.ps1``."
+    )
+    if ($selectedPacks.Count) {
+        $sectionLines += '- Active production methods: ' + (($selectedPacks | ForEach-Object { "``$state/packs/$_/SKILL.md``" }) -join ', ') + '.'
+    } else {
+        $sectionLines += '- No production-method pack is active; use core guidance only.'
+    }
+    $sectionLines += $facetSectionEnd
+    $facetSection = $sectionLines -join "`n"
+    $mergedInstruction = Merge-FacetSection $instruction $facetSection $instructionOwned
+    @{path=$instructionRel;sha256=(Text-Hash $facetSection)} | ConvertTo-Json | Set-Content "$projectStage/state/instruction-section.json" -Encoding UTF8
     $managed = @()
     foreach ($pair in @(@{source="$projectStage/state";prefix='.facet-install'},@{source="$projectStage/skill";prefix="$($hostDef.value)/facet"})) {
         $managed += @(Get-ChildItem -LiteralPath $pair.source -Recurse -File | ForEach-Object { @{path=($pair.prefix + '/' + (Relative-Path $pair.source $_.FullName));sha256=(Get-FileHash -LiteralPath $_.FullName).Hash} })
@@ -495,6 +562,11 @@ try {
         if ($previous) { Move-Item -LiteralPath $state -Destination $oldState; Move-Item -LiteralPath $skill -Destination $oldSkill }
         Move-Item -LiteralPath "$projectStage/state" -Destination $state
         Move-Item -LiteralPath "$projectStage/skill" -Destination $skill
+        $instructionExisted = Test-Path -LiteralPath $instruction
+        if ($instructionExisted) { $instructionBackup = [IO.File]::ReadAllBytes($instruction) }
+        New-Item -ItemType Directory -Path (Split-Path -Parent $instruction) -Force | Out-Null
+        $instructionTouched = $true
+        [IO.File]::WriteAllText($instruction,$mergedInstruction,[Text.UTF8Encoding]::new($false))
     } catch {
         if (Test-Path $oldState) { if (Test-Path $state) { Remove-Item $state -Recurse -Force }; Move-Item $oldState $state }
         if (Test-Path $oldSkill) { if (Test-Path $skill) { Remove-Item $skill -Recurse -Force }; Move-Item $oldSkill $skill }
@@ -521,6 +593,10 @@ try {
     if (-not $committed) {
         if ($oldState -and (Test-Path $oldState)) { if (Test-Path $state) { Remove-Item $state -Recurse -Force }; Move-Item $oldState $state }
         if ($oldSkill -and (Test-Path $oldSkill)) { if (Test-Path $skill) { Remove-Item $skill -Recurse -Force }; Move-Item $oldSkill $skill }
+        if ($instructionTouched) {
+            if ($instructionExisted) { [IO.File]::WriteAllBytes($instruction,$instructionBackup) }
+            elseif (Test-Path -LiteralPath $instruction) { Remove-Item -LiteralPath $instruction -Force }
+        }
     }
     if ($stage -and (Test-Path -LiteralPath $stage)) { Remove-Item -LiteralPath $stage -Recurse -Force }
     if ($projectStage -and (Test-Path -LiteralPath $projectStage)) { Remove-Item -LiteralPath $projectStage -Recurse -Force }

@@ -194,7 +194,7 @@ func TestRunInit(t *testing.T) {
 	}{
 		{"claude", ".claude/skills", "CLAUDE.md"},
 		{"copilot", ".github/skills", ".github/copilot-instructions.md"},
-		{"codex", ".codex/skills", "AGENTS.md"},
+		{"codex", ".agents/skills", "AGENTS.md"},
 		{"opencode", ".opencode/skills", "AGENTS.md"},
 		{"studio", "skills", "AGENTS.md"},
 	}

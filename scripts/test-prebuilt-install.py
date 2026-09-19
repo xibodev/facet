@@ -58,17 +58,34 @@ def main():
         assert result == "facet v" + version, result
         # Reuse CI-provisioned FFmpeg; installer must not install system software.
         if os.environ.get("FACET_INSTALL_SMOKE") == "1":
-            for host, config in {"opencode": ".opencode", "codex": ".agents", "claude": ".claude", "copilot": ".github"}.items():
+            adapters = {
+                "opencode": (".opencode/skills", "AGENTS.md"),
+                "codex": (".agents/skills", "AGENTS.md"),
+                "claude": (".claude/skills", "CLAUDE.md"),
+                "copilot": (".github/skills", ".github/copilot-instructions.md"),
+                "studio": ("skills", "AGENTS.md"),
+            }
+            for host, (skill_root, instruction_name) in adapters.items():
                 project = temp / host
                 project.mkdir()
-                (project / "AGENTS.md").write_text("Keep user instructions.")
+                instruction = project / instruction_name
+                instruction.parent.mkdir(parents=True, exist_ok=True)
+                original_instruction = f"Keep user instructions for {host}.\n"
+                instruction.write_text(original_instruction)
                 packs = ("cinematic", "localization") if host == "opencode" else ()
                 install(project, temp / "release", interactive="none\ny\n" if host == "opencode" else None, packs=packs)
-                assert (project / config / "skills/facet/SKILL.md").is_file()
-                assert (project / "AGENTS.md").read_text() == "Keep user instructions."
+                assert (project / skill_root / "facet/SKILL.md").is_file()
+                instruction_text = instruction.read_text()
+                assert instruction_text.startswith(original_instruction)
+                assert instruction_text.count("<!-- facet:managed:start -->") == 1
+                assert instruction_text.count("<!-- facet:managed:end -->") == 1
+                for other_instruction in {"AGENTS.md", "CLAUDE.md", ".github/copilot-instructions.md"} - {instruction_name}:
+                    assert not (project / other_instruction).exists(), f"{host} wrote unrelated {other_instruction}"
+                ownership_name = "instruction-section.json" if args.os == "windows" else "instruction-section.tsv"
+                assert (project / ".facet-install" / ownership_name).is_file()
                 assert (project / ".facet-install/packs/explainer/SKILL.md").is_file()
-                assert not (project / config / "skills/facet/packs").exists()
-                installed_guidance = (project / config / "skills/facet/SKILL.md").read_text()
+                assert not (project / skill_root / "facet/packs").exists()
+                installed_guidance = (project / skill_root / "facet/SKILL.md").read_text()
                 if packs:
                     for pack in packs:
                         assert f".facet-install/packs/{pack}/SKILL.md" in installed_guidance
@@ -77,6 +94,13 @@ def main():
                 rerun = install(project, temp / "release")
                 assert "Reusing configured dependencies" in rerun.stdout
                 assert "configuration: --" not in rerun.stdout and "[STREAM]" not in rerun.stdout
+                instruction.write_text(instruction.read_text() + f"\nUser follow-up for {host}.\n")
+                install(project, temp / "release")
+                assert f"User follow-up for {host}." in instruction.read_text()
+                managed = instruction.read_text().replace("## Facet", "## Facet modified", 1)
+                instruction.write_text(managed)
+                install(project, temp / "release", expect_success=False)
+                instruction.write_text(instruction.read_text().replace("## Facet modified", "## Facet", 1))
                 launcher = project / ".facet-install" / ("run-facet.ps1" if args.os == "windows" else "run-facet.sh")
                 before = launcher.read_bytes()
                 repair = install(project, temp / "release", action="repair")
@@ -84,8 +108,8 @@ def main():
                 assert (temp / "release/bin" / ("facet" + suffix)).exists(), "Repair destroyed shared runtime"
                 if host == "opencode":
                     install(project, temp / "release", action="update")
-                    assert (project / "AGENTS.md").read_text() == "Keep user instructions."
-                skill = project / config / "skills/facet/SKILL.md"
+                    assert original_instruction in instruction.read_text()
+                skill = project / skill_root / "facet/SKILL.md"
                 original = skill.read_bytes()
                 skill.write_bytes(original + b"\nUser customization\n")
                 install(project, temp / "release", expect_success=False)

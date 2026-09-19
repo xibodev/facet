@@ -52,7 +52,7 @@ func TestGeneratedInstructionContract(t *testing.T) {
 		{"claude", ".claude/skills/", "CLAUDE.md"},
 		{"opencode", ".opencode/skills/", "AGENTS.md"},
 		{"copilot", ".github/skills/", ".github/copilot-instructions.md"},
-		{"codex", ".codex/skills/", "AGENTS.md"},
+		{"codex", ".agents/skills/", "AGENTS.md"},
 		{"studio", "skills/", "AGENTS.md"},
 	} {
 		for _, packs := range []struct {
@@ -112,7 +112,7 @@ func TestGeneratedInstructionContract(t *testing.T) {
 							t.Errorf("%s lacks engine-local %s entry", file, pack)
 						}
 					}
-					for _, other := range []string{".claude/skills/", ".opencode/skills/", ".github/skills/", ".codex/skills/", ".copilot/skills/"} {
+					for _, other := range []string{".claude/skills/", ".opencode/skills/", ".github/skills/", ".agents/skills/", ".codex/skills/", ".copilot/skills/"} {
 						if other != engine.root && strings.Contains(text, other) {
 							t.Errorf("%s contains wrong engine path %q", file, other)
 						}

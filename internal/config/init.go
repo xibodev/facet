@@ -452,7 +452,7 @@ func getSkillsTargetPath(targetDir, engine, skillName string) string {
 	case "copilot", "github":
 		return filepath.Join(targetDir, ".github", "skills", skillName)
 	case "codex":
-		return filepath.Join(targetDir, ".codex", "skills", skillName)
+		return filepath.Join(targetDir, ".agents", "skills", skillName)
 	default:
 		return filepath.Join(targetDir, ".claude", "skills", skillName)
 	}

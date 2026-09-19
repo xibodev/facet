@@ -6,6 +6,11 @@ host	codex	-	.agents/skills	-	-	-	-	Codex
 host	claude	-	.claude/skills	-	-	-	-	Claude Code
 host	copilot	-	.github/skills	-	-	-	-	GitHub Copilot CLI
 host	studio	-	skills	-	-	-	-	Facet Studio
+instruction	opencode-instructions	-	AGENTS.md	-	-	-	-	OpenCode governing instructions
+instruction	codex-instructions	-	AGENTS.md	-	-	-	-	Codex governing instructions
+instruction	claude-instructions	-	CLAUDE.md	-	-	-	-	Claude governing instructions
+instruction	copilot-instructions	-	.github/copilot-instructions.md	-	-	-	-	GitHub Copilot governing instructions
+instruction	studio-instructions	-	AGENTS.md	-	-	-	-	Facet Studio governing instructions
 pack	explainer	-	bundle/packs/explainer	-	-	-	-	Animated explainers and narrated walkthroughs
 pack	cinematic	-	bundle/packs/cinematic	-	-	-	-	Cinematic and documentary treatments
 pack	screen-demo	-	bundle/packs/screen-demo	-	-	-	-	Product and screen demonstrations
