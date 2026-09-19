@@ -646,16 +646,20 @@ func project(op, toolboxOp, reqID, capability, tool string, env toolbox.Envelope
 	if warnings == nil {
 		warnings = []string{}
 	}
+	projectedTool := env.Tool
+	if projectedTool == "" {
+		projectedTool = tool
+	}
 
 	// external_writes is derived twice, independently: once by the toolbox at
 	// source, once here. They should always agree; a disagreement means one of
 	// the two is wrong and the host should not be handed a confident answer.
 	// Fail closed on disagreement — either side claiming a write wins.
-	adapterSays := writesOutput(toolboxOp, tool)
+	adapterSays := writesOutput(toolboxOp, projectedTool)
 	toolboxSays := env.Execution.ExternalWrite
 	if adapterSays != toolboxSays {
 		warnings = append(warnings,
-			"external_writes disagreement for "+tool+": toolbox reported a different "+
+			"external_writes disagreement for "+projectedTool+": toolbox reported a different "+
 				"value than the module adapter derived; declaring the write-performing "+
 				"value so approval is not bypassed")
 	}
@@ -683,7 +687,7 @@ func project(op, toolboxOp, reqID, capability, tool string, env toolbox.Envelope
 	if out.OK {
 		out.Result = map[string]any{
 			"capability": capability,
-			"tool":       tool,
+			"tool":       projectedTool,
 			"output":     env.Result,
 		}
 		return out
@@ -700,8 +704,8 @@ func project(op, toolboxOp, reqID, capability, tool string, env toolbox.Envelope
 		}
 	}
 	details["capability"] = capability
-	if tool != "" {
-		details["tool"] = tool
+	if projectedTool != "" {
+		details["tool"] = projectedTool
 	}
 	out.Error = &Error{Code: code, Message: message, Retryable: retryable, Details: details}
 	return out

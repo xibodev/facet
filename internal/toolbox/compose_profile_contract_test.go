@@ -44,17 +44,25 @@ func TestExplainerProfileSchemaContract(t *testing.T) {
 		}
 		request[field] = original
 	}
-	// Go estimates route direct props without evaluating Remotion's cross-field rules.
+	// Go estimates apply the same cross-field rules as the reduced composer.
 	t.Setenv("PATH", t.TempDir())
-	for _, duration := range []float64{3, 0.1, 2} {
+	request["duration_seconds"] = float64(3)
+	data, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, ok := CLI([]string{"tools", "estimate", "video_compose", "--input", string(data)})
+	if !ok || !strings.Contains(string(mustProfileJSON(t, env.Result)), "video_compose_remotion_render") {
+		t.Fatalf("valid profile estimate failed: %+v", env)
+	}
+	for _, duration := range []float64{0.1, 2} {
 		request["duration_seconds"] = duration
 		data, err := json.Marshal(request)
 		if err != nil {
 			t.Fatal(err)
 		}
-		env, ok := CLI([]string{"tools", "estimate", "video_compose", "--input", string(data)})
-		if !ok || !strings.Contains(string(mustProfileJSON(t, env.Result)), "video_compose_remotion_render") {
-			t.Fatalf("estimate should route only, not claim metadata validation: %+v", env)
+		if env, ok := CLI([]string{"tools", "estimate", "video_compose", "--input", string(data)}); ok || env.OK {
+			t.Fatalf("estimate accepted cuts outside duration %v: %+v", duration, env)
 		}
 	}
 }
