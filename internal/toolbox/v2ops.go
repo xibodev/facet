@@ -116,7 +116,7 @@ var operationProduces = map[string][]string{
 	"gflow_video":         {"render_video"},
 	"pexels_video":        {"render_video"},
 	"pixabay_video":       {"render_video"},
-	"wikimedia":           {"render_video"},
+	"wikimedia":           {"image", "render_video"},
 	"direct_clip_search":  {"render_video"},
 	"video_selector":      {"render_video"},
 }
