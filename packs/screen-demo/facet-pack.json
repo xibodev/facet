@@ -3,12 +3,14 @@
   "version": "1.0.0",
   "description": "Facet-owned guidance for recorded and synthetic software demos.",
   "kind": "content",
+  "methods": ["product-demo"],
   "requirements": {
     "probes": ["facet.probe.ffmpeg.v1", "facet.probe.ffprobe.v1"]
   },
   "declarations": {
-    "suggestedTools": ["media_probe", "frame_sample", "edit", "audio_mix", "output_review"],
+    "suggestedTools": ["output_review", "source_edit", "video_compose"],
     "networkIntent": "none",
+    "costIntent": "none",
     "filesystemIntent": "project-local"
   },
   "exports": {

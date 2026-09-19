@@ -40,6 +40,9 @@ state or replacing the agent's judgment.
 
 ```text
 facet version
+facet routes list
+facet routes describe <method>
+facet routes assess --input request.json
 facet tools list
 facet tools describe <tool>
 facet tools estimate <tool> --input request.json
@@ -72,8 +75,15 @@ and pack assets. The supported product path is the installed agent bundle.
 | Localization | Translation, subtitles, dubbing, and timing review |
 
 Packs describe methods and requirements; they do not install providers or
-promise that every optional route is available. Use the live tool registry and
-actual runtime diagnostics before committing to an approach.
+promise that every optional route is available. `facet routes assess` joins
+the selected method to live canonical operations, input availability,
+dependencies, network use, and charge effects. It never executes, stores
+workflow state, or chooses a provider. A route is feasible only when concrete
+file inputs exist, every operation request has a valid canonical shape, the
+entry request passes normal estimate validation, every consumable required
+input matches its declared operation request field, and intermediate artifact
+bindings are constructible. Inputs used only for policy or planning are
+explicitly marked informational in the route catalog.
 
 ## Project and delivery boundaries
 

@@ -6,6 +6,9 @@ description: Repurpose source video into reviewed short-form and vertical edits 
 # Social
 
 Use this pack to select and edit short moments from supplied long-form footage.
+Assess `content-repurpose` against the actual source before planning excerpts.
+When captions are requested, use `subtitle_gen` followed by the canonical
+`ffmpeg_caption_burn` operation.
 Confirm the platform, duration, aspect ratio, audience, caption style, and
 whether reframing may crop important action.
 

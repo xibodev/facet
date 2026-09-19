@@ -6,6 +6,8 @@ description: Produce source-led documentary, montage, and cinematic edits with F
 # Cinematic
 
 Use this pack for documentary, archival, atmospheric, and montage work.
+Assess `source-edit`, `documentary-cinematic`, or `music-led` with
+`facet routes assess` before committing to an edit route.
 Inventory source rights and quality, identify the narrative beats, and choose
 only operations available in the live registry. Prefer source-led editing;
 generated shots require a configured provider, explicit paid consent when

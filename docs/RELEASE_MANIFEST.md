@@ -67,6 +67,9 @@ facet tools list
 facet tools describe <tool>
 facet tools estimate <tool> --input request.json
 facet tools run <tool> --input request.json
+facet routes list
+facet routes describe <method>
+facet routes assess --input request.json
 ```
 
 No release-specific copy of tool names, effects, cost truth, or production

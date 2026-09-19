@@ -47,7 +47,6 @@ type captionBurnRequest struct {
 	HighlightColor string              `json:"highlight_color,omitempty"`
 	Corrections    map[string]string   `json:"corrections,omitempty"`
 	Overlays       []any               `json:"overlays,omitempty"`
-	ForceFFmpeg    bool                `json:"force_ffmpeg,omitempty"`
 	TimeoutSeconds int                 `json:"timeout_seconds,omitempty"`
 }
 
@@ -125,11 +124,11 @@ func doSubtitleGen(op string, data []byte) (any, []string, error) {
 	}, nil, nil
 }
 
-func doRemotionCaptionBurn(op string, data []byte) (any, []string, error) {
-	return doRemotionCaptionBurnContext(context.Background(), op, data)
+func doFFmpegCaptionBurn(op string, data []byte) (any, []string, error) {
+	return doFFmpegCaptionBurnContext(context.Background(), op, data)
 }
 
-func doRemotionCaptionBurnContext(ctx context.Context, op string, data []byte) (any, []string, error) {
+func doFFmpegCaptionBurnContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r captionBurnRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -223,7 +222,7 @@ func doRemotionCaptionBurnContext(ctx context.Context, op string, data []byte) (
 	}
 
 	return map[string]any{
-		"method":        "ffmpeg_fallback",
+		"method":        "ffmpeg",
 		"output":        r.OutputPath,
 		"caption_count": len(words),
 	}, nil, nil

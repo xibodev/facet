@@ -3,13 +3,15 @@
   "version": "1.0.0",
   "description": "Facet-owned guidance for 2D explainers and motion graphics.",
   "kind": "content",
+  "methods": ["animation", "explainer"],
   "requirements": {
     "probes": ["facet.probe.ffmpeg.v1", "facet.probe.node.v1"],
     "runtimes": ["remotion"]
   },
   "declarations": {
-    "suggestedTools": ["video_compose", "media_probe", "frame_sample", "output_review"],
-    "networkIntent": "none",
+    "suggestedTools": ["flux_image", "openai_image", "output_review", "video_compose"],
+    "networkIntent": "provider-optional",
+    "costIntent": "may-charge-optional",
     "filesystemIntent": "project-local"
   },
   "exports": {

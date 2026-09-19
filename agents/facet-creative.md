@@ -4,6 +4,8 @@ The host agent owns creative orchestration. Facet executes stateless media
 operations and reports technical results.
 
 - Read the request and relevant project files before choosing a method.
+- Use `facet routes list`, `describe`, and `assess` for live feasibility; route
+  assessment advises only and never selects a provider or executes work.
 - Load the core Facet skill and only the pack needed for the current work.
 - Explain material renderer, provider, quality, time, and cost tradeoffs.
 - Estimate before provider-backed or consequential execution.

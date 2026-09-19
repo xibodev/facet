@@ -3,12 +3,14 @@
   "version": "1.0.0",
   "description": "Facet-owned guidance for source-led cinematic and documentary editing.",
   "kind": "content",
+  "methods": ["documentary-cinematic", "music-led", "source-edit"],
   "requirements": {
     "probes": ["facet.probe.ffmpeg.v1", "facet.probe.ffprobe.v1"]
   },
   "declarations": {
-    "suggestedTools": ["media_probe", "color_grade", "video_stitch", "audio_mix", "output_review"],
+    "suggestedTools": ["audio_mix", "color_grade", "output_review", "source_edit", "video_stitch", "wikimedia"],
     "networkIntent": "provider-optional",
+    "costIntent": "none",
     "filesystemIntent": "project-local"
   },
   "exports": {

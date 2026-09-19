@@ -14,6 +14,7 @@ import (
 	"github.com/xibodev/facet/internal/bundle"
 	"github.com/xibodev/facet/internal/config"
 	"github.com/xibodev/facet/internal/module"
+	"github.com/xibodev/facet/internal/routes"
 	"github.com/xibodev/facet/internal/studio"
 	"github.com/xibodev/facet/internal/toolbox"
 )
@@ -29,6 +30,7 @@ Usage:
 Available Commands:
   doctor           Inspect system dependencies, runtimes, CLIs, and 33 tools
   init [slug]      Initialize a project workspace and link agent skills
+  routes <op>      Discover and assess production methods without executing
   tools <op> ...   Run toolbox operations (list, describe, estimate, run)
   module <op>      Module protocol surface for a host (describe, invoke)
   ui               Start the Facet Studio web interface
@@ -158,6 +160,18 @@ func main() {
 
 	case "tools":
 		result, ok := toolbox.CLI(os.Args[1:])
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(result); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		if !ok {
+			os.Exit(1)
+		}
+
+	case "routes":
+		result, ok := routes.CLI(os.Args[2:])
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
 		if err := encoder.Encode(result); err != nil {

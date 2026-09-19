@@ -3,12 +3,14 @@
   "version": "1.0.0",
   "description": "Facet-owned guidance for short-form source repurposing.",
   "kind": "content",
+  "methods": ["content-repurpose"],
   "requirements": {
     "probes": ["facet.probe.ffmpeg.v1"]
   },
   "declarations": {
-    "suggestedTools": ["media_probe", "scene_detect", "edit", "subtitle_burn", "audio_mix", "output_review"],
+    "suggestedTools": ["ffmpeg_caption_burn", "output_review", "source_edit", "subtitle_gen"],
     "networkIntent": "none",
+    "costIntent": "none",
     "filesystemIntent": "project-local"
   },
   "exports": {

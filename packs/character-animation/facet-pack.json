@@ -3,12 +3,14 @@
   "version": "1.0.0",
   "description": "Facet-owned guidance for character-led 2D animation.",
   "kind": "content",
+  "methods": ["character-animation"],
   "requirements": {
     "probes": ["facet.probe.ffmpeg.v1"]
   },
   "declarations": {
-    "suggestedTools": ["media_probe", "frame_sample", "video_compose", "audio_mix", "output_review"],
-    "networkIntent": "provider-optional",
+    "suggestedTools": ["audio_mix", "output_review", "video_compose"],
+    "networkIntent": "none",
+    "costIntent": "none",
     "filesystemIntent": "project-local"
   },
   "exports": {
