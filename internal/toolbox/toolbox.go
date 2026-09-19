@@ -22,7 +22,6 @@ const maxDiagnostic = 8192
 
 var names = []string{
 	"audio_mix",
-	"audio_mixer",
 	"audio_probe",
 	"color_grade",
 	"direct_clip_search",
@@ -31,7 +30,6 @@ var names = []string{
 	"ffmpeg_caption_burn",
 	"flux_image",
 	"frame_sample",
-	"frame_sampler",
 	"gflow_image",
 	"gflow_video",
 	"hyperframes_compose",
@@ -56,6 +54,11 @@ var names = []string{
 	"video_trimmer",
 	"visual_qa",
 	"wikimedia",
+}
+
+var compatibilityAliases = map[string]string{
+	"audio_mixer":   "audio_mix",
+	"frame_sampler": "frame_sample",
 }
 
 type Execution struct {
@@ -335,6 +338,9 @@ func canonicalToolName(tool string) string {
 			return tool
 		}
 	}
+	if canonical, ok := compatibilityAliases[tool]; ok {
+		return canonical
+	}
 	switch tool {
 	case "edgetts", "edge-tts":
 		return "edge_tts"
@@ -429,7 +435,8 @@ func CLI(args []string) (Envelope, bool) {
 		if len(args) != 5 || args[3] != "--input" {
 			return bad("usage: facet tools " + op + " <tool> --input <request.json>")
 		}
-		tool = canonicalToolName(args[2])
+		requestedTool := strings.ToLower(strings.TrimSpace(args[2]))
+		tool = canonicalToolName(requestedTool)
 		if !known(tool) {
 			return bad("unknown tool: " + args[2])
 		}
@@ -447,7 +454,7 @@ func CLI(args []string) (Envelope, bool) {
 				return errorEnvelope(tool, op, failure("input_not_found", "request input could not be read", map[string]any{"path": args[4], "error": bounded(err.Error())})), false
 			}
 		}
-		result, warnings, err := execute(tool, op, data)
+		result, warnings, err := execute(invocationToolName(requestedTool), op, data)
 		if err != nil {
 			return errorEnvelope(tool, op, err), false
 		}
@@ -498,6 +505,14 @@ func known(name string) bool {
 		}
 	}
 	return false
+}
+
+func invocationToolName(requested string) string {
+	requested = strings.ToLower(strings.TrimSpace(requested))
+	if _, ok := compatibilityAliases[requested]; ok {
+		return requested
+	}
+	return canonicalToolName(requested)
 }
 
 // Resolution states. Operator ruling 7: Resolution is not Boolean, and the
@@ -791,7 +806,7 @@ var schemas = map[string]any{
 		"output_path": map[string]any{"type": "string"}, "transition": map[string]any{"enum": []string{"cut", "crossfade", "fade"}, "default": "cut"}, "transition_duration": map[string]any{"type": "number", "default": 0.5},
 		"auto_normalize": map[string]any{"type": "boolean", "default": false}, "layout": map[string]any{"enum": []string{"side_by_side", "vertical_stack", "picture_in_picture"}},
 	}},
-	"video_compose": map[string]any{"type": "object", "additionalProperties": false, "description": "Accepts an operation envelope (default compose), direct Facet Explainer props with nonempty cuts, or a scene plan with nonempty scenes. The Remotion composer supports only text_card, hero_title, stat_card, and media. Direct cuts take precedence over scenes and operation. Width, height, fps, and duration_seconds are explicit; defaults are 1920x1080 at 30 fps and the last cut end. Metadata validation runs in Remotion, not in estimates; estimates route work but do not prove a render will succeed.", "properties": map[string]any{
+	"video_compose": map[string]any{"type": "object", "additionalProperties": false, "description": "Accepts an operation envelope (default compose), direct Facet Explainer props with nonempty cuts, or a scene plan with nonempty scenes. The Remotion composer supports only text_card, hero_title, stat_card, and media. Direct cuts take precedence over scenes and operation. Width, height, fps, and duration_seconds are explicit; defaults are 1920x1080 at 30 fps and the last cut end. Estimates validate the reduced composer primitive, required fields, and timing shape before routing work; they do not prove a render will succeed because complete metadata validation also runs in Remotion.", "properties": map[string]any{
 		"operation": map[string]any{"enum": []string{"compose", "render", "remotion_render", "burn_subtitles", "overlay", "encode"}}, "input_path": map[string]any{"type": "string"}, "output_path": map[string]any{"type": "string"},
 		"edit_decisions": map[string]any{"type": "object"}, "asset_manifest": map[string]any{"type": "object"}, "audio_path": map[string]any{"type": "string"}, "subtitle_path": map[string]any{"type": "string"},
 		"output": stringSchema(), "composition_id": map[string]any{"const": "Explainer"}, "composition": map[string]any{"const": "Explainer"},
@@ -1663,6 +1678,10 @@ func contains(values []string, value string) bool {
 // Names returns a defensive copy of the exact public tool catalog.
 func Names() []string { out := append([]string(nil), names...); sort.Strings(out); return out }
 
+// CanonicalName resolves compatibility aliases to the operation identity
+// reported by envelopes, listings, and module projections.
+func CanonicalName(tool string) string { return canonicalToolName(tool) }
+
 // Description returns the tool's human-readable capability description.
 func Description(tool string) string {
 	tool = canonicalToolName(tool)
@@ -1903,14 +1922,15 @@ func Run(tool string, data []byte) Envelope {
 
 // RunContext carries cancellation into media execution and network requests.
 func RunContext(ctx context.Context, tool string, data []byte) Envelope {
-	tool = canonicalToolName(tool)
+	requestedTool := strings.ToLower(strings.TrimSpace(tool))
+	tool = canonicalToolName(requestedTool)
 	if err := ctx.Err(); err != nil {
 		return errorEnvelope(tool, "run", failure("cancelled", err.Error(), nil))
 	}
 	if !known(tool) {
 		return errorEnvelope(tool, "run", failure("unknown_tool", "unknown tool: "+tool, nil))
 	}
-	result, warnings, err := executeContext(ctx, tool, "run", data)
+	result, warnings, err := executeContext(ctx, invocationToolName(requestedTool), "run", data)
 	if ctx.Err() != nil {
 		return errorEnvelope(tool, "run", failure("cancelled", ctx.Err().Error(), nil))
 	}

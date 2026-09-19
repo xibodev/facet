@@ -241,7 +241,7 @@ func TestCostKnownComesFromTheEstimateNotFromMayCharge(t *testing.T) {
 	// the point of this block.
 	//
 	// In today's tool set may_charge and cost_known are exact inverses for all
-	// 35 tools, so `cost_known = !may_charge` produces byte-identical output
+	// canonical tools, so `cost_known = !may_charge` produces byte-identical output
 	// and every value assertion passes. Measured, not assumed: a mutation
 	// doing exactly that survived the whole suite.
 	//
@@ -372,8 +372,8 @@ func TestVideoComposeIsMultiImplementationNotComposite(t *testing.T) {
 	}
 }
 
-// All 35 public tool names survive. v2 adds a semantic layer beside the
-// capability surface; it renames nothing.
+// All canonical public tool names survive. v2 adds a semantic layer beside
+// the capability surface; compatibility aliases do not become Operations.
 func TestPublicToolNamesUnchangedByV2(t *testing.T) {
 	byID := v2ByID(serializedV2(t))
 	for _, n := range toolbox.Names() {

@@ -22,13 +22,13 @@ import (
 const Version = "1.0.4"
 
 func printUsage() {
-	fmt.Println(`Facet - Autonomous Video Production Engine & Agent Toolbox
+	fmt.Printf(`Facet - Autonomous Video Production Engine & Agent Toolbox
 
 Usage:
   facet <command> [arguments]
 
 Available Commands:
-  doctor           Inspect system dependencies, runtimes, CLIs, and 33 tools
+  doctor           Inspect system dependencies, runtimes, CLIs, and %d tools
   init [slug]      Initialize a project workspace and link agent skills
   routes <op>      Discover and assess production methods without executing
   tools <op> ...   Run toolbox operations (list, describe, estimate, run)
@@ -41,7 +41,8 @@ Flags:
   -h, --help       Show help
   -v, --version    Show version
 
-Use "facet <command> --help" for more information about a command.`)
+Use "facet <command> --help" for more information about a command.
+`, len(toolbox.Names()))
 }
 
 func main() {

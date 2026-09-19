@@ -434,7 +434,7 @@ func withProjections(caps []Capability) []Capability {
 
 	// The pessimistic union over every projected Operation.
 	//
-	// DERIVED, never hardcoded: a capability that dispatches any of 35 tools
+	// DERIVED, never hardcoded: a capability that dispatches any canonical tool
 	// must declare the worst case any of them can do, because the capability
 	// description is read BEFORE the request selects which. Writing these as
 	// literals would be a second effects table that drifts the first time a
@@ -468,7 +468,7 @@ func withProjections(caps []Capability) []Capability {
 		caps[i].Effects.Network = union.network
 		caps[i].Effects.ExternalWrites = union.writes
 		caps[i].Effects.MayCharge = union.charge
-		// A capability dispatching 35 tools is never deterministic: it reaches
+		// A capability dispatching the full canonical registry is never deterministic: it reaches
 		// networked and chargeable Operations, and the union of a
 		// nondeterministic set is nondeterministic.
 		caps[i].Effects.Deterministic = false
@@ -550,7 +550,7 @@ func rawCapabilityList() []Capability {
 			// including chargeable ones, so it declares the worst case.
 			//
 			// CostKnown here means what Facet defines it to mean — whether a
-			// numeric amount is known — and across 35 tools it is not. It does
+			// numeric amount is known — and across the canonical registry it is not. It does
 			// NOT mean "may spend money", and approval must not be inferred
 			// from it: edge_tts reaches an external service with a known cost
 			// of zero and correctly needs no consent.

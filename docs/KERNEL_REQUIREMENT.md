@@ -107,7 +107,7 @@ stops is indistinguishable from one that failed silently.
 
 ## 6. Approval / execution hooks
 
-Facet gates paid work: 8 of its 35 tools may charge, and consent is required
+Facet gates paid work: 8 of its 33 canonical tools may charge, and consent is required
 before execution. The kernel must let Facet **interpose before a tool runs** —
 inspect the pending call, and refuse or defer it pending human approval.
 

@@ -141,7 +141,18 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 	var rawMap map[string]any
 	if err := json.Unmarshal(data, &rawMap); err == nil && rawMap != nil {
 		// 1. Direct Remotion Explainer props (contains top-level "cuts")
-		if cutsRaw, hasCuts := rawMap["cuts"].([]any); hasCuts && len(cutsRaw) > 0 {
+		if rawCuts, hasCuts := rawMap["cuts"]; hasCuts {
+			cutsRaw, ok := rawCuts.([]any)
+			if !ok || len(cutsRaw) == 0 {
+				return nil, nil, failure("invalid_request", "cuts must be a nonempty array", nil)
+			}
+			cuts, err := explainerCutsFromAny(cutsRaw, "cut")
+			if err != nil {
+				return nil, nil, err
+			}
+			if err := validateExplainerComposition(rawMap, cuts); err != nil {
+				return nil, nil, err
+			}
 			outPath := "renders/final.mp4"
 			if o, ok := rawMap["output"].(string); ok && strings.TrimSpace(o) != "" {
 				outPath = strings.TrimSpace(o)
@@ -154,11 +165,9 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 			}
 			if op == "estimate" {
 				last := 0.0
-				for _, c := range cutsRaw {
-					if cm, ok := c.(map[string]any); ok {
-						if v, ok := cm["out_seconds"].(float64); ok && v > last {
-							last = v
-						}
+				for _, cut := range cuts {
+					if v, ok := cut["out_seconds"].(float64); ok && v > last {
+						last = v
 					}
 				}
 				f, w, h := renderShape(rawMap, last)
@@ -168,11 +177,9 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 			// explicit duration.
 			if _, given := rawMap["duration_seconds"]; !given {
 				last := 0.0
-				for _, c := range cutsRaw {
-					if cm, ok := c.(map[string]any); ok {
-						if v, ok := cm["out_seconds"].(float64); ok && v > last {
-							last = v
-						}
+				for _, cut := range cuts {
+					if v, ok := cut["out_seconds"].(float64); ok && v > last {
+						last = v
 					}
 				}
 				if last > 0 {
@@ -201,7 +208,22 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 		}
 
 		// 2. Direct Scene Plan JSON (contains top-level "scenes")
-		if scenesRaw, hasScenes := rawMap["scenes"].([]any); hasScenes && len(scenesRaw) > 0 {
+		if rawScenes, hasScenes := rawMap["scenes"]; hasScenes {
+			scenesRaw, ok := rawScenes.([]any)
+			if !ok || len(scenesRaw) == 0 {
+				return nil, nil, failure("invalid_request", "scenes must be a nonempty array", nil)
+			}
+			scenes, err := explainerCutsFromAny(scenesRaw, "scene")
+			if err != nil {
+				return nil, nil, err
+			}
+			cuts := make([]map[string]any, 0, len(scenes))
+			for _, scene := range scenes {
+				cuts = append(cuts, mapSceneToCut(scene))
+			}
+			if err := validateExplainerComposition(rawMap, cuts); err != nil {
+				return nil, nil, err
+			}
 			outPath := "renders/final.mp4"
 			if o, ok := rawMap["output"].(string); ok && strings.TrimSpace(o) != "" {
 				outPath = strings.TrimSpace(o)
@@ -214,11 +236,9 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 			}
 			if op == "estimate" {
 				last := 0.0
-				for _, sc := range scenesRaw {
-					if sm, ok := sc.(map[string]any); ok {
-						if v, ok := sm["end_seconds"].(float64); ok && v > last {
-							last = v
-						}
+				for _, scene := range scenes {
+					if v, ok := scene["end_seconds"].(float64); ok && v > last {
+						last = v
 					}
 				}
 				f, w, h := renderShape(rawMap, last)
@@ -242,12 +262,6 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 			// accepts any other property, so a caller has no way to learn
 			// which fields survive. Carrying them through is the only
 			// behaviour consistent with what the schema accepts.
-			cuts := make([]map[string]any, 0, len(scenesRaw))
-			for _, s := range scenesRaw {
-				if sm, ok := s.(map[string]any); ok {
-					cuts = append(cuts, mapSceneToCut(sm))
-				}
-			}
 			remotionProps := map[string]any{
 				"cuts": cuts,
 			}
@@ -256,6 +270,9 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 			}
 			if ov, ok := rawMap["overlays"]; ok {
 				remotionProps["overlays"] = ov
+			}
+			if background, ok := rawMap["backgroundColor"]; ok {
+				remotionProps["backgroundColor"] = background
 			}
 			// Output dimensions and frame rate are the caller's, not the
 			// composition's. This branch rebuilds props from scratch, so
@@ -839,40 +856,277 @@ var cutRequirements = map[string][]string{
 	"media":      {"source", "media_kind"},
 }
 
-func validateExplainerCuts(cuts []map[string]any) error {
+const maxSafeInteger = 9007199254740991
+
+func explainerCutsFromAny(items []any, label string) ([]map[string]any, error) {
+	cuts := make([]map[string]any, 0, len(items))
+	for i, item := range items {
+		cut, ok := item.(map[string]any)
+		if !ok {
+			return nil, failure("invalid_request", fmt.Sprintf("%s %d must be an object", label, i), nil)
+		}
+		cuts = append(cuts, cut)
+	}
+	return cuts, nil
+}
+
+func finiteJSONNumber(value any, name string) (float64, error) {
+	var number float64
+	switch typed := value.(type) {
+	case float64:
+		number = typed
+	case float32:
+		number = float64(typed)
+	case int:
+		number = float64(typed)
+	case int8:
+		number = float64(typed)
+	case int16:
+		number = float64(typed)
+	case int32:
+		number = float64(typed)
+	case int64:
+		number = float64(typed)
+	case uint:
+		number = float64(typed)
+	case uint8:
+		number = float64(typed)
+	case uint16:
+		number = float64(typed)
+	case uint32:
+		number = float64(typed)
+	case uint64:
+		number = float64(typed)
+	default:
+		return 0, failure("invalid_request", name+" must be a finite number", nil)
+	}
+	if !finite(number) {
+		return 0, failure("invalid_request", name+" must be a finite number", nil)
+	}
+	return number, nil
+}
+
+func nonBlankJSONField(value any, name string) (string, error) {
+	text, ok := value.(string)
+	if !ok || strings.TrimSpace(text) == "" {
+		return "", failure("invalid_request", name+" must be a nonblank string", nil)
+	}
+	return text, nil
+}
+
+func optionalNonBlankJSONField(values map[string]any, field, name string) error {
+	value, present := values[field]
+	if !present {
+		return nil
+	}
+	_, err := nonBlankJSONField(value, name)
+	return err
+}
+
+func validateExplainerTrack(value any, name string) error {
+	track, ok := value.(map[string]any)
+	if !ok {
+		return failure("invalid_request", name+" must be an object", nil)
+	}
+	if _, err := nonBlankJSONField(track["src"], name+".src"); err != nil {
+		return err
+	}
+	if volume, present := track["volume"]; present {
+		number, err := finiteJSONNumber(volume, name+".volume")
+		if err != nil {
+			return err
+		}
+		if number < 0 || number > 1 {
+			return failure("invalid_request", name+".volume must be between 0 and 1", nil)
+		}
+	}
+	if loop, present := track["loop"]; present {
+		if _, ok := loop.(bool); !ok {
+			return failure("invalid_request", name+".loop must be a boolean", nil)
+		}
+	}
+	return nil
+}
+
+func validateExplainerComposition(props map[string]any, cuts []map[string]any) error {
 	if len(cuts) == 0 {
 		return failure("invalid_request", "Explainer cuts must be a nonempty array", nil)
 	}
+
+	dimension := func(name string, fallback float64) (float64, error) {
+		value, present := props[name]
+		if !present || value == nil {
+			return fallback, nil
+		}
+		number, err := finiteJSONNumber(value, name)
+		if err != nil {
+			return 0, err
+		}
+		if number <= 0 || number > maxSafeInteger || math.Trunc(number) != number || math.Mod(number, 2) != 0 {
+			return 0, failure("invalid_request", name+" must be a positive even safe integer", nil)
+		}
+		return number, nil
+	}
+	if _, err := dimension("width", 1920); err != nil {
+		return err
+	}
+	if _, err := dimension("height", 1080); err != nil {
+		return err
+	}
+
+	fps := 30.0
+	if value, present := props["fps"]; present && value != nil {
+		number, err := finiteJSONNumber(value, "fps")
+		if err != nil {
+			return err
+		}
+		fps = number
+	}
+	if fps <= 0 {
+		return failure("invalid_request", "fps must be positive", nil)
+	}
+
+	lastEnd := 0.0
 	for i, cut := range cuts {
-		kind, _ := cut["type"].(string)
+		end, err := finiteJSONNumber(cut["out_seconds"], fmt.Sprintf("cut %d.out_seconds", i))
+		if err != nil {
+			return err
+		}
+		if end > lastEnd {
+			lastEnd = end
+		}
+	}
+	duration := lastEnd
+	if value, present := props["duration_seconds"]; present {
+		number, err := finiteJSONNumber(value, "duration_seconds")
+		if err != nil {
+			return err
+		}
+		duration = number
+	}
+	if duration <= 0 {
+		return failure("invalid_request", "duration_seconds must be positive", nil)
+	}
+	frameCount := duration * fps
+	if frameCount <= 0 || frameCount > maxSafeInteger || math.Trunc(frameCount) != frameCount {
+		return failure("invalid_request", "duration_seconds * fps must be a positive safe integer frame count", nil)
+	}
+
+	previousEnd := 0.0
+	for i, cut := range cuts {
+		prefix := fmt.Sprintf("cut %d", i)
+		start, err := finiteJSONNumber(cut["in_seconds"], prefix+".in_seconds")
+		if err != nil {
+			return err
+		}
+		end, err := finiteJSONNumber(cut["out_seconds"], prefix+".out_seconds")
+		if err != nil {
+			return err
+		}
+		if start < 0 || end <= start {
+			return failure("invalid_request", fmt.Sprintf(
+				"cut %d must satisfy 0 <= in_seconds < out_seconds", i), nil)
+		}
+		if start < previousEnd {
+			return failure("invalid_request", prefix+" overlaps or is out of order", nil)
+		}
+		if end > duration {
+			return failure("invalid_request", prefix+".out_seconds exceeds duration_seconds", nil)
+		}
+		startFrame := math.Floor(start*fps + 1e-9)
+		endFrame := math.Ceil(end*fps - 1e-9)
+		if endFrame <= startFrame {
+			return failure("invalid_request", prefix+" must span at least one frame", nil)
+		}
+		previousEnd = end
+
+		kind, err := nonBlankJSONField(cut["type"], prefix+".type")
+		if err != nil {
+			return err
+		}
 		required, known := cutRequirements[kind]
 		if !known {
 			return failure("invalid_request", fmt.Sprintf("cut %d has unsupported type %q", i, kind), nil)
 		}
-		var missing []string
 		for _, field := range required {
-			v, present := cut[field]
-			if !present || v == nil || (func() bool {
-				s, ok := v.(string)
-				return ok && strings.TrimSpace(s) == ""
-			})() {
-				missing = append(missing, field)
+			if _, err := nonBlankJSONField(cut[field], prefix+"."+field); err != nil {
+				return err
 			}
 		}
-		if len(missing) > 0 {
-			return failure("invalid_request", fmt.Sprintf(
-				"cut %d (type %q) is missing nonblank %s",
-				i, kind, strings.Join(missing, ", ")), nil)
+		if err := optionalNonBlankJSONField(cut, "backgroundColor", prefix+".backgroundColor"); err != nil {
+			return err
 		}
-		if kind == "media" {
+		if err := optionalNonBlankJSONField(cut, "color", prefix+".color"); err != nil {
+			return err
+		}
+		switch kind {
+		case "text_card":
+			if value, present := cut["fontSize"]; present {
+				fontSize, err := finiteJSONNumber(value, prefix+".fontSize")
+				if err != nil {
+					return err
+				}
+				if fontSize <= 0 {
+					return failure("invalid_request", prefix+".fontSize must be positive", nil)
+				}
+			}
+		case "hero_title":
+			if err := optionalNonBlankJSONField(cut, "subtitle", prefix+".subtitle"); err != nil {
+				return err
+			}
+		case "stat_card":
+			if err := optionalNonBlankJSONField(cut, "label", prefix+".label"); err != nil {
+				return err
+			}
+		case "media":
 			mediaKind, _ := cut["media_kind"].(string)
 			if mediaKind != "image" && mediaKind != "video" {
 				return failure("invalid_request", fmt.Sprintf(
 					"cut %d media_kind must be \"image\" or \"video\"", i), nil)
 			}
+			if fit, present := cut["fit"]; present && fit != "contain" && fit != "cover" {
+				return failure("invalid_request", prefix+".fit must be \"contain\" or \"cover\"", nil)
+			}
+			if err := optionalNonBlankJSONField(cut, "title", prefix+".title"); err != nil {
+				return err
+			}
+			if muted, present := cut["muted"]; present {
+				if _, ok := muted.(bool); !ok {
+					return failure("invalid_request", prefix+".muted must be a boolean", nil)
+				}
+			}
 		}
 	}
+
+	if audioValue, present := props["audio"]; present {
+		audio, ok := audioValue.(map[string]any)
+		if !ok {
+			return failure("invalid_request", "audio must be an object", nil)
+		}
+		narration, hasNarration := audio["narration"]
+		music, hasMusic := audio["music"]
+		if !hasNarration && !hasMusic {
+			return failure("invalid_request", "audio must contain narration or music", nil)
+		}
+		if hasNarration {
+			if err := validateExplainerTrack(narration, "audio.narration"); err != nil {
+				return err
+			}
+		}
+		if hasMusic {
+			if err := validateExplainerTrack(music, "audio.music"); err != nil {
+				return err
+			}
+		}
+	}
+	if err := optionalNonBlankJSONField(props, "backgroundColor", "backgroundColor"); err != nil {
+		return err
+	}
 	return nil
+}
+
+func validateExplainerCuts(cuts []map[string]any) error {
+	return validateExplainerComposition(map[string]any{"cuts": cuts}, cuts)
 }
 
 func doRemotionRender(r composeRequest, outPath string, tmo time.Duration) (any, []string, error) {
@@ -937,7 +1191,11 @@ func doRemotionRenderContext(ctx context.Context, r composeRequest, outPath stri
 		}
 	}
 	if len(explainerCuts) > 0 {
-		if err := validateExplainerCuts(explainerCuts); err != nil {
+		props := r.RawProps
+		if props == nil {
+			props = map[string]any{"cuts": explainerCuts}
+		}
+		if err := validateExplainerComposition(props, explainerCuts); err != nil {
 			return nil, nil, err
 		}
 	}
