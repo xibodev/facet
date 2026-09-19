@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -13,6 +14,7 @@ import (
 )
 
 var productPathPattern = regexp.MustCompile("`((?:skills|packs|agents|schemas|styles|pipeline_defs|\\.agents)/[^`\\s,;:)]+)")
+var documentedTargetInstallRoots = []string{".agents/skills"}
 
 func TestDonorGuardChecksTrackedPathNames(t *testing.T) {
 	banned := []*regexp.Regexp{
@@ -504,6 +506,33 @@ func TestProductTextGuardCoversShippingDefinitions(t *testing.T) {
 	}
 }
 
+func TestMarkdownProductPathsDistinguishesTargetInstallRoots(t *testing.T) {
+	tests := []struct {
+		name           string
+		reference      string
+		wantViolations int
+	}{
+		{name: "target root", reference: ".agents/skills"},
+		{name: "target descendant", reference: ".agents/skills/facet/SKILL.md"},
+		{name: "dangling repository path", reference: "skills/missing-contract/SKILL.md", wantViolations: 1},
+		{name: "adjacent agents path", reference: ".agents/missing-contract/SKILL.md", wantViolations: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			name := filepath.Join(t.TempDir(), "contract.md")
+			if err := os.WriteFile(name, []byte("`"+test.reference+"`"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var violations []string
+			checkMarkdownProductPaths(name, &violations)
+			if len(violations) != test.wantViolations {
+				t.Fatalf("checkMarkdownProductPaths(%q) found %d violations, want %d: %v",
+					test.reference, len(violations), test.wantViolations, violations)
+			}
+		})
+	}
+}
+
 func checkPackPath(packDir, manifestPath, name string, violations *[]string) {
 	clean := filepath.Clean(filepath.FromSlash(name))
 	if name == "" || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
@@ -527,10 +556,23 @@ func checkMarkdownProductPaths(name string, violations *[]string) {
 			*violations = append(*violations, filepath.ToSlash(name)+": non-deterministic path "+match[1])
 			continue
 		}
+		if isDocumentedTargetInstallPath(ref) {
+			continue
+		}
 		if _, err := os.Stat(filepath.FromSlash(ref)); err != nil {
 			*violations = append(*violations, filepath.ToSlash(name)+": missing "+match[1])
 		}
 	}
+}
+
+func isDocumentedTargetInstallPath(name string) bool {
+	clean := path.Clean(name)
+	for _, root := range documentedTargetInstallRoots {
+		if clean == root || strings.HasPrefix(clean, root+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func isProductTextFile(name string) bool {
