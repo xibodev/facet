@@ -271,6 +271,9 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 			if ov, ok := rawMap["overlays"]; ok {
 				remotionProps["overlays"] = ov
 			}
+			if background, ok := rawMap["backgroundColor"]; ok {
+				remotionProps["backgroundColor"] = background
+			}
 			// Output dimensions and frame rate are the caller's, not the
 			// composition's. This branch rebuilds props from scratch, so
 			// anything not copied here is silently discarded: a request for
