@@ -52,3 +52,8 @@ test('script installers manage bounded instruction sections with ownership metad
     assert.match(source, /shared runtime/i);
   }
 });
+
+test('script launchers expose the installed Piper voice to Facet', () => {
+  assert.match(bash, /FACET_PIPER_MODEL/);
+  assert.match(powershell, /FACET_PIPER_MODEL/);
+});
