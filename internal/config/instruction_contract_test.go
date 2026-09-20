@@ -18,6 +18,7 @@ func TestRepositoryInstructionContract(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := string(data)
+		normalizedText := strings.Join(strings.Fields(text), " ")
 		if file == "CLAUDE.md" && !strings.Contains(text, canonical) {
 			t.Errorf("%s must reference %s", file, canonical)
 		}
@@ -27,15 +28,28 @@ func TestRepositoryInstructionContract(t *testing.T) {
 			}
 		}
 		if file == canonical {
-			for _, required := range []string{"stateless toolbox", "explicit human consent", "unknown", "mock: true", "creative acceptance", "matching pack"} {
-				if !strings.Contains(text, required) {
+			for _, required := range []string{
+				"stateless toolbox",
+				"explicit human consent",
+				"unknown",
+				"mock: true",
+				"creative acceptance",
+				"matching pack",
+				"production proposal",
+				"before narration synthesis, asset acquisition, provider generation, or the first render",
+				"Do not silently change",
+				"Ordinary local revisions",
+				`"input":"renders/final.mp4"`,
+				"requested duration tolerance",
+			} {
+				if !strings.Contains(normalizedText, required) {
 					t.Errorf("%s lacks %q", file, required)
 				}
 			}
 		}
 		if file == "packs/explainer/SKILL.md" {
-			for _, required := range []string{"Narration and music are optional", "Estimate before rendering", "review the final MP4"} {
-				if !strings.Contains(text, required) {
+			for _, required := range []string{"Narration and music are optional", "Estimate before rendering", "review the final MP4", "requested duration tolerance"} {
+				if !strings.Contains(normalizedText, required) {
 					t.Errorf("%s lacks %q", file, required)
 				}
 			}
@@ -89,6 +103,7 @@ func TestGeneratedInstructionContract(t *testing.T) {
 						t.Fatal(err)
 					}
 					text := string(data)
+					normalizedText := strings.Join(strings.Fields(text), " ")
 					if !strings.HasPrefix(text, userInstructions) {
 						t.Errorf("%s did not preserve pre-existing user instructions", file)
 					}
@@ -97,8 +112,8 @@ func TestGeneratedInstructionContract(t *testing.T) {
 					} else {
 						t.Logf("%s: %d lines", file, lines)
 					}
-					for _, required := range []string{"explicit consent", "silent-video", "mock:true", "gflow_image", "gflow_video", "strategy", "1920x1080/30fps", "`" + engine.root + "facet/SKILL.md`", "workspace-relative", "canonical core skill", "active pack entry", "Facet-owned files define the production contract", "briefly explain the plan"} {
-						if !strings.Contains(text, required) {
+					for _, required := range []string{"explicit consent", "production proposal", "before narration synthesis, asset acquisition, provider generation, or the first render", "Do not silently change", "Ordinary local revisions", `"input":"renders/final.mp4"`, "silent-video", "mock:true", "gflow_image", "gflow_video", "strategy", "1920x1080/30fps", "`" + engine.root + "facet/SKILL.md`", "workspace-relative", "canonical core skill", "active pack entry", "Facet-owned files define the production contract", "briefly explain the plan"} {
+						if !strings.Contains(normalizedText, required) {
 							t.Errorf("%s lacks %q", file, required)
 						}
 					}
@@ -130,7 +145,7 @@ func TestGeneratedInstructionContract(t *testing.T) {
 							t.Errorf("%s contains wrong engine path %q", file, other)
 						}
 					}
-					for _, forbidden := range []string{"Turn 1", "Turn 2", "Turn 3", "sole", `"file_path":`, `"video_path":`} {
+					for _, forbidden := range []string{"Turn 1", "Turn 2", "Turn 3", "sole", `"file_path":`, `"video_path":`, `"rendered_file":`} {
 						if strings.Contains(text, forbidden) {
 							t.Errorf("%s retains %q", file, forbidden)
 						}
