@@ -18,6 +18,8 @@ the story, sequence work, approve output, or retain hidden production state.
    execute, inspect output, revise defects, and report provenance and limits.
 Do not impose narration, captions, music, fixed turns, or artifact ceremony.
 Prefer supplied assets and local operations when they satisfy the brief.
+Prefer Edge TTS for requested narration when network processing is acceptable.
+Use Piper as the offline or privacy-preserving fallback, not a silent downgrade.
 ## Safety and honesty
 - Paid execution and publication require explicit human consent; unknown cost
   is not free.

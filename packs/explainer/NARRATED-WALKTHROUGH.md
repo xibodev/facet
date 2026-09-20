@@ -4,6 +4,13 @@ Narration is optional. When requested, write and synthesize it first, then use
 `media_probe` to measure its actual duration. Unknown provider cost is not free;
 estimate and obtain consent before paid generation.
 
+For normal connected production, propose `edge_tts` first because its neural
+voices are more natural. Disclose that the script is sent to Microsoft's
+network service. Use `piper_tts` when the user requests offline or private
+processing, or when Edge is unavailable and the user approves that fallback.
+Name the selected voice and output path in the production proposal before
+synthesis.
+
 Create a frame-aligned request whose timeline covers the narration:
 
 ```json

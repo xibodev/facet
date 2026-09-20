@@ -59,6 +59,8 @@ Every release shape preserves the same guarantees:
 - approval covers ordinary local revisions, but a provider change, new or
   unknown cost, additional data exposure, identity or rights concern, or
   material quality reduction requires renewed approval;
+- requested narration prefers Edge TTS when network processing is acceptable,
+  with Piper retained as the offline and privacy-preserving fallback;
 - requirements retain their strength and resolution may be satisfied,
   unsatisfied, or unknown;
 - deterministic behavior is measured rather than assumed;
