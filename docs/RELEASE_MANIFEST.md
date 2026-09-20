@@ -53,6 +53,12 @@ Every release shape preserves the same guarantees:
 - `may_charge` is independent of whether a price is known;
 - unknown cost is never treated as zero;
 - paid work and publication require explicit human consent;
+- the agent presents a production proposal and receives approval before
+  narration synthesis, asset acquisition, provider generation, or the first
+  render;
+- approval covers ordinary local revisions, but a provider change, new or
+  unknown cost, additional data exposure, identity or rights concern, or
+  material quality reduction requires renewed approval;
 - requirements retain their strength and resolution may be satisfied,
   unsatisfied, or unknown;
 - deterministic behavior is measured rather than assumed;

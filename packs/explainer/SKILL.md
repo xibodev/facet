@@ -21,6 +21,9 @@ and a nonempty flat `cuts` array:
 Use `packs/explainer/SCENE-TYPES.md` for the four supported primitives. Unknown
 types, blank required content, overlapping cuts, and invalid metadata are
 rejected. For requested narration, follow
-`packs/explainer/NARRATED-WALKTHROUGH.md` and time visuals to measured audio.
+`packs/explainer/NARRATED-WALKTHROUGH.md`, measure the synthesized audio, and
+confirm it remains within the requested duration tolerance before timing the
+visuals to it. Revise the script or obtain approval for a material duration
+difference rather than merely stretching or shrinking the scene plan.
 Estimate before rendering, do not silently downgrade the renderer, sample
 frames, and review the final MP4 against the requested profile.
