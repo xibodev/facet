@@ -43,6 +43,11 @@ func TestRepositoryInstructionContract(t *testing.T) {
 				"requested duration tolerance",
 				"Prefer Edge TTS",
 				"Use Piper",
+				"Lack of a response is not approval",
+				"stop at the proposal",
+				"5%",
+				"Do not render until narration is within tolerance",
+				"A fallback requires renewed approval before use",
 			} {
 				if !strings.Contains(normalizedText, required) {
 					t.Errorf("%s lacks %q", file, required)
@@ -50,7 +55,7 @@ func TestRepositoryInstructionContract(t *testing.T) {
 			}
 		}
 		if file == "packs/explainer/SKILL.md" {
-			for _, required := range []string{"Narration and music are optional", "Prefer Edge TTS", "Use Piper", "Estimate before rendering", "review the final MP4", "requested duration tolerance"} {
+			for _, required := range []string{"Narration and music are optional", "Prefer Edge TTS", "Use Piper", "Estimate before rendering", "review the final MP4", "requested duration tolerance", "5%", "Do not render until narration is within tolerance"} {
 				if !strings.Contains(normalizedText, required) {
 					t.Errorf("%s lacks %q", file, required)
 				}
@@ -114,7 +119,7 @@ func TestGeneratedInstructionContract(t *testing.T) {
 					} else {
 						t.Logf("%s: %d lines", file, lines)
 					}
-					for _, required := range []string{"explicit consent", "production proposal", "before narration synthesis, asset acquisition, provider generation, or the first render", "Do not silently change", "Ordinary local revisions", `"input":"renders/final.mp4"`, "silent-video", "mock:true", "gflow_image", "gflow_video", "strategy", "1920x1080/30fps", "`" + engine.root + "facet/SKILL.md`", "workspace-relative", "canonical core skill", "active pack entry", "Facet-owned files define the production contract", "briefly explain the plan"} {
+					for _, required := range []string{"explicit consent", "production proposal", "before narration synthesis, asset acquisition, provider generation, or the first render", "Lack of a response is not approval", "stop at the proposal", "Do not silently change", "A fallback requires renewed approval before use", "Ordinary local revisions", `"input":"renders/final.mp4"`, "silent-video", "mock:true", "gflow_image", "gflow_video", "strategy", "1920x1080/30fps", "`" + engine.root + "facet/SKILL.md`", "workspace-relative", "canonical core skill", "active pack entry", "Facet-owned files define the production contract", "briefly explain the plan"} {
 						if !strings.Contains(normalizedText, required) {
 							t.Errorf("%s lacks %q", file, required)
 						}

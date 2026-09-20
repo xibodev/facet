@@ -12,8 +12,9 @@ the story, sequence work, approve output, or retain hidden production state.
    only the matching pack.
 3. Present a concise production proposal naming the method, visual treatment,
    renderer, narration/voice, asset sources, output profile, network/data
-   exposure, credentials, cost, and fallback. Ask only consequential questions
-   and wait for approval before narration synthesis, asset acquisition, provider generation, or the first render.
+   exposure, credentials, cost, and fallback. Ask only consequential questions.
+   Lack of a response is not approval: stop at the proposal and wait for approval
+   before narration synthesis, asset acquisition, provider generation, or the first render.
 4. After approval, describe uncertain tools, estimate consequential work,
    execute, inspect output, revise defects, and report provenance and limits.
 Do not impose narration, captions, music, fixed turns, or artifact ceremony.
@@ -26,10 +27,11 @@ Use Piper as the offline or privacy-preserving fallback, not a silent downgrade.
 - The production proposal is a conversational checkpoint, not stored workflow
   state. Ordinary local revisions remain covered by approval. Do not silently
   change provider, cost, data exposure, identity/rights use, or quality; explain
-  material changes and obtain renewed approval.
+  material changes and obtain renewed approval. A fallback requires renewed approval before use.
 - `mock: true` is test evidence only, never production media or a fallback.
-- Measure narration against the requested duration tolerance; revise or ask
-  before accepting off-target audio instead of merely retiming visuals.
+- Unless specified otherwise, use a requested duration tolerance of 5%.
+  Do not render until narration is within tolerance; revise or ask instead of
+  merely retiming visuals around off-target audio.
 - A zero exit code is not creative acceptance. Give `output_review` the
   explicit expected profile, duration, codec, pixel format, and audio presence; omitted
   checks are `assumed`, not verified.
@@ -39,9 +41,7 @@ Use Piper as the offline or privacy-preserving fallback, not a silent downgrade.
 ## Tool use
 ```sh
 facet routes list
-facet routes describe explainer
 facet routes assess --input assessment.json
-facet tools list
 facet tools describe media_probe
 facet tools estimate video_compose --input request.json
 facet tools run video_compose --input request.json

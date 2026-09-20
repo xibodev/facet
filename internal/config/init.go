@@ -302,8 +302,9 @@ Read the canonical core skill at `+"`%s/SKILL.md`"+` (workspace-relative), then 
 - The user's selected agent orchestrates; Facet is a stateless toolbox, not an autonomous workflow controller.
 - Understand the request and supplied assets; briefly explain the plan, renderer, providers, and meaningful tradeoffs. Ask only consequential questions.
 - Present a concise production proposal covering the method, visual treatment, narration, asset sources, output profile, network/data exposure, credentials, cost, and fallback. Wait for approval before narration synthesis, asset acquisition, provider generation, or the first render.
+- Lack of a response is not approval; stop at the proposal until the user responds.
 - Ask for explicit consent before paid generation or external publication. Unknown cost is not free; estimates do not verify credentials or perform generation.
-- Ordinary local revisions remain covered by approval. Do not silently change provider, add cost or data exposure, introduce identity or rights concerns, or materially reduce quality; explain the change and obtain renewed approval.
+- Ordinary local revisions remain covered by approval. Do not silently change provider, add cost or data exposure, introduce identity or rights concerns, or materially reduce quality. A fallback requires renewed approval before use.
 - Preserve silent-video intent: narration, music, and captions are optional. Do not impose turn numbers or mandatory artifact stages.
 - Produce and review the requested video here. Never substitute mock media in production; `+"`mock:true`"+` is only for explicitly requested tests.
 

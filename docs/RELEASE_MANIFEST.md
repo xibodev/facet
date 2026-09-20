@@ -56,11 +56,16 @@ Every release shape preserves the same guarantees:
 - the agent presents a production proposal and receives approval before
   narration synthesis, asset acquisition, provider generation, or the first
   render;
+- lack of a response, including an unavailable interactive prompt, is not
+  approval; the agent stops at the proposal;
 - approval covers ordinary local revisions, but a provider change, new or
   unknown cost, additional data exposure, identity or rights concern, or
-  material quality reduction requires renewed approval;
+  material quality reduction requires renewed approval, including before using
+  a fallback;
 - requested narration prefers Edge TTS when network processing is acceptable,
   with Piper retained as the offline and privacy-preserving fallback;
+- narration must be within 5% of the requested duration unless the user sets
+  another tolerance or explicitly approves the measured difference before render;
 - the recommended installer profile includes Remotion and Piper; Edge TTS is
   built into the Facet binary and therefore has no separately installed client;
 - requirements retain their strength and resolution may be satisfied,
