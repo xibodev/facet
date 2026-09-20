@@ -58,6 +58,14 @@ another project and create a project-local launcher that selects the installed
 binary and runtime paths without changing the user's shell profile or persistent PATH.
 System package-manager dependency installs may update PATH themselves.
 
+The default complete local profile selects `remotion,piper`: Remotion provides
+the local composition stack and Piper provides an offline narration fallback.
+The Edge TTS client is compiled into Facet rather than installed as a separate
+component; it is the preferred narration path when network processing is
+acceptable, but setup does not claim that its remote service is reachable.
+Pass `-Components none` / `--components none` for the advanced core-only
+FFmpeg/FFprobe profile.
+
 Pack resources live in `.facet-install/packs/`, outside the host's recursive
 skill discovery tree. Only the core `facet` skill is registered; repeat
 `--pack` / `--production-method` (or pass `-Pack` on PowerShell) to activate

@@ -170,6 +170,18 @@ func TestRunDoctor(t *testing.T) {
 	}
 }
 
+func TestEdgeTTSDoctorDistinguishesBuiltInClientFromServiceReachability(t *testing.T) {
+	got := probeEdgeTTS()
+	if !got.Available || got.Status != StatusOK {
+		t.Fatalf("built-in Edge TTS client should be available: %#v", got)
+	}
+	for _, want := range []string{"built-in", "network", "not tested"} {
+		if !strings.Contains(strings.ToLower(got.Details), want) {
+			t.Errorf("Edge TTS details %q do not mention %q", got.Details, want)
+		}
+	}
+}
+
 func TestRunInit(t *testing.T) {
 	// Create a dummy bundle directory with skills
 	bundleDir := t.TempDir()

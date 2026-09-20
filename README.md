@@ -43,9 +43,11 @@ installation, download the
 [installer ZIP](https://github.com/xibodev/facet/releases/download/v1.0.4/facet-installer-1.0.4.zip)
 and keep its `installer` directory beside the extracted scripts.
 
-Optional components include FFmpeg/FFprobe, Remotion, Piper, gflow, and
-HyperFrames. Provider-backed operations can require credentials, account
-access, quota, or payment. Configuration checks do not prove live access.
+The recommended setup installs FFmpeg/FFprobe, Remotion with its browser, and
+Piper as the offline narration fallback. Edge TTS support is built into Facet
+and is preferred when network processing is acceptable. gflow and HyperFrames
+remain optional. Provider-backed operations can require credentials, account
+access, quota, or payment; configuration checks do not prove live access.
 
 ## Agent contract
 

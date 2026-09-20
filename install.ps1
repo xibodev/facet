@@ -288,10 +288,12 @@ if ($instructionDef.kind -ne 'instruction' -or [IO.Path]::IsPathRooted($instruct
 $instructionRel = $instructionDef.value
 if (-not $ProjectDir) { $ProjectDir = Ask 'Project directory' '.' }
 $ProjectDir = [IO.Path]::GetFullPath($ProjectDir)
+$defaultComponents = 'remotion'
+if ((Definition piper).windows -in @('all',$arch)) { $defaultComponents += ',piper' }
 if (-not $Components) {
     $savedState = Join-Path $ProjectDir '.facet-install/installation.json'
     if (Test-Path $savedState) { $Components = (([IO.File]::ReadAllText($savedState) | ConvertFrom-Json).components -join ',') }
-    if (-not $Components) { $Components='remotion' }
+    if (-not $Components) { $Components=$defaultComponents }
 }
 if (-not $packsExplicit) {
     $savedState = Join-Path $ProjectDir '.facet-install/installation.json'
@@ -311,6 +313,7 @@ $InstallDir = [IO.Path]::GetFullPath($InstallDir)
 if (($ProjectDir + $InstallDir) -match '[\x00-\x1f]') { throw 'Control characters are unsupported in installation paths.' }
 $choices = @($manifest | Where-Object kind -EQ 'component')
 Write-Host 'Core: FFmpeg and FFprobe. Optional downloads (approximate; platform/cache dependent):'
+Write-Host 'Built in: Edge TTS client (keyless network service; reachability is checked only when used).'
 for ($i=0; $i -lt $choices.Count; $i++) {
     $id=$choices[$i].id
     $status = if ($id -in $Components.Split(',')) {'[x]'} else {'[ ]'}

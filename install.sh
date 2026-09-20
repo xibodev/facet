@@ -119,11 +119,12 @@ INSTRUCTION_REL=$(definition "$TARGET-instructions" 4)
 absolute() { case "$1" in /*) printf '%s' "$1";; *) printf '%s/%s' "$PWD" "$1";; esac; }
 PROJECT=$(absolute "$PROJECT"); INSTALL=$(absolute "${INSTALL:-$HOME/.facet/releases/$VERSION-$OS-$ARCH}")
 if [[ -z "$COMPONENTS" && -f "$PROJECT/.facet-install/installation.tsv" ]]; then COMPONENTS=$(awk -F '\t' '$1=="components" {gsub(/ /,",",$2); print $2}' "$PROJECT/.facet-install/installation.tsv"); fi
-COMPONENTS=${COMPONENTS:-remotion}
+COMPONENTS=${COMPONENTS:-remotion,piper}
 if [[ $PACKS_EXPLICIT == 0 && -f "$PROJECT/.facet-install/installation.tsv" ]]; then PACKS=$(awk -F '\t' '$1=="packs" {gsub(/ /,",",$2); print $2}' "$PROJECT/.facet-install/installation.tsv"); fi
 [[ "$PROJECT$INSTALL" != *$'\n'* && "$PROJECT$INSTALL" != *$'\r'* && "$PROJECT$INSTALL" != *$'\t'* ]] || die 'Control characters are unsupported in installation paths.'
 if [[ -n "$ARCHIVE" ]]; then ARCHIVE=$(absolute "$ARCHIVE"); SUMS=$(absolute "$SUMS"); fi
 printf '%s\n' 'Core: FFmpeg and FFprobe. Optional downloads (approximate; platform/cache dependent):'
+printf '%s\n' 'Built in: Edge TTS client (keyless network service; reachability is checked only when used).'
 awk -F '\t' -v selected=",$COMPONENTS," '$1=="component" {printf "%s %d. %s: %s — %s\n",index(selected,","$2",")?"[x]":"[ ]",++n,$2,$8,$9}' "$MANIFEST"
 printf '%s\n' 'Media providers are optional and may require credentials/account access. CLI authentication is assumed.'
 if [[ $YES != 1 ]]; then

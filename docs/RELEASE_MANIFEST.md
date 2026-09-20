@@ -61,6 +61,8 @@ Every release shape preserves the same guarantees:
   material quality reduction requires renewed approval;
 - requested narration prefers Edge TTS when network processing is acceptable,
   with Piper retained as the offline and privacy-preserving fallback;
+- the recommended installer profile includes Remotion and Piper; Edge TTS is
+  built into the Facet binary and therefore has no separately installed client;
 - requirements retain their strength and resolution may be satisfied,
   unsatisfied, or unknown;
 - deterministic behavior is measured rather than assumed;
