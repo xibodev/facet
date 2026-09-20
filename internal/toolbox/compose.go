@@ -1232,7 +1232,12 @@ func doRemotionRenderContext(ctx context.Context, r composeRequest, outPath stri
 	absOut, _ := filepath.Abs(renderPath)
 	absProps, _ := filepath.Abs(propsPath)
 
-	args := []string{cliPath, "render", entryFile, compositionID, absOut, "--props=" + absProps, "--public-dir=" + publicDir}
+	args := []string{
+		cliPath, "render", entryFile, compositionID, absOut,
+		"--props=" + absProps,
+		"--public-dir=" + publicDir,
+		"--pixel-format=yuv420p",
+	}
 	// Pure graphics with no audio declaration should not acquire an encoder's
 	// default audio track. Video cuts retain their source audio unless directed
 	// otherwise; an explicit narration/music track is never muted here.
