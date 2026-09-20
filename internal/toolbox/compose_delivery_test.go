@@ -132,10 +132,11 @@ func TestRemotionDeliveryFacts(t *testing.T) {
 	}
 }
 
-func TestRemotionRenderRequestsDeliverySafePixelFormat(t *testing.T) {
+func TestRemotionRenderRequestsDeliverySafeColorProfile(t *testing.T) {
 	requireFFmpeg(t)
 	script := `
 if (!process.argv.includes('--pixel-format=yuv420p')) throw Error('missing delivery-safe pixel format');
+if (!process.argv.includes('--color-space=bt709')) throw Error('missing delivery-safe color space');
 require('fs').copyFileSync('../source.mp4', process.argv[5]);
 `
 	workspace := composeDeliveryFixture(t, script)

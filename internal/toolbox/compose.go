@@ -1237,6 +1237,7 @@ func doRemotionRenderContext(ctx context.Context, r composeRequest, outPath stri
 		"--props=" + absProps,
 		"--public-dir=" + publicDir,
 		"--pixel-format=yuv420p",
+		"--color-space=bt709",
 	}
 	// Pure graphics with no audio declaration should not acquire an encoder's
 	// default audio track. Video cuts retain their source audio unless directed
