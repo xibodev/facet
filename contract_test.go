@@ -172,6 +172,30 @@ func TestProductContractContainsNoBannedTerms(t *testing.T) {
 	}
 }
 
+func TestTrackedTextContainsNoPersonalWindowsUserPaths(t *testing.T) {
+	pattern := regexp.MustCompile(`(?i)[a-z]:[/\\]+users[/\\]+([^/\\\r\n"'<>]+)`)
+	allowed := map[string]bool{"user": true, "test user": true}
+	var violations []string
+	for _, name := range trackedFiles(t) {
+		if !isProductTextFile(name) {
+			continue
+		}
+		data, err := os.ReadFile(filepath.FromSlash(name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, match := range pattern.FindAllSubmatch(data, -1) {
+			username := strings.ToLower(strings.TrimSpace(string(match[1])))
+			if !allowed[username] {
+				violations = append(violations, name+": personal Windows user path")
+			}
+		}
+	}
+	if len(violations) != 0 {
+		t.Fatalf("personal host paths remain:\n%s", strings.Join(violations, "\n"))
+	}
+}
+
 func isLegalNotice(name string) bool {
 	return filepath.ToSlash(name) == "THIRD_PARTY_NOTICES.md"
 }
