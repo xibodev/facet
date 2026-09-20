@@ -36,6 +36,14 @@ test('script installers expose explicit repeatable production-method selection',
   assert.match(powershell, /packs=\$selectedPacks/);
 });
 
+test('script installers default to the complete local runtime profile', () => {
+  assert.match(bash, /COMPONENTS=\$\{COMPONENTS:-remotion,piper\}/);
+  assert.match(powershell, /\$defaultComponents = 'remotion'/);
+  assert.match(powershell, /\$defaultComponents \+= ',piper'/);
+  assert.match(powershell, /if \(-not \$Components\) \{ \$Components=\$defaultComponents \}/);
+  assert.match(manifest, /^builtin\tedge-tts\t-\tmicrosoft_edge\tall\tall\tall\t0\t/m);
+});
+
 test('script installer defaults remain core-only', () => {
   assert.doesNotMatch(bash, /PACKS=.*explainer/);
   assert.doesNotMatch(powershell, /\$Pack\s*=.*explainer/);

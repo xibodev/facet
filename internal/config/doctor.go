@@ -267,7 +267,7 @@ func probeEdgeTTS() RuntimeCheck {
 	return RuntimeCheck{
 		Name:      "Edge-TTS",
 		Status:    StatusOK,
-		Details:   "built-in keyless neural TTS runtime ready",
+		Details:   "built-in keyless network client ready; service reachability not tested",
 		Available: true,
 	}
 }
