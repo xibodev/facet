@@ -132,6 +132,21 @@ func TestRemotionDeliveryFacts(t *testing.T) {
 	}
 }
 
+func TestRemotionRenderRequestsDeliverySafePixelFormat(t *testing.T) {
+	requireFFmpeg(t)
+	script := `
+if (!process.argv.includes('--pixel-format=yuv420p')) throw Error('missing delivery-safe pixel format');
+require('fs').copyFileSync('../source.mp4', process.argv[5]);
+`
+	workspace := composeDeliveryFixture(t, script)
+	composeDeliveryMedia(t, filepath.Join(workspace, "source.mp4"), false)
+
+	_, _, err := doRemotionRender(composeRequest{}, filepath.Join(workspace, "output.mp4"), 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRemotionDeliveryFailsClosed(t *testing.T) {
 	requireFFmpeg(t)
 	for _, scenario := range []string{"missing-artifact", "invalid-artifact", "missing-audio", "mux-error", "publish-error"} {
