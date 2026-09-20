@@ -9,7 +9,12 @@ voices are more natural. Disclose that the script is sent to Microsoft's
 network service. Use `piper_tts` when the user requests offline or private
 processing, or when Edge is unavailable and the user approves that fallback.
 Name the selected voice and output path in the production proposal before
-synthesis.
+synthesis. Lack of a response is not approval, and fallback use requires renewed
+approval.
+
+Unless the user specifies another tolerance, narration should be within 5% of
+the requested duration. Revise the script or obtain explicit approval for the
+difference before rendering; do not hide off-target narration by retiming visuals.
 
 Create a frame-aligned request whose timeline covers the narration:
 
