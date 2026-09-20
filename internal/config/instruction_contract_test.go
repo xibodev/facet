@@ -41,6 +41,8 @@ func TestRepositoryInstructionContract(t *testing.T) {
 				"Ordinary local revisions",
 				`"input":"renders/final.mp4"`,
 				"requested duration tolerance",
+				"Prefer Edge TTS",
+				"Use Piper",
 			} {
 				if !strings.Contains(normalizedText, required) {
 					t.Errorf("%s lacks %q", file, required)
@@ -48,7 +50,7 @@ func TestRepositoryInstructionContract(t *testing.T) {
 			}
 		}
 		if file == "packs/explainer/SKILL.md" {
-			for _, required := range []string{"Narration and music are optional", "Estimate before rendering", "review the final MP4", "requested duration tolerance"} {
+			for _, required := range []string{"Narration and music are optional", "Prefer Edge TTS", "Use Piper", "Estimate before rendering", "review the final MP4", "requested duration tolerance"} {
 				if !strings.Contains(normalizedText, required) {
 					t.Errorf("%s lacks %q", file, required)
 				}

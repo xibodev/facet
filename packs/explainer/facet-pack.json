@@ -9,7 +9,7 @@
     "runtimes": ["remotion"]
   },
   "declarations": {
-    "suggestedTools": ["flux_image", "openai_image", "output_review", "video_compose"],
+    "suggestedTools": ["edge_tts", "flux_image", "openai_image", "output_review", "piper_tts", "video_compose"],
     "networkIntent": "provider-optional",
     "costIntent": "may-charge-optional",
     "filesystemIntent": "project-local"

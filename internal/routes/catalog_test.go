@@ -432,6 +432,132 @@ func TestLocalExplainerAcceptsTextOnlyTitleAndSubtitle(t *testing.T) {
 	}
 }
 
+func TestExplainerOffersExplicitEdgeAndPiperNarrationRoutes(t *testing.T) {
+	method, ok := Find("explainer")
+	if !ok {
+		t.Fatal("explainer method is missing")
+	}
+	want := map[string]struct {
+		narrator string
+		network  bool
+	}{
+		"edge-narrated-explainer":  {narrator: "edge_tts", network: true},
+		"piper-narrated-explainer": {narrator: "piper_tts", network: false},
+	}
+	for _, route := range method.Routes {
+		expected, ok := want[route.ID]
+		if !ok {
+			continue
+		}
+		if !reflect.DeepEqual(route.Operations, []string{expected.narrator, "video_compose", "output_review"}) {
+			t.Errorf("%s operations = %v", route.ID, route.Operations)
+		}
+		var narrationBinding bool
+		for _, binding := range route.Bindings {
+			if binding.FromOperation == expected.narrator &&
+				binding.ArtifactKind == "narration" &&
+				binding.ToOperation == "video_compose" &&
+				binding.ToParameter == "audio.narration.src" {
+				narrationBinding = true
+			}
+		}
+		if !narrationBinding {
+			t.Errorf("%s does not bind narration into video_compose", route.ID)
+		}
+		assessment, err := Describe("explainer")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, candidate := range assessment.Routes {
+			if candidate.ID == route.ID && candidate.Network != expected.network {
+				t.Errorf("%s network = %v, want %v", route.ID, candidate.Network, expected.network)
+			}
+		}
+		delete(want, route.ID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing narrated explainer routes: %v", want)
+	}
+}
+
+func TestNarratedExplainerRequestsAreConstructible(t *testing.T) {
+	method, ok := Find("explainer")
+	if !ok {
+		t.Fatal("explainer method is missing")
+	}
+	tests := []struct {
+		routeID   string
+		narrator  string
+		audioPath string
+		request   json.RawMessage
+	}{
+		{
+			routeID:   "edge-narrated-explainer",
+			narrator:  "edge_tts",
+			audioPath: "narration/voice.mp3",
+			request:   json.RawMessage(`{"text":"Approved script","voice":"en-US-AriaNeural","output_path":"narration/voice.mp3"}`),
+		},
+		{
+			routeID:   "piper-narrated-explainer",
+			narrator:  "piper_tts",
+			audioPath: "narration/voice.wav",
+			request:   json.RawMessage(`{"text":"Approved script","output_path":"narration/voice.wav"}`),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.routeID, func(t *testing.T) {
+			var route Route
+			for _, candidate := range method.Routes {
+				if candidate.ID == tc.routeID {
+					route = candidate
+					break
+				}
+			}
+			if route.ID == "" {
+				t.Fatalf("route %s is missing", tc.routeID)
+			}
+			compose := json.RawMessage(`{
+				"composition_id":"Explainer",
+				"duration_seconds":2,
+				"cuts":[{"type":"text_card","text":"Approved script","in_seconds":0,"out_seconds":2}],
+				"audio":{"narration":{"src":"` + tc.audioPath + `"}},
+				"output":"renders/final.mp4"
+			}`)
+			got, err := assess(
+				[]Method{{ID: method.ID, Title: method.Title, Pack: method.Pack, Routes: []Route{route}}},
+				operationMap([]toolbox.V2Operation{
+					{ID: tc.narrator, Produces: []string{"narration"}},
+					{ID: "video_compose", Produces: []string{"render_video"}},
+					{ID: "output_review"},
+				}),
+				Request{
+					Method: "explainer",
+					Inputs: map[string]json.RawMessage{
+						"script": json.RawMessage(`"Approved script"`),
+					},
+					OperationRequests: map[string]json.RawMessage{
+						tc.narrator:     tc.request,
+						"video_compose": compose,
+						"output_review": json.RawMessage(`{"input":"renders/final.mp4"}`),
+					},
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assessment := got.Methods[0].Routes[0]
+			if assessment.Status != StatusFeasible {
+				t.Fatalf("%s status = %s, want feasible: %#v", tc.routeID, assessment.Status, assessment)
+			}
+			for _, binding := range assessment.Bindings {
+				if !binding.Constructible {
+					t.Fatalf("%s binding is not constructible: %#v", tc.routeID, binding)
+				}
+			}
+		})
+	}
+}
+
 func TestEntryRequestRequiresCanonicalShapeBeforeEstimate(t *testing.T) {
 	methods := []Method{{
 		ID: "explainer", Title: "Explainer", Pack: "explainer",
