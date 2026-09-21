@@ -28,7 +28,7 @@ func TestSceneRequestCarriesOutputDimensions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	props := map[string]any{"theme": "flat-motion-graphics", "cuts": []any{}}
+	props := map[string]any{"cuts": []any{}}
 	for _, k := range []string{"width", "height", "fps"} {
 		if v, ok := raw[k].(float64); ok && v > 0 {
 			props[k] = v

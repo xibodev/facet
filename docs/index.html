@@ -141,7 +141,7 @@
     <section id="packs" class="white">
       <div class="wrap">
         <h2>Production Packs</h2>
-        <p class="intro">Packs contain instructions, pipeline definitions, and supporting content. The Facet skill directs your agent to the relevant pack for the task. Optional tools and providers have their own requirements.</p>
+        <p class="intro">Packs contain Facet-owned, method-specific guidance and supporting content. The Facet skill directs your agent to relevant guidance for the task. Optional tools and providers have their own requirements.</p>
         <div class="grid">
           <article class="card" data-pack="explainer"><h3>Animated Explainer</h3><code class="package">@xibodev/facet-pack-explainer</code><p>Topic explainers, diagrams, text cards, comparisons, and charts using Remotion.</p><p class="condition">Requires the installed composer, its npm dependencies, and a supported browser. Narration needs a working speech route.</p></article>
           <article class="card" data-pack="cinematic"><h3>Cinematic &amp; Documentary</h3><code class="package">@xibodev/facet-pack-cinematic</code><p>Montages of supplied, sourced, or generated images and footage, with grading and audio mixing.</p><p class="condition">Source media must be available and licensed for your use. Generated shots require a separately configured provider.</p></article>
@@ -156,7 +156,7 @@
     <section id="quickstart">
       <div class="wrap">
         <h2>Recommended Installation</h2>
-        <p class="intro">Use Facet with your agentic CLI. The interactive installer supports OpenCode, Codex, Claude Code, and GitHub Copilot CLI, and lets you choose the optional production tools you need.</p>
+        <p class="intro">Use Facet with your agentic CLI. The interactive installer supports OpenCode, Codex, Claude Code, and GitHub Copilot CLI, and defaults to a complete local production runtime.</p>
         <p>Paste the command for your platform into a terminal. It downloads and checksum-verifies the installer package, then opens interactive setup.</p>
         <div class="grid">
           <div class="card"><h3>Windows (PowerShell)</h3><pre><code id="install-windows">irm https://xibodev.github.io/facet/install.ps1 | iex</code></pre><button type="button" class="button" data-copy="install-windows">Copy Windows command</button></div>
@@ -164,9 +164,9 @@
         </div>
         <p id="copy-status" role="status" aria-live="polite"></p>
         <p><a href="https://github.com/xibodev/facet/releases/download/v1.0.4/facet-installer-1.0.4.zip">Download Installer ZIP v1.0.4</a> &middot; <a href="docs.html#install">Manual installation and details</a></p>
-        <h3>Optional Dependencies</h3>
-        <p>Local editing and rendering do not require media-provider API keys. Optional generation services may require separate credentials, account access, or credits. The installer explains optional downloads, and tools report missing configuration when you use them.</p>
-        <p>Select Remotion, Piper, gflow, or HyperFrames as needed. The dependency selection lists approximate download sizes and what each component adds.</p>
+        <h3>Production Runtime</h3>
+        <p>The recommended setup installs FFmpeg/FFprobe, Remotion with its browser, and Piper as an offline narration fallback. Edge TTS support is built into Facet and is preferred when network processing is acceptable.</p>
+        <p>You can customize the component selection or use the advanced core-only profile. gflow, HyperFrames, and credentialed generation providers remain optional.</p>
       </div>
     </section>
     <section id="other-agents" class="white">

@@ -276,9 +276,6 @@ func isBundleRoot(dir string) bool {
 	if fi, err := os.Stat(filepath.Join(dir, "skills")); err == nil && fi.IsDir() {
 		return true
 	}
-	if fi, err := os.Stat(filepath.Join(dir, "pipeline_defs")); err == nil && fi.IsDir() {
-		return true
-	}
 	return false
 }
 

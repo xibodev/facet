@@ -1,7 +1,7 @@
 {
   "name": "@xibodev/facet-pack-screendemo",
   "version": "1.0.0",
-  "description": "Software walkthroughs, synthetic screen recordings, cursor highlights, and UI demo video pipeline for Facet.",
+  "description": "Facet guidance for software walkthroughs, screen recordings, cursor highlights, and UI demos.",
   "keywords": ["facet", "facet-pack", "screen-demo", "screencast", "video"],
   "author": "Facet Authors",
   "license": "Apache-2.0",

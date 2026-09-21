@@ -6,16 +6,47 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	facet "github.com/xibodev/facet"
 )
 
 func testSource(t *testing.T) Source {
 	t.Helper()
 	return Source{
 		SkillsDir:    filepath.Join("..", "..", "skills", "facet"),
-		SkillsRoot:   filepath.Join("..", "..", "skills"),
 		PacksDir:     filepath.Join("..", "..", "packs"),
 		Tools:        []string{"video_compose", "media_probe", "edge_tts"},
 		FacetVersion: "1.0.2-test",
+	}
+}
+
+func TestBundleProjectsOnlyCanonicalRetainedPacks(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Build(testSource(t), TargetClaude, dir); err != nil {
+		t.Fatal(err)
+	}
+	for _, pack := range facet.RetainedPacks() {
+		for _, guidance := range pack.Guidance {
+			rel, err := filepath.Rel(filepath.Join("packs", pack.ID), filepath.FromSlash(guidance.Path))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "skills", pack.ID, rel)); err != nil {
+				t.Errorf("bundle omits canonical guidance %s: %v", guidance.Path, err)
+				continue
+			}
+			got, err := os.ReadFile(filepath.Join(dir, "skills", pack.ID, rel))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := facet.Guidance(guidance.Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != want {
+				t.Errorf("bundle guidance drifted from canonical content: %s", guidance.Path)
+			}
+		}
 	}
 }
 
@@ -55,7 +86,7 @@ func TestBundleCarriesIdentityAndProvenance(t *testing.T) {
 func TestEachTargetGetsItsNativeShape(t *testing.T) {
 	want := map[Target]struct{ instruction, root string }{
 		TargetClaude:   {"CLAUDE.md", ".claude"},
-		TargetCodex:    {"AGENTS.md", ".codex"},
+		TargetCodex:    {"AGENTS.md", ".agents"},
 		TargetCopilot:  {"copilot-instructions.md", ".github"},
 		TargetOpenCode: {"AGENTS.md", ".opencode"},
 	}
@@ -237,64 +268,44 @@ func TestManifestDescribesTheDirectory(t *testing.T) {
 	}
 }
 
+func TestBuiltBundlesContainOnlyCanonicalFacetContent(t *testing.T) {
+	banned := []string{"Open" + "Montage", "Video" + " Kit"}
+	for _, target := range Targets() {
+		t.Run(string(target), func(t *testing.T) {
+			dir := t.TempDir()
+			manifest, err := Build(testSource(t), target, dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, entry := range manifest.Entries {
+				name := filepath.ToSlash(entry.Path)
+				for _, legacy := range []string{"pipeline_defs/", "styles/", "skills/core/", "skills/creative/", "skills/meta/", "skills/pipelines/", ".agents/skills/"} {
+					if strings.Contains(name, legacy) {
+						t.Errorf("bundle contains removed surface %s", name)
+					}
+				}
+				switch strings.ToLower(filepath.Ext(name)) {
+				case ".json", ".md", ".yaml", ".yml":
+				default:
+					continue
+				}
+				data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(entry.Path)))
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, term := range banned {
+					if strings.Contains(strings.ToLower(string(data)), strings.ToLower(term)) {
+						t.Errorf("%s contains banned donor term %q", name, term)
+					}
+				}
+			}
+		})
+	}
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a
 	}
 	return b
-}
-
-// A SHIPPED PIPELINE'S REQUIRED SKILLS MUST SHIP WITH IT.
-//
-// The bundle shipped animated-explainer.yaml declaring 11 required_skills and
-// NONE of them: 113 of 160 skill files projected, every explainer director and
-// every meta skill absent. A pipeline referencing files that are not there is a
-// contract with nothing behind it, and it fails SILENTLY -- the agent does not
-// error, it improvises, which is exactly what a real target CLI did when it
-// reverse-engineered the request shape from Go source instead.
-//
-// The manifest was internally consistent the whole time. TestManifestDescribes
-// TheDirectory passed, because it asks whether the bundle matches its own
-// manifest, not whether the bundle is COHERENT.
-func TestShippedPipelinesHaveTheirRequiredSkills(t *testing.T) {
-	dir := t.TempDir()
-	src := testSource(t)
-	src.SkillsRoot = filepath.Join("..", "..", "skills")
-	if _, err := Build(src, TargetClaude, dir); err != nil {
-		t.Fatal(err)
-	}
-
-	refs, err := requiredSkills(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// A bundle whose pipelines require nothing would make this check vacuous.
-	if len(refs) == 0 {
-		t.Fatal("no pipeline in the bundle declares required_skills; this check has no subject")
-	}
-
-	for _, ref := range refs {
-		p := filepath.Join(dir, "skills", filepath.FromSlash(ref)+".md")
-		if _, err := os.Stat(p); err != nil {
-			t.Errorf("a shipped pipeline requires %q and the bundle does not contain it; "+
-				"the agent reads guidance pointing at a file that is not there", ref)
-		}
-	}
-	t.Logf("verified %d required skills all present", len(refs))
-}
-
-// A pipeline naming a skill that cannot be resolved must FAIL the build rather
-// than ship guidance pointing at nothing.
-func TestUnresolvableSkillFailsTheBuild(t *testing.T) {
-	src := testSource(t)
-	// Point the skills root somewhere real but wrong: pipelines will resolve
-	// none of their requirements from here.
-	src.SkillsRoot = t.TempDir()
-	_, err := Build(src, TargetClaude, t.TempDir())
-	if err == nil {
-		t.Fatal("a bundle whose pipeline requirements cannot be resolved was built successfully")
-	}
-	if !strings.Contains(err.Error(), "does not resolve") {
-		t.Errorf("error does not name the unresolved requirement: %v", err)
-	}
 }

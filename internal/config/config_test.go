@@ -170,6 +170,18 @@ func TestRunDoctor(t *testing.T) {
 	}
 }
 
+func TestEdgeTTSDoctorDistinguishesBuiltInClientFromServiceReachability(t *testing.T) {
+	got := probeEdgeTTS()
+	if !got.Available || got.Status != StatusOK {
+		t.Fatalf("built-in Edge TTS client should be available: %#v", got)
+	}
+	for _, want := range []string{"built-in", "network", "not tested"} {
+		if !strings.Contains(strings.ToLower(got.Details), want) {
+			t.Errorf("Edge TTS details %q do not mention %q", got.Details, want)
+		}
+	}
+}
+
 func TestRunInit(t *testing.T) {
 	// Create a dummy bundle directory with skills
 	bundleDir := t.TempDir()
@@ -187,68 +199,54 @@ func TestRunInit(t *testing.T) {
 		writeConfigFixture(t, filepath.Join(bundleDir, "packs", name, "SKILL.md"), "# Pack")
 	}
 
-	// 1. Test Claude engine init
-	t.Run("ClaudeEngine", func(t *testing.T) {
-		projectDir := filepath.Join(t.TempDir(), "claude-project")
-		var buf bytes.Buffer
-		res, err := RunInitWithWriter(projectDir, "claude", cfg, &buf)
-		if err != nil {
-			t.Fatalf("RunInitWithWriter failed: %v", err)
-		}
-
-		if res.Engine != "claude" {
-			t.Errorf("expected engine claude, got %s", res.Engine)
-		}
-		if _, err := os.Stat(filepath.Join(projectDir, ".facet.yaml")); err != nil {
-			t.Errorf("expected .facet.yaml in project dir: %v", err)
-		}
-		if _, err := os.Stat(filepath.Join(projectDir, "artifacts", "brief.md")); err != nil {
-			t.Errorf("expected artifacts/brief.md in project dir: %v", err)
-		}
-		if _, err := os.Stat(filepath.Join(projectDir, "assets")); err != nil {
-			t.Errorf("expected assets dir: %v", err)
-		}
-		if _, err := os.Stat(filepath.Join(projectDir, ".claude", "skills", "facet")); err != nil {
-			t.Errorf("expected .claude/skills/facet dir or link: %v", err)
-		}
-	})
-
-	// 2. Test OpenCode engine init
-	t.Run("OpenCodeEngine", func(t *testing.T) {
-		projectDir := filepath.Join(t.TempDir(), "opencode-project")
-		var buf bytes.Buffer
-		res, err := RunInitWithWriter(projectDir, "opencode", cfg, &buf)
-		if err != nil {
-			t.Fatalf("RunInitWithWriter failed: %v", err)
-		}
-
-		if res.Engine != "opencode" {
-			t.Errorf("expected engine opencode, got %s", res.Engine)
-		}
-		if _, err := os.Stat(filepath.Join(projectDir, ".opencode", "skills", "facet")); err != nil {
-			t.Errorf("expected .opencode/skills/facet dir or link: %v", err)
-		}
-	})
-
-	// 3. Test Copilot engine init
-	t.Run("CopilotEngine", func(t *testing.T) {
-		projectDir := filepath.Join(t.TempDir(), "copilot-project")
-		var buf bytes.Buffer
-		res, err := RunInitWithWriter(projectDir, "copilot", cfg, &buf)
-		if err != nil {
-			t.Fatalf("RunInitWithWriter failed: %v", err)
-		}
-
-		if res.Engine != "copilot" {
-			t.Errorf("expected engine copilot, got %s", res.Engine)
-		}
-		if _, err := os.Stat(filepath.Join(projectDir, ".github", "skills", "facet")); err != nil {
-			t.Errorf("expected .github/skills/facet dir or link: %v", err)
-		}
-		if _, err := os.Stat(filepath.Join(projectDir, ".github", "copilot-instructions.md")); err != nil {
-			t.Errorf("expected .github/copilot-instructions.md: %v", err)
-		}
-	})
+	adapters := []struct {
+		engine      string
+		skillsRoot  string
+		instruction string
+	}{
+		{"claude", ".claude/skills", "CLAUDE.md"},
+		{"copilot", ".github/skills", ".github/copilot-instructions.md"},
+		{"codex", ".agents/skills", "AGENTS.md"},
+		{"opencode", ".opencode/skills", "AGENTS.md"},
+		{"studio", "skills", "AGENTS.md"},
+	}
+	allInstructions := []string{"CLAUDE.md", "AGENTS.md", ".github/copilot-instructions.md"}
+	for _, adapter := range adapters {
+		t.Run("CoreOnly/"+adapter.engine, func(t *testing.T) {
+			projectDir := filepath.Join(t.TempDir(), adapter.engine+"-project")
+			var buf bytes.Buffer
+			res, err := RunInitWithWriter(projectDir, adapter.engine, cfg, &buf)
+			if err != nil {
+				t.Fatalf("RunInitWithWriter failed: %v", err)
+			}
+			if res.Engine != adapter.engine {
+				t.Errorf("expected engine %s, got %s", adapter.engine, res.Engine)
+			}
+			if len(res.Packs) != 0 {
+				t.Fatalf("default init activated packs: %v", res.Packs)
+			}
+			for _, path := range []string{".facet.yaml", "facet.lock.json", filepath.ToSlash(filepath.Join(adapter.skillsRoot, "facet", "SKILL.md")), adapter.instruction} {
+				if _, err := os.Stat(filepath.Join(projectDir, filepath.FromSlash(path))); err != nil {
+					t.Errorf("expected %s: %v", path, err)
+				}
+			}
+			for _, path := range []string{"assets", "artifacts", "renders", "narration"} {
+				if _, err := os.Stat(filepath.Join(projectDir, path)); !os.IsNotExist(err) {
+					t.Errorf("core-only init created unsolicited %s", path)
+				}
+			}
+			for _, instruction := range allInstructions {
+				_, err := os.Stat(filepath.Join(projectDir, filepath.FromSlash(instruction)))
+				if instruction == adapter.instruction {
+					if err != nil {
+						t.Errorf("selected instruction %s missing: %v", instruction, err)
+					}
+				} else if !os.IsNotExist(err) {
+					t.Errorf("%s init wrote unrelated governing file %s", adapter.engine, instruction)
+				}
+			}
+		})
+	}
 
 	// 4. Test InitWithOptions with packs and ownership
 	t.Run("PacksAndOwnership", func(t *testing.T) {
@@ -286,7 +284,7 @@ func TestRunInit(t *testing.T) {
 			t.Errorf("expected .claude/skills/explainer: %v", err)
 		}
 
-		// Verify CLAUDE.md and AGENTS.md were scaffolded with anti-drift directives
+		// Verify only the selected engine's governing file was scaffolded.
 		claudeFile := filepath.Join(projectDir, "CLAUDE.md")
 		claudeContent, err := os.ReadFile(claudeFile)
 		if err != nil {
@@ -312,9 +310,10 @@ func TestRunInit(t *testing.T) {
 			}
 		}
 
-		agentsFile := filepath.Join(projectDir, "AGENTS.md")
-		if _, err := os.Stat(agentsFile); err != nil {
-			t.Errorf("expected AGENTS.md: %v", err)
+		for _, unrelated := range []string{"AGENTS.md", ".github/copilot-instructions.md"} {
+			if _, err := os.Stat(filepath.Join(projectDir, filepath.FromSlash(unrelated))); !os.IsNotExist(err) {
+				t.Errorf("unexpected unrelated instruction file %s", unrelated)
+			}
 		}
 	})
 }
@@ -387,6 +386,7 @@ func TestPinnedPathsAndProjectDefaultsSurviveInit(t *testing.T) {
 	if cfg.Paths.Bundle != wantPaths.Bundle || cfg.Paths.RemotionComposer != wantPaths.RemotionComposer || cfg.Paths.FFmpeg != wantPaths.FFmpeg || cfg.Paths.Node != wantPaths.Node || cfg.Paths.OpenCode != wantPaths.OpenCode {
 		t.Fatalf("pinned paths overwritten: %+v", cfg.Paths)
 	}
+
 	if got := findPackSource("explainer", cfg); got != filepath.Join(bundle, "packs", "explainer") {
 		t.Fatalf("configured pack not preferred: %s", got)
 	}
@@ -403,5 +403,22 @@ func TestPinnedPathsAndProjectDefaultsSurviveInit(t *testing.T) {
 	}
 	if loaded.Paths != cfg.Paths || loaded.Defaults.Voice != "custom-voice" || loaded.Defaults.Resolution != "720x1280" || loaded.Defaults.FPS != 24 || loaded.Defaults.Engine != "opencode" {
 		t.Fatalf("custom project configuration lost: %+v", loaded)
+	}
+}
+
+func TestSelectedPackMustExistBeforeProjectWrites(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "project")
+	cfg := DefaultConfig()
+	cfg.Paths.Bundle = t.TempDir()
+	if _, err := RunInitWithOptions(InitOptions{
+		ProjectDir: project,
+		Engine:     "claude",
+		Packs:      []string{"missing"},
+	}, cfg, nil); err == nil {
+		t.Fatal("missing selected pack was accepted")
+	}
+	if _, err := os.Stat(project); !os.IsNotExist(err) {
+		t.Fatalf("failed pack selection wrote project files: %v", err)
 	}
 }

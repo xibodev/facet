@@ -228,7 +228,7 @@ func TestExternalWritesFailsClosed(t *testing.T) {
 
 	// And the projection must carry it: a probe writes nothing.
 	env := Invoke(CapToolsRun, []byte(
-		`{"tool":"media_probe","input":{"input":"../../projects/cinematic-documentary/assets/video/shot1_raw.mp4"}}`))
+		`{"tool":"media_probe","input":{"input":"../../assets/source.mp4"}}`))
 	if env.OK && env.Execution.ExternalWrites {
 		t.Error("media_probe run reported an external write")
 	}

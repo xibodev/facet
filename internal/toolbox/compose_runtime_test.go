@@ -192,7 +192,7 @@ setInterval(() => {}, 1000);
 	if err != nil || string(data) != "previous delivery" {
 		t.Fatalf("previous delivery lost: %q, %v", data, err)
 	}
-	for _, pattern := range []string{".videokit-*", ".remotion_props.json"} {
+	for _, pattern := range []string{".facet-*", ".remotion_props.json"} {
 		leftovers, err := filepath.Glob(filepath.Join(workspace, pattern))
 		if err != nil || len(leftovers) != 0 {
 			t.Fatalf("temporary artifacts left behind: %v, %v", leftovers, err)

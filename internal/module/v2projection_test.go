@@ -241,7 +241,7 @@ func TestCostKnownComesFromTheEstimateNotFromMayCharge(t *testing.T) {
 	// the point of this block.
 	//
 	// In today's tool set may_charge and cost_known are exact inverses for all
-	// 35 tools, so `cost_known = !may_charge` produces byte-identical output
+	// canonical tools, so `cost_known = !may_charge` produces byte-identical output
 	// and every value assertion passes. Measured, not assumed: a mutation
 	// doing exactly that survived the whole suite.
 	//
@@ -339,20 +339,20 @@ func TestSerializedArtifactKindsCarryNoValidator(t *testing.T) {
 	}
 }
 
-// Authoring formats must NOT be projected as emitted artifacts, and must not
-// be deleted from the frozen v1 field either.
-func TestAuthoringSchemasAreNotProjectedAsEmitted(t *testing.T) {
+// Workflow authoring formats are not Facet tool outputs and must not be
+// projected through either module contract.
+func TestWorkflowAuthoringSchemasAreNotProjected(t *testing.T) {
 	d := serializedV2(t)
-	if len(d.ArtifactSchemas) < 20 {
-		t.Errorf("artifact_schemas has %d entries; the v1 contract published 21 and nothing may be deleted",
+	if len(d.ArtifactSchemas) != 1 {
+		t.Errorf("artifact_schemas has %d entries, want only the emitted output kind",
 			len(d.ArtifactSchemas))
 	}
 	for _, authoring := range []string{"brief", "scene_plan", "script", "review", "decision_log", "rig_plan"} {
 		if _, ok := d.ArtifactKinds[authoring]; ok {
 			t.Errorf("%q is an authoring format declared as an EMITTED artifact kind", authoring)
 		}
-		if _, ok := d.ArtifactSchemas[authoring]; !ok {
-			t.Errorf("%q was dropped from artifact_schemas; the v1 contract is frozen", authoring)
+		if _, ok := d.ArtifactSchemas[authoring]; ok {
+			t.Errorf("%q is a workflow authoring schema retained in artifact_schemas", authoring)
 		}
 	}
 }
@@ -372,8 +372,8 @@ func TestVideoComposeIsMultiImplementationNotComposite(t *testing.T) {
 	}
 }
 
-// All 35 public tool names survive. v2 adds a semantic layer beside the
-// capability surface; it renames nothing.
+// All canonical public tool names survive. v2 adds a semantic layer beside
+// the capability surface; compatibility aliases do not become Operations.
 func TestPublicToolNamesUnchangedByV2(t *testing.T) {
 	byID := v2ByID(serializedV2(t))
 	for _, n := range toolbox.Names() {

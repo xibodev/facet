@@ -40,7 +40,6 @@ type PackInfo struct {
 	Name        string   `json:"name"`
 	Version     string   `json:"version"`
 	Description string   `json:"description"`
-	Pipelines   []string `json:"pipelines"`
 	Skills      []string `json:"skills"`
 	Installed   bool     `json:"installed"`
 }
@@ -261,17 +260,15 @@ func DiscoverAvailablePacks(rootDir string) []PackInfo {
 			ID:          "explainer",
 			Name:        "Animated Explainer",
 			Version:     "1.0.0",
-			Description: "2D animated explainer pipeline with motion graphics, text cards, charts, and Remotion composition.",
-			Pipelines:   []string{"animated-explainer"},
-			Skills:      []string{"explainer", "explainer-producer"},
+			Description: "Facet-owned guidance for 2D explainers and motion graphics.",
+			Skills:      []string{"explainer"},
 			Installed:   true,
 		},
 		{
 			ID:          "cinematic",
 			Name:        "Cinematic & Documentary",
 			Version:     "1.0.0",
-			Description: "Cinematic documentary montage, Wikimedia public domain sourcing, color grading, and video stitching.",
-			Pipelines:   []string{"cinematic", "documentary-montage"},
+			Description: "Facet-owned guidance for source-led cinematic and documentary editing.",
 			Skills:      []string{"cinematic"},
 			Installed:   true,
 		},
@@ -279,8 +276,7 @@ func DiscoverAvailablePacks(rootDir string) []PackInfo {
 			ID:          "screen-demo",
 			Name:        "Screen Demo & Walkthrough",
 			Version:     "1.0.0",
-			Description: "Software walkthroughs, synthetic terminal screen recording, UI highlights, and feature demos.",
-			Pipelines:   []string{"screen-demo"},
+			Description: "Facet-owned guidance for recorded and synthetic software demos.",
 			Skills:      []string{"screen-demo"},
 			Installed:   true,
 		},
@@ -288,8 +284,7 @@ func DiscoverAvailablePacks(rootDir string) []PackInfo {
 			ID:          "talking-head",
 			Name:        "Talking Head & Avatar",
 			Version:     "1.0.0",
-			Description: "AI presenter videos, lip-sync, teleprompter scripts, and Edge/Azure neural narration.",
-			Pipelines:   []string{"talking-head", "avatar-spokesperson"},
+			Description: "Facet-owned guidance for presenter-led and consented avatar video.",
 			Skills:      []string{"talking-head"},
 			Installed:   true,
 		},
@@ -297,8 +292,7 @@ func DiscoverAvailablePacks(rootDir string) []PackInfo {
 			ID:          "social",
 			Name:        "Social & Short-Form",
 			Version:     "1.0.0",
-			Description: "Short-form vertical video, viral clips, podcast repurposing, and caption burn-in pipeline.",
-			Pipelines:   []string{"clip-factory", "podcast-repurpose"},
+			Description: "Facet-owned guidance for short-form source repurposing.",
 			Skills:      []string{"social"},
 			Installed:   true,
 		},
@@ -306,17 +300,15 @@ func DiscoverAvailablePacks(rootDir string) []PackInfo {
 			ID:          "character-animation",
 			Name:        "2D Character Animation",
 			Version:     "1.0.0",
-			Description: "2D character animation, SVG rigging, pose libraries, and action cycle pipelines.",
-			Pipelines:   []string{"character-animation", "animation"},
-			Skills:      []string{"animation"},
+			Description: "Facet-owned guidance for character-led 2D animation.",
+			Skills:      []string{"character-animation"},
 			Installed:   true,
 		},
 		{
 			ID:          "localization",
 			Name:        "Video Localization & Dubbing",
 			Version:     "1.0.0",
-			Description: "Multilingual dubbing, subtitle translation, and voice localization pipeline.",
-			Pipelines:   []string{"localization-dub"},
+			Description: "Facet-owned guidance for subtitles, dubbing, and localized variants.",
 			Skills:      []string{"localization"},
 			Installed:   true,
 		},
@@ -372,9 +364,6 @@ func scanPacksDir(dir string, out map[string]PackInfo) {
 				Skills []struct {
 					ID string `json:"id"`
 				} `json:"skills"`
-				Pipelines []struct {
-					ID string `json:"id"`
-				} `json:"pipelines"`
 			} `json:"exports"`
 		}
 
@@ -393,17 +382,11 @@ func scanPacksDir(dir string, out map[string]PackInfo) {
 			skills = append(skills, s.ID)
 		}
 
-		pipelines := make([]string, 0, len(raw.Exports.Pipelines))
-		for _, p := range raw.Exports.Pipelines {
-			pipelines = append(pipelines, p.ID)
-		}
-
 		out[id] = PackInfo{
 			ID:          id,
 			Name:        name,
 			Version:     raw.Version,
 			Description: raw.Description,
-			Pipelines:   pipelines,
 			Skills:      skills,
 			Installed:   true,
 		}
@@ -448,9 +431,6 @@ func CreateNewProject(name, slug, baseDir, engine string, packs []string, rootDi
 	if engine == "" {
 		engine = "studio"
 	}
-	if len(packs) == 0 {
-		packs = []string{"explainer"}
-	}
 
 	opts := config.InitOptions{
 		ProjectDir: targetDir,
@@ -474,7 +454,7 @@ func OpenExistingProject(targetPath, engine string, rootDir ...string) (*Catalog
 	}
 
 	// Try reading facet.lock.json to discover engine and packs
-	packs := []string{"explainer"}
+	var packs []string
 	lockPath := filepath.Join(targetPath, "facet.lock.json")
 	if data, err := os.ReadFile(lockPath); err == nil {
 		var lock config.ProjectLock

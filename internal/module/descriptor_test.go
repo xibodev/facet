@@ -66,23 +66,8 @@ func TestDescriptorSatisfiesHostRules(t *testing.T) {
 			t.Errorf("capability %s skills is null; must be []", c.ID)
 		}
 
-		// long_running and poll_capability must agree in both directions: a
-		// long-running capability the host cannot poll is unobservable, and a
-		// poll target on a fast capability is a contract the module will not
-		// honour.
-		if c.LongRunning && c.PollCapability == "" {
-			t.Errorf("capability %s is long_running but names no poll capability", c.ID)
-		}
-		if !c.LongRunning && c.PollCapability != "" {
-			t.Errorf("capability %s is not long_running but names %q", c.ID, c.PollCapability)
-		}
-	}
-
-	// A poll capability must be one the module actually offers.
-	for _, c := range d.Capabilities {
-		if c.PollCapability != "" && !ids[c.PollCapability] {
-			t.Errorf("capability %s polls %q, which this module does not provide",
-				c.ID, c.PollCapability)
+		if c.LongRunning || c.PollCapability != "" {
+			t.Errorf("per-invocation module advertises unsupported lifecycle for %s", c.ID)
 		}
 	}
 

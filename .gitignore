@@ -19,7 +19,6 @@ build/
 bin/facet-*
 bin/facet
 bin/facet-ui
-bin/videokit
 !bin/*.js
 
 # Media produced by tests or ad-hoc runs. Two paid-generation images were

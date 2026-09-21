@@ -84,20 +84,21 @@ curl -fsSL https://xibodev.github.io/facet/install.sh | sh</code></pre>
         <p>The website bootstrap downloads and checksum-verifies the v1.0.4 installer package, then launches its interactive installer. The installer selects the matching prebuilt Windows, Linux, or macOS bundle for x64 or ARM64. The Unix one-liner requires an interactive terminal for its prompts.</p>
         <h3>Manual Installation</h3>
         <p><a href="https://github.com/xibodev/facet/releases/download/v1.0.4/facet-installer-1.0.4.zip">Download the installer ZIP</a>, extract it, and run <code>./install.ps1</code> in PowerShell or <code>bash ./install.sh</code> from the extracted folder. Keep its <code>installer/</code> directory beside the scripts. Only the website bootstrap supports piping. See <a href="https://github.com/xibodev/facet/releases/tag/v1.0.4">release assets and SHA-256 checksums</a> for manual/offline downloads.</p>
-        <p>Use arrow keys and Enter to choose your CLI; Space toggles optional tools. Rerun setup to add components, repair, or update. For an existing v1.0.3 project, accept the explicit backup migration and choose <strong>update</strong>. Set <code>FACET_PLAIN=1</code> for plain prompts.</p>
+        <p>Use arrow keys and Enter to choose your CLI; Space toggles production components. The recommended defaults install Remotion and the Piper offline fallback. Rerun setup to add components, repair, or update. For an existing v1.0.3 project, accept the explicit backup migration and choose <strong>update</strong>. Set <code>FACET_PLAIN=1</code> for plain prompts.</p>
         <ol>
           <li>Select your CLI and the project folder that should use Facet.</li>
-          <li>Choose optional dependencies from the list of capabilities and approximate download sizes.</li>
+          <li>Review the default production runtime and change its components if needed.</li>
           <li>Review the installation summary and any dependency installation commands.</li>
           <li>Start a new agent session in the configured project and ask it to use Facet.</li>
         </ol>
         <p>The installer uses prebuilt Facet binaries and preserves existing user instructions and project configuration. It assumes your CLI is already authenticated.</p>
-        <h3>Optional Dependencies</h3>
-        <p>Local editing and rendering do not require media-provider API keys. Optional generation services may require separate credentials, account access, or credits. The installer explains optional downloads, and tools report missing configuration when you use them.</p>
+        <h3>Production Runtime</h3>
+        <p>Local editing and rendering do not require media-provider API keys. The default setup includes Remotion and Piper alongside required FFmpeg/FFprobe. Edge TTS is built into Facet and uses a keyless network service; setup does not test service reachability. Optional generation services may require separate credentials, account access, or credits.</p>
         <ul>
           <li><strong>FFmpeg and FFprobe:</strong> core media editing and inspection.</li>
           <li><strong>Remotion:</strong> animated compositions and rendered captions, with its browser and Node.js/npm dependencies.</li>
-          <li><strong>Piper:</strong> local speech synthesis, with an optional runtime and voice-model download.</li>
+          <li><strong>Edge TTS:</strong> preferred natural narration when network processing is acceptable; its client is built into Facet.</li>
+          <li><strong>Piper:</strong> installed offline speech fallback with a pinned voice-model download.</li>
           <li><strong>gflow:</strong> optional image/video generation through its supported providers.</li>
           <li><strong>HyperFrames:</strong> HTML-based video rendering.</li>
         </ul>
@@ -186,10 +187,10 @@ facet tools run &lt;tool-name&gt; --input request.json</code></pre>
             <li><a href="https://github.com/xibodev/facet/blob/main/internal/toolbox/compose.go">Composition request handling and renderer invocation</a></li>
             <li><a href="https://github.com/xibodev/facet/blob/main/remotion-composer/src/Root.tsx">Remotion composition registration, default props, and themes</a></li>
             <li><a href="https://github.com/xibodev/facet/blob/main/remotion-composer/src/Explainer.tsx">Explainer scene types and rendering</a></li>
-            <li><a href="https://github.com/xibodev/facet/tree/main/schemas/artifacts">Artifact JSON schemas</a> and <a href="https://github.com/xibodev/facet/tree/main/schemas/tools">standalone tool JSON schemas</a></li>
+            <li><a href="https://github.com/xibodev/facet/tree/main/schemas/tools">Standalone tool JSON schemas</a></li>
             <li><a href="https://github.com/xibodev/facet/blob/main/internal/toolbox/visual_qa.go">Technical output review implementation</a></li>
             <li><a href="https://github.com/xibodev/facet/blob/main/internal/toolbox/gflow.go">Google Flow request validation and error handling</a></li>
-            <li><a href="https://github.com/xibodev/facet/blob/main/skills/facet/SKILL.md">Core producer guidance</a> and <a href="https://github.com/xibodev/facet/tree/main/pipeline_defs">pipeline definitions</a></li>
+            <li><a href="https://github.com/xibodev/facet/blob/main/skills/facet/SKILL.md">Core producer guidance</a> and <a href="https://github.com/xibodev/facet/tree/main/packs">production packs</a></li>
           </ul>
           <p>Links point to the source branch, which may differ from your installation. Use the matching checkout revision when debugging. No single page here claims complete API coverage.</p>
         </details>

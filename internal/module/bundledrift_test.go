@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	facet "github.com/xibodev/facet"
 )
 
 // The installed bundle is a COPY, and it is what a real installation reads.
@@ -32,11 +34,9 @@ func TestInstalledBundleGuidanceIsCurrent(t *testing.T) {
 	}
 
 	repo := filepath.Join("..", "..")
-	for _, rel := range []string{
+	paths := []string{
 		filepath.Join("agents", "facet-creative.md"),
 		filepath.Join("skills", "facet", "SKILL.md"),
-		filepath.Join("packs", "explainer", "SCENE-TYPES.md"),
-		filepath.Join("packs", "explainer", "NARRATED-WALKTHROUGH.md"),
 		// The Remotion composer drifted worse than the guidance: the installed
 		// copy hardcoded `(lastEnd + 1) * 30` and ignored duration_seconds, so
 		// a 2-second plan rendered 3.000s through the installed path while the
@@ -44,9 +44,16 @@ func TestInstalledBundleGuidanceIsCurrent(t *testing.T) {
 		// binaries, identical request, different videos.
 		filepath.Join("remotion-composer", "src", "Root.tsx"),
 		filepath.Join("remotion-composer", "src", "Explainer.tsx"),
-		filepath.Join("remotion-composer", "src", "explainerMetadata.ts"),
+		filepath.Join("remotion-composer", "src", "contract.ts"),
+		filepath.Join("remotion-composer", "legacy-composer-manifest.json"),
 		filepath.Join("remotion-composer", "package.json"),
-	} {
+	}
+	for _, pack := range facet.RetainedPacks() {
+		for _, guidance := range pack.Guidance {
+			paths = append(paths, filepath.FromSlash(guidance.Path))
+		}
+	}
+	for _, rel := range paths {
 		want, err := os.ReadFile(filepath.Join(repo, rel))
 		if err != nil {
 			t.Errorf("declared guidance missing from the repository: %s", rel)

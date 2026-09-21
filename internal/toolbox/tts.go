@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -311,10 +312,7 @@ func doPiperTTSContext(parent context.Context, op string, data []byte) (any, []s
 		return nil, nil, failure("unconfigured", "piper binary is not available on PATH", nil)
 	}
 
-	model := r.Model
-	if model == "" {
-		model = "en_US-lessac-medium"
-	}
+	model := resolvePiperModel(r.Model)
 	lengthScale := r.LengthScale
 	if lengthScale <= 0 {
 		lengthScale = 1.0
@@ -366,4 +364,24 @@ func doPiperTTSContext(parent context.Context, op string, data []byte) (any, []s
 		"output":                 outPath,
 		"format":                 "wav",
 	}, nil, nil
+}
+
+func resolvePiperModel(requested string) string {
+	requested = strings.TrimSpace(requested)
+	configured := strings.TrimSpace(os.Getenv("FACET_PIPER_MODEL"))
+	if requested == "" {
+		if configured != "" {
+			return configured
+		}
+		return "en_US-lessac-medium"
+	}
+	if configured == "" {
+		return requested
+	}
+	requestedName := strings.TrimSuffix(filepath.Base(requested), filepath.Ext(requested))
+	configuredName := strings.TrimSuffix(filepath.Base(configured), filepath.Ext(configured))
+	if requestedName == configuredName {
+		return configured
+	}
+	return requested
 }

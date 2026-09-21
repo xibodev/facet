@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/xibodev/facet/internal/module"
 )
@@ -36,9 +35,6 @@ func main() {
 	if err := json.NewEncoder(os.Stdout).Encode(env); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
-	}
-	if module.HasRunningJobs() {
-		module.AwaitJobs(30 * time.Minute)
 	}
 	if !env.OK {
 		os.Exit(1)

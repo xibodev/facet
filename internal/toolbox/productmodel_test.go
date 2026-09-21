@@ -7,32 +7,19 @@ import (
 	"testing"
 )
 
-// FACET EXTENDS A REASONING RUNTIME; IT DOES NOT BECOME ONE.
-//
-// The reasoning driver owns conversation, planning, tool calling, permissions,
-// hooks, session handling and the conversation's model connection. Facet owns
-// media tools, creative assets, pipeline definitions, provider requirements,
-// effects and artifact verification.
-//
-// The failure this guards is not hypothetical: it is the easiest mistake to
-// make while building a standalone release, because standalone is the one shape
-// where no external driver is visible and writing "just a small planner" looks
-// like progress.
-//
-// Pipelines are INSTRUCTIONS to the driver, not a program Facet executes. If Go
-// code ever starts interpreting a pipeline, Facet has grown a second workflow
-// runtime and the driver's is now redundant.
-func TestFacetDoesNotExecutePipelines(t *testing.T) {
-	// Pipeline and style YAML live in packs/ and are read by the DRIVER.
-	// A Go file that walks pipeline steps is the signature of a runtime.
+// Facet supplies stateless media operations, production guidance, operation
+// requirements, effects, and artifact verification to a reasoning runtime.
+// Conversation, planning, sequencing, permissions, and session state remain
+// the runtime's responsibility.
+func TestFacetDoesNotImplementReasoningRuntime(t *testing.T) {
 	banned := []struct {
 		token  string
 		reason string
 	}{
-		{"pipelines/", "Go code referencing a pipelines/ path is reading what the driver should read"},
-		{"ExecutePipeline", "executing a pipeline is the driver's job"},
-		{"RunWorkflow", "running a workflow is the driver's job"},
-		{"planSteps", "planning a sequence is the driver's job"},
+		{"ExecutePipeline", "sequenced execution belongs to the reasoning runtime"},
+		{"ExecuteWorkflow", "sequenced execution belongs to the reasoning runtime"},
+		{"RunWorkflow", "sequenced execution belongs to the reasoning runtime"},
+		{"planSteps", "planning belongs to the reasoning runtime"},
 	}
 
 	var files []string
@@ -65,11 +52,6 @@ func TestFacetDoesNotExecutePipelines(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		// Strip comments before scanning. The first version matched raw text
-		// and fired on internal/bundle, which PACKAGES pipelines and explains
-		// so in a comment -- packaging is not executing, and a guard that
-		// cannot tell prose from code punishes the documentation that makes
-		// the rule legible.
 		body := stripGoComments(string(b))
 		for _, bad := range banned {
 			if strings.Contains(body, bad.token) {

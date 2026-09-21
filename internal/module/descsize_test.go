@@ -28,10 +28,7 @@ func TestDescriptorStaysSmall(t *testing.T) {
 	}
 }
 
-// Dropping the schema BODIES must not break the references into them, and must
-// not make a schema unverifiable: an ID alone proves a reference resolves but
-// says nothing about the document a host would then read.
-func TestArtifactSchemaReferencesStayResolvableAndVerifiable(t *testing.T) {
+func TestArtifactSchemaMapContainsOnlyEmittedKinds(t *testing.T) {
 	env := Describe("test")
 	if !env.OK {
 		t.Fatalf("describe failed: %+v", env.Error)
@@ -41,29 +38,19 @@ func TestArtifactSchemaReferencesStayResolvableAndVerifiable(t *testing.T) {
 		t.Fatalf("result is %T, not a Descriptor", env.Result)
 	}
 
-	for id, ref := range desc.ArtifactSchemas {
-		m, ok := ref.(map[string]any)
-		if !ok {
-			t.Errorf("artifact schema %q is %T, not a reference object", id, ref)
-			continue
-		}
-		// The emitted KIND is an entry with no file behind it: it names what a
-		// capability produces so the host can validate an artifact's kind, and
-		// the bytes ARE the artifact. Requiring a digest of a document that
-		// does not exist would force a fabricated one.
-		if id == ArtifactKindOutput {
-			if _, present := m["description"]; !present {
-				t.Errorf("%q carries no description; a host reading it learns nothing", id)
-			}
-			continue
-		}
-		digest, _ := m["digest"].(string)
-		if !ValidDigest(digest) {
-			t.Errorf("artifact schema %q digest %q is not sha256 hex", id, digest)
-		}
-		if n, _ := m["bytes"].(int); n <= 0 {
-			t.Errorf("artifact schema %q reports %v bytes", id, m["bytes"])
-		}
+	if len(desc.ArtifactSchemas) != 1 {
+		t.Fatalf("artifact_schemas = %v, want only the emitted output kind", desc.ArtifactSchemas)
+	}
+	ref, present := desc.ArtifactSchemas[ArtifactKindOutput]
+	if !present {
+		t.Fatalf("artifact_schemas does not declare %q", ArtifactKindOutput)
+	}
+	m, ok := ref.(map[string]any)
+	if !ok {
+		t.Fatalf("%q is %T, not a reference object", ArtifactKindOutput, ref)
+	}
+	if _, present := m["description"]; !present {
+		t.Errorf("%q carries no description; a host reading it learns nothing", ArtifactKindOutput)
 	}
 
 	// Every ID a capability names must still be a present key, or the host

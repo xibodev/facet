@@ -22,15 +22,14 @@ const maxDiagnostic = 8192
 
 var names = []string{
 	"audio_mix",
-	"audio_mixer",
 	"audio_probe",
 	"color_grade",
 	"direct_clip_search",
 	"edge_tts",
 	"elevenlabs_tts",
+	"ffmpeg_caption_burn",
 	"flux_image",
 	"frame_sample",
-	"frame_sampler",
 	"gflow_image",
 	"gflow_video",
 	"hyperframes_compose",
@@ -44,7 +43,6 @@ var names = []string{
 	"pexels_video",
 	"piper_tts",
 	"pixabay_video",
-	"remotion_caption_burn",
 	"scene_detect",
 	"silence_cutter",
 	"sora_video",
@@ -56,6 +54,11 @@ var names = []string{
 	"video_trimmer",
 	"visual_qa",
 	"wikimedia",
+}
+
+var compatibilityAliases = map[string]string{
+	"audio_mixer":   "audio_mix",
+	"frame_sampler": "frame_sample",
 }
 
 type Execution struct {
@@ -133,13 +136,8 @@ func executionFor(tool string) Execution {
 	case "color_grade":
 		provider = "ffmpeg"
 	case "direct_clip_search":
-		// AGGREGATOR: this tool contacts Pexels, Pixabay and Wikimedia in
-		// turn, whichever are configured. "openmontage" named a project this
-		// code no longer belongs to, so the host was told a dead name was the
-		// provider of a real network call it could not attribute.
-		//
-		// "multi_stock" says what a host can act on: the upstream is not one
-		// service, and naming any single one would be false for the other two.
+		// The tool contacts whichever configured stock services can satisfy
+		// the request, so no single provider name is accurate.
 		provider = "multi_stock"
 		network = true
 	case "edge_tts":
@@ -170,15 +168,12 @@ func executionFor(tool string) Execution {
 		network = true
 	case "piper_tts":
 		provider = "piper"
-	case "remotion_caption_burn":
-		provider = "remotion"
+	case "ffmpeg_caption_burn":
+		provider = "ffmpeg"
 	case "sora_video":
 		provider = "openai"
 		network = true
 	case "subtitle_gen":
-		// LOCAL: renderSRT/renderVTT write text on this machine and contact
-		// nothing. It carried "openmontage" — a name that both misattributed
-		// the work AND implied an external service for a tool that has none.
 		provider = "local"
 	case "video_selector":
 		provider = "selector"
@@ -343,6 +338,9 @@ func canonicalToolName(tool string) string {
 			return tool
 		}
 	}
+	if canonical, ok := compatibilityAliases[tool]; ok {
+		return canonical
+	}
 	switch tool {
 	case "edgetts", "edge-tts":
 		return "edge_tts"
@@ -376,6 +374,8 @@ func canonicalToolName(tool string) string {
 		return "piper_tts"
 	case "subtitle-gen", "subtitles":
 		return "subtitle_gen"
+	case "remotion_caption_burn", "remotion-caption-burn", "subtitle_burn", "subtitle-burn", "caption-burn":
+		return "ffmpeg_caption_burn"
 	case "scene-detect":
 		return "scene_detect"
 	case "silence-cutter":
@@ -403,7 +403,7 @@ func CLI(args []string) (Envelope, bool) {
 	if len(args) >= 1 && args[0] == "studio" {
 		return success("", "studio", map[string]any{
 			"command":      "studio",
-			"description":  "Video Kit Studio web interface",
+			"description":  "Facet Studio web interface",
 			"default_port": 8787,
 			"default_dir":  ".",
 		}, nil), true
@@ -435,7 +435,8 @@ func CLI(args []string) (Envelope, bool) {
 		if len(args) != 5 || args[3] != "--input" {
 			return bad("usage: facet tools " + op + " <tool> --input <request.json>")
 		}
-		tool = canonicalToolName(args[2])
+		requestedTool := strings.ToLower(strings.TrimSpace(args[2]))
+		tool = canonicalToolName(requestedTool)
 		if !known(tool) {
 			return bad("unknown tool: " + args[2])
 		}
@@ -453,7 +454,7 @@ func CLI(args []string) (Envelope, bool) {
 				return errorEnvelope(tool, op, failure("input_not_found", "request input could not be read", map[string]any{"path": args[4], "error": bounded(err.Error())})), false
 			}
 		}
-		result, warnings, err := execute(tool, op, data)
+		result, warnings, err := execute(invocationToolName(requestedTool), op, data)
 		if err != nil {
 			return errorEnvelope(tool, op, err), false
 		}
@@ -504,6 +505,14 @@ func known(name string) bool {
 		}
 	}
 	return false
+}
+
+func invocationToolName(requested string) string {
+	requested = strings.ToLower(strings.TrimSpace(requested))
+	if _, ok := compatibilityAliases[requested]; ok {
+		return requested
+	}
+	return canonicalToolName(requested)
 }
 
 // Resolution states. Operator ruling 7: Resolution is not Boolean, and the
@@ -602,7 +611,7 @@ func summary(name string) map[string]any {
 		deps = append(deps, dependency("ffmpeg"), dependency("ffprobe"))
 	case "color_grade":
 		deps = append(deps, dependency("ffmpeg"))
-	case "video_compose", "remotion_caption_burn":
+	case "video_compose":
 		// The Remotion composer is a real dependency and was never declared.
 		//
 		// Verified on a fresh install: video_compose reported configured:true
@@ -610,6 +619,8 @@ func summary(name string) map[string]any {
 		// dependency_missing because the composer had no node_modules. A tool
 		// that cannot render must not report itself ready.
 		deps = append(deps, dependency("ffmpeg"), dependency("node"), composerDependency())
+	case "ffmpeg_caption_burn":
+		deps = append(deps, dependency("ffmpeg"))
 	case "hyperframes_compose":
 		deps = append(deps, dependency("npx"), dependency("ffmpeg"))
 	case "music_library":
@@ -693,41 +704,41 @@ func dependenciesAvailable(deps []any) bool {
 }
 
 var capabilities = map[string]string{
-	"audio_mix":             "audio mixing",
-	"audio_mixer":           "audio mixing",
-	"audio_probe":           "audio metadata inspection",
-	"color_grade":           "FFmpeg LUT and color grading tool",
-	"direct_clip_search":    "stock clip search and download",
-	"edge_tts":              "free keyless Microsoft Edge neural text-to-speech synthesis",
-	"elevenlabs_tts":        "cloud text-to-speech synthesis",
-	"flux_image":            "cloud AI image generation via FLUX",
-	"frame_sample":          "review frame extraction",
-	"frame_sampler":         "frame extraction and sampling",
-	"gflow_image":           "Google Flow Imagen 4 / Nano Banana 2 image generation",
-	"gflow_video":           "Google Flow Veo 3.1 cinematic video generation and 4K upsampling",
-	"hyperframes_compose":   "HTML/CSS/GSAP video composition",
-	"image_selector":        "image provider discovery, facts, and explainable ranking",
-	"kling_video":           "cloud AI video generation via Kling",
-	"media_probe":           "media inspection",
-	"music_library":         "local music discovery and indexing",
-	"openai_image":          "cloud AI image generation via OpenAI DALL-E / GPT Image",
-	"openai_tts":            "cloud text-to-speech synthesis",
-	"output_review":         "technical output review",
-	"pexels_video":          "stock video search and download",
-	"piper_tts":             "local text-to-speech synthesis",
-	"pixabay_video":         "stock video search and download",
-	"remotion_caption_burn": "animated caption burning",
-	"scene_detect":          "scene cut and shot boundary detection",
-	"silence_cutter":        "silence detection and jump cut editing",
-	"sora_video":            "cloud AI video generation via Sora",
-	"source_edit":           "supplied-footage editing",
-	"subtitle_gen":          "subtitle generation (SRT/VTT/JSON)",
-	"video_compose":         "video composition orchestration",
-	"video_selector":        "video provider discovery, facts, duration limits, and explainable ranking",
-	"video_stitch":          "multi-clip assembly and transitions",
-	"video_trimmer":         "video trimming, speed, and concatenation",
-	"visual_qa":             "visual quality assurance and inspection",
-	"wikimedia":             "Wikimedia Commons stock search and download",
+	"audio_mix":           "audio mixing",
+	"audio_mixer":         "audio mixing",
+	"audio_probe":         "audio metadata inspection",
+	"color_grade":         "FFmpeg LUT and color grading tool",
+	"direct_clip_search":  "stock clip search and download",
+	"edge_tts":            "free keyless Microsoft Edge neural text-to-speech synthesis",
+	"elevenlabs_tts":      "cloud text-to-speech synthesis",
+	"flux_image":          "cloud AI image generation via FLUX",
+	"frame_sample":        "review frame extraction",
+	"frame_sampler":       "frame extraction and sampling",
+	"gflow_image":         "Google Flow Imagen 4 / Nano Banana 2 image generation",
+	"gflow_video":         "Google Flow Veo 3.1 cinematic video generation and 4K upsampling",
+	"hyperframes_compose": "HTML/CSS/GSAP video composition",
+	"image_selector":      "image provider discovery, facts, and explainable ranking",
+	"kling_video":         "cloud AI video generation via Kling",
+	"media_probe":         "media inspection",
+	"music_library":       "local music discovery and indexing",
+	"openai_image":        "cloud AI image generation via OpenAI DALL-E / GPT Image",
+	"openai_tts":          "cloud text-to-speech synthesis",
+	"output_review":       "technical output review",
+	"pexels_video":        "stock video search and download",
+	"piper_tts":           "local text-to-speech synthesis",
+	"pixabay_video":       "stock video search and download",
+	"ffmpeg_caption_burn": "FFmpeg subtitle and caption burning",
+	"scene_detect":        "scene cut and shot boundary detection",
+	"silence_cutter":      "silence detection and jump cut editing",
+	"sora_video":          "cloud AI video generation via Sora",
+	"source_edit":         "supplied-footage editing",
+	"subtitle_gen":        "subtitle generation (SRT/VTT/JSON)",
+	"video_compose":       "video composition orchestration",
+	"video_selector":      "video provider discovery, facts, duration limits, and explainable ranking",
+	"video_stitch":        "multi-clip assembly and transitions",
+	"video_trimmer":       "video trimming, speed, and concatenation",
+	"visual_qa":           "visual quality assurance and inspection",
+	"wikimedia":           "Wikimedia Commons stock search and download",
 }
 
 func description(name string) map[string]any {
@@ -795,17 +806,19 @@ var schemas = map[string]any{
 		"output_path": map[string]any{"type": "string"}, "transition": map[string]any{"enum": []string{"cut", "crossfade", "fade"}, "default": "cut"}, "transition_duration": map[string]any{"type": "number", "default": 0.5},
 		"auto_normalize": map[string]any{"type": "boolean", "default": false}, "layout": map[string]any{"enum": []string{"side_by_side", "vertical_stack", "picture_in_picture"}},
 	}},
-	"video_compose": map[string]any{"type": "object", "additionalProperties": false, "description": "Accepts an operation envelope (default compose), direct Remotion props with nonempty cuts, or a scene plan with nonempty scenes. Direct cuts take precedence over scenes and operation. Direct Explainer props support width, height, fps and duration_seconds; defaults are 1920x1080 at 30 fps, with one second padding after the last cut only when duration_seconds is omitted. Metadata validation runs in Remotion, not in estimates; estimates do not deeply validate props or prove a render will succeed.", "properties": map[string]any{
+	"video_compose": map[string]any{"type": "object", "additionalProperties": false, "description": "Accepts an operation envelope (default compose), direct Facet Explainer props with nonempty cuts, or a scene plan with nonempty scenes. The Remotion composer supports only text_card, hero_title, stat_card, and media. Direct cuts take precedence over scenes and operation. Width, height, fps, and duration_seconds are explicit; defaults are 1920x1080 at 30 fps and the last cut end. Estimates validate the reduced composer primitive, required fields, and timing shape before routing work; they do not prove a render will succeed because complete metadata validation also runs in Remotion.", "properties": map[string]any{
 		"operation": map[string]any{"enum": []string{"compose", "render", "remotion_render", "burn_subtitles", "overlay", "encode"}}, "input_path": map[string]any{"type": "string"}, "output_path": map[string]any{"type": "string"},
 		"edit_decisions": map[string]any{"type": "object"}, "asset_manifest": map[string]any{"type": "object"}, "audio_path": map[string]any{"type": "string"}, "subtitle_path": map[string]any{"type": "string"},
-		"output": stringSchema(), "composition_id": stringSchema(), "composition": stringSchema(), "theme": stringSchema(), "playbook": stringSchema(), "themeConfig": map[string]any{"type": "object"}, "style_playbook": stringSchema(),
+		"output": stringSchema(), "composition_id": map[string]any{"const": "Explainer"}, "composition": map[string]any{"const": "Explainer"},
 		"width":            map[string]any{"type": "integer", "minimum": 2, "maximum": 9007199254740991, "multipleOf": 2, "default": 1920, "description": "Direct Explainer props: positive even safe integer pixels."},
 		"height":           map[string]any{"type": "integer", "minimum": 2, "maximum": 9007199254740991, "multipleOf": 2, "default": 1080, "description": "Direct Explainer props: positive even safe integer pixels."},
 		"fps":              map[string]any{"type": "number", "exclusiveMinimum": 0, "default": 30, "description": "Direct Explainer props: positive finite frame rate, used for metadata and scene timing."},
-		"duration_seconds": map[string]any{"type": "number", "exclusiveMinimum": 0, "description": "Direct Explainer props: exact duration; duration_seconds * fps must be a positive safe integer frame count. Cuts must fit within it and span at least one frame after boundary rounding. Omit for last cut out_seconds + 1 second (60 seconds with no cuts in Remotion)."},
-		"cuts":             map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "object", "required": []string{"in_seconds", "out_seconds"}, "properties": map[string]any{"in_seconds": map[string]any{"type": "number", "minimum": 0}, "out_seconds": map[string]any{"type": "number", "exclusiveMinimum": 0}}}},
-		"scenes":           map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "object", "required": []string{"start_seconds", "end_seconds"}}},
-		"overlays":         map[string]any{"type": "array", "items": map[string]any{"type": "object"}}, "captions": map[string]any{}, "audio": map[string]any{}, "subtitle_style": map[string]any{"type": "object"},
+		"duration_seconds": map[string]any{"type": "number", "exclusiveMinimum": 0, "description": "Direct Explainer props: exact duration; duration_seconds * fps must be a positive safe integer frame count. Cuts must fit within it and span at least one frame after boundary rounding. Omit to end at the last cut."},
+		"backgroundColor":  stringSchema(),
+		"cuts":             map[string]any{"type": "array", "minItems": 1, "items": explainerCutSchema("in_seconds", "out_seconds")},
+		"scenes":           map[string]any{"type": "array", "minItems": 1, "items": explainerCutSchema("start_seconds", "end_seconds")},
+		"audio":            explainerAudioSchema(),
+		"overlays":         map[string]any{"type": "array", "items": map[string]any{"type": "object"}}, "captions": map[string]any{}, "subtitle_style": map[string]any{"type": "object"},
 		"codec": stringSchema(), "crf": map[string]any{"type": "integer"}, "preset": stringSchema(), "profile": stringSchema(), "remotion_timeout_ms": map[string]any{"type": "integer"}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1},
 	}},
 	"subtitle_gen": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"segments"}, "properties": map[string]any{
@@ -813,10 +826,10 @@ var schemas = map[string]any{
 		"output_path": map[string]any{"type": "string"}, "max_chars_per_line": map[string]any{"type": "integer", "default": 42}, "max_words_per_cue": map[string]any{"type": "integer", "default": 8},
 		"highlight_style": map[string]any{"enum": []string{"none", "word_by_word", "karaoke"}, "default": "none"}, "corrections": map[string]any{"type": "object"},
 	}},
-	"remotion_caption_burn": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"input_path", "output_path"}, "properties": map[string]any{
+	"ffmpeg_caption_burn": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"input_path", "output_path"}, "properties": map[string]any{
 		"input_path": map[string]any{"type": "string"}, "output_path": map[string]any{"type": "string"}, "segments": map[string]any{"type": "array"},
 		"srt_path": map[string]any{"type": "string"}, "words_per_page": map[string]any{"type": "integer", "default": 4}, "font_size": map[string]any{"type": "integer", "default": 52},
-		"highlight_color": map[string]any{"type": "string", "default": "#22D3EE"}, "force_ffmpeg": map[string]any{"type": "boolean", "default": false},
+		"highlight_color": map[string]any{"type": "string", "default": "#22D3EE"},
 	}},
 	"silence_cutter": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"input_path"}, "properties": map[string]any{
 		"input_path": map[string]any{"type": "string"}, "output_path": map[string]any{"type": "string"}, "mode": map[string]any{"enum": []string{"remove", "speed_up", "mark"}, "default": "remove"},
@@ -955,11 +968,11 @@ var resultSchemas = map[string]any{
 	"subtitle_gen": objectSchema([]string{"format", "cue_count", "output"}, map[string]any{
 		"format": stringSchema(), "cue_count": map[string]any{"type": "integer"}, "output": stringSchema(),
 	}),
-	"remotion_caption_burn": objectSchema([]string{"method", "output"}, map[string]any{"method": stringSchema(), "output": stringSchema()}),
-	"silence_cutter":        objectSchema([]string{"mode"}, map[string]any{"mode": stringSchema(), "output": stringSchema()}),
-	"hyperframes_compose":   objectSchema([]string{"operation"}, map[string]any{"operation": stringSchema()}),
-	"audio_mix":             mediaOutputResultSchema([]string{"loudnorm"}),
-	"audio_mixer":           mediaOutputResultSchema([]string{"loudnorm"}),
+	"ffmpeg_caption_burn": objectSchema([]string{"method", "output"}, map[string]any{"method": map[string]any{"const": "ffmpeg"}, "output": stringSchema()}),
+	"silence_cutter":      objectSchema([]string{"mode"}, map[string]any{"mode": stringSchema(), "output": stringSchema()}),
+	"hyperframes_compose": objectSchema([]string{"operation"}, map[string]any{"operation": stringSchema()}),
+	"audio_mix":           mediaOutputResultSchema([]string{"loudnorm"}),
+	"audio_mixer":         mediaOutputResultSchema([]string{"loudnorm"}),
 	"music_library": objectSchema([]string{"library_dir", "exists", "track_count", "tracks"}, map[string]any{
 		"library_dir": stringSchema(), "exists": map[string]any{"type": "boolean"}, "track_count": map[string]any{"type": "integer"}, "total_duration_seconds": map[string]any{"type": "number"}, "tracks": map[string]any{"type": "array"},
 	}),
@@ -1002,6 +1015,55 @@ func objectSchema(required []string, properties map[string]any) map[string]any {
 	return map[string]any{"type": "object", "additionalProperties": false, "required": required, "properties": properties}
 }
 func stringSchema() map[string]any { return map[string]any{"type": "string"} }
+func nonBlankStringSchema() map[string]any {
+	return map[string]any{"type": "string", "minLength": 1}
+}
+func explainerCutSchema(start, end string) map[string]any {
+	common := func(extra map[string]any) map[string]any {
+		properties := map[string]any{
+			"id": stringSchema(), "type": nonBlankStringSchema(),
+			start:             map[string]any{"type": "number", "minimum": 0},
+			end:               map[string]any{"type": "number", "exclusiveMinimum": 0},
+			"backgroundColor": stringSchema(), "color": stringSchema(),
+		}
+		for key, value := range extra {
+			properties[key] = value
+		}
+		return properties
+	}
+	return map[string]any{"oneOf": []any{
+		objectSchema([]string{"type", start, end, "text"}, common(map[string]any{
+			"type": map[string]any{"const": "text_card"}, "text": nonBlankStringSchema(),
+			"fontSize": map[string]any{"type": "number", "exclusiveMinimum": 0},
+		})),
+		objectSchema([]string{"type", start, end, "text"}, common(map[string]any{
+			"type": map[string]any{"const": "hero_title"}, "text": nonBlankStringSchema(),
+			"subtitle": nonBlankStringSchema(),
+		})),
+		objectSchema([]string{"type", start, end, "stat"}, common(map[string]any{
+			"type": map[string]any{"const": "stat_card"}, "stat": nonBlankStringSchema(),
+			"label": nonBlankStringSchema(),
+		})),
+		objectSchema([]string{"type", start, end, "source", "media_kind"}, common(map[string]any{
+			"type": map[string]any{"const": "media"}, "source": nonBlankStringSchema(),
+			"media_kind": map[string]any{"enum": []string{"image", "video"}},
+			"fit":        map[string]any{"enum": []string{"contain", "cover"}},
+			"title":      nonBlankStringSchema(), "muted": map[string]any{"type": "boolean"},
+		})),
+	}}
+}
+func explainerAudioSchema() map[string]any {
+	track := func() map[string]any {
+		return objectSchema([]string{"src"}, map[string]any{
+			"src":    nonBlankStringSchema(),
+			"volume": map[string]any{"type": "number", "minimum": 0, "maximum": 1},
+			"loop":   map[string]any{"type": "boolean"},
+		})
+	}
+	return map[string]any{"type": "object", "additionalProperties": false, "minProperties": 1, "properties": map[string]any{
+		"narration": track(), "music": track(),
+	}}
+}
 func stringArraySchema() map[string]any {
 	return map[string]any{"type": "array", "items": stringSchema()}
 }
@@ -1061,8 +1123,8 @@ func executeContext(ctx context.Context, tool, op string, data []byte) (any, []s
 		return doVideoComposeContext(ctx, op, data)
 	case "subtitle_gen":
 		return doSubtitleGen(op, data)
-	case "remotion_caption_burn":
-		return doRemotionCaptionBurnContext(ctx, op, data)
+	case "ffmpeg_caption_burn":
+		return doFFmpegCaptionBurnContext(ctx, op, data)
 	case "silence_cutter":
 		return doSilenceCutterContext(ctx, op, data)
 	case "hyperframes_compose":
@@ -1316,7 +1378,7 @@ func samePath(a, b string) bool {
 
 func temporaryOutput(path string) (string, func(), error) {
 	ext := filepath.Ext(path)
-	file, err := os.CreateTemp(filepath.Dir(path), ".videokit-*"+ext)
+	file, err := os.CreateTemp(filepath.Dir(path), ".facet-*"+ext)
 	if err != nil {
 		return "", nil, failure("command_failed", "temporary output could not be created", map[string]any{"error": bounded(err.Error())})
 	}
@@ -1338,7 +1400,7 @@ func finalizeOutput(temp, output string, overwrite bool) error {
 		}
 		return nil
 	}
-	backupFile, err := os.CreateTemp(filepath.Dir(output), ".videokit-backup-*")
+	backupFile, err := os.CreateTemp(filepath.Dir(output), ".facet-backup-*")
 	if err != nil {
 		return failure("command_failed", "replacement backup could not be prepared", map[string]any{"error": bounded(err.Error())})
 	}
@@ -1389,7 +1451,7 @@ func publishFileSet(staged, outputs []string, overwrite bool) error {
 	if overwrite {
 		for i, output := range outputs {
 			if _, err := os.Stat(output); err == nil {
-				backupFile, createErr := os.CreateTemp(filepath.Dir(output), ".videokit-frame-backup-*")
+				backupFile, createErr := os.CreateTemp(filepath.Dir(output), ".facet-frame-backup-*")
 				if createErr != nil {
 					rollback()
 					return failure("command_failed", "frame backup could not be prepared", map[string]any{"path": output, "error": bounded(createErr.Error())})
@@ -1616,6 +1678,10 @@ func contains(values []string, value string) bool {
 // Names returns a defensive copy of the exact public tool catalog.
 func Names() []string { out := append([]string(nil), names...); sort.Strings(out); return out }
 
+// CanonicalName resolves compatibility aliases to the operation identity
+// reported by envelopes, listings, and module projections.
+func CanonicalName(tool string) string { return canonicalToolName(tool) }
+
 // Description returns the tool's human-readable capability description.
 func Description(tool string) string {
 	tool = canonicalToolName(tool)
@@ -1636,6 +1702,219 @@ func Parameters(tool string) map[string]any {
 	return map[string]any{"type": "object"}
 }
 
+// ValidateRequest validates a concrete request through the canonical estimate
+// path. Estimates execute no production work, but they do enforce semantic
+// requirements such as real input files and operation-specific constraints.
+func ValidateRequest(tool string, data []byte) error {
+	tool = canonicalToolName(tool)
+	if !known(tool) {
+		return fmt.Errorf("unknown canonical operation %q", tool)
+	}
+	_, _, err := execute(tool, "estimate", data)
+	return err
+}
+
+// ValidateRequestShape validates a request against the canonical JSON schema
+// without requiring intermediate files to exist yet.
+func ValidateRequestShape(tool string, data []byte) error {
+	tool = canonicalToolName(tool)
+	schema, ok := schemas[tool]
+	if !ok {
+		return fmt.Errorf("unknown canonical operation %q", tool)
+	}
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return fmt.Errorf("invalid JSON: %w", err)
+	}
+	if reason := schemaMismatch(schema, value, "$"); reason != "" {
+		return fmt.Errorf("%s", reason)
+	}
+	return nil
+}
+
+func schemaMismatch(rawSchema, value any, path string) string {
+	schema, ok := rawSchema.(map[string]any)
+	if !ok {
+		return ""
+	}
+	if branches, ok := schema["anyOf"].([]any); ok {
+		matched := false
+		for _, branch := range branches {
+			if schemaMismatch(branch, value, path) == "" {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return path + " does not satisfy any allowed request shape"
+		}
+	}
+	if branches, ok := schema["oneOf"].([]any); ok {
+		matches := 0
+		for _, branch := range branches {
+			if schemaMismatch(branch, value, path) == "" {
+				matches++
+			}
+		}
+		if matches != 1 {
+			return fmt.Sprintf("%s matches %d oneOf request shapes", path, matches)
+		}
+	}
+	if condition, ok := schema["if"]; ok && schemaMismatch(condition, value, path) == "" {
+		if thenSchema, ok := schema["then"]; ok {
+			if reason := schemaMismatch(thenSchema, value, path); reason != "" {
+				return reason
+			}
+		}
+	}
+	if expected, ok := schema["const"]; ok && !schemaValueEqual(expected, value) {
+		return fmt.Sprintf("%s must equal %v", path, expected)
+	}
+	if values, ok := schema["enum"].([]string); ok {
+		text, _ := value.(string)
+		if !contains(values, text) {
+			return fmt.Sprintf("%s must be one of %v", path, values)
+		}
+	}
+	if _, hasType := schema["type"]; !hasType {
+		if required := schemaStrings(schema["required"]); len(required) != 0 {
+			object, ok := value.(map[string]any)
+			if !ok {
+				return path + " must be an object"
+			}
+			for _, name := range required {
+				if _, exists := object[name]; !exists {
+					return path + "." + name + " is required"
+				}
+			}
+		}
+	}
+	switch schema["type"] {
+	case "object":
+		object, ok := value.(map[string]any)
+		if !ok {
+			return path + " must be an object"
+		}
+		for _, name := range schemaStrings(schema["required"]) {
+			if _, exists := object[name]; !exists {
+				return path + "." + name + " is required"
+			}
+		}
+		properties, _ := schema["properties"].(map[string]any)
+		for name, child := range object {
+			childSchema, exists := properties[name]
+			if !exists {
+				if schema["additionalProperties"] == false {
+					return path + "." + name + " is not allowed"
+				}
+				continue
+			}
+			if reason := schemaMismatch(childSchema, child, path+"."+name); reason != "" {
+				return reason
+			}
+		}
+	case "array":
+		items, ok := value.([]any)
+		if !ok {
+			return path + " must be an array"
+		}
+		if min, ok := numberValue(schema["minItems"]); ok && float64(len(items)) < min {
+			return fmt.Sprintf("%s must contain at least %.0f items", path, min)
+		}
+		if itemSchema, ok := schema["items"]; ok {
+			for i, item := range items {
+				if reason := schemaMismatch(itemSchema, item, fmt.Sprintf("%s[%d]", path, i)); reason != "" {
+					return reason
+				}
+			}
+		}
+	case "string":
+		text, ok := value.(string)
+		if !ok {
+			return path + " must be a string"
+		}
+		if min, ok := numberValue(schema["minLength"]); ok && float64(len(text)) < min {
+			return fmt.Sprintf("%s must contain at least %.0f characters", path, min)
+		}
+	case "integer":
+		number, ok := numberValue(value)
+		if !ok || math.Trunc(number) != number {
+			return path + " must be an integer"
+		}
+		if reason := numericMismatch(schema, number, path); reason != "" {
+			return reason
+		}
+	case "number":
+		number, ok := numberValue(value)
+		if !ok {
+			return path + " must be a number"
+		}
+		if reason := numericMismatch(schema, number, path); reason != "" {
+			return reason
+		}
+	case "boolean":
+		if _, ok := value.(bool); !ok {
+			return path + " must be a boolean"
+		}
+	}
+	return ""
+}
+
+func numericMismatch(schema map[string]any, number float64, path string) string {
+	if minimum, ok := numberValue(schema["minimum"]); ok && number < minimum {
+		return fmt.Sprintf("%s must be at least %v", path, minimum)
+	}
+	if minimum, ok := numberValue(schema["exclusiveMinimum"]); ok && number <= minimum {
+		return fmt.Sprintf("%s must be greater than %v", path, minimum)
+	}
+	if maximum, ok := numberValue(schema["maximum"]); ok && number > maximum {
+		return fmt.Sprintf("%s must be at most %v", path, maximum)
+	}
+	if maximum, ok := numberValue(schema["exclusiveMaximum"]); ok && number >= maximum {
+		return fmt.Sprintf("%s must be less than %v", path, maximum)
+	}
+	if multiple, ok := numberValue(schema["multipleOf"]); ok && math.Mod(number, multiple) != 0 {
+		return fmt.Sprintf("%s must be a multiple of %v", path, multiple)
+	}
+	return ""
+}
+
+func schemaStrings(value any) []string {
+	switch values := value.(type) {
+	case []string:
+		return values
+	case []any:
+		out := make([]string, 0, len(values))
+		for _, value := range values {
+			if text, ok := value.(string); ok {
+				out = append(out, text)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+func numberValue(value any) (float64, bool) {
+	switch number := value.(type) {
+	case int:
+		return float64(number), true
+	case int64:
+		return float64(number), true
+	case float64:
+		return number, true
+	}
+	return 0, false
+}
+
+func schemaValueEqual(left, right any) bool {
+	if l, ok := numberValue(left); ok {
+		r, rok := numberValue(right)
+		return rok && l == r
+	}
+	return reflect.DeepEqual(left, right)
+}
+
 // Run executes a tool operation in 'run' mode with raw JSON input.
 func Run(tool string, data []byte) Envelope {
 	return RunContext(context.Background(), tool, data)
@@ -1643,14 +1922,15 @@ func Run(tool string, data []byte) Envelope {
 
 // RunContext carries cancellation into media execution and network requests.
 func RunContext(ctx context.Context, tool string, data []byte) Envelope {
-	tool = canonicalToolName(tool)
+	requestedTool := strings.ToLower(strings.TrimSpace(tool))
+	tool = canonicalToolName(requestedTool)
 	if err := ctx.Err(); err != nil {
 		return errorEnvelope(tool, "run", failure("cancelled", err.Error(), nil))
 	}
 	if !known(tool) {
 		return errorEnvelope(tool, "run", failure("unknown_tool", "unknown tool: "+tool, nil))
 	}
-	result, warnings, err := executeContext(ctx, tool, "run", data)
+	result, warnings, err := executeContext(ctx, invocationToolName(requestedTool), "run", data)
 	if ctx.Err() != nil {
 		return errorEnvelope(tool, "run", failure("cancelled", ctx.Err().Error(), nil))
 	}

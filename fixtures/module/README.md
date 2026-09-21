@@ -1,61 +1,42 @@
 # Facet module protocol fixtures
 
-Generated from real runs of `facet module ...` at the commit noted below. These
-are the shapes a host can code against; they are not hand-written.
+These checked-in examples are generated from real module calls or are
+hand-authored deterministic inputs verified by tests.
 
-Regenerate with the commands in each entry below.
+| Fixture | Demonstrates |
+| --- | --- |
+| `requests/` | Supported synchronous request examples |
+| `list-success.json` | Successful local tool catalog invocation |
+| `run-local-deterministic.json` | Deterministic local execution and honest effects |
+| `estimate-unknown-cost.json` | Unknown estimated cost remains `null` |
+| `error-consent-required.json` | Paid work is refused without explicit consent |
+| `error-unknown-capability.json` | Unknown capability rejection |
+| `error-input-not-found.json` | Toolbox error codes pass through unchanged |
+| `error-unknown-field.json` | Unsupported request fields are named explicitly |
+| `seed-explainer/` | A portable `xibodev.midden.seed/v1` bundle |
 
-| Fixture | Command | Demonstrates |
-| --- | --- | --- |
-| `describe.json` | `facet module describe --json` | The twelve descriptor fields, six capabilities, live per-tool schemas |
-| `list-success.json` | `module invoke creative.tools.list` | Successful local invocation, tool catalog shape |
-| `run-local-deterministic.json` | `module invoke creative.tools.run` (media_probe) | Deterministic local run, honest `local=true network=false` execution |
-| `estimate-unknown-cost.json` | `module estimate creative.tools.estimate` (gflow_image) | `estimated_cost: null` — unknown cost is never reported as zero |
-| `error-consent-required.json` | `module invoke creative.tools.run` (gflow_image, no consent) | The consent gate refusing a paid tool |
-| `error-unknown-capability.json` | `module invoke creative.bogus` | Unknown capability rejection |
-| `error-input-not-found.json` | `module invoke creative.tools.run` (missing file) | Toolbox error code passed through unchanged |
-| `error-unknown-job.json` | `module invoke creative.jobs.status` (unknown id) | Job state does not survive the module process, and the poll says so |
-| `error-unknown-field.json` | `module invoke creative.tools.run` (mock on a local tool) | A well-formed request a tool does not accept, named as such rather than called invalid JSON |
-| `seed-explainer/` | hand-authored synthetic | A `xibodev.midden.seed/v1` bundle Facet can consume |
+Compatibility-only negative cases are isolated under `legacy/`. They are not
+host guidance or supported capability examples.
 
 ## Normalization
 
-`list-success.json` had its dependency `path` values replaced with
-`<resolved-at-runtime>` and `available` forced to `true`. Those fields are
-properties of the machine that generated the fixture, not of the contract. Every
-other fixture is byte-for-byte as emitted.
-
-No fixture contains an absolute host path.
+`list-success.json` has runtime-specific dependency paths replaced with
+`<resolved-at-runtime>` and availability normalized to `true`. No fixture
+contains an absolute host path.
 
 ## Seed fixture
 
-`seed-explainer/` is a DIRECTORY bundle, matching Midden's contract:
-
-```
-seed-explainer/
-  manifest.json     entry file — the shape Facet reads
-  brief.md          prose for the host agent
-  evidence.jsonl    the evidence set (empty here; a valid state)
-  provenance.json   source identities
-  attachments/      referenced files
-```
-
-`manifest.json` — sha256, hex, lowercase, over the raw file bytes:
+`seed-explainer/manifest.json` has this lowercase SHA-256 digest over its raw
+bytes:
 
 ```
 e4a37c683730c1c6a156013ad9381ae2f33f359ded3a97135cf8239657fb93ce
 ```
 
-`LoadSeed` accepts a path to either the bundle root or `manifest.json`, and
-accepts the digest with or without a `sha256:` prefix.
+The seed may be loaded by bundle root or manifest path. Its evidence digest is
+independent from regenerated brief prose; an empty evidence set is valid.
 
-The manifest carries `evidence_digest` separately: evidence identity stays
-stable when `brief.md` prose is regenerated. An empty `evidence.jsonl` digests
-to `e3b0c442...b855` (sha256 of zero bytes) and is a valid seed, not an error.
+## Limits
 
-## What these fixtures do not prove
-
-They exercise the protocol surface only. They do not prove a renderer works, do
-not prove a provider is reachable or authenticated, and do not constitute
-creative acceptance of any output. No paid provider was called to produce any
-fixture here.
+These fixtures exercise protocol shapes. They do not certify rendering,
+provider access, authentication, creative acceptance, or paid-provider UAT.

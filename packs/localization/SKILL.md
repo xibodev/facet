@@ -1,17 +1,23 @@
 ---
 name: localization
-description: Produce multilingual dubs, translated voiceovers, localized subtitles, and regional video exports using Facet.
+description: Produce translated subtitles, narration, and localized video variants with Facet.
 ---
 
-# Video Localization & Dubbing Pack
+# Localization
 
-Use this skill when localizing existing video into multiple target languages with synthetic voice dubbing and accurate subtitle timing.
+Use this pack for an existing video's language variants. Confirm target locale,
+terminology, reading level, subtitle format, voice requirements, and whether
+timing may change.
+Assess `localization` against the source and human-reviewed translated text;
+Facet does not provide an implicit translation or voice provider.
+Use the canonical `ffmpeg_caption_burn` operation for burned subtitles. The
+legacy `remotion_caption_burn` name is only a compatibility alias.
+For Edge voice dubbing, pass the synthesized narration to `source_edit` as
+`replacement_audio`; `audio_mix.source` only controls the existing source audio.
 
-## Overview
-
-1. **Transcription & Timecodes:** Extract speech and timestamps from source audio.
-2. **Translation & Timing Adjustment:** Adapt script to target language while matching original visual beat durations.
-3. **Neural Dubbing:** Synthesize localized neural voiceover in the target language with `facet tools run edgetts`.
-4. **Audio Ducking & Replacement:** Replace original dialogue while retaining background music and ambient sounds.
-5. **Subtitle Generation:** Export synchronized `.srt` or burn translated subtitles.
-6. **Delivery QA:** Verify timing match between new dialogue and on-screen scene changes.
+Work from an accurate transcript and timestamps. Preserve meaning rather than
+translating mechanically, fit subtitles to readable timing and safe regions,
+and use only voices that support the target language. Voice cloning and lip
+sync need separate provider support and consent. Review translation, timing,
+pronunciation, mix, and requested delivery properties with a qualified human
+when accuracy matters.

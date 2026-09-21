@@ -1,9 +1,9 @@
 # Facet Studio Design System
 
-> **FROZEN.** This design system describes the standalone Studio UI, which is
-> working and supported but no longer under development. It is retained as the
-> reference for what Facet's artefacts need in order to be shown. See
-> `FROZEN.md`.
+Facet Standalone is an experimental projection of the canonical Facet contract.
+The installed agent bundle is the supported product path. Studio presents real
+project files, tool results, and embedded Facet guidance; it does not define a
+separate workflow or product contract.
 
 ## Direction
 
@@ -28,17 +28,19 @@ agent activity, production evidence, and media review.
   inspector, and persistent bottom agent composer.
 - Mobile: horizontal navigation, scrollable production canvas, sticky composer,
   and a modal inspector drawer with focus containment and a visible close action.
-- The six evidence stages are Brief, Script, Voice, Compose, QA, and Master.
+- Present only artifacts and evidence exposed by the current project.
+- Labels may organize the interface, but they are not mandatory workflow
+  stages and must not imply that absent files are required.
 
 ## State Rules
 
 - Never show Passed, Master, Rendered, Ready, or Connected without direct runtime
   or file evidence.
-- No project means six neutral Not run stages and no media source.
+- No project means no production evidence and no media source.
 - Preview and Master are distinct labels. A preview never implies final delivery.
 - A dead process immediately becomes Disconnected and offers Restart.
-- CLI permission prompts are disabled in autonomous mode. Paid providers,
-  publication, and external-account actions still require explicit consent.
+- Preserve the selected agentic CLI's permission model. Paid execution and
+  publication always require explicit human consent; unknown cost is not free.
 
 ## Interaction Rules
 
@@ -46,7 +48,11 @@ agent activity, production evidence, and media review.
 - Keep keyboard focus visible and preserve accessible names when labels collapse.
 - Respect reduced motion. Prefer one restrained state transition over decorative
   animation.
-- Project, engine, and settings changes must preserve or reset session state
-  explicitly; never imply that a running child received new configuration.
+- Project, engine, and settings changes must never imply that a running child
+  received new configuration.
 - Project artifacts and review status are derived from ordinary files, never
   fabricated frontend defaults.
+- Facet remains stateless: Studio must not introduce a planner, workflow engine,
+  durable approval service, or pipeline state machine.
+- Technical success and measurable review results never imply creative or
+  human acceptance.

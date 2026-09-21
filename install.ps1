@@ -9,11 +9,12 @@ Authentication is owned by the selected CLI. No product setup command is used.
 [CmdletBinding()]
 param(
     [string]$Version = $env:FACET_VERSION,
-    [ValidateSet('opencode','codex','claude','copilot')][string]$Target,
+    [ValidateSet('opencode','codex','claude','copilot','studio')][string]$Target,
     [string]$ProjectDir = $env:FACET_PROJECT,
     [string]$InstallDir = $env:FACET_INSTALL_DIR,
     [string]$Components = $env:FACET_COMPONENTS,
-    [ValidateSet('add','repair','update')][string]$Action = 'add',
+    [Alias('ProductionMethod')][string[]]$Pack,
+    [ValidateSet('add','repair','update','uninstall')][string]$Action = 'add',
     [switch]$MigrateLegacy,
     [switch]$Plain,
     [string]$ArchivePath,
@@ -36,8 +37,10 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 if (-not $Target -and $env:FACET_TARGET) { $Target = $env:FACET_TARGET }
 if ($env:FACET_YES -eq '1') { $NonInteractive = $true }
 if ($env:FACET_ACTION -and -not $PSBoundParameters.ContainsKey('Action')) { $Action = $env:FACET_ACTION }
-if ($Action -notin @('add','repair','update')) { throw 'Action must be add, repair, or update.' }
+if ($Action -notin @('add','repair','update','uninstall')) { throw 'Action must be add, repair, update, or uninstall.' }
 $componentsExplicit = -not [string]::IsNullOrWhiteSpace($Components)
+$packsExplicit = $PSBoundParameters.ContainsKey('Pack') -or -not [string]::IsNullOrWhiteSpace($env:FACET_PACKS)
+if (-not $Pack -and $env:FACET_PACKS) { $Pack = @($env:FACET_PACKS.Split(',') | Where-Object { $_.Trim() } | ForEach-Object { $_.Trim() }) }
 $logRoot = if ($env:FACET_LOG_DIR) { $env:FACET_LOG_DIR } else { Join-Path $HOME '.facet/logs' }
 New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
 $logFile = Join-Path $logRoot ('install-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N') + '.log')
@@ -112,6 +115,41 @@ function Step([string]$Label,[scriptblock]$Work) {
     }
 }
 function Relative-Path([string]$Root,[string]$Path) { return $Path.Substring($Root.TrimEnd('\','/').Length + 1).Replace('\','/') }
+$facetSectionStart = '<!-- facet:managed:start -->'
+$facetSectionEnd = '<!-- facet:managed:end -->'
+function Find-FacetSection([string]$Content,[string]$Path) {
+    $startPattern = '(?m)^' + [regex]::Escape($facetSectionStart) + '\r?$'
+    $endPattern = '(?m)^' + [regex]::Escape($facetSectionEnd) + '\r?$'
+    $starts = [regex]::Matches($Content,$startPattern).Count
+    $ends = [regex]::Matches($Content,$endPattern).Count
+    if ($starts -eq 0 -and $ends -eq 0) { return $null }
+    if ($starts -ne 1 -or $ends -ne 1) { throw "Malformed Facet section in $Path" }
+    $pattern = '(?ms)^' + [regex]::Escape($facetSectionStart) + '\r?\n.*?^' + [regex]::Escape($facetSectionEnd) + '\r?$'
+    $match = [regex]::Match($Content,$pattern)
+    if (-not $match.Success) { throw "Malformed Facet section in $Path" }
+    return $match
+}
+function Text-Hash([string]$Text) {
+    $Text = $Text.Replace("`r`n","`n").TrimEnd("`r","`n")
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($Text)))).Replace('-','').ToLowerInvariant() }
+    finally { $sha.Dispose() }
+}
+function Merge-FacetSection([string]$Path,[string]$Section,[bool]$Owned) {
+    if (-not (Test-Path -LiteralPath $Path)) { return $Section + "`n" }
+    $item = Get-Item -LiteralPath $Path -Force
+    if (-not $item.PSIsContainer -and -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        $content = [IO.File]::ReadAllText($Path)
+        $match = Find-FacetSection $content $Path
+        if (-not $match) {
+            if ($content -and -not $content.EndsWith("`n")) { $content += "`n" }
+            return $content + $Section + "`n"
+        }
+        if (-not $Owned) { throw "Preserving unmanaged Facet section in $Path" }
+        return $content.Substring(0,$match.Index) + $Section + $content.Substring($match.Index + $match.Length)
+    }
+    throw "Preserving unsafe governing instruction: $Path"
+}
 function Download([string]$Url,[string]$Destination) {
     for ($attempt=1; $attempt -le 3; $attempt++) {
         try { Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Destination -TimeoutSec 180; return } catch {
@@ -159,6 +197,24 @@ function Assert-RealAncestors([string]$Path) {
 function Assert-New([string]$Path) {
     if (Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue) { throw "Preserving existing entry: $Path" }
     Assert-RealAncestors (Split-Path -Parent $Path)
+}
+function Read-ProjectReceipt([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    try {
+        $receipt = [IO.File]::ReadAllText($Path) | ConvertFrom-Json
+        $properties = @($receipt.PSObject.Properties.Name)
+        foreach ($required in @('schema','version','installation','host','components','packs')) {
+            if ($required -notin $properties) { return $null }
+        }
+        if ($receipt.schema -ne 1 -or -not "$($receipt.version)".Trim() -or
+            -not [IO.Path]::IsPathRooted("$($receipt.installation)") -or
+            $receipt.host -notin @('opencode','codex','claude','copilot','studio')) {
+            return $null
+        }
+        return $receipt
+    } catch {
+        return $null
+    }
 }
 function Verify-Checksum([string]$Archive,[string]$Sums,[string]$Name) {
     $expected = @([IO.File]::ReadAllLines($Sums) | ForEach-Object {
@@ -222,23 +278,42 @@ if (-not $Target) {
     Write-Host "  Detected CLIs: $(@($detected | ForEach-Object id) -join ', ')"
     $hostRows=@($manifest | Where-Object kind -EQ 'host')
     $labels=@($hostRows | ForEach-Object { "$($_.capability)" + $(if (Get-Command $_.id -ErrorAction SilentlyContinue) {' - detected'} else {' - not detected'}) })
-    $Target = Select-Choice 'Which CLI should use Facet?' $labels @($hostRows | ForEach-Object id) @($defaultHost)
-    if ($Target -match '^[1-4]$') { $Target=$hostRows[[int]$Target-1].id }
+    $Target = Select-Choice 'Which agent should use Facet?' $labels @($hostRows | ForEach-Object id) @($defaultHost)
+    if ($Target -match '^[1-5]$') { $Target=$hostRows[[int]$Target-1].id }
 }
 $hostDef = Definition $Target
 if ($hostDef.kind -ne 'host') { throw 'Unsupported CLI.' }
+$instructionDef = Definition "$Target-instructions"
+if ($instructionDef.kind -ne 'instruction' -or [IO.Path]::IsPathRooted($instructionDef.value) -or $instructionDef.value -match '(^|[/\\])\.\.([/\\]|$)') { throw 'Invalid governing instruction path.' }
+$instructionRel = $instructionDef.value
 if (-not $ProjectDir) { $ProjectDir = Ask 'Project directory' '.' }
 $ProjectDir = [IO.Path]::GetFullPath($ProjectDir)
+$defaultComponents = 'remotion'
+if ((Definition piper).windows -in @('all',$arch)) { $defaultComponents += ',piper' }
 if (-not $Components) {
     $savedState = Join-Path $ProjectDir '.facet-install/installation.json'
     if (Test-Path $savedState) { $Components = (([IO.File]::ReadAllText($savedState) | ConvertFrom-Json).components -join ',') }
-    if (-not $Components) { $Components='remotion' }
+    if (-not $Components) { $Components=$defaultComponents }
+}
+if (-not $packsExplicit) {
+    $savedState = Join-Path $ProjectDir '.facet-install/installation.json'
+    if (Test-Path $savedState) {
+        $saved = [IO.File]::ReadAllText($savedState) | ConvertFrom-Json
+        if ($saved.PSObject.Properties.Name -contains 'packs') { $Pack = @($saved.packs) }
+    }
+}
+$selectedPacks = @($Pack | Where-Object { $_ } | ForEach-Object { $_.Split(',') } | ForEach-Object { $_.Trim().ToLowerInvariant() } | Where-Object { $_ })
+if (@($selectedPacks | Select-Object -Unique).Count -ne $selectedPacks.Count) { throw 'Duplicate production method.' }
+foreach ($id in $selectedPacks) {
+    $def = Definition $id
+    if ($def.kind -ne 'pack') { throw "Unknown production method: $id" }
 }
 if (-not $InstallDir) { $InstallDir = Join-Path $HOME ".facet/releases/$Version-windows-$arch" }
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
 if (($ProjectDir + $InstallDir) -match '[\x00-\x1f]') { throw 'Control characters are unsupported in installation paths.' }
 $choices = @($manifest | Where-Object kind -EQ 'component')
 Write-Host 'Core: FFmpeg and FFprobe. Optional downloads (approximate; platform/cache dependent):'
+Write-Host 'Built in: Edge TTS client (keyless network service; reachability is checked only when used).'
 for ($i=0; $i -lt $choices.Count; $i++) {
     $id=$choices[$i].id
     $status = if ($id -in $Components.Split(',')) {'[x]'} else {'[ ]'}
@@ -261,12 +336,16 @@ foreach ($id in $selected) {
 }
 $skill = Join-Path $ProjectDir "$($hostDef.value)/facet"
 $state = Join-Path $ProjectDir '.facet-install'
+$instruction = Join-Path $ProjectDir $instructionRel
 $previous = $null
 $legacyMigration = $false
-if (Test-Path -LiteralPath $state) {
+$instructionOwned = $false
+$stateResidue = $false
+$projectReceipt = Read-ProjectReceipt (Join-Path $state 'installation.json')
+if ($projectReceipt) {
     Assert-RealAncestors $state
     $ownedFile = Join-Path $state 'managed-files.json'
-    $previous = [IO.File]::ReadAllText((Join-Path $state 'installation.json')) | ConvertFrom-Json
+    $previous = $projectReceipt
     if ($previous.host -ne $Target) { throw 'This project belongs to another CLI integration; select that CLI or a fresh project.' }
     if (-not (Test-Path -LiteralPath $ownedFile)) {
         if (-not $NonInteractive) { $MigrateLegacy = (Ask 'Migrate older integration? Its complete files will be kept in a project backup' 'n') -in @('y','yes') }
@@ -283,8 +362,22 @@ if (Test-Path -LiteralPath $state) {
         $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint -or (Get-FileHash -LiteralPath $path).Hash -ne $file.sha256) { throw "Preserving modified project file: $($file.path)" }
     }
-    $actualFiles = @(Get-ChildItem -LiteralPath $state,$skill -File -Recurse | Where-Object FullName -NE $ownedFile)
-    if ($actualFiles.Count -ne @($owned).Count) { throw 'Preserving extra files in installer-owned project directories.' }
+    if ($Action -ne 'uninstall') {
+        $skillPrefix = $hostDef.value.TrimEnd('/','\') + '/facet/'
+        $expectedSkillCount = @($owned | Where-Object { $_.path.StartsWith($skillPrefix,[StringComparison]::Ordinal) }).Count
+        $actualSkillCount = if (Test-Path -LiteralPath $skill) { @(Get-ChildItem -LiteralPath $skill -File -Recurse).Count } else { 0 }
+        if ($actualSkillCount -ne $expectedSkillCount) { throw 'Preserving extra files in the managed skill directory.' }
+    }
+    }
+    $instructionRecord = Join-Path $state 'instruction-section.json'
+    if (Test-Path -LiteralPath $instructionRecord) {
+        $record = [IO.File]::ReadAllText($instructionRecord) | ConvertFrom-Json
+        if ($record.path -cne $instructionRel -or $record.sha256 -notmatch '^[a-f0-9]{64}$') { throw 'Invalid governing instruction ownership record.' }
+        $instructionItem = Get-Item -LiteralPath $instruction -Force -ErrorAction Stop
+        if ($instructionItem.PSIsContainer -or $instructionItem.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Managed governing instruction is missing or replaced.' }
+        $section = Find-FacetSection ([IO.File]::ReadAllText($instruction)) $instructionRel
+        if (-not $section -or (Text-Hash $section.Value) -cne $record.sha256) { throw 'Preserving modified Facet instruction section.' }
+        $instructionOwned = $true
     }
     if (-not $NonInteractive -and -not $PSBoundParameters.ContainsKey('Action') -and -not $env:FACET_ACTION) {
         $Action = Select-Choice 'What should setup do?' @('Add components - keep existing tools','Repair - build and verify a replacement','Update - switch this project to the selected version') @('add','repair','update') @('add')
@@ -295,24 +388,41 @@ if (Test-Path -LiteralPath $state) {
     if ($Action -eq 'add') {
         $selected = @(@($previous.components) + @($selected | Where-Object { $_ -ne 'none' }) | Where-Object { $_ -ne 'none' } | Select-Object -Unique)
         if (-not $selected.Count) { $selected=@('none') }
+        $previousPacks = if ($previous.PSObject.Properties.Name -contains 'packs') { @($previous.packs) } else { @() }
+        $selectedPacks = @($previousPacks + $selectedPacks | Where-Object { $_ } | Select-Object -Unique)
         $InstallDir = $previous.installation
     }
-} else { Assert-New $skill; Assert-New $state }
-Assert-RealAncestors $InstallDir
+    if ($Action -eq 'uninstall') { $InstallDir = $previous.installation }
+} else {
+    if ($Action -eq 'uninstall') { throw 'This project has no Facet installation to uninstall.' }
+    Assert-New $skill
+    $stateItem = Get-Item -LiteralPath $state -Force -ErrorAction SilentlyContinue
+    if ($stateItem) {
+        if (-not $stateItem.PSIsContainer -or $stateItem.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Preserving unsafe partial installer state: $state" }
+        Assert-RealAncestors $state
+        if (@(Get-ChildItem -LiteralPath $state -Recurse -Force | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count) { throw "Preserving linked partial installer state: $state" }
+        $stateResidue = $true
+    } else {
+        Assert-New $state
+    }
+}
 # An existing runtime is immutable during repair/additions: build a sibling
 # generation and only rebind this project after every selected check passes.
 $reuse = $false
-$runtimeState = Join-Path $InstallDir 'components.json'
-if (Test-Path -LiteralPath $runtimeState) {
-    $ready = [IO.File]::ReadAllText($runtimeState) | ConvertFrom-Json
-    $missing = @($selected | Where-Object { $_ -ne 'none' -and $_ -notin @($ready.components) })
-    $reuse = $Action -ne 'repair' -and $ready.version -eq $Version -and -not $missing.Count
+if ($Action -ne 'uninstall') {
+    Assert-RealAncestors $InstallDir
+    $runtimeState = Join-Path $InstallDir 'components.json'
+    if (Test-Path -LiteralPath $runtimeState) {
+        $ready = [IO.File]::ReadAllText($runtimeState) | ConvertFrom-Json
+        $missing = @($selected | Where-Object { $_ -ne 'none' -and $_ -notin @($ready.components) })
+        $reuse = $Action -ne 'repair' -and $ready.version -eq $Version -and -not $missing.Count
+    }
+    if ((Test-Path -LiteralPath $InstallDir) -and -not $reuse) {
+        if (-not (Test-Path -LiteralPath (Join-Path $InstallDir 'facet-install.json'))) { throw 'Existing installation is not managed by these scripts.' }
+        $InstallDir += '-generation-' + [guid]::NewGuid().ToString('N').Substring(0,8)
+    }
 }
-if ((Test-Path -LiteralPath $InstallDir) -and -not $reuse) {
-    if (-not (Test-Path -LiteralPath (Join-Path $InstallDir 'facet-install.json'))) { throw 'Existing installation is not managed by these scripts.' }
-    $InstallDir += '-generation-' + [guid]::NewGuid().ToString('N').Substring(0,8)
-}
-Write-Host "`n  CLI: $Target`n  Project: $ProjectDir`n  Action: $Action`n  Components: $($selected -join ', ')`n  Runtime: $InstallDir"
+Write-Host "`n  Agent: $Target`n  Project: $ProjectDir`n  Action: $Action`n  Production methods: $(if ($selectedPacks.Count) {$selectedPacks -join ', '} else {'core only'})`n  Components: $($selected -join ', ')`n  Runtime: $InstallDir"
 Write-Host '  Existing managed runtimes are retained until a verified replacement is ready.'
 Write-Host "  Detailed log: $logFile"
 if (-not $NonInteractive -and (Ask 'Continue?' 'y') -notin @('y','yes')) { throw 'Installation cancelled.' }
@@ -321,10 +431,42 @@ $savedPath = $env:PATH
 $temp = Join-Path ([IO.Path]::GetTempPath()) ('facet-install-' + [guid]::NewGuid().ToString('N'))
 $stage = ''; $projectStage = ''
 $oldState=''; $oldSkill=''
+$instructionTouched=$false; $instructionExisted=$false; $instructionBackup=$null
 $newRuntime = -not (Test-Path -LiteralPath $InstallDir)
 $committed = $false
 New-Item -ItemType Directory -Path $temp | Out-Null
 try {
+    if ($Action -eq 'uninstall') {
+        if (-not $previous -or -not (Test-Path -LiteralPath $ownedFile) -or -not $instructionOwned) { throw 'This project has no ownership-verified Facet installation to uninstall.' }
+        $skillPrefix = $hostDef.value.TrimEnd('/','\') + '/facet/'
+        foreach ($file in $owned) {
+            if (-not ($file.path.StartsWith('.facet-install/',[StringComparison]::Ordinal) -or $file.path.StartsWith($skillPrefix,[StringComparison]::Ordinal))) {
+                throw "Invalid uninstall ownership path: $($file.path)"
+            }
+        }
+        $content = [IO.File]::ReadAllText($instruction)
+        $match = Find-FacetSection $content $instructionRel
+        if (-not $match -or (Text-Hash $match.Value) -cne $record.sha256) { throw 'Preserving modified Facet instruction section.' }
+        $withoutFacet = $content.Substring(0,$match.Index) + $content.Substring($match.Index + $match.Length)
+        [IO.File]::WriteAllText($instruction,$withoutFacet,[Text.UTF8Encoding]::new($false))
+        foreach ($file in $owned) {
+            Remove-Item -LiteralPath (Join-Path $ProjectDir $file.path) -Force
+        }
+        Remove-Item -LiteralPath $ownedFile -Force
+        foreach ($root in @($skill,$state)) {
+            if (Test-Path -LiteralPath $root) {
+                $directories = @(Get-ChildItem -LiteralPath $root -Directory -Recurse -Force | Sort-Object { $_.FullName.Length } -Descending)
+                foreach ($directory in $directories) {
+                    if (-not @(Get-ChildItem -LiteralPath $directory.FullName -Force).Count) { Remove-Item -LiteralPath $directory.FullName -Force }
+                }
+                if (-not @(Get-ChildItem -LiteralPath $root -Force).Count) { Remove-Item -LiteralPath $root -Force }
+            }
+        }
+        $committed=$true
+        Write-Host "`nFacet was removed from this project. User instructions and unmanaged files were preserved." -ForegroundColor Green
+        Write-Host "Shared runtime retained at: $InstallDir"
+        return
+    }
     $name = "facet-$Version-windows-$arch.zip"
     if (-not $ArchivePath -and -not $reuse) {
         $base = "https://github.com/$((Definition facet).value)/releases/download/v$Version"
@@ -448,7 +590,10 @@ try {
         Write-Host 'Local media verification passed; external providers and host invocation were not tested.'
       }
     } else { Write-Host 'Verification skipped: media readiness is unverified.' }
-    if (-not $previous) { Assert-New $skill; Assert-New $state }
+    if (-not $previous) {
+        Assert-New $skill
+        if (-not $stateResidue) { Assert-New $state }
+    }
     Section '[3/3] Connect your CLI'
     @{version=$Version;components=$selected} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $InstallDir 'components.json') -Encoding UTF8
     New-Item -ItemType Directory -Path $ProjectDir -Force | Out-Null
@@ -459,12 +604,36 @@ try {
     foreach ($cmd in @('ffmpeg','ffprobe','node','npm.cmd')) { $found=@(Get-Command $cmd -CommandType Application -ErrorAction SilentlyContinue); if ($found.Count) { $paths += Split-Path -Parent $found[0].Source } }
     $pathLiteral = (($paths -join ';') + ';').Replace("'","''")
     $binaryLiteral = $facet.Replace("'","''")
-    @('$ErrorActionPreference = ''Stop''',"`$env:PATH = '$pathLiteral' + `$env:PATH","& '$binaryLiteral' @args",'exit $LASTEXITCODE') | Set-Content -LiteralPath "$projectStage/state/run-facet.ps1" -Encoding utf8
+    $launcherLines = @('$ErrorActionPreference = ''Stop''',"`$env:PATH = '$pathLiteral' + `$env:PATH")
+    if ('piper' -in $selected) {
+        $modelLiteral = (Join-Path $voices "$((Definition piper).value).onnx").Replace("'","''")
+        $launcherLines += "`$env:FACET_PIPER_MODEL = '$modelLiteral'"
+    }
+    $launcherLines += "& '$binaryLiteral' @args"
+    $launcherLines += 'exit $LASTEXITCODE'
+    $launcherLines | Set-Content -LiteralPath "$projectStage/state/run-facet.ps1" -Encoding utf8
     $launcher = (Join-Path $state 'run-facet.ps1').Replace("'","''")
-    @('', '## This installation', "- Invoke Facet with: & '$launcher' followed by the normal arguments. Use this launcher instead of bare facet in examples.", "- Resolve packs/... under $state. Read the relevant pack's SKILL.md on demand.", "- Optional components selected: $($selected -join ','). Media services report missing credentials/session requirements when used.") | Add-Content -LiteralPath "$projectStage/skill/SKILL.md"
+    $methodLine = if ($selectedPacks.Count) { "- Active production methods selected during setup: " + (($selectedPacks | ForEach-Object { "$state/packs/$_/SKILL.md" }) -join ', ') + '.' } else { '- No production-method pack is active; use the core guidance only.' }
+    @('', '## This installation', "- Invoke Facet with: & '$launcher' followed by the normal arguments. Use this launcher instead of bare facet in examples.", "- Run facet routes list and facet routes assess --input <json> before choosing a method. Resolve packs/... under $state and read only the relevant pack's SKILL.md.", $methodLine, "- Optional components selected: $($selected -join ','). Media services report missing credentials/session requirements when used.") | Add-Content -LiteralPath "$projectStage/skill/SKILL.md"
     if ('piper' -in $selected) { "- Piper model: $(Join-Path $voices "$((Definition piper).value).onnx")" | Add-Content "$projectStage/skill/SKILL.md" }
     if ('hyperframes' -in $selected) { "- Invoke the pinned HyperFrames renderer with node `"$hfEntry`" followed by its arguments; do not use unpinned npx." | Add-Content "$projectStage/skill/SKILL.md" }
-    @{schema=1;version=$Version;installation=$InstallDir;host=$Target;components=$selected} | ConvertTo-Json | Set-Content "$projectStage/state/installation.json"
+    @{schema=1;version=$Version;installation=$InstallDir;host=$Target;components=$selected;packs=$selectedPacks} | ConvertTo-Json | Set-Content "$projectStage/state/installation.json"
+    $sectionLines = @(
+        $facetSectionStart,
+        '## Facet',
+        '- Facet manages only this bounded section; keep project-specific instructions outside it.',
+        "- Read core guidance at ``$($hostDef.value)/facet/SKILL.md``.",
+        "- Invoke Facet through ``$state/run-facet.ps1``."
+    )
+    if ($selectedPacks.Count) {
+        $sectionLines += '- Active production methods: ' + (($selectedPacks | ForEach-Object { "``$state/packs/$_/SKILL.md``" }) -join ', ') + '.'
+    } else {
+        $sectionLines += '- No production-method pack is active; use core guidance only.'
+    }
+    $sectionLines += $facetSectionEnd
+    $facetSection = $sectionLines -join "`n"
+    $mergedInstruction = Merge-FacetSection $instruction $facetSection $instructionOwned
+    @{path=$instructionRel;sha256=(Text-Hash $facetSection)} | ConvertTo-Json | Set-Content "$projectStage/state/instruction-section.json" -Encoding UTF8
     $managed = @()
     foreach ($pair in @(@{source="$projectStage/state";prefix='.facet-install'},@{source="$projectStage/skill";prefix="$($hostDef.value)/facet"})) {
         $managed += @(Get-ChildItem -LiteralPath $pair.source -Recurse -File | ForEach-Object { @{path=($pair.prefix + '/' + (Relative-Path $pair.source $_.FullName));sha256=(Get-FileHash -LiteralPath $_.FullName).Hash} })
@@ -473,9 +642,24 @@ try {
     New-Item -ItemType Directory -Path (Split-Path -Parent $skill) -Force | Out-Null
     $oldState="$projectStage/old-state"; $oldSkill="$projectStage/old-skill"
     try {
-        if ($previous) { Move-Item -LiteralPath $state -Destination $oldState; Move-Item -LiteralPath $skill -Destination $oldSkill }
+        if ($previous) {
+            Move-Item -LiteralPath $state -Destination $oldState
+            Move-Item -LiteralPath $skill -Destination $oldSkill
+        } elseif ($stateResidue) {
+            Move-Item -LiteralPath $state -Destination $oldState
+            foreach ($entry in @(Get-ChildItem -LiteralPath $oldState -Force)) {
+                $destination = Join-Path "$projectStage/state" $entry.Name
+                if (Test-Path -LiteralPath $destination) { throw "Preserving colliding partial installer state: .facet-install/$($entry.Name)" }
+                Copy-Item -LiteralPath $entry.FullName -Destination $destination -Recurse
+            }
+        }
         Move-Item -LiteralPath "$projectStage/state" -Destination $state
         Move-Item -LiteralPath "$projectStage/skill" -Destination $skill
+        $instructionExisted = Test-Path -LiteralPath $instruction
+        if ($instructionExisted) { $instructionBackup = [IO.File]::ReadAllBytes($instruction) }
+        New-Item -ItemType Directory -Path (Split-Path -Parent $instruction) -Force | Out-Null
+        $instructionTouched = $true
+        [IO.File]::WriteAllText($instruction,$mergedInstruction,[Text.UTF8Encoding]::new($false))
     } catch {
         if (Test-Path $oldState) { if (Test-Path $state) { Remove-Item $state -Recurse -Force }; Move-Item $oldState $state }
         if (Test-Path $oldSkill) { if (Test-Path $skill) { Remove-Item $skill -Recurse -Force }; Move-Item $oldSkill $skill }
@@ -502,6 +686,10 @@ try {
     if (-not $committed) {
         if ($oldState -and (Test-Path $oldState)) { if (Test-Path $state) { Remove-Item $state -Recurse -Force }; Move-Item $oldState $state }
         if ($oldSkill -and (Test-Path $oldSkill)) { if (Test-Path $skill) { Remove-Item $skill -Recurse -Force }; Move-Item $oldSkill $skill }
+        if ($instructionTouched) {
+            if ($instructionExisted) { [IO.File]::WriteAllBytes($instruction,$instructionBackup) }
+            elseif (Test-Path -LiteralPath $instruction) { Remove-Item -LiteralPath $instruction -Force }
+        }
     }
     if ($stage -and (Test-Path -LiteralPath $stage)) { Remove-Item -LiteralPath $stage -Recurse -Force }
     if ($projectStage -and (Test-Path -LiteralPath $projectStage)) { Remove-Item -LiteralPath $projectStage -Recurse -Force }

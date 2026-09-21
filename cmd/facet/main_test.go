@@ -1,12 +1,17 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/xibodev/facet/internal/toolbox"
 )
 
 // Run the actual entry point in a child so exit codes and accidental writes are tested.
@@ -85,6 +90,18 @@ func TestHelpAndInvalidInputsDoNotWrite(t *testing.T) {
 	}
 }
 
+func TestHelpDerivesCanonicalToolCount(t *testing.T) {
+	dir, home := t.TempDir(), t.TempDir()
+	out, code := runCLI(t, dir, home, "", "--help")
+	if code != 0 {
+		t.Fatalf("help exit=%d output=%s", code, out)
+	}
+	want := fmt.Sprintf("and %d tools", len(toolbox.Names()))
+	if !strings.Contains(out, want) {
+		t.Fatalf("help output does not contain live canonical count %q:\n%s", want, out)
+	}
+}
+
 func TestLaunchErrorsPropagate(t *testing.T) {
 	for _, missing := range []bool{true, false} {
 		t.Run(map[bool]string{true: "missing", false: "exit-code"}[missing], func(t *testing.T) {
@@ -109,5 +126,56 @@ func TestLaunchErrorsPropagate(t *testing.T) {
 				t.Fatalf("wanted exit %d; got %d: %s", want, code, out)
 			}
 		})
+	}
+}
+
+func TestParseInitArgsSupportsRepeatablePackAliases(t *testing.T) {
+	got, err := parseInitArgs([]string{
+		"demo",
+		"--engine", "codex",
+		"--pack", "cinematic",
+		"--production-method=screen-demo",
+		"--pack=localization",
+		"--no-launch",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ProjectDir != "demo" || got.Engine != "codex" || !got.NoLaunch {
+		t.Fatalf("unexpected options: %+v", got)
+	}
+	want := []string{"cinematic", "screen-demo", "localization"}
+	if !reflect.DeepEqual(got.Packs, want) {
+		t.Fatalf("packs = %v, want %v", got.Packs, want)
+	}
+}
+
+func TestParseInitArgsDefaultsToCoreOnly(t *testing.T) {
+	got, err := parseInitArgs([]string{"demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Packs) != 0 {
+		t.Fatalf("default packs = %v, want core only", got.Packs)
+	}
+}
+
+func TestModuleJobStateDoesNotCrossProcesses(t *testing.T) {
+	dir, home := t.TempDir(), t.TempDir()
+	out, code := runCLI(t, dir, home, "", "module", "invoke", "creative.jobs.status", "--input",
+		`{"request_id":"req_poll","job_id":"job_from_another_process"}`)
+	if code == 0 {
+		t.Fatalf("fresh process unexpectedly knew job: %s", out)
+	}
+	var polled struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(out), &polled); err != nil {
+		t.Fatalf("decode poll refusal: %v\n%s", err, out)
+	}
+	if polled.Error.Code != "unknown_job" {
+		t.Fatalf("poll code=%q, want unknown_job: %s", polled.Error.Code, out)
 	}
 }

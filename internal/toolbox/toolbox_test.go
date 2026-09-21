@@ -7,21 +7,21 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
 
 var expectedToolNames = []string{
 	"audio_mix",
-	"audio_mixer",
 	"audio_probe",
 	"color_grade",
 	"direct_clip_search",
 	"edge_tts",
 	"elevenlabs_tts",
+	"ffmpeg_caption_burn",
 	"flux_image",
 	"frame_sample",
-	"frame_sampler",
 	"gflow_image",
 	"gflow_video",
 	"hyperframes_compose",
@@ -35,7 +35,6 @@ var expectedToolNames = []string{
 	"pexels_video",
 	"piper_tts",
 	"pixabay_video",
-	"remotion_caption_burn",
 	"scene_detect",
 	"silence_cutter",
 	"sora_video",
@@ -564,41 +563,41 @@ func TestAllToolEstimates(t *testing.T) {
 	outPath := filepath.Join(dir, "out.mp4")
 
 	sampleInputs := map[string]any{
-		"audio_mix":             map[string]any{"video": dummyFile, "source": map[string]any{"gain_db": -1.0}, "duration": "video", "output": outPath},
-		"audio_mixer":           map[string]any{"video": dummyFile, "source": map[string]any{"gain_db": -1.0}, "duration": "video", "output": outPath},
-		"audio_probe":           map[string]any{"input_path": dummyFile},
-		"color_grade":           map[string]any{"input_path": dummyFile, "output_path": outPath, "profile": "cinematic_warm"},
-		"direct_clip_search":    map[string]any{"output_dir": dir, "queries": []map[string]any{{"query": "nature"}}},
-		"edge_tts":              map[string]any{"text": "Hello world from Microsoft Edge neural voice"},
-		"elevenlabs_tts":        map[string]any{"text": "Hello world from ElevenLabs"},
-		"flux_image":            map[string]any{"prompt": "sunset over mountains", "aspect_ratio": "16:9"},
-		"frame_sample":          map[string]any{"input": dummyFile, "output_dir": filepath.Join(dir, "frames"), "strategy": map[string]any{"type": "uniform", "count": 2}},
-		"frame_sampler":         map[string]any{"input_path": dummyFile, "strategy": "count", "count": 2, "output_dir": filepath.Join(dir, "frames")},
-		"gflow_image":           map[string]any{"prompt": "origami eagle logo", "aspect_ratio": "square"},
-		"gflow_video":           map[string]any{"prompt": "futuristic dragon soaring through clouds", "duration": 6.0, "aspect_ratio": "landscape"},
-		"hyperframes_compose":   map[string]any{"operation": "doctor"},
-		"image_selector":        map[string]any{"prompt": "modern data center server room", "aspect_ratio": "16:9", "style": "photorealistic"},
-		"kling_video":           map[string]any{"prompt": "ocean waves crashing on rocks", "duration": 5.0, "aspect_ratio": "16:9"},
-		"media_probe":           map[string]any{"input": dummyFile},
-		"music_library":         map[string]any{"library_dir": dir},
-		"openai_image":          map[string]any{"prompt": "futuristic smart city with flying cars", "aspect_ratio": "16:9"},
-		"openai_tts":            map[string]any{"text": "Hello world from OpenAI"},
-		"output_review":         map[string]any{"input": dummyFile, "profile": map[string]any{"width": 1920, "height": 1080, "fps": 30}, "checks": map[string]any{"duration": map[string]any{"expected": 10, "tolerance": 0.5}, "video_codec": "h264", "pixel_format": "yuv420p", "audio": map[string]any{"required": true, "codec": "aac", "sample_rate": 48000, "channels": 2}}, "samples": map[string]any{"type": "uniform", "count": 4}, "evidence_dir": dir},
-		"pexels_video":          map[string]any{"query": "mountains"},
-		"piper_tts":             map[string]any{"text": "Hello world from Piper"},
-		"pixabay_video":         map[string]any{"query": "ocean"},
-		"remotion_caption_burn": map[string]any{"input_path": dummyFile, "output_path": outPath, "segments": []map[string]any{{"start": 0, "end": 1, "text": "hello"}}},
-		"scene_detect":          map[string]any{"input_path": dummyFile},
-		"silence_cutter":        map[string]any{"input_path": dummyFile},
-		"sora_video":            map[string]any{"prompt": "close up shot of a cup of coffee", "duration": 5.0, "aspect_ratio": "16:9"},
-		"source_edit":           map[string]any{"segments": []map[string]any{{"input": dummyFile, "start": 0, "end": 1}}, "target": map[string]any{"width": 1920, "height": 1080, "fps": 30, "fit": "contain", "video_codec": "h264", "pixel_format": "yuv420p", "audio_codec": "aac", "audio_sample_rate": 48000, "audio_channels": 2}, "output": outPath},
-		"subtitle_gen":          map[string]any{"segments": []map[string]any{{"start": 0, "end": 1, "text": "hello"}}},
-		"video_compose":         map[string]any{"operation": "compose", "edit_decisions": map[string]any{"cuts": []map[string]any{{"source": dummyFile, "in_seconds": 0, "out_seconds": 1}}}},
-		"video_selector":        map[string]any{"prompt": "drone flight over pine forest", "duration": 5.0, "aspect_ratio": "16:9", "intent": "cinematic"},
-		"video_stitch":          map[string]any{"operation": "stitch", "clips": []string{dummyFile, dummyFile}, "output_path": outPath},
-		"video_trimmer":         map[string]any{"operation": "cut", "input_path": dummyFile, "output_path": outPath, "start_seconds": 0, "end_seconds": 1},
-		"visual_qa":             map[string]any{"operation": "probe", "input_path": dummyFile},
-		"wikimedia":             map[string]any{"query": "planet"},
+		"audio_mix":           map[string]any{"video": dummyFile, "source": map[string]any{"gain_db": -1.0}, "duration": "video", "output": outPath},
+		"audio_mixer":         map[string]any{"video": dummyFile, "source": map[string]any{"gain_db": -1.0}, "duration": "video", "output": outPath},
+		"audio_probe":         map[string]any{"input_path": dummyFile},
+		"color_grade":         map[string]any{"input_path": dummyFile, "output_path": outPath, "profile": "cinematic_warm"},
+		"direct_clip_search":  map[string]any{"output_dir": dir, "queries": []map[string]any{{"query": "nature"}}},
+		"edge_tts":            map[string]any{"text": "Hello world from Microsoft Edge neural voice"},
+		"elevenlabs_tts":      map[string]any{"text": "Hello world from ElevenLabs"},
+		"flux_image":          map[string]any{"prompt": "sunset over mountains", "aspect_ratio": "16:9"},
+		"frame_sample":        map[string]any{"input": dummyFile, "output_dir": filepath.Join(dir, "frames"), "strategy": map[string]any{"type": "uniform", "count": 2}},
+		"frame_sampler":       map[string]any{"input_path": dummyFile, "strategy": "count", "count": 2, "output_dir": filepath.Join(dir, "frames")},
+		"gflow_image":         map[string]any{"prompt": "origami eagle logo", "aspect_ratio": "square"},
+		"gflow_video":         map[string]any{"prompt": "futuristic dragon soaring through clouds", "duration": 6.0, "aspect_ratio": "landscape"},
+		"hyperframes_compose": map[string]any{"operation": "doctor"},
+		"image_selector":      map[string]any{"prompt": "modern data center server room", "aspect_ratio": "16:9", "style": "photorealistic"},
+		"kling_video":         map[string]any{"prompt": "ocean waves crashing on rocks", "duration": 5.0, "aspect_ratio": "16:9"},
+		"media_probe":         map[string]any{"input": dummyFile},
+		"music_library":       map[string]any{"library_dir": dir},
+		"openai_image":        map[string]any{"prompt": "futuristic smart city with flying cars", "aspect_ratio": "16:9"},
+		"openai_tts":          map[string]any{"text": "Hello world from OpenAI"},
+		"output_review":       map[string]any{"input": dummyFile, "profile": map[string]any{"width": 1920, "height": 1080, "fps": 30}, "checks": map[string]any{"duration": map[string]any{"expected": 10, "tolerance": 0.5}, "video_codec": "h264", "pixel_format": "yuv420p", "audio": map[string]any{"required": true, "codec": "aac", "sample_rate": 48000, "channels": 2}}, "samples": map[string]any{"type": "uniform", "count": 4}, "evidence_dir": dir},
+		"pexels_video":        map[string]any{"query": "mountains"},
+		"piper_tts":           map[string]any{"text": "Hello world from Piper"},
+		"pixabay_video":       map[string]any{"query": "ocean"},
+		"ffmpeg_caption_burn": map[string]any{"input_path": dummyFile, "output_path": outPath, "segments": []map[string]any{{"start": 0, "end": 1, "text": "hello"}}},
+		"scene_detect":        map[string]any{"input_path": dummyFile},
+		"silence_cutter":      map[string]any{"input_path": dummyFile},
+		"sora_video":          map[string]any{"prompt": "close up shot of a cup of coffee", "duration": 5.0, "aspect_ratio": "16:9"},
+		"source_edit":         map[string]any{"segments": []map[string]any{{"input": dummyFile, "start": 0, "end": 1}}, "target": map[string]any{"width": 1920, "height": 1080, "fps": 30, "fit": "contain", "video_codec": "h264", "pixel_format": "yuv420p", "audio_codec": "aac", "audio_sample_rate": 48000, "audio_channels": 2}, "output": outPath},
+		"subtitle_gen":        map[string]any{"segments": []map[string]any{{"start": 0, "end": 1, "text": "hello"}}},
+		"video_compose":       map[string]any{"operation": "compose", "edit_decisions": map[string]any{"cuts": []map[string]any{{"source": dummyFile, "in_seconds": 0, "out_seconds": 1}}}},
+		"video_selector":      map[string]any{"prompt": "drone flight over pine forest", "duration": 5.0, "aspect_ratio": "16:9", "intent": "cinematic"},
+		"video_stitch":        map[string]any{"operation": "stitch", "clips": []string{dummyFile, dummyFile}, "output_path": outPath},
+		"video_trimmer":       map[string]any{"operation": "cut", "input_path": dummyFile, "output_path": outPath, "start_seconds": 0, "end_seconds": 1},
+		"visual_qa":           map[string]any{"operation": "probe", "input_path": dummyFile},
+		"wikimedia":           map[string]any{"query": "planet"},
 	}
 
 	for _, tool := range Names() {
@@ -623,11 +622,13 @@ func TestAllToolEstimates(t *testing.T) {
 func TestToolAliasesAndInlineJSON(t *testing.T) {
 	// 1. Test alias mapping in describe
 	for alias, expected := range map[string]string{
-		"edgetts": "edge_tts",
-		"edit":    "source_edit",
-		"probe":   "media_probe",
-		"review":  "output_review",
-		"compose": "video_compose",
+		"audio_mixer":   "audio_mix",
+		"edgetts":       "edge_tts",
+		"edit":          "source_edit",
+		"frame_sampler": "frame_sample",
+		"probe":         "media_probe",
+		"review":        "output_review",
+		"compose":       "video_compose",
 	} {
 		env, ok := CLI([]string{"tools", "describe", alias})
 		if !ok || !env.OK {
@@ -638,9 +639,25 @@ func TestToolAliasesAndInlineJSON(t *testing.T) {
 		}
 	}
 
+	// Compatibility aliases remain invokable with their legacy request shape,
+	// but the envelope identifies the canonical operation.
+	dir := t.TempDir()
+	input := filepath.Join(dir, "input.mp4")
+	if err := os.WriteFile(input, []byte("not decoded during estimate"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	legacyFrameRequest := `{"input_path":` + strconv.Quote(input) + `,"strategy":"count","count":2,"output_dir":` + strconv.Quote(filepath.Join(dir, "frames")) + `}`
+	env, ok := CLI([]string{"tools", "estimate", "frame_sampler", "--input", legacyFrameRequest})
+	if !ok || !env.OK {
+		t.Fatalf("estimate through compatibility alias failed: %#v", env)
+	}
+	if env.Tool != "frame_sample" {
+		t.Fatalf("compatibility alias reported %q, want canonical frame_sample", env.Tool)
+	}
+
 	// 2. Test inline JSON execution for estimate
 	inlineJSON := `{"text": "Hello world from inline json", "output": "narration/test.mp3"}`
-	env, ok := CLI([]string{"tools", "estimate", "edgetts", "--input", inlineJSON})
+	env, ok = CLI([]string{"tools", "estimate", "edgetts", "--input", inlineJSON})
 	if !ok || !env.OK {
 		t.Fatalf("estimate with inline JSON failed: %#v", env)
 	}
@@ -659,7 +676,6 @@ func TestToolAliasesAndInlineJSON(t *testing.T) {
 func TestVideoComposeDirectProps(t *testing.T) {
 	// 1. Test direct Explainer props estimate
 	explainerProps := `{
-		"theme": "flat-motion-graphics",
 		"cuts": [
 			{"id": "sc1", "type": "hero_title", "in_seconds": 0, "out_seconds": 4, "text": "The Universe"}
 		],
@@ -672,10 +688,8 @@ func TestVideoComposeDirectProps(t *testing.T) {
 
 	// 2. Test direct Scene Plan JSON estimate
 	scenePlan := `{
-		"version": "1.0",
-		"style_playbook": "flat-motion-graphics",
 		"scenes": [
-			{"id": "sc1", "type": "text_card", "description": "Intro to space", "start_seconds": 0, "end_seconds": 5}
+			{"id": "sc1", "type": "text_card", "text": "Intro to space", "start_seconds": 0, "end_seconds": 5}
 		],
 		"output": "renders/final.mp4"
 	}`

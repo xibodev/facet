@@ -9,7 +9,7 @@ import "testing"
 // render failed with dependency_missing. A tool that cannot render must not
 // report itself ready — that is the whole purpose of `configured`.
 func TestVideoComposeDeclaresTheComposer(t *testing.T) {
-	for _, tool := range []string{"video_compose", "remotion_caption_burn"} {
+	for _, tool := range []string{"video_compose"} {
 		deps, ok := summary(tool)["dependencies"].([]any)
 		if !ok {
 			t.Fatalf("%s declares no dependencies", tool)

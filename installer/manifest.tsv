@@ -5,10 +5,24 @@ host	opencode	-	.opencode/skills	-	-	-	-	OpenCode
 host	codex	-	.agents/skills	-	-	-	-	Codex
 host	claude	-	.claude/skills	-	-	-	-	Claude Code
 host	copilot	-	.github/skills	-	-	-	-	GitHub Copilot CLI
+host	studio	-	skills	-	-	-	-	Facet Studio
+instruction	opencode-instructions	-	AGENTS.md	-	-	-	-	OpenCode governing instructions
+instruction	codex-instructions	-	AGENTS.md	-	-	-	-	Codex governing instructions
+instruction	claude-instructions	-	CLAUDE.md	-	-	-	-	Claude governing instructions
+instruction	copilot-instructions	-	.github/copilot-instructions.md	-	-	-	-	GitHub Copilot governing instructions
+instruction	studio-instructions	-	AGENTS.md	-	-	-	-	Facet Studio governing instructions
+pack	explainer	-	bundle/packs/explainer	-	-	-	-	Animated explainers and narrated walkthroughs
+pack	cinematic	-	bundle/packs/cinematic	-	-	-	-	Cinematic and documentary treatments
+pack	screen-demo	-	bundle/packs/screen-demo	-	-	-	-	Product and screen demonstrations
+pack	talking-head	-	bundle/packs/talking-head	-	-	-	-	Presenter and talking-head productions
+pack	social	-	bundle/packs/social	-	-	-	-	Short-form and content repurposing
+pack	character-animation	-	bundle/packs/character-animation	-	-	-	-	Character-led animation
+pack	localization	-	bundle/packs/localization	-	-	-	-	Localization and dubbing
 runtime	ffmpeg	-	ffmpeg	Gyan.FFmpeg	ffmpeg	ffmpeg	Varies by platform	Core media editing and inspection (includes ffprobe)
 runtime	node	24.18.0	22	OpenJS.NodeJS.LTS	nodejs	node@24	30-60 MB	Node.js/npm for selected renderers
 runtime	python	3.12	python3	Python.Python.3.12	python3 python3-venv	python@3.12	Varies by platform	Python for optional Piper only
 runtime	browser-libs	-	chromium	-	libnspr4 libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 fonts-liberation	-	Varies by distribution	Linux system libraries and fonts for browser rendering
+builtin	edge-tts	-	microsoft_edge	all	all	all	0	Built-in keyless network neural speech client; service reachability checked only when used
 component	remotion	lockfile	bundle/remotion-composer	all	all	all	150-300 MB	Animated compositions and captions, including browser
 component	piper	1.8.0	en_US-lessac-medium	amd64	all	all	About 125 MB plus Python	Offline speech with a voice model and runtime dependencies
 component	gflow	1.2.1	xibodev/gflow-cli	all	all	all	3-4 MB	Optional image/video providers; external sessions configured when needed

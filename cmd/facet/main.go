@@ -9,11 +9,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/xibodev/facet/internal/bundle"
 	"github.com/xibodev/facet/internal/config"
-	"github.com/xibodev/facet/internal/module"
+	"github.com/xibodev/facet/internal/routes"
 	"github.com/xibodev/facet/internal/studio"
 	"github.com/xibodev/facet/internal/toolbox"
 )
@@ -21,14 +20,15 @@ import (
 const Version = "1.0.4"
 
 func printUsage() {
-	fmt.Println(`Facet - Autonomous Video Production Engine & Agent Toolbox
+	fmt.Printf(`Facet - Autonomous Video Production Engine & Agent Toolbox
 
 Usage:
   facet <command> [arguments]
 
 Available Commands:
-  doctor           Inspect system dependencies, runtimes, CLIs, and 33 tools
+  doctor           Inspect system dependencies, runtimes, CLIs, and %d tools
   init [slug]      Initialize a project workspace and link agent skills
+  routes <op>      Discover and assess production methods without executing
   tools <op> ...   Run toolbox operations (list, describe, estimate, run)
   module <op>      Module protocol surface for a host (describe, invoke)
   ui               Start the Facet Studio web interface
@@ -39,7 +39,71 @@ Flags:
   -h, --help       Show help
   -v, --version    Show version
 
-Use "facet <command> --help" for more information about a command.`)
+Use "facet <command> --help" for more information about a command.
+`, len(toolbox.Names()))
+}
+
+type initCLIOptions struct {
+	ProjectDir string
+	Engine     string
+	Packs      []string
+	NoLaunch   bool
+	Help       bool
+}
+
+func parseInitArgs(args []string) (initCLIOptions, error) {
+	opts := initCLIOptions{Engine: "claude"}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--help" || arg == "-h" || arg == "-help":
+			opts.Help = true
+			return opts, nil
+		case arg == "--no-launch" || arg == "-no-launch":
+			opts.NoLaunch = true
+		case arg == "--engine" || arg == "-engine":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				return opts, fmt.Errorf("--engine requires claude, opencode, codex, copilot, or studio")
+			}
+			opts.Engine = args[i+1]
+			i++
+		case strings.HasPrefix(arg, "--engine=") || strings.HasPrefix(arg, "-engine="):
+			opts.Engine = strings.SplitN(arg, "=", 2)[1]
+		case arg == "--pack" || arg == "-pack" || arg == "--production-method" || arg == "-production-method":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				return opts, fmt.Errorf("%s requires a pack name", arg)
+			}
+			opts.Packs = append(opts.Packs, args[i+1])
+			i++
+		case strings.HasPrefix(arg, "--pack=") || strings.HasPrefix(arg, "-pack=") ||
+			strings.HasPrefix(arg, "--production-method=") || strings.HasPrefix(arg, "-production-method="):
+			opts.Packs = append(opts.Packs, strings.SplitN(arg, "=", 2)[1])
+		case !strings.HasPrefix(arg, "-") && opts.ProjectDir == "":
+			opts.ProjectDir = arg
+		default:
+			return opts, fmt.Errorf("unknown argument %q. Run 'facet init --help' for usage", arg)
+		}
+	}
+	opts.Engine = strings.ToLower(strings.TrimSpace(opts.Engine))
+	switch opts.Engine {
+	case "claude", "opencode", "codex", "copilot", "studio":
+	default:
+		return opts, fmt.Errorf("unknown engine %q; choose claude, opencode, codex, copilot, or studio", opts.Engine)
+	}
+	seen := make(map[string]bool)
+	packs := opts.Packs[:0]
+	for _, pack := range opts.Packs {
+		pack = strings.ToLower(strings.TrimSpace(pack))
+		if pack == "" {
+			return opts, fmt.Errorf("pack name cannot be empty")
+		}
+		if !seen[pack] {
+			seen[pack] = true
+			packs = append(packs, pack)
+		}
+	}
+	opts.Packs = packs
+	return opts, nil
 }
 
 func main() {
@@ -69,41 +133,14 @@ func main() {
 		}
 
 	case "init":
-		engine := "claude"
-		noLaunch := false
-		slug := ""
-
-		args := os.Args[2:]
-		for i := 0; i < len(args); i++ {
-			arg := args[i]
-			if arg == "--help" || arg == "-h" || arg == "-help" {
-				fmt.Println("Usage: facet init [project-directory] [--engine claude|opencode|codex|copilot|studio] [--no-launch]\n\nInitialize a workspace and launch the selected agent (default: claude).\n--no-launch initializes without starting an agent.\n-h, --help prints this usage without writing files.")
-				return
-			} else if arg == "--no-launch" || arg == "-no-launch" {
-				noLaunch = true
-			} else if arg == "--engine" || arg == "-engine" {
-				if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
-					fmt.Fprintln(os.Stderr, "Init error: --engine requires claude, opencode, codex, or copilot")
-					os.Exit(1)
-				}
-				engine = args[i+1]
-				i++
-			} else if strings.HasPrefix(arg, "--engine=") || strings.HasPrefix(arg, "-engine=") {
-				parts := strings.SplitN(arg, "=", 2)
-				engine = parts[1]
-			} else if !strings.HasPrefix(arg, "-") && slug == "" {
-				slug = arg
-			} else {
-				fmt.Fprintf(os.Stderr, "Init error: unknown argument %q. Run 'facet init --help' for usage.\n", arg)
-				os.Exit(1)
-			}
-		}
-		engine = strings.ToLower(strings.TrimSpace(engine))
-		switch engine {
-		case "claude", "opencode", "codex", "copilot", "studio":
-		default:
-			fmt.Fprintf(os.Stderr, "Init error: unknown engine %q; choose claude, opencode, codex, copilot, or studio\n", engine)
+		opts, err := parseInitArgs(os.Args[2:])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Init error: %v\n", err)
 			os.Exit(1)
+		}
+		if opts.Help {
+			fmt.Println("Usage: facet init [project-directory] [--engine claude|opencode|codex|copilot|studio] [--pack name ...] [--production-method name ...] [--no-launch]\n\nInitialize a core-only workspace and launch the selected agent (default: claude).\n--pack and --production-method are repeatable aliases that activate only the named guidance packs.\n--no-launch initializes without starting an agent.\n-h, --help prints this usage without writing files.")
+			return
 		}
 
 		cfg, err := config.Load()
@@ -112,28 +149,32 @@ func main() {
 			os.Exit(1)
 		}
 
-		if err := config.RunInit(slug, engine, cfg); err != nil {
+		if _, err := config.RunInitWithOptions(config.InitOptions{
+			ProjectDir: opts.ProjectDir,
+			Engine:     opts.Engine,
+			Packs:      opts.Packs,
+		}, cfg, os.Stdout); err != nil {
 			fmt.Fprintf(os.Stderr, "Init error: %v\n", err)
 			os.Exit(1)
 		}
 
-		if !noLaunch {
+		if !opts.NoLaunch {
 			targetDir := "."
-			if slug != "" {
-				targetDir = slug
+			if opts.ProjectDir != "" {
+				targetDir = opts.ProjectDir
 			}
-			if engine == "studio" {
+			if opts.Engine == "studio" {
 				if err := studio.RunWithOption(":8787", targetDir, true); err != nil {
 					fmt.Fprintln(os.Stderr, err)
 					os.Exit(1)
 				}
 				return
 			}
-			cliPath := config.FindExecutable(engine, engine+".cmd", engine+".exe", engine+".ps1")
+			cliPath := config.FindExecutable(opts.Engine, opts.Engine+".cmd", opts.Engine+".exe", opts.Engine+".ps1")
 			if cliPath == "" {
-				cliPath = engine
+				cliPath = opts.Engine
 			}
-			fmt.Printf("🚀 Launching %s in %s...\n", engine, targetDir)
+			fmt.Printf("🚀 Launching %s in %s...\n", opts.Engine, targetDir)
 			c := exec.Command(cliPath)
 			if runtime.GOOS == "windows" {
 				switch strings.ToLower(filepath.Ext(cliPath)) {
@@ -168,6 +209,18 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "routes":
+		result, ok := routes.CLI(os.Args[2:])
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(result); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		if !ok {
+			os.Exit(1)
+		}
+
 	case "module":
 		// Host module protocol surface. Additive: `facet tools` is unchanged and
 		// remains the documented human-facing contract. stdout carries exactly
@@ -183,17 +236,6 @@ func main() {
 		if err := encoder.Encode(env); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
-		}
-		// An async invocation returns a job handle immediately, but this is a
-		// one-shot process: exiting here would kill the goroutine and discard
-		// the render it represents. A handle that loses its work is worse than
-		// blocking, so wait for jobs this process started. The envelope is
-		// already written, so the host has its handle while the work finishes.
-		if module.HasRunningJobs() {
-			if !module.AwaitJobs(30 * time.Minute) {
-				fmt.Fprintln(os.Stderr,
-					"facet: exiting with unfinished jobs; their output was not completed")
-			}
 		}
 		if !ok {
 			os.Exit(1)
@@ -235,7 +277,6 @@ func main() {
 
 		src := bundle.Source{
 			SkillsDir:    filepath.Join("skills", "facet"),
-			SkillsRoot:   "skills",
 			PacksDir:     "packs",
 			Tools:        toolbox.Names(),
 			FacetVersion: Version,

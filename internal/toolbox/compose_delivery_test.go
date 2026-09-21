@@ -132,6 +132,22 @@ func TestRemotionDeliveryFacts(t *testing.T) {
 	}
 }
 
+func TestRemotionRenderRequestsDeliverySafeColorProfile(t *testing.T) {
+	requireFFmpeg(t)
+	script := `
+if (!process.argv.includes('--pixel-format=yuv420p')) throw Error('missing delivery-safe pixel format');
+if (!process.argv.includes('--color-space=bt709')) throw Error('missing delivery-safe color space');
+require('fs').copyFileSync('../source.mp4', process.argv[5]);
+`
+	workspace := composeDeliveryFixture(t, script)
+	composeDeliveryMedia(t, filepath.Join(workspace, "source.mp4"), false)
+
+	_, _, err := doRemotionRender(composeRequest{}, filepath.Join(workspace, "output.mp4"), 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRemotionDeliveryFailsClosed(t *testing.T) {
 	requireFFmpeg(t)
 	for _, scenario := range []string{"missing-artifact", "invalid-artifact", "missing-audio", "mux-error", "publish-error"} {
@@ -177,7 +193,7 @@ func TestRemotionDeliveryFailsClosed(t *testing.T) {
 			if err != nil || string(data) != "previous delivery" {
 				t.Fatalf("previous output lost: %q, %v", data, err)
 			}
-			for _, pattern := range []string{".videokit-*", ".remotion_props.json"} {
+			for _, pattern := range []string{".facet-*", ".remotion_props.json"} {
 				leftovers, err := filepath.Glob(filepath.Join(workspace, pattern))
 				if err != nil || len(leftovers) != 0 {
 					t.Fatalf("temporary artifacts left behind: %v, %v", leftovers, err)
