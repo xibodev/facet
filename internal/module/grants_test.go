@@ -26,12 +26,12 @@ func TestRealHostRequestIsAccepted(t *testing.T) {
 	// So the fixture grants the repository root and names the media relative
 	// to it, which is what a host does.
 	projectRoot := t.TempDir()
-	wav := append([]byte{
+	wav := []byte{
 		'R', 'I', 'F', 'F', 36, 0, 0, 0, 'W', 'A', 'V', 'E',
 		'f', 'm', 't', ' ', 16, 0, 0, 0, 1, 0, 1, 0,
 		0x40, 0x1f, 0, 0, 0x40, 0x1f, 0, 0, 1, 0, 8, 0,
 		'd', 'a', 't', 'a', 0, 0, 0, 0,
-	})
+	}
 	if err := os.WriteFile(filepath.Join(projectRoot, "source.wav"), wav, 0600); err != nil {
 		t.Fatal(err)
 	}
