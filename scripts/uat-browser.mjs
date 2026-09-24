@@ -62,23 +62,22 @@ try {
       }
     };
   });
-  checkpoint.write('create-project-select-real-opencode');
+  checkpoint.write('create-project-for-native-studio');
   await page.goto('http://127.0.0.1:8788/', { waitUntil: 'domcontentloaded' });
-  await page.locator('#btnQuickNew').click();
-  await page.locator('#newProdName').fill(slug);
-  await page.locator('#newProdEngine').selectOption('opencode');
+  await page.locator('#newProjectButton').click();
+  await page.locator('#newProjectName').fill(slug);
+  await page.locator('#newProjectSlug').fill(slug);
   const createdResponse = page.waitForResponse(r => new URL(r.url()).pathname === '/api/catalog/new' && r.request().method() === 'POST');
-  await page.locator('#btnSubmitNewProd').click();
+  await page.locator('#createProjectButton').click();
   const created = await createdResponse;
   assert.equal(created.status(), 200, 'Create production failed');
   const project = await created.json();
   projectPath = project.path;
   assert.ok(projectPath?.startsWith('/home/facet/'), 'Project escaped disposable HOME');
-  await page.waitForFunction(() => !document.querySelector('#promptInput').disabled);
-  assert.equal(await page.locator('#engineSelect').inputValue(), 'opencode', 'Created project engine did not propagate to Studio');
+  await page.locator('#workspaceTitle').waitFor({ state: 'visible' });
   await page.screenshot({ path: path.join(out, '01-created.png'), fullPage: true });
   assert.equal(fs.existsSync(path.join(projectPath, 'renders/final.mp4')), false, 'Fresh project already contains output');
-  report.checks.push({ name: 'create-project-select-real-opencode', passed: true });
+  report.checks.push({ name: 'create-project-for-native-studio', passed: true });
 
   checkpoint.write('external-catalog-details-and-media-isolation');
   const base = 'http://127.0.0.1:8788';
@@ -86,7 +85,7 @@ try {
   assert.equal(detailsResponse.status(), 200, 'External catalog project details unavailable without studio/projects');
   const details = await detailsResponse.json();
   assert.equal(details.path, projectPath);
-  assert.equal(details.engine, 'opencode');
+  assert.equal(details.engine, 'studio');
   assert.equal(details.stages.master, false);
   assert.ok(!details.video_url, 'Fresh project inherited another production video');
   assert.ok(details.brief_url?.startsWith(`/api/media/catalog/${slug}/`), 'Brief URL is not scoped to the catalog project');
@@ -109,6 +108,7 @@ try {
   const config = JSON.parse(fs.readFileSync(process.env.OPENCODE_CONFIG, 'utf8'));
   validateModelConfig(config);
   report.model = config.model;
+  await page.waitForFunction(() => !document.querySelector('#promptInput').disabled);
   const prompts = [
     'Make a 3-second title card that says "Hello from Facet", with a blue background and an audible tone. Export it at 320x180, 24fps, H.264 video and AAC audio to renders/final.mp4. Use the installed Facet toolbox and local assets only, with no paid APIs or network asset downloads.',
     'Change the title to "See you soon" and the background to green. Keep the same duration, dimensions, frame rate, codecs and audible tone, and export the revised video to renders/final.mp4 using the installed Facet toolbox.'
@@ -186,16 +186,15 @@ try {
     // Verify the first deliverable before submitting the revision; do not let a
     // final-only playback check conceal an unusable initial output.
     checkpoint.write(`turn-${i + 1}-playback`);
-    await page.waitForFunction(() => { const v = document.querySelector('#masterVideo'); return v.readyState >= 2 && v.duration > 0; }, null, { timeout: 30000 });
-    await page.locator('#masterVideo').evaluate(v => { v.pause(); v.currentTime = 0; });
-    await page.locator('#playButton').click();
-    await page.waitForFunction(() => document.querySelector('#masterVideo').currentTime > 0.3, null, { timeout: 15000 });
-    turn.playback = await page.locator('#masterVideo').evaluate(v => ({ duration: v.duration, currentTime: v.currentTime, error: v.error?.code || null }));
+    await page.waitForFunction(() => { const v = document.querySelector('#projectVideo'); return !v.hidden && v.readyState >= 2 && v.duration > 0; }, null, { timeout: 30000 });
+    await page.locator('#projectVideo').evaluate(async v => { v.pause(); v.currentTime = 0; await v.play(); });
+    await page.waitForFunction(() => document.querySelector('#projectVideo').currentTime > 0.3, null, { timeout: 15000 });
+    turn.playback = await page.locator('#projectVideo').evaluate(v => ({ duration: v.duration, currentTime: v.currentTime, error: v.error?.code || null }));
     assert.equal(turn.playback.error, null);
-    await page.locator('#masterVideo').evaluate(v => v.pause());
+    await page.locator('#projectVideo').evaluate(v => v.pause());
     checkpoint.write(`turn-${i + 1}-download`);
     const downloadPromise = page.waitForEvent('download');
-    await page.locator('#videoDownloadLink').click();
+    await page.locator('#videoLink').click();
     const download = await downloadPromise;
     assert.equal(await download.failure(), null);
     const downloaded = path.join(out, `turn-${i + 1}-download.mp4`);

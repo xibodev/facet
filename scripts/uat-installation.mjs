@@ -77,7 +77,7 @@ check('real-remotion-render-no-fallback', () => {
   assert.ok(composer, 'Installer must install Remotion and dependencies under HOME');
   const output = path.join(evidence, 'renderer-fixture.mp4');
   const props = path.join(evidence, 'renderer-props.json');
-  fs.writeFileSync(props, JSON.stringify({ cuts: [{ id: 'uat-fixture', type: 'hero_title', text: 'Deterministic renderer fixture', in_seconds: 0, out_seconds: 1 }], audio: {} }));
+  fs.writeFileSync(props, JSON.stringify({ cuts: [{ id: 'uat-fixture', type: 'hero_title', text: 'Deterministic renderer fixture', in_seconds: 0, out_seconds: 1 }] }));
   const log = run(path.join(composer, 'node_modules/.bin/remotion'), ['render', path.join(composer, 'src/index.tsx'), 'Explainer', output, '--props', props, '--browser-executable=/usr/bin/chromium', '--concurrency=1', '--frames=0-29', '--log=error'], { cwd: composer, timeout: 180000 });
   fs.writeFileSync(path.join(evidence, 'renderer.log'), redact(log));
   return inspectMedia(output, { audio: false, maxDuration: 3 });
@@ -91,7 +91,7 @@ check('installed-facet-video-compose-with-audio', () => {
   run('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=523:duration=2', audio]);
   const props = {
     cuts: [{ id: 'toolbox-fixture', type: 'hero_title', text: 'Installed Facet renderer fixture', in_seconds: 0, out_seconds: 1 }],
-    audio: {}, audio_path: audio, output: 'renders/final.mp4', timeout_seconds: 180
+    audio_path: audio, output: 'renders/final.mp4', timeout_seconds: 180
   };
   const input = path.join(project, 'artifacts/props.json');
   fs.writeFileSync(input, JSON.stringify(props));

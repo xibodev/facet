@@ -619,6 +619,30 @@ func TestLocalUATActivatesUIFromTheInstalledStudioBundle(t *testing.T) {
 	if strings.Contains(string(installation), "['facet-ui', ['--version']]") {
 		t.Error("installation UAT still expects the removed standalone facet-ui launcher")
 	}
+	if strings.Contains(string(installation), "audio: {}") {
+		t.Error("installation UAT sends an explicitly invalid empty audio contract")
+	}
+	browser, err := os.ReadFile("scripts/uat-browser.mjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"#newProjectButton", "#newProjectName", "#newProjectSlug", "#createProjectButton", "#projectVideo", "#videoLink"} {
+		if !strings.Contains(string(browser), required) {
+			t.Errorf("browser UAT does not contain %q", required)
+		}
+	}
+	for _, removed := range []string{"#btnQuickNew", "#newProdName", "#newProdEngine", "#btnSubmitNewProd", "#masterVideo", "#videoDownloadLink"} {
+		if strings.Contains(string(browser), removed) {
+			t.Errorf("browser UAT still contains legacy selector %q", removed)
+		}
+	}
+	smoke, err := os.ReadFile(".release-harness/scenarios/smoke.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(smoke), `nav[aria-label='Projects']`) {
+		t.Error("smoke scenario does not target the rebuilt project navigation")
+	}
 }
 
 func TestMarkdownProductPathsDistinguishesTargetInstallRoots(t *testing.T) {
