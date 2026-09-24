@@ -534,6 +534,7 @@ func TestLocalUATAllowsAnExplicitNPMRegistry(t *testing.T) {
 	checks := map[string][]string{
 		".release-harness/docker/Dockerfile": {
 			"ARG NPM_REGISTRY=https://registry.npmjs.org",
+			"ENV npm_config_registry=${NPM_REGISTRY}",
 			`npm install --global opencode-ai@1.18.29 --registry="${NPM_REGISTRY}"`,
 			`npm install --prefix /opt/uat --registry="${NPM_REGISTRY}"`,
 		},
@@ -559,7 +560,13 @@ func TestLocalUATIncludesTheInstallerPackage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{"!installer/", "!installer/**"} {
+	for _, required := range []string{
+		"!installer/", "!installer/**",
+		"!agents/", "!agents/**",
+		"!LICENSE", "!THIRD_PARTY_NOTICES.md",
+		"!capability.go",
+		"!pkg/", "!pkg/**",
+	} {
 		if !strings.Contains(string(data), required) {
 			t.Errorf(".dockerignore does not contain %q", required)
 		}
@@ -572,12 +579,45 @@ func TestLocalUATRunsTheInstallerNonInteractively(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, required := range []string{
-		"bash install.sh --yes --target opencode --project /home/facet/studio --install-dir /home/facet/.facet/runtime --components none",
+		"go build -trimpath -ldflags \"-X main.version=1.0.4\"",
+		"facet-1.0.4-linux-amd64.zip",
+		"bash install.sh --yes --target opencode --project /home/facet/studio --install-dir /home/facet/.facet/runtime --components remotion",
+		"--archive /tmp/facet-1.0.4-linux-amd64.zip --checksums /tmp/checksums-linux-amd64.txt",
 		"ln -s ../runtime/bin/facet /home/facet/.facet/bin/facet",
+		"ln -s runtime/bundle /home/facet/.facet/bundle",
 	} {
 		if !strings.Contains(string(data), required) {
 			t.Errorf(".release-harness/docker/Dockerfile does not contain %q", required)
 		}
+	}
+}
+
+func TestLocalUATActivatesUIFromTheInstalledStudioBundle(t *testing.T) {
+	checks := map[string][]string{
+		".release-harness/docker/Dockerfile": {
+			"/home/facet/.facet/bin/facet bundle --target studio --out /home/facet/.facet/bundle",
+		},
+		"scripts/uat-entrypoint.mjs": {
+			"spawn('/home/facet/.facet/bin/facet', ['ui', '--port', '8787', '--dir', '/home/facet/studio', '--no-open']",
+		},
+	}
+	for name, required := range checks {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, term := range required {
+			if !strings.Contains(string(data), term) {
+				t.Errorf("%s does not contain %q", name, term)
+			}
+		}
+	}
+	installation, err := os.ReadFile("scripts/uat-installation.mjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(installation), "['facet-ui', ['--version']]") {
+		t.Error("installation UAT still expects the removed standalone facet-ui launcher")
 	}
 }
 

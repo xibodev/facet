@@ -2,7 +2,7 @@ import net from 'node:net';
 import { spawn } from 'node:child_process';
 
 // The relay shares Studio's namespace and preserves HTTP Host/Origin and SSE.
-const child = spawn('facet-ui', ['--port', '8787', '--dir', '/home/facet/studio', '--no-open'], { stdio: 'inherit' });
+const child = spawn('/home/facet/.facet/bin/facet', ['ui', '--port', '8787', '--dir', '/home/facet/studio', '--no-open'], { stdio: 'inherit' });
 const relay = net.createServer(client => {
   const upstream = net.connect(8787, '127.0.0.1');
   client.pipe(upstream).pipe(client);

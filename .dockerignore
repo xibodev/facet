@@ -4,10 +4,17 @@
 !install.sh
 !installer/
 !installer/**
+!LICENSE
+!THIRD_PARTY_NOTICES.md
+!capability.go
+!agents/
+!agents/**
 !cmd/
 !cmd/**
 !internal/
 !internal/**
+!pkg/
+!pkg/**
 !web/
 !web/**
 !skills/

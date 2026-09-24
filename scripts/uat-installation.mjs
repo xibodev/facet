@@ -19,7 +19,7 @@ function check(name, fn) {
 }
 check('installed-toolchain', () => {
   const versions = {};
-  for (const [command, args] of [['facet', ['--version']], ['facet-ui', ['--version']], ['opencode', ['--version']], ['node', ['--version']], ['ffmpeg', ['-version']], ['ffprobe', ['-version']], ['chromium', ['--version']]]) {
+  for (const [command, args] of [['facet', ['--version']], ['opencode', ['--version']], ['node', ['--version']], ['ffmpeg', ['-version']], ['ffprobe', ['-version']], ['chromium', ['--version']]]) {
     versions[command] = run(command, args).split('\n')[0];
   }
   assert.match(versions.opencode, /1\.18\.29/);
