@@ -2,6 +2,8 @@
 !go.mod
 !go.sum
 !install.sh
+!installer/
+!installer/**
 !cmd/
 !cmd/**
 !internal/

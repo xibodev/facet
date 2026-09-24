@@ -530,6 +530,57 @@ func TestProductTextGuardCoversShippingDefinitions(t *testing.T) {
 	}
 }
 
+func TestLocalUATAllowsAnExplicitNPMRegistry(t *testing.T) {
+	checks := map[string][]string{
+		".release-harness/docker/Dockerfile": {
+			"ARG NPM_REGISTRY=https://registry.npmjs.org",
+			`npm install --global opencode-ai@1.18.29 --registry="${NPM_REGISTRY}"`,
+			`npm install --prefix /opt/uat --registry="${NPM_REGISTRY}"`,
+		},
+		"docker-compose.test.yml": {
+			"NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}",
+		},
+	}
+	for name, required := range checks {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, term := range required {
+			if !strings.Contains(string(data), term) {
+				t.Errorf("%s does not contain %q", name, term)
+			}
+		}
+	}
+}
+
+func TestLocalUATIncludesTheInstallerPackage(t *testing.T) {
+	data, err := os.ReadFile(".dockerignore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"!installer/", "!installer/**"} {
+		if !strings.Contains(string(data), required) {
+			t.Errorf(".dockerignore does not contain %q", required)
+		}
+	}
+}
+
+func TestLocalUATRunsTheInstallerNonInteractively(t *testing.T) {
+	data, err := os.ReadFile(".release-harness/docker/Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"bash install.sh --yes --target opencode --project /home/facet/studio --install-dir /home/facet/.facet/runtime --components none",
+		"ln -s ../runtime/bin/facet /home/facet/.facet/bin/facet",
+	} {
+		if !strings.Contains(string(data), required) {
+			t.Errorf(".release-harness/docker/Dockerfile does not contain %q", required)
+		}
+	}
+}
+
 func TestMarkdownProductPathsDistinguishesTargetInstallRoots(t *testing.T) {
 	tests := []struct {
 		name           string
