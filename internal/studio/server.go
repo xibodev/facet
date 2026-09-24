@@ -64,6 +64,18 @@ type Server struct {
 	sessionToken    string
 	modelMu         sync.Mutex
 	modelConfigPath string
+	bundleDir       string
+}
+
+func installedBundleDir() string {
+	if dir := strings.TrimSpace(os.Getenv("FACET_BUNDLE_DIR")); dir != "" {
+		return dir
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".facet", "bundle", "studio")
+	}
+	return filepath.Join(home, ".facet", "bundle", "studio")
 }
 
 // NewServer constructs a new Studio Server.
@@ -93,6 +105,7 @@ func NewServer(rootDir string) *Server {
 		environment:     environment,
 		sessionToken:    sessionToken,
 		modelConfigPath: filepath.Join(applicationHome(), "config.json"),
+		bundleDir:       installedBundleDir(),
 	}
 	s.registerRoutes()
 	return s
@@ -106,6 +119,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/projects", s.guardRequest(noToken, s.handleListProjects))
 	s.mux.HandleFunc("GET /api/projects/{slug}", s.guardRequest(noToken, s.handleGetProject))
 	s.mux.HandleFunc("GET /api/engines", s.guardRequest(noToken, s.handleListEngines))
+	s.mux.HandleFunc("GET /api/capability", s.guardRequest(noToken, s.handleCapabilityStatus))
 	s.mux.HandleFunc("GET /api/session-token", s.guardRequest(noToken, s.handleSessionToken))
 	s.mux.HandleFunc("GET /api/session", s.guardRequest(tokenHeader, s.handleGetSession))
 	s.mux.HandleFunc("GET /api/conversation", s.guardRequest(tokenHeader, s.handleConversation))
@@ -309,10 +323,24 @@ func Run(addr, dir string) error {
 
 // RunWithOption starts the Studio server with optional browser opening.
 func RunWithOption(addr, dir string, autoOpen bool) error {
+	return RunWithBundleOption(addr, dir, "", autoOpen)
+}
+
+// RunWithBundleOption starts Studio with an explicit installed capability
+// bundle. An empty path uses FACET_BUNDLE_DIR or the standard user location.
+func RunWithBundleOption(addr, dir, bundleDir string, autoOpen bool) error {
 	if err := InitializeApplication(); err != nil {
 		return err
 	}
-	return NewServer(dir).RunWithOption(addr, autoOpen)
+	server := NewServer(dir)
+	if strings.TrimSpace(bundleDir) != "" {
+		abs, err := filepath.Abs(bundleDir)
+		if err != nil {
+			return fmt.Errorf("resolve Facet bundle: %w", err)
+		}
+		server.bundleDir = abs
+	}
+	return server.RunWithOption(addr, autoOpen)
 }
 
 // Handler returns the underlying http.Handler for testing or mounting.
@@ -960,8 +988,8 @@ func (s *Server) handleChatSSE(w http.ResponseWriter, r *http.Request) {
 	}
 	lastNativeID, _, _, _, _ := sess.status()
 	result := sess.runTurn(r.Context(), prompt, func(event turnEvent) error {
-		if event.normalized.SessionID != "" && event.normalized.SessionID != lastNativeID {
-			lastNativeID = event.normalized.SessionID
+		if event.sessionID != "" && event.sessionID != lastNativeID {
+			lastNativeID = event.sessionID
 			if err := sse(w, "session", sessionPayload(sess)); err != nil {
 				return err
 			}

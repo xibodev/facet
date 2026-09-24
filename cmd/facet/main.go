@@ -309,6 +309,7 @@ func main() {
 		fs := flag.NewFlagSet("ui", flag.ExitOnError)
 		port := fs.Int("port", 8787, "Port to listen on")
 		dir := fs.String("dir", ".", "Working directory / root directory of projects")
+		bundleDir := fs.String("bundle", "", "Installed Studio bundle directory (default: FACET_BUNDLE_DIR or ~/.facet/bundle/studio)")
 		noOpen := fs.Bool("no-open", false, "Do not automatically open browser")
 		_ = fs.Parse(os.Args[2:])
 		if fs.NArg() != 0 {
@@ -317,7 +318,7 @@ func main() {
 		}
 
 		addr := fmt.Sprintf(":%d", *port)
-		if err := studio.RunWithOption(addr, *dir, !*noOpen); err != nil {
+		if err := studio.RunWithBundleOption(addr, *dir, *bundleDir, !*noOpen); err != nil {
 			fmt.Fprintf(os.Stderr, "UI error: %v\n", err)
 			os.Exit(1)
 		}

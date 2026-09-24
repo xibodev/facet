@@ -371,8 +371,9 @@ func TestServerEndpoints(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET / returned %d, want 200", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "Facet — Video production") {
-		t.Fatalf("GET / body missing Facet Studio title")
+	if !strings.Contains(rec.Body.String(), "<title>Facet</title>") ||
+		!strings.Contains(rec.Body.String(), `id="bundleHealth"`) {
+		t.Fatalf("GET / body missing the bundle-aware Facet production UI")
 	}
 
 	// 2. GET /non-existent

@@ -58,6 +58,7 @@ type turnResult struct {
 type turnEvent struct {
 	normalized *engine.NormalizedEvent
 	payload    map[string]any
+	sessionID  string
 }
 
 type processTree interface {
@@ -483,7 +484,7 @@ func (s *Session) runTurn(ctx context.Context, prompt string, emit func(turnEven
 		if adapter.Name() == "claude" && normalized.Raw != nil {
 			payload = normalized.Raw
 		}
-		if err := emit(turnEvent{normalized: normalized, payload: payload}); err != nil {
+		if err := emit(turnEvent{normalized: normalized, payload: payload, sessionID: normalized.SessionID}); err != nil {
 			emitErr = err
 			cancel()
 			_ = stdout.Close()

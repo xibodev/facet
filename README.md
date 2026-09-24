@@ -77,8 +77,19 @@ The operating rules are:
 - inspect the rendered result because process success is not creative
   acceptance.
 
-Facet Standalone is experimental and consumes the same embedded Facet guidance
-and pack assets. The supported product path is the installed agent bundle.
+Facet.UI embeds the released `facet-studio` agent kernel and activates Facet
+only from a verified Studio-target bundle. Build that bundle for local
+development, then pass it explicitly:
+
+```text
+facet bundle --target studio --out dist/bundles
+facet ui --bundle dist/bundles/studio
+```
+
+The default lookup location is `~/.facet/bundle/studio`; it can be overridden
+with `FACET_BUNDLE_DIR` or `--bundle`. The bundle, not compiled fallback
+guidance, is authoritative for capability identity, instructions, packs, tool
+vocabulary, compatibility, and integrity.
 
 ## Production packs
 
