@@ -105,13 +105,16 @@ contract inside that bundle is `skills/facet/SKILL.md`, accompanied by
 the runtime assets needed by Facet implementations.
 
 Target adapters project those same assets into the native discovery shape for
-Claude Code, Codex, GitHub Copilot CLI, and OpenCode. A target-shaped agent
-bundle is a readable directory plus `facet-bundle.json`; it records Facet
-version, adapter version, compatibility, tool names, entries, and digests.
-Different target paths are allowed. Different product semantics are not.
+Claude Code, Codex, GitHub Copilot CLI, OpenCode, and the embedded Facet Studio
+kernel. A target-shaped agent bundle is a readable directory plus
+`facet-bundle.json`; it records capability identity, Facet version, adapter
+version, compatibility, tool names, entries, and digests. Different target
+paths are allowed. Different product semantics are not.
 
-The current tool transport is the `facet` CLI. Adapters must not advertise MCP
-or another transport until Facet actually implements it.
+External agentic CLI adapters use the `facet` CLI transport. The Studio adapter
+declares the released v1 kernel API and the `facet-native` in-process provider;
+it must not tell the embedded kernel to shell out to another Facet executable.
+Adapters must not advertise MCP or another transport until Facet implements it.
 
 ## 5. Host projection
 

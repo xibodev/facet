@@ -248,12 +248,12 @@ func main() {
 		// product truth here and passed in; the builder never holds its own
 		// copy of either.
 		fs := flag.NewFlagSet("bundle", flag.ExitOnError)
-		target := fs.String("target", "", "claude | codex | copilot | opencode | all")
+		target := fs.String("target", "", "claude | codex | copilot | opencode | studio | all")
 		out := fs.String("out", "dist/bundles", "Output directory")
 		_ = fs.Parse(os.Args[2:])
 
 		if *target == "" {
-			fmt.Fprintln(os.Stderr, "Usage: facet bundle --target <claude|codex|copilot|opencode|all> [--out dir]")
+			fmt.Fprintln(os.Stderr, "Usage: facet bundle --target <claude|codex|copilot|opencode|studio|all> [--out dir]")
 			os.Exit(1)
 		}
 
@@ -269,7 +269,7 @@ func main() {
 				}
 			}
 			if !valid {
-				fmt.Fprintf(os.Stderr, "Unknown target %q; choose claude, codex, copilot, opencode or all\n", *target)
+				fmt.Fprintf(os.Stderr, "Unknown target %q; choose claude, codex, copilot, opencode, studio or all\n", *target)
 				os.Exit(1)
 			}
 			wanted = []bundle.Target{t}

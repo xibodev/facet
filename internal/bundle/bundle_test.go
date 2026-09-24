@@ -89,6 +89,7 @@ func TestEachTargetGetsItsNativeShape(t *testing.T) {
 		TargetCodex:    {"AGENTS.md", ".agents"},
 		TargetCopilot:  {"copilot-instructions.md", ".github"},
 		TargetOpenCode: {"AGENTS.md", ".opencode"},
+		TargetStudio:   {"AGENT.md", "."},
 	}
 	for tgt, exp := range want {
 		dir := t.TempDir()
@@ -102,6 +103,44 @@ func TestEachTargetGetsItsNativeShape(t *testing.T) {
 		if m.Compatibility.InstallRoot != exp.root {
 			t.Errorf("%s: install root %q, want %q", tgt, m.Compatibility.InstallRoot, exp.root)
 		}
+	}
+}
+
+func TestStudioBundleDeclaresNativeKernelBinding(t *testing.T) {
+	dir := t.TempDir()
+	m, err := Build(testSource(t), TargetStudio, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.CapabilityID != "xibodev.facet" {
+		t.Errorf("capability id = %q, want xibodev.facet", m.CapabilityID)
+	}
+	if m.Compatibility.ToolTransport != "native" {
+		t.Errorf("transport = %q, want native", m.Compatibility.ToolTransport)
+	}
+	if m.Compatibility.NativeProvider != "facet-native" {
+		t.Errorf("native provider = %q, want facet-native", m.Compatibility.NativeProvider)
+	}
+	if m.Compatibility.KernelModule != "github.com/xibodev/facet-studio" {
+		t.Errorf("kernel module = %q", m.Compatibility.KernelModule)
+	}
+	if m.Compatibility.KernelVersion != "v1" {
+		t.Errorf("kernel version = %q, want v1", m.Compatibility.KernelVersion)
+	}
+	if m.Compatibility.FacetBinary != "" {
+		t.Errorf("native bundle unexpectedly requires binary %q", m.Compatibility.FacetBinary)
+	}
+
+	instructions, err := os.ReadFile(filepath.Join(dir, "AGENT.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(instructions)
+	if !strings.Contains(body, "facet-native") {
+		t.Error("native binding is not explained to the kernel agent")
+	}
+	if strings.Contains(body, "facet tools run") || strings.Contains(body, "facet executable") {
+		t.Error("studio bundle tells the embedded kernel to shell out to Facet")
 	}
 }
 
@@ -148,6 +187,7 @@ func TestVerifyDetectsTampering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if _, err := Verify(dir); err != nil {
 		t.Fatalf("a freshly built bundle failed verification: %v", err)
 	}
@@ -181,6 +221,44 @@ func TestVerifyDetectsTampering(t *testing.T) {
 	}
 	if _, err := Verify(dir); err == nil {
 		t.Error("a bundle missing a declared entry passed verification")
+	}
+}
+
+func TestVerifyTargetRejectsIncompatibleStudioBinding(t *testing.T) {
+	for name, mutate := range map[string]func(*Manifest){
+		"capability": func(m *Manifest) { m.CapabilityID = "example.other" },
+		"target":     func(m *Manifest) { m.Target = TargetClaude },
+		"transport":  func(m *Manifest) { m.Compatibility.ToolTransport = "cli" },
+		"provider":   func(m *Manifest) { m.Compatibility.NativeProvider = "other-native" },
+		"kernel":     func(m *Manifest) { m.Compatibility.KernelModule = "example.com/other-kernel" },
+		"version":    func(m *Manifest) { m.Compatibility.KernelVersion = "v2" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if _, err := Build(testSource(t), TargetStudio, dir); err != nil {
+				t.Fatal(err)
+			}
+			manifestPath := filepath.Join(dir, "facet-bundle.json")
+			raw, err := os.ReadFile(manifestPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var m Manifest
+			if err := json.Unmarshal(raw, &m); err != nil {
+				t.Fatal(err)
+			}
+			mutate(&m)
+			raw, err = json.MarshalIndent(m, "", "  ")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(manifestPath, raw, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := VerifyTarget(dir, TargetStudio); err == nil {
+				t.Fatal("incompatible studio binding passed target verification")
+			}
+		})
 	}
 }
 

@@ -49,7 +49,9 @@ const ManifestSchema = "xibodev.facet.bundle/v1"
 // warranted.
 const AdapterVersion = "1"
 
-// Target is one external agentic CLI Facet can be installed into.
+const CapabilityID = "xibodev.facet"
+
+// Target is one agent runtime Facet can be installed into.
 type Target string
 
 const (
@@ -57,11 +59,12 @@ const (
 	TargetOpenCode Target = "opencode"
 	TargetCopilot  Target = "copilot"
 	TargetCodex    Target = "codex"
+	TargetStudio   Target = "studio"
 )
 
 // Targets returns every supported target, sorted so a build is reproducible.
 func Targets() []Target {
-	return []Target{TargetClaude, TargetCodex, TargetCopilot, TargetOpenCode}
+	return []Target{TargetClaude, TargetCodex, TargetCopilot, TargetOpenCode, TargetStudio}
 }
 
 // Entry is one file the bundle will install, with the digest of its content.
@@ -86,6 +89,7 @@ type Manifest struct {
 	Schema string `json:"schema"`
 
 	// --- identity ---
+	CapabilityID   string `json:"capability_id"`
 	FacetVersion   string `json:"facet_version"`
 	Target         Target `json:"target"`
 	AdapterVersion string `json:"adapter_version"`
@@ -126,7 +130,12 @@ type Compatibility struct {
 	// rather than forcing a rewrite.
 	ToolTransport string `json:"tool_transport"`
 	// FacetBinary is the executable an agent must invoke.
-	FacetBinary string `json:"facet_binary"`
+	FacetBinary string `json:"facet_binary,omitempty"`
+	// NativeProvider identifies the in-process provider compiled into a host.
+	NativeProvider string `json:"native_provider,omitempty"`
+	// KernelModule and KernelVersion identify the compatible public kernel API.
+	KernelModule  string `json:"kernel_module,omitempty"`
+	KernelVersion string `json:"kernel_version,omitempty"`
 }
 
 // layoutFor returns the target-native install shape.
@@ -149,6 +158,13 @@ func layoutFor(t Target) Compatibility {
 		base.InstallRoot = ".github"
 	case TargetCodex:
 		base.InstallRoot = ".agents"
+	case TargetStudio:
+		base.InstallRoot = "."
+		base.ToolTransport = "native"
+		base.FacetBinary = ""
+		base.NativeProvider = "facet-native"
+		base.KernelModule = "github.com/xibodev/facet-studio"
+		base.KernelVersion = "v1"
 	}
 	return base
 }
@@ -238,6 +254,7 @@ func Build(src Source, t Target, outDir string) (*Manifest, error) {
 
 	m := &Manifest{
 		Schema:         ManifestSchema,
+		CapabilityID:   CapabilityID,
 		FacetVersion:   src.FacetVersion,
 		Target:         t,
 		AdapterVersion: AdapterVersion,
@@ -271,6 +288,8 @@ func instructionFileFor(t Target) string {
 		return filepath.ToSlash(filepath.Join("copilot-instructions.md"))
 	case TargetOpenCode:
 		return "AGENTS.md"
+	case TargetStudio:
+		return "AGENT.md"
 	}
 	return "AGENTS.md"
 }
@@ -380,6 +399,39 @@ func Verify(dir string) (*Manifest, error) {
 	return &m, nil
 }
 
+// VerifyTarget checks both bundle integrity and the binding required by a host.
+func VerifyTarget(dir string, target Target) (*Manifest, error) {
+	m, err := Verify(dir)
+	if err != nil {
+		return nil, err
+	}
+	if m.CapabilityID != CapabilityID {
+		return nil, fmt.Errorf("capability %q, want %q", m.CapabilityID, CapabilityID)
+	}
+	if m.Target != target {
+		return nil, fmt.Errorf("bundle target %q, want %q", m.Target, target)
+	}
+	if len(m.Tools) == 0 {
+		return nil, fmt.Errorf("bundle declares no tool vocabulary")
+	}
+	if target != TargetStudio {
+		return m, nil
+	}
+	if m.Compatibility.ToolTransport != "native" {
+		return nil, fmt.Errorf("studio transport %q, want native", m.Compatibility.ToolTransport)
+	}
+	if m.Compatibility.NativeProvider != "facet-native" {
+		return nil, fmt.Errorf("studio provider %q, want facet-native", m.Compatibility.NativeProvider)
+	}
+	if m.Compatibility.KernelModule != "github.com/xibodev/facet-studio" {
+		return nil, fmt.Errorf("studio kernel %q is not supported", m.Compatibility.KernelModule)
+	}
+	if m.Compatibility.KernelVersion != "v1" {
+		return nil, fmt.Errorf("studio kernel API %q, want v1", m.Compatibility.KernelVersion)
+	}
+	return m, nil
+}
+
 // renderToolWiring produces the target-native instruction that makes Facet
 // discoverable and invocable.
 //
@@ -387,6 +439,10 @@ func Verify(dir string) (*Manifest, error) {
 // shape differs, which is the adapter rule holding: an agent reading any of
 // these learns the same product semantics.
 func renderToolWiring(t Target, c Compatibility, src Source) string {
+	if t == TargetStudio {
+		return renderNativeToolWiring(c, src)
+	}
+
 	var b strings.Builder
 
 	b.WriteString("# Facet — creative production tools\n\n")
@@ -438,6 +494,34 @@ func renderToolWiring(t Target, c Compatibility, src Source) string {
 	b.WriteString("## Guidance\n\n")
 	b.WriteString(fmt.Sprintf("Production guidance is installed under `%s/skills/`. Read `skills/facet/SKILL.md`\n", c.InstallRoot))
 	b.WriteString("first, then the pack matching the requested style.\n")
+
+	return b.String()
+}
+
+func renderNativeToolWiring(c Compatibility, src Source) string {
+	var b strings.Builder
+
+	b.WriteString("---\n")
+	b.WriteString("name: Facet Video Producer\n")
+	b.WriteString("description: Produce and verify media with the installed Facet capability.\n")
+	b.WriteString("skills:\n")
+	b.WriteString("  - facet\n")
+	b.WriteString("---\n\n")
+	b.WriteString("# Facet — creative production tools\n\n")
+	b.WriteString(fmt.Sprintf("Facet v%s is installed through the `%s` native provider. ", src.FacetVersion, c.NativeProvider))
+	b.WriteString("Use the registered Facet tools directly; do not invoke a Facet executable or an external agent CLI.\n\n")
+	b.WriteString("Always call `facet_describe` before constructing a request and `facet_estimate` before consequential work. ")
+	b.WriteString("The provider and bundle versions must match; report a version mismatch instead of working around it.\n\n")
+	b.WriteString("## Rules that are product guarantees, not style\n\n")
+	b.WriteString("- **Paid work needs explicit human consent.** Unknown cost is never zero.\n")
+	b.WriteString("- **Verify the output, not the exit code.** Check duration, resolution, frame count, and visible content before reporting success.\n")
+	b.WriteString("- **Never substitute mock output for a real asset.**\n\n")
+	b.WriteString(fmt.Sprintf("## Available tools (%d)\n\n", len(src.Tools)))
+	for _, name := range src.Tools {
+		b.WriteString(fmt.Sprintf("- `%s`\n", name))
+	}
+	b.WriteString("\n## Guidance\n\n")
+	b.WriteString("The canonical core skill is `skills/facet/SKILL.md`. Follow it first, then only the installed pack needed for the request.\n")
 
 	return b.String()
 }
