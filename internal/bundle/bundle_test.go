@@ -15,6 +15,8 @@ func testSource(t *testing.T) Source {
 	return Source{
 		SkillsDir:    filepath.Join("..", "..", "skills", "facet"),
 		PacksDir:     filepath.Join("..", "..", "packs"),
+		AgentsDir:    filepath.Join("..", "..", "agents"),
+		SchemasDir:   filepath.Join("..", "..", "schemas"),
 		Tools:        []string{"video_compose", "media_probe", "edge_tts"},
 		FacetVersion: "1.0.2-test",
 	}
@@ -46,6 +48,34 @@ func TestBundleProjectsOnlyCanonicalRetainedPacks(t *testing.T) {
 			if string(got) != want {
 				t.Errorf("bundle guidance drifted from canonical content: %s", guidance.Path)
 			}
+		}
+
+	}
+}
+
+func TestBundleIncludesCanonicalSupportAssets(t *testing.T) {
+	dir := t.TempDir()
+	manifest, err := Build(testSource(t), TargetStudio, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"agents/facet-creative.md":               "agent",
+		"schemas/tools/video_stitch.schema.json": "schema",
+	}
+	for path, kind := range want {
+		found := false
+		for _, entry := range manifest.Entries {
+			if entry.Path == path && entry.Kind == kind {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("bundle omits canonical %s asset %s", kind, path)
+		}
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(path))); err != nil {
+			t.Errorf("bundle did not write %s: %v", path, err)
 		}
 	}
 }

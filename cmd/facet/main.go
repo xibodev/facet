@@ -278,6 +278,8 @@ func main() {
 		src := bundle.Source{
 			SkillsDir:    filepath.Join("skills", "facet"),
 			PacksDir:     "packs",
+			AgentsDir:    "agents",
+			SchemasDir:   "schemas",
 			Tools:        toolbox.Names(),
 			FacetVersion: Version,
 		}

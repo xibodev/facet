@@ -173,8 +173,10 @@ func layoutFor(t Target) Compatibility {
 type Source struct {
 	// SkillsDir and PacksDir are canonical product truth. The builder reads
 	// them and projects the same semantics into every target.
-	SkillsDir string
-	PacksDir  string
+	SkillsDir  string
+	PacksDir   string
+	AgentsDir  string
+	SchemasDir string
 	// Tools is the public vocabulary, supplied by the caller so the builder
 	// never holds a second copy of it.
 	Tools []string
@@ -228,6 +230,21 @@ func Build(src Source, t Target, outDir string) (*Manifest, error) {
 		got, err := copyTree(filepath.Join(src.PacksDir, p), filepath.Join(outDir, dest), dest, "pack")
 		if err != nil {
 			return nil, fmt.Errorf("projecting pack %s: %w", p, err)
+		}
+		entries = append(entries, got...)
+	}
+
+	if src.AgentsDir != "" {
+		got, err := copyTree(src.AgentsDir, filepath.Join(outDir, "agents"), "agents", "agent")
+		if err != nil {
+			return nil, fmt.Errorf("projecting agent definitions: %w", err)
+		}
+		entries = append(entries, got...)
+	}
+	if src.SchemasDir != "" {
+		got, err := copyTree(src.SchemasDir, filepath.Join(outDir, "schemas"), "schemas", "schema")
+		if err != nil {
+			return nil, fmt.Errorf("projecting schemas: %w", err)
 		}
 		entries = append(entries, got...)
 	}
