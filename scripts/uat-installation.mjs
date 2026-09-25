@@ -90,7 +90,7 @@ check('installed-facet-video-compose-with-audio', () => {
   const audio = path.join(project, 'narration/fixture.wav');
   run('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=523:duration=2', audio]);
   const props = {
-    cuts: [{ id: 'toolbox-fixture', type: 'hero_title', text: 'Installed Facet renderer fixture', in_seconds: 0, out_seconds: 1 }],
+    cuts: [{ id: 'toolbox-fixture', type: 'hero_title', text: 'Installed Facet renderer fixture', in_seconds: 0, out_seconds: 2 }],
     audio_path: audio, output: 'renders/final.mp4', timeout_seconds: 180
   };
   const input = path.join(project, 'artifacts/props.json');

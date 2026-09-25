@@ -88,10 +88,10 @@ try {
   assert.equal(details.engine, 'studio');
   assert.equal(details.stages.master, false);
   assert.ok(!details.video_url, 'Fresh project inherited another production video');
-  assert.ok(details.brief_url?.startsWith(`/api/media/catalog/${slug}/`), 'Brief URL is not scoped to the catalog project');
+  assert.ok(details.brief_url?.startsWith(`/api/media/projects/${slug}/`), 'Brief URL is not scoped to the project');
   const brief = await context.request.get(`${base}${details.brief_url}`);
   assert.equal(brief.status(), 200);
-  const briefRelative = decodeURIComponent(new URL(details.brief_url, base).pathname.slice(`/api/media/catalog/${slug}/`.length));
+  const briefRelative = decodeURIComponent(new URL(details.brief_url, base).pathname.slice(`/api/media/projects/${slug}/`.length));
   const briefFile = path.resolve(projectPath, briefRelative);
   assert.ok(briefFile.startsWith(`${projectPath}/`), 'Brief escaped project directory');
   assert.equal(await brief.text(), fs.readFileSync(briefFile, 'utf8'));

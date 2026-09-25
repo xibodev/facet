@@ -622,6 +622,9 @@ func TestLocalUATActivatesUIFromTheInstalledStudioBundle(t *testing.T) {
 	if strings.Contains(string(installation), "audio: {}") {
 		t.Error("installation UAT sends an explicitly invalid empty audio contract")
 	}
+	if !strings.Contains(string(installation), "id: 'toolbox-fixture', type: 'hero_title', text: 'Installed Facet renderer fixture', in_seconds: 0, out_seconds: 2") {
+		t.Error("installation UAT does not align the toolbox fixture duration with its audio")
+	}
 	browser, err := os.ReadFile("scripts/uat-browser.mjs")
 	if err != nil {
 		t.Fatal(err)
@@ -635,6 +638,9 @@ func TestLocalUATActivatesUIFromTheInstalledStudioBundle(t *testing.T) {
 		if strings.Contains(string(browser), removed) {
 			t.Errorf("browser UAT still contains legacy selector %q", removed)
 		}
+	}
+	if !strings.Contains(string(browser), "/api/media/projects/${slug}/") {
+		t.Error("browser UAT does not validate the rebuilt project media route")
 	}
 	smoke, err := os.ReadFile(".release-harness/scenarios/smoke.json")
 	if err != nil {
