@@ -629,7 +629,7 @@ func TestLocalUATActivatesUIFromTheInstalledStudioBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{"#newProjectButton", "#newProjectName", "#newProjectSlug", "#createProjectButton", "#projectVideo", "#videoLink"} {
+	for _, required := range []string{"#newProjectButton", "#newProjectName", "#newProjectSlug", "#createProjectButton", "#settingsButton", "#discoverModelsButton", "#modelSelect", "#saveModelButton", "#projectVideo", "#videoLink"} {
 		if !strings.Contains(string(browser), required) {
 			t.Errorf("browser UAT does not contain %q", required)
 		}

@@ -113,6 +113,21 @@ try {
   const config = JSON.parse(fs.readFileSync(process.env.OPENCODE_CONFIG, 'utf8'));
   validateModelConfig(config);
   report.model = config.model;
+  const modelStatus = await (await context.request.get(`${base}/api/models`)).json();
+  if (!modelStatus.configured || modelStatus.active_model !== config.model) {
+    await page.locator('#settingsButton').click();
+    const discoveredResponse = page.waitForResponse(r => new URL(r.url()).pathname === '/api/models/discover' && r.request().method() === 'POST');
+    await page.locator('#discoverModelsButton').click();
+    const discovered = await discoveredResponse;
+    assert.equal(discovered.status(), 200, 'Native model discovery failed');
+    await page.locator(`#modelSelect option[value="${config.model}"]`).waitFor({ state: 'attached' });
+    await page.locator('#modelSelect').selectOption(config.model);
+    const savedResponse = page.waitForResponse(r => new URL(r.url()).pathname === '/api/models' && r.request().method() === 'POST');
+    await page.locator('#saveModelButton').click();
+    const saved = await savedResponse;
+    assert.equal(saved.status(), 200, 'Native model selection failed');
+    await page.locator('[data-close="settingsDialog"]').click();
+  }
   await page.waitForFunction(() => !document.querySelector('#promptInput').disabled);
   const prompts = [
     'Make a 3-second title card that says "Hello from Facet", with a blue background and an audible tone. Export it at 320x180, 24fps, H.264 video and AAC audio to renders/final.mp4. Use the installed Facet toolbox and local assets only, with no paid APIs or network asset downloads.',
