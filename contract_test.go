@@ -645,6 +645,9 @@ func TestLocalUATActivatesUIFromTheInstalledStudioBundle(t *testing.T) {
 	if !strings.Contains(string(browser), "if (details.brief_url)") {
 		t.Error("browser UAT requires optional brief evidence on a fresh project")
 	}
+	if !strings.Contains(string(browser), "const discoveredModels = await page.locator('#modelSelect option').evaluateAll") {
+		t.Error("browser UAT does not accept the native model catalog returned by discovery")
+	}
 	smoke, err := os.ReadFile(".release-harness/scenarios/smoke.json")
 	if err != nil {
 		t.Fatal(err)

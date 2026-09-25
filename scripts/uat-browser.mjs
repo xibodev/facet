@@ -120,8 +120,11 @@ try {
     await page.locator('#discoverModelsButton').click();
     const discovered = await discoveredResponse;
     assert.equal(discovered.status(), 200, 'Native model discovery failed');
-    await page.locator(`#modelSelect option[value="${config.model}"]`).waitFor({ state: 'attached' });
-    await page.locator('#modelSelect').selectOption(config.model);
+    const discoveredModels = await page.locator('#modelSelect option').evaluateAll(options => options.map(option => option.value).filter(Boolean));
+    assert.ok(discoveredModels.length, 'Native model discovery returned no selectable models');
+    const selectedModel = discoveredModels.includes(config.model) ? config.model : discoveredModels[0];
+    report.model = selectedModel;
+    await page.locator('#modelSelect').selectOption(selectedModel);
     const savedResponse = page.waitForResponse(r => new URL(r.url()).pathname === '/api/models' && r.request().method() === 'POST');
     await page.locator('#saveModelButton').click();
     const saved = await savedResponse;
