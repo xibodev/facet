@@ -639,8 +639,8 @@ func TestLocalUATActivatesUIFromTheInstalledStudioBundle(t *testing.T) {
 			t.Errorf("browser UAT still contains legacy selector %q", removed)
 		}
 	}
-	if !strings.Contains(string(browser), "/api/media/projects/${slug}/") {
-		t.Error("browser UAT does not validate the rebuilt project media route")
+	if !strings.Contains(string(browser), "const mediaPrefix = `/api/media/catalog/${details.slug}/`;") {
+		t.Error("browser UAT does not validate the catalog media route using the canonical project ID")
 	}
 	smoke, err := os.ReadFile(".release-harness/scenarios/smoke.json")
 	if err != nil {
