@@ -13,7 +13,6 @@ import (
 	"github.com/xibodev/facet-studio/pkg/agent"
 	"github.com/xibodev/facet-studio/pkg/bus"
 	"github.com/xibodev/facet-studio/pkg/fileutil"
-	"github.com/xibodev/facet/internal/studio/engine"
 	"github.com/xibodev/facet/internal/toolbox"
 )
 
@@ -58,7 +57,12 @@ func (o *nativeOutput) ApproveTool(ctx context.Context, req *agent.ToolApprovalR
 	o.session.mu.Unlock()
 	defer func() { o.session.mu.Lock(); delete(o.session.approvals, id); o.session.mu.Unlock() }()
 	o.mu.Lock()
-	e := &engine.NormalizedEvent{Type: "approval", ToolName: req.Tool, ToolID: id, Content: "This operation may incur a charge. Allow this specific operation?"}
+	e := map[string]any{
+		"type":      "approval",
+		"tool_name": req.Tool,
+		"tool_id":   id,
+		"content":   "This operation may incur a charge. Allow this specific operation?",
+	}
 	err := o.send(e)
 	o.mu.Unlock()
 	if err != nil {
@@ -75,23 +79,25 @@ func (o *nativeOutput) ApproveTool(ctx context.Context, req *agent.ToolApprovalR
 				toolID = ids[0]
 				o.toolIDs[req.Tool] = ids[1:]
 			}
-			_ = o.send(&engine.NormalizedEvent{Type: engine.EventToolResult, ToolID: toolID, ToolName: req.Tool, ToolOutput: "Not executed: you declined this operation.", IsError: true})
+			_ = o.send(map[string]any{
+				"type":        "tool_result",
+				"tool_id":     toolID,
+				"tool_name":   req.Tool,
+				"tool_output": "Not executed: you declined this operation.",
+				"is_error":    true,
+			})
 			o.mu.Unlock()
 		}
 		return agent.ApprovalDecision{Approved: allowed, Reason: "User decision in Facet"}, nil
 	}
 }
 
-func (o *nativeOutput) send(event *engine.NormalizedEvent) error {
+func (o *nativeOutput) send(event map[string]any) error {
 	if o.err != nil {
 		return o.err
 	}
-	payload, err := normalizedEventMap(event)
-	if err == nil {
-		err = o.emit(turnEvent{normalized: event, payload: payload})
-	}
-	o.err = err
-	return err
+	o.err = o.emit(turnEvent{payload: event})
+	return o.err
 }
 func (o *nativeOutput) GetStreamer(context.Context, string, string, string) (bus.Streamer, bool) {
 	return o, true
@@ -100,7 +106,7 @@ func (o *nativeOutput) Update(_ context.Context, content string) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.text = content
-	return o.send(&engine.NormalizedEvent{Type: "text_replace", Content: content})
+	return o.send(map[string]any{"type": "text_replace", "content": content})
 }
 func (o *nativeOutput) Finalize(ctx context.Context, content string) error {
 	return o.Update(ctx, content)
@@ -118,7 +124,12 @@ func (o *nativeOutput) BeforeTool(_ context.Context, call *agent.ToolCallHookReq
 	o.toolSequence++
 	id := fmt.Sprintf("native-tool-%d", o.toolSequence)
 	o.toolIDs[call.Tool] = append(o.toolIDs[call.Tool], id)
-	err := o.send(&engine.NormalizedEvent{Type: engine.EventToolUse, ToolID: id, ToolName: call.Tool, ToolInput: call.Arguments})
+	err := o.send(map[string]any{
+		"type":       "tool_use",
+		"tool_id":    id,
+		"tool_name":  call.Tool,
+		"tool_input": call.Arguments,
+	})
 	return call, agent.HookDecision{}, err
 }
 
@@ -132,13 +143,19 @@ func (o *nativeOutput) AfterTool(_ context.Context, result *agent.ToolResultHook
 		id = ids[0]
 		o.toolIDs[result.Tool] = ids[1:]
 	}
-	e := &engine.NormalizedEvent{Type: engine.EventToolResult, ToolID: id, ToolName: result.Tool, DurationMs: result.Duration.Milliseconds()}
+	e := map[string]any{
+		"type":        "tool_result",
+		"tool_id":     id,
+		"tool_name":   result.Tool,
+		"duration_ms": result.Duration.Milliseconds(),
+	}
 	if result.Result != nil {
-		e.ToolOutput = result.Result.ForUser
-		if e.ToolOutput == "" {
-			e.ToolOutput = result.Result.ForLLM
+		output := result.Result.ForUser
+		if output == "" {
+			output = result.Result.ForLLM
 		}
-		e.IsError = result.Result.IsError
+		e["tool_output"] = output
+		e["is_error"] = result.Result.IsError
 	}
 	return result, agent.HookDecision{}, o.send(e)
 }
@@ -175,7 +192,7 @@ func (s *Session) runNativeTurn(ctx context.Context, prompt string, emit func(tu
 		return turnResult{reason: err.Error(), canceled: errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)}
 	}
 	if response != "" && response != o.text {
-		if err := o.send(&engine.NormalizedEvent{Type: "text_replace", Content: response}); err != nil {
+		if err := o.send(map[string]any{"type": "text_replace", "content": response}); err != nil {
 			return turnResult{reason: err.Error(), emitFailed: true}
 		}
 	}

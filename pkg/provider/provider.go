@@ -24,11 +24,20 @@ import (
 
 // FacetToolProvider implements agent.ToolProvider by wrapping Facet's native
 // toolbox operations as Studio-compatible tools.
-type FacetToolProvider struct{}
+type FacetToolProvider struct {
+	bundleDir     string
+	bundleEntries map[string]struct{}
+}
 
 // NewFacetToolProvider creates a new Facet tool provider.
 func NewFacetToolProvider() *FacetToolProvider {
 	return &FacetToolProvider{}
+}
+
+// NewBundleToolProvider creates a provider whose guidance tools read only from
+// a verified installed bundle.
+func NewBundleToolProvider(bundleDir string, entries ...string) *FacetToolProvider {
+	return &FacetToolProvider{bundleDir: bundleDir, bundleEntries: entrySet(entries)}
 }
 
 // RegisterTools contributes all enabled Facet tools to the Studio agent.
@@ -44,7 +53,12 @@ func (p *FacetToolProvider) RegisterTools(
 		summaries = append(summaries, name)
 	}
 	for _, operation := range []string{"describe", "estimate", "guidance"} {
-		register(capabilityTool{operation: operation, workspace: workspace})
+		register(capabilityTool{
+			operation:     operation,
+			workspace:     workspace,
+			bundleDir:     p.bundleDir,
+			bundleEntries: p.bundleEntries,
+		})
 	}
 
 	return summaries, nil

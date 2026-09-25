@@ -65,3 +65,9 @@ test('script launchers expose the installed Piper voice to Facet', () => {
   assert.match(bash, /FACET_PIPER_MODEL/);
   assert.match(powershell, /FACET_PIPER_MODEL/);
 });
+
+test('linux installer accepts current browser dependency package names', () => {
+  assert.match(bash, /apt-get update/);
+  assert.match(bash, /apt-cache show fonts-liberation/);
+  assert.match(bash, /package=\$\{package\/\/fonts-liberation\/fonts-liberation2\}/);
+});

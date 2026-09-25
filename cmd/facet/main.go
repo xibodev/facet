@@ -248,12 +248,12 @@ func main() {
 		// product truth here and passed in; the builder never holds its own
 		// copy of either.
 		fs := flag.NewFlagSet("bundle", flag.ExitOnError)
-		target := fs.String("target", "", "claude | codex | copilot | opencode | all")
+		target := fs.String("target", "", "claude | codex | copilot | opencode | studio | all")
 		out := fs.String("out", "dist/bundles", "Output directory")
 		_ = fs.Parse(os.Args[2:])
 
 		if *target == "" {
-			fmt.Fprintln(os.Stderr, "Usage: facet bundle --target <claude|codex|copilot|opencode|all> [--out dir]")
+			fmt.Fprintln(os.Stderr, "Usage: facet bundle --target <claude|codex|copilot|opencode|studio|all> [--out dir]")
 			os.Exit(1)
 		}
 
@@ -269,7 +269,7 @@ func main() {
 				}
 			}
 			if !valid {
-				fmt.Fprintf(os.Stderr, "Unknown target %q; choose claude, codex, copilot, opencode or all\n", *target)
+				fmt.Fprintf(os.Stderr, "Unknown target %q; choose claude, codex, copilot, opencode, studio or all\n", *target)
 				os.Exit(1)
 			}
 			wanted = []bundle.Target{t}
@@ -278,6 +278,8 @@ func main() {
 		src := bundle.Source{
 			SkillsDir:    filepath.Join("skills", "facet"),
 			PacksDir:     "packs",
+			AgentsDir:    "agents",
+			SchemasDir:   "schemas",
 			Tools:        toolbox.Names(),
 			FacetVersion: Version,
 		}
@@ -307,6 +309,7 @@ func main() {
 		fs := flag.NewFlagSet("ui", flag.ExitOnError)
 		port := fs.Int("port", 8787, "Port to listen on")
 		dir := fs.String("dir", ".", "Working directory / root directory of projects")
+		bundleDir := fs.String("bundle", "", "Installed Studio bundle directory (default: FACET_BUNDLE_DIR or ~/.facet/bundle/studio)")
 		noOpen := fs.Bool("no-open", false, "Do not automatically open browser")
 		_ = fs.Parse(os.Args[2:])
 		if fs.NArg() != 0 {
@@ -315,7 +318,7 @@ func main() {
 		}
 
 		addr := fmt.Sprintf(":%d", *port)
-		if err := studio.RunWithOption(addr, *dir, !*noOpen); err != nil {
+		if err := studio.RunWithBundleOption(addr, *dir, *bundleDir, !*noOpen); err != nil {
 			fmt.Fprintf(os.Stderr, "UI error: %v\n", err)
 			os.Exit(1)
 		}

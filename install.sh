@@ -486,8 +486,17 @@ system_package() {
         if [[ "$id" == browser-libs ]] && ! apt-cache show libasound2t64 >/dev/null 2>&1; then
             package=${package//libasound2t64/libasound2}; read -r -a packages <<< "$package"
         fi
+        if [[ "$id" == browser-libs ]] && ! apt-cache show fonts-liberation >/dev/null 2>&1; then
+            package=${package//fonts-liberation/fonts-liberation2}; read -r -a packages <<< "$package"
+        fi
         confirm "sudo apt-get install ${packages[*]}"
-        if [[ $EUID == 0 ]]; then DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"; else sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"; fi
+        if [[ $EUID == 0 ]]; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
+        else
+            sudo apt-get update
+            sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
+        fi
     fi
 }
 if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then step 'Install media tools' system_package ffmpeg; fi

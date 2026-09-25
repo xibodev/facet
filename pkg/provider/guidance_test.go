@@ -25,6 +25,74 @@ func TestGuidanceLoadsSelectedPackOutsideCheckout(t *testing.T) {
 	}
 }
 
+func TestBundleGuidanceToolReadsInstalledContent(t *testing.T) {
+	bundleDir := t.TempDir()
+	skillDir := filepath.Join(bundleDir, "skills", "facet")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const marker = "installed-guidance-only"
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(marker), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result := (capabilityTool{
+		operation:     "guidance",
+		bundleDir:     bundleDir,
+		bundleEntries: entrySet([]string{"skills/facet/SKILL.md"}),
+	}).Execute(context.Background(), map[string]any{"path": "skills/facet/SKILL.md"})
+	if result.IsError || result.ForLLM != marker {
+		t.Fatalf("bundle guidance result = %#v", result)
+	}
+}
+
+func TestBundleGuidanceToolRejectsEscapingPath(t *testing.T) {
+	result := (capabilityTool{
+		operation: "guidance",
+		bundleDir: t.TempDir(),
+	}).Execute(context.Background(), map[string]any{"path": "../outside"})
+	if !result.IsError || !strings.Contains(result.ForLLM, "invalid Facet guidance path") {
+		t.Fatalf("escaping path result = %#v", result)
+	}
+}
+
+func TestBundleGuidanceToolReadsCanonicalSupportAssets(t *testing.T) {
+	bundleDir := t.TempDir()
+	path := filepath.Join(bundleDir, "agents", "facet-creative.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("agent-marker"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result := (capabilityTool{
+		operation:     "guidance",
+		bundleDir:     bundleDir,
+		bundleEntries: entrySet([]string{"agents/facet-creative.md"}),
+	}).Execute(context.Background(), map[string]any{"path": "agents/facet-creative.md"})
+	if result.IsError || result.ForLLM != "agent-marker" {
+		t.Fatalf("support guidance result = %#v", result)
+	}
+}
+
+func TestBundleGuidanceToolRejectsUndeclaredFile(t *testing.T) {
+	bundleDir := t.TempDir()
+	path := filepath.Join(bundleDir, "skills", "stale", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result := (capabilityTool{
+		operation:     "guidance",
+		bundleDir:     bundleDir,
+		bundleEntries: entrySet([]string{"skills/facet/SKILL.md"}),
+	}).Execute(context.Background(), map[string]any{"path": "skills/stale/SKILL.md"})
+	if !result.IsError || !strings.Contains(result.ForLLM, "not declared") {
+		t.Fatalf("undeclared guidance result = %#v", result)
+	}
+}
+
 func TestProjectArgumentsPreserveRemoteMediaAndProse(t *testing.T) {
 	root := t.TempDir()
 	args := map[string]any{"input": "assets/a.mp4", "prompt": "hello world", "cuts": []any{map[string]any{"source": "https://example.com/a.mp4"}}, "audio": map[string]any{"src": "narration/a.wav"}}

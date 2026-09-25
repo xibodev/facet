@@ -2,8 +2,7 @@
 
 **From:** Facet
 **To:** facet-studio
-**Status:** requirement, not a design. How the kernel satisfies these is
-facet-studio's decision.
+**Status:** satisfied by `github.com/xibodev/facet-studio v1.0.0`.
 
 Facet needs an embeddable reasoning kernel to build its standalone application.
 Facet does not need — and does not want — a full Studio installation, a module
@@ -138,5 +137,14 @@ and that is a product guarantee rather than a preference.
 **Does a kernel in this shape already exist as a separable artifact, or would it
 have to be extracted?**
 
-That answer determines Release A's start, and nothing else in Facet's roadmap
-depends on it — Release C proceeds independently.
+Resolved: the released `pkg/agent` kernel is the versioned embeddable artifact.
+Facet pins it as a Go dependency and registers the `facet-native` provider
+through `agent.ToolProvider`. Facet does not launch the separately packaged
+`facet-studio-kernel` executable and does not route itself through module-v2.
+
+The installed Studio-target Facet bundle is the activation boundary. It
+declares `xibodev.facet`, native transport, the provider binding, the compatible
+v1 kernel API, the exact tool vocabulary, entry digests, and bundle digest.
+Facet.UI verifies that contract before constructing an agent runtime. Guidance
+and pack reads then come from the verified bundle; a missing, altered, stale, or
+incompatible bundle leaves the generic kernel without Facet capability.

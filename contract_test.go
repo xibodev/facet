@@ -530,6 +530,133 @@ func TestProductTextGuardCoversShippingDefinitions(t *testing.T) {
 	}
 }
 
+func TestLocalUATAllowsAnExplicitNPMRegistry(t *testing.T) {
+	checks := map[string][]string{
+		".release-harness/docker/Dockerfile": {
+			"ARG NPM_REGISTRY=https://registry.npmjs.org",
+			"ENV npm_config_registry=${NPM_REGISTRY}",
+			`npm install --global opencode-ai@1.18.29 --registry="${NPM_REGISTRY}"`,
+			`npm install --prefix /opt/uat --registry="${NPM_REGISTRY}"`,
+		},
+		"docker-compose.test.yml": {
+			"NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}",
+		},
+	}
+	for name, required := range checks {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, term := range required {
+			if !strings.Contains(string(data), term) {
+				t.Errorf("%s does not contain %q", name, term)
+			}
+		}
+	}
+}
+
+func TestLocalUATIncludesTheInstallerPackage(t *testing.T) {
+	data, err := os.ReadFile(".dockerignore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"!installer/", "!installer/**",
+		"!agents/", "!agents/**",
+		"!LICENSE", "!THIRD_PARTY_NOTICES.md",
+		"!capability.go",
+		"!pkg/", "!pkg/**",
+	} {
+		if !strings.Contains(string(data), required) {
+			t.Errorf(".dockerignore does not contain %q", required)
+		}
+	}
+}
+
+func TestLocalUATRunsTheInstallerNonInteractively(t *testing.T) {
+	data, err := os.ReadFile(".release-harness/docker/Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"go build -trimpath -ldflags \"-X main.version=1.0.4\"",
+		"facet-1.0.4-linux-amd64.zip",
+		"bash install.sh --yes --target opencode --project /home/facet/studio --install-dir /home/facet/.facet/runtime --components remotion",
+		"--archive /tmp/facet-1.0.4-linux-amd64.zip --checksums /tmp/checksums-linux-amd64.txt",
+		"ln -s ../runtime/bin/facet /home/facet/.facet/bin/facet",
+		"ln -s runtime/bundle /home/facet/.facet/bundle",
+	} {
+		if !strings.Contains(string(data), required) {
+			t.Errorf(".release-harness/docker/Dockerfile does not contain %q", required)
+		}
+	}
+}
+
+func TestLocalUATActivatesUIFromTheInstalledStudioBundle(t *testing.T) {
+	checks := map[string][]string{
+		".release-harness/docker/Dockerfile": {
+			"/home/facet/.facet/bin/facet bundle --target studio --out /home/facet/.facet/bundle",
+		},
+		"scripts/uat-entrypoint.mjs": {
+			"spawn('/home/facet/.facet/bin/facet', ['ui', '--port', '8787', '--dir', '/home/facet/studio', '--no-open']",
+		},
+	}
+	for name, required := range checks {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, term := range required {
+			if !strings.Contains(string(data), term) {
+				t.Errorf("%s does not contain %q", name, term)
+			}
+		}
+	}
+	installation, err := os.ReadFile("scripts/uat-installation.mjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(installation), "['facet-ui', ['--version']]") {
+		t.Error("installation UAT still expects the removed standalone facet-ui launcher")
+	}
+	if strings.Contains(string(installation), "audio: {}") {
+		t.Error("installation UAT sends an explicitly invalid empty audio contract")
+	}
+	if !strings.Contains(string(installation), "id: 'toolbox-fixture', type: 'hero_title', text: 'Installed Facet renderer fixture', in_seconds: 0, out_seconds: 2") {
+		t.Error("installation UAT does not align the toolbox fixture duration with its audio")
+	}
+	browser, err := os.ReadFile("scripts/uat-browser.mjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"#newProjectButton", "#newProjectName", "#newProjectSlug", "#createProjectButton", "#settingsButton", "#discoverModelsButton", "#modelSelect", "#saveModelButton", "#projectVideo", "#videoLink"} {
+		if !strings.Contains(string(browser), required) {
+			t.Errorf("browser UAT does not contain %q", required)
+		}
+	}
+	for _, removed := range []string{"#btnQuickNew", "#newProdName", "#newProdEngine", "#btnSubmitNewProd", "#masterVideo", "#videoDownloadLink"} {
+		if strings.Contains(string(browser), removed) {
+			t.Errorf("browser UAT still contains legacy selector %q", removed)
+		}
+	}
+	if !strings.Contains(string(browser), "const mediaPrefix = `/api/media/catalog/${details.slug}/`;") {
+		t.Error("browser UAT does not validate the catalog media route using the canonical project ID")
+	}
+	if !strings.Contains(string(browser), "if (details.brief_url)") {
+		t.Error("browser UAT requires optional brief evidence on a fresh project")
+	}
+	if !strings.Contains(string(browser), "const discoveredModels = await page.locator('#modelSelect option').evaluateAll") {
+		t.Error("browser UAT does not accept the native model catalog returned by discovery")
+	}
+	smoke, err := os.ReadFile(".release-harness/scenarios/smoke.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(smoke), `nav[aria-label='Projects']`) {
+		t.Error("smoke scenario does not target the rebuilt project navigation")
+	}
+}
+
 func TestMarkdownProductPathsDistinguishesTargetInstallRoots(t *testing.T) {
 	tests := []struct {
 		name           string

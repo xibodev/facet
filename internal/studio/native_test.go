@@ -5,16 +5,50 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	facet "github.com/xibodev/facet"
 	"github.com/xibodev/facet-studio/pkg/config"
-	"github.com/xibodev/facet/internal/studio/engine"
+	"github.com/xibodev/facet/internal/bundle"
+	"github.com/xibodev/facet/internal/toolbox"
 )
 
-func configureTestModel(t *testing.T, server *Server, endpoint string) {
+func installTestStudioBundle(t *testing.T, marker string) string {
 	t.Helper()
+	source := t.TempDir()
+	skills := filepath.Join(source, "skills", "facet")
+	if err := os.MkdirAll(skills, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skills, "SKILL.md"), []byte("# Facet production contract\n\n"+marker), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	packs := filepath.Join(source, "packs")
+	for _, pack := range facet.RetainedPacks() {
+		dir := filepath.Join(packs, pack.ID)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("# "+pack.Title), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out := t.TempDir()
+	if _, err := bundle.Build(bundle.Source{
+		SkillsDir: skills, PacksDir: packs, Tools: toolbox.Names(), FacetVersion: "test",
+	}, bundle.TargetStudio, out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func configureTestModel(t *testing.T, server *Server, endpoint string) string {
+	t.Helper()
+	marker := "installed-bundle-marker-" + strings.ReplaceAll(t.Name(), "/", "-")
+	server.bundleDir = installTestStudioBundle(t, marker)
 	home := t.TempDir()
 	t.Setenv(config.EnvHome, home)
 	server.modelConfigPath = filepath.Join(home, "config.json")
@@ -25,6 +59,7 @@ func configureTestModel(t *testing.T, server *Server, endpoint string) {
 	if err := config.SaveConfig(server.modelConfigPath, cfg); err != nil {
 		t.Fatal(err)
 	}
+	return marker
 }
 
 func TestNativeConversationVisibleContentAndGuidance(t *testing.T) {
@@ -46,20 +81,20 @@ func TestNativeConversationVisibleContentAndGuidance(t *testing.T) {
 	}))
 	defer endpoint.Close()
 	server := NewServer(t.TempDir())
-	configureTestModel(t, server, endpoint.URL)
+	marker := configureTestModel(t, server, endpoint.URL)
 	sess, err := server.newSession("", "rw", "studio")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer sess.Close()
-	var events []*engine.NormalizedEvent
-	result := sess.runTurn(context.Background(), "Hello", func(event turnEvent) error { events = append(events, event.normalized); return nil })
+	var events []map[string]any
+	result := sess.runTurn(context.Background(), "Hello", func(event turnEvent) error { events = append(events, event.payload); return nil })
 	if !result.ok {
 		t.Fatal(result.reason)
 	}
 	found := false
 	for _, e := range events {
-		if e.Content == "Visible Facet response" {
+		if e["content"] == "Visible Facet response" {
 			found = true
 		}
 	}
@@ -67,13 +102,101 @@ func TestNativeConversationVisibleContentAndGuidance(t *testing.T) {
 		t.Fatalf("response not rendered: %#v", events)
 	}
 	joined := strings.Join(prompts, "\n")
-	if !strings.Contains(joined, "Facet production contract") || !strings.Contains(joined, "facet_guidance") {
+	if !strings.Contains(joined, marker) || !strings.Contains(joined, "facet_guidance") {
 		t.Fatal("canonical capability guidance missing from actual model request")
+	}
+}
+
+func TestMissingBundleNeverCreatesAnAgentRuntime(t *testing.T) {
+	server := NewServer(t.TempDir())
+	server.bundleDir = filepath.Join(t.TempDir(), "missing")
+	home := t.TempDir()
+	t.Setenv(config.EnvHome, home)
+	server.modelConfigPath = filepath.Join(home, "config.json")
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.ModelName = "fixture/model"
+	cfg.ModelList = []*config.ModelConfig{{ModelName: "fixture/model", Provider: "openai", Model: "model", APIBase: "http://127.0.0.1:1", Enabled: true}}
+	if err := config.SaveConfig(server.modelConfigPath, cfg); err != nil {
+		t.Fatal(err)
+	}
+	loop, b, err := server.buildRuntime(server.rootDir)
+	if err == nil || loop != nil || b != nil {
+		t.Fatal("missing capability bundle was reported as a ready runtime")
+	}
+	if !strings.Contains(err.Error(), "Facet bundle") {
+		t.Fatalf("missing bundle error is not actionable: %v", err)
+	}
+}
+
+func TestCapabilityStatusReportsVerifiedBundle(t *testing.T) {
+	server := NewServer(t.TempDir())
+	server.bundleDir = installTestStudioBundle(t, "capability-status")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, newSecurityRequest(http.MethodGet, "/api/capability", ""))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var result struct {
+		Ready         bool   `json:"ready"`
+		CapabilityID  string `json:"capability_id"`
+		FacetVersion  string `json:"facet_version"`
+		BundleDigest  string `json:"bundle_digest"`
+		ToolCount     int    `json:"tool_count"`
+		NativeBinding string `json:"native_binding"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.Ready || result.CapabilityID != bundle.CapabilityID || result.FacetVersion != "test" ||
+		!strings.HasPrefix(result.BundleDigest, "sha256:") || result.ToolCount != len(toolbox.Names()) ||
+		result.NativeBinding != "facet-native" {
+		t.Fatalf("unexpected capability status: %#v", result)
+	}
+}
+
+func TestCapabilityStatusExplainsMissingBundle(t *testing.T) {
+	server := NewServer(t.TempDir())
+	server.bundleDir = filepath.Join(t.TempDir(), "missing")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, newSecurityRequest(http.MethodGet, "/api/capability", ""))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "not installed or compatible") {
+		t.Fatalf("missing bundle status is not actionable: %s", rec.Body.String())
+	}
+}
+
+func TestCapabilityStatusRejectsMismatchedToolVocabulary(t *testing.T) {
+	server := NewServer(t.TempDir())
+	server.bundleDir = installTestStudioBundle(t, "tool-mismatch")
+	path := filepath.Join(server.bundleDir, "facet-bundle.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest bundle.Manifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.Tools = manifest.Tools[:len(manifest.Tools)-1]
+	raw, err = json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, newSecurityRequest(http.MethodGet, "/api/capability", ""))
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "tool vocabulary") {
+		t.Fatalf("mismatched vocabulary status = %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
 func TestMissingModelNeverCreatesAnUnusableLoop(t *testing.T) {
 	server := NewServer(t.TempDir())
+	server.bundleDir = installTestStudioBundle(t, "missing-model-bundle")
 	server.modelConfigPath = filepath.Join(t.TempDir(), "config.json")
 	loop, b, err := server.buildRuntime(server.rootDir)
 	if err == nil || loop != nil || b != nil {
@@ -83,6 +206,7 @@ func TestMissingModelNeverCreatesAnUnusableLoop(t *testing.T) {
 
 func TestStandaloneRejectsExternalRuntimeSelection(t *testing.T) {
 	s := NewServer(t.TempDir())
+	s.bundleDir = installTestStudioBundle(t, "external-runtime-selection")
 	s.modelConfigPath = filepath.Join(t.TempDir(), "config.json")
 	request := newSecurityRequest("GET", "/api/chat?prompt=hello&engine=claude", "")
 	query := request.URL.Query()
@@ -157,5 +281,16 @@ func TestNativeProjectConversationSurvivesRuntimeRestart(t *testing.T) {
 	}
 	if len(history) != 2 || !strings.Contains(strings.Join(history[1], "\n"), "My project color is blue") {
 		t.Fatal("kernel history lost on runtime restart")
+	}
+}
+
+func TestNativePresentationDoesNotDependOnExternalCLIEventModel(t *testing.T) {
+	raw, err := os.ReadFile("native.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	if strings.Contains(body, "internal/studio/engine") || strings.Contains(body, "engine.NormalizedEvent") {
+		t.Fatal("native kernel presentation still depends on the transitional external-CLI event model")
 	}
 }

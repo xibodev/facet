@@ -17,6 +17,8 @@ import (
 	"github.com/xibodev/facet-studio/pkg/config"
 	"github.com/xibodev/facet-studio/pkg/modelservice"
 	"github.com/xibodev/facet-studio/pkg/providers"
+	"github.com/xibodev/facet/internal/bundle"
+	"github.com/xibodev/facet/internal/toolbox"
 	"github.com/xibodev/facet/pkg/provider"
 )
 
@@ -114,6 +116,10 @@ func selectedProvider(cfg *config.Config, selection string) (providers.LLMProvid
 }
 
 func (s *Server) buildRuntime(workspace string) (*agent.AgentLoop, *bus.MessageBus, error) {
+	manifest, err := s.loadCapability()
+	if err != nil {
+		return nil, nil, err
+	}
 	s.modelMu.Lock()
 	cfg, err := s.loadModels()
 	s.modelMu.Unlock()
@@ -128,7 +134,9 @@ func (s *Server) buildRuntime(workspace string) (*agent.AgentLoop, *bus.MessageB
 	copyModel := *mc
 	copyModel.ModelName = cfg.Agents.Defaults.ModelName
 	copyModel.Streaming.Enabled = true
-	if copyModel.RequestTimeout==0{copyModel.RequestTimeout=60}
+	if copyModel.RequestTimeout == 0 {
+		copyModel.RequestTimeout = 60
+	}
 	cfg.ModelList = []*config.ModelConfig{&copyModel}
 	cfg.Agents.List = nil
 	cfg.Agents.Defaults.Workspace = workspace
@@ -139,14 +147,67 @@ func (s *Server) buildRuntime(workspace string) (*agent.AgentLoop, *bus.MessageB
 		return nil, nil, err
 	}
 	cfg.Channels = config.ChannelsConfig{"facet": channel}
+	entries := make([]string, 0, len(manifest.Entries))
+	for _, entry := range manifest.Entries {
+		entries = append(entries, entry.Path)
+	}
 	msgBus := bus.NewMessageBus()
-	loop := agent.NewAgentLoop(cfg, msgBus, llm, agent.WithToolProviders(provider.NewFacetToolProvider()))
-	if err := provider.MountGuidance(loop); err != nil {
+	loop := agent.NewAgentLoop(cfg, msgBus, llm, agent.WithToolProviders(provider.NewBundleToolProvider(s.bundleDir, entries...)))
+	if err := provider.MountBundleGuidance(loop, s.bundleDir, entries...); err != nil {
 		loop.Close()
 		msgBus.Close()
 		return nil, nil, err
 	}
 	return loop, msgBus, nil
+}
+
+func (s *Server) loadCapability() (*bundle.Manifest, error) {
+	manifest, err := bundle.VerifyTarget(s.bundleDir, bundle.TargetStudio)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"Facet bundle at %s is not installed or compatible: %w",
+			s.bundleDir,
+			err,
+		)
+	}
+	if err := verifyBundleTools(manifest.Tools); err != nil {
+		return nil, err
+	}
+	return manifest, nil
+}
+
+func verifyBundleTools(got []string) error {
+	want := toolbox.Names()
+	got = append([]string(nil), got...)
+	sort.Strings(got)
+	if len(got) != len(want) {
+		return fmt.Errorf("Facet bundle tool vocabulary has %d entries, runtime has %d; reinstall the matching bundle", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			return fmt.Errorf("Facet bundle tool vocabulary does not match this runtime; reinstall the matching bundle")
+		}
+	}
+	return nil
+}
+
+func (s *Server) handleCapabilityStatus(w http.ResponseWriter, _ *http.Request) {
+	manifest, err := s.loadCapability()
+	if err != nil {
+		respondJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"ready": false,
+			"error": err.Error(),
+		})
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]any{
+		"ready":          true,
+		"capability_id":  manifest.CapabilityID,
+		"facet_version":  manifest.FacetVersion,
+		"bundle_digest":  manifest.BundleDigest,
+		"tool_count":     len(manifest.Tools),
+		"native_binding": manifest.Compatibility.NativeProvider,
+	})
 }
 
 type modelOption struct {

@@ -11,7 +11,7 @@
     },
     {
       "action": "assert",
-      "target": "nav[aria-label='Facet Studio navigation']"
+      "target": "nav[aria-label='Projects']"
     },
     {
       "action": "screenshot"

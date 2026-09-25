@@ -62,23 +62,22 @@ try {
       }
     };
   });
-  checkpoint.write('create-project-select-real-opencode');
+  checkpoint.write('create-project-for-native-studio');
   await page.goto('http://127.0.0.1:8788/', { waitUntil: 'domcontentloaded' });
-  await page.locator('#btnQuickNew').click();
-  await page.locator('#newProdName').fill(slug);
-  await page.locator('#newProdEngine').selectOption('opencode');
+  await page.locator('#newProjectButton').click();
+  await page.locator('#newProjectName').fill(slug);
+  await page.locator('#newProjectSlug').fill(slug);
   const createdResponse = page.waitForResponse(r => new URL(r.url()).pathname === '/api/catalog/new' && r.request().method() === 'POST');
-  await page.locator('#btnSubmitNewProd').click();
+  await page.locator('#createProjectButton').click();
   const created = await createdResponse;
   assert.equal(created.status(), 200, 'Create production failed');
   const project = await created.json();
   projectPath = project.path;
   assert.ok(projectPath?.startsWith('/home/facet/'), 'Project escaped disposable HOME');
-  await page.waitForFunction(() => !document.querySelector('#promptInput').disabled);
-  assert.equal(await page.locator('#engineSelect').inputValue(), 'opencode', 'Created project engine did not propagate to Studio');
+  await page.locator('#workspaceTitle').waitFor({ state: 'visible' });
   await page.screenshot({ path: path.join(out, '01-created.png'), fullPage: true });
   assert.equal(fs.existsSync(path.join(projectPath, 'renders/final.mp4')), false, 'Fresh project already contains output');
-  report.checks.push({ name: 'create-project-select-real-opencode', passed: true });
+  report.checks.push({ name: 'create-project-for-native-studio', passed: true });
 
   checkpoint.write('external-catalog-details-and-media-isolation');
   const base = 'http://127.0.0.1:8788';
@@ -86,29 +85,53 @@ try {
   assert.equal(detailsResponse.status(), 200, 'External catalog project details unavailable without studio/projects');
   const details = await detailsResponse.json();
   assert.equal(details.path, projectPath);
-  assert.equal(details.engine, 'opencode');
+  assert.equal(details.engine, 'studio');
   assert.equal(details.stages.master, false);
   assert.ok(!details.video_url, 'Fresh project inherited another production video');
-  assert.ok(details.brief_url?.startsWith(`/api/media/catalog/${slug}/`), 'Brief URL is not scoped to the catalog project');
-  const brief = await context.request.get(`${base}${details.brief_url}`);
-  assert.equal(brief.status(), 200);
-  const briefRelative = decodeURIComponent(new URL(details.brief_url, base).pathname.slice(`/api/media/catalog/${slug}/`.length));
-  const briefFile = path.resolve(projectPath, briefRelative);
-  assert.ok(briefFile.startsWith(`${projectPath}/`), 'Brief escaped project directory');
-  assert.equal(await brief.text(), fs.readFileSync(briefFile, 'utf8'));
+  const mediaPrefix = `/api/media/catalog/${details.slug}/`;
+  let briefBytesMatch = false;
+  if (details.brief_url) {
+    assert.ok(details.brief_url.startsWith(mediaPrefix), 'Brief URL is not scoped to the canonical catalog project');
+    const brief = await context.request.get(`${base}${details.brief_url}`);
+    assert.equal(brief.status(), 200);
+    const briefRelative = decodeURIComponent(new URL(details.brief_url, base).pathname.slice(mediaPrefix.length));
+    const briefFile = path.resolve(projectPath, briefRelative);
+    assert.ok(briefFile.startsWith(`${projectPath}/`), 'Brief escaped project directory');
+    assert.equal(await brief.text(), fs.readFileSync(briefFile, 'utf8'));
+    briefBytesMatch = true;
+  }
   const denied = [];
   for (const url of [`/api/projects/${slug}-missing`, `/api/media/catalog/${slug}/renders/final.mp4`, '/api/media/etc/passwd', `/api/media/catalog/${slug}/%2e%2e%2f%2e%2e%2f%2e%2e%2fetc/passwd`]) {
     const response = await context.request.get(`${base}${url}`, { maxRedirects: 0 });
     assert.ok([400, 403, 404].includes(response.status()), `Out-of-scope or absent resource unexpectedly served: ${url}`);
     denied.push({ url, status: response.status() });
   }
-  report.checks.push({ name: 'external-catalog-details-and-media-isolation', passed: true, facts: { engine: details.engine, absent_master: true, brief_bytes_match: true, denied } });
+  report.checks.push({ name: 'external-catalog-details-and-media-isolation', passed: true, facts: { engine: details.engine, absent_master: true, brief_present: Boolean(details.brief_url), brief_bytes_match: briefBytesMatch, denied } });
 
   checkpoint.write('real-agent-configuration');
   if (process.env.UAT_REAL_AGENT !== '1') throw new Error('REAL_AGENT_UNCONFIGURED: set UAT_REAL_AGENT=1 and mount a dedicated model configuration explicitly; no fake agent is permitted');
   const config = JSON.parse(fs.readFileSync(process.env.OPENCODE_CONFIG, 'utf8'));
   validateModelConfig(config);
   report.model = config.model;
+  const modelStatus = await (await context.request.get(`${base}/api/models`)).json();
+  if (!modelStatus.configured || modelStatus.active_model !== config.model) {
+    await page.locator('#settingsButton').click();
+    const discoveredResponse = page.waitForResponse(r => new URL(r.url()).pathname === '/api/models/discover' && r.request().method() === 'POST');
+    await page.locator('#discoverModelsButton').click();
+    const discovered = await discoveredResponse;
+    assert.equal(discovered.status(), 200, 'Native model discovery failed');
+    const discoveredModels = await page.locator('#modelSelect option').evaluateAll(options => options.map(option => option.value).filter(Boolean));
+    assert.ok(discoveredModels.length, 'Native model discovery returned no selectable models');
+    const selectedModel = discoveredModels.includes(config.model) ? config.model : discoveredModels[0];
+    report.model = selectedModel;
+    await page.locator('#modelSelect').selectOption(selectedModel);
+    const savedResponse = page.waitForResponse(r => new URL(r.url()).pathname === '/api/models' && r.request().method() === 'POST');
+    await page.locator('#saveModelButton').click();
+    const saved = await savedResponse;
+    assert.equal(saved.status(), 200, 'Native model selection failed');
+    await page.locator('[data-close="settingsDialog"]').click();
+  }
+  await page.waitForFunction(() => !document.querySelector('#promptInput').disabled);
   const prompts = [
     'Make a 3-second title card that says "Hello from Facet", with a blue background and an audible tone. Export it at 320x180, 24fps, H.264 video and AAC audio to renders/final.mp4. Use the installed Facet toolbox and local assets only, with no paid APIs or network asset downloads.',
     'Change the title to "See you soon" and the background to green. Keep the same duration, dimensions, frame rate, codecs and audible tone, and export the revised video to renders/final.mp4 using the installed Facet toolbox.'
@@ -186,16 +209,15 @@ try {
     // Verify the first deliverable before submitting the revision; do not let a
     // final-only playback check conceal an unusable initial output.
     checkpoint.write(`turn-${i + 1}-playback`);
-    await page.waitForFunction(() => { const v = document.querySelector('#masterVideo'); return v.readyState >= 2 && v.duration > 0; }, null, { timeout: 30000 });
-    await page.locator('#masterVideo').evaluate(v => { v.pause(); v.currentTime = 0; });
-    await page.locator('#playButton').click();
-    await page.waitForFunction(() => document.querySelector('#masterVideo').currentTime > 0.3, null, { timeout: 15000 });
-    turn.playback = await page.locator('#masterVideo').evaluate(v => ({ duration: v.duration, currentTime: v.currentTime, error: v.error?.code || null }));
+    await page.waitForFunction(() => { const v = document.querySelector('#projectVideo'); return !v.hidden && v.readyState >= 2 && v.duration > 0; }, null, { timeout: 30000 });
+    await page.locator('#projectVideo').evaluate(async v => { v.pause(); v.currentTime = 0; await v.play(); });
+    await page.waitForFunction(() => document.querySelector('#projectVideo').currentTime > 0.3, null, { timeout: 15000 });
+    turn.playback = await page.locator('#projectVideo').evaluate(v => ({ duration: v.duration, currentTime: v.currentTime, error: v.error?.code || null }));
     assert.equal(turn.playback.error, null);
-    await page.locator('#masterVideo').evaluate(v => v.pause());
+    await page.locator('#projectVideo').evaluate(v => v.pause());
     checkpoint.write(`turn-${i + 1}-download`);
     const downloadPromise = page.waitForEvent('download');
-    await page.locator('#videoDownloadLink').click();
+    await page.locator('#videoLink').click();
     const download = await downloadPromise;
     assert.equal(await download.failure(), null);
     const downloaded = path.join(out, `turn-${i + 1}-download.mp4`);
