@@ -89,20 +89,24 @@ try {
   assert.equal(details.stages.master, false);
   assert.ok(!details.video_url, 'Fresh project inherited another production video');
   const mediaPrefix = `/api/media/catalog/${details.slug}/`;
-  assert.ok(details.brief_url?.startsWith(mediaPrefix), 'Brief URL is not scoped to the canonical catalog project');
-  const brief = await context.request.get(`${base}${details.brief_url}`);
-  assert.equal(brief.status(), 200);
-  const briefRelative = decodeURIComponent(new URL(details.brief_url, base).pathname.slice(mediaPrefix.length));
-  const briefFile = path.resolve(projectPath, briefRelative);
-  assert.ok(briefFile.startsWith(`${projectPath}/`), 'Brief escaped project directory');
-  assert.equal(await brief.text(), fs.readFileSync(briefFile, 'utf8'));
+  let briefBytesMatch = false;
+  if (details.brief_url) {
+    assert.ok(details.brief_url.startsWith(mediaPrefix), 'Brief URL is not scoped to the canonical catalog project');
+    const brief = await context.request.get(`${base}${details.brief_url}`);
+    assert.equal(brief.status(), 200);
+    const briefRelative = decodeURIComponent(new URL(details.brief_url, base).pathname.slice(mediaPrefix.length));
+    const briefFile = path.resolve(projectPath, briefRelative);
+    assert.ok(briefFile.startsWith(`${projectPath}/`), 'Brief escaped project directory');
+    assert.equal(await brief.text(), fs.readFileSync(briefFile, 'utf8'));
+    briefBytesMatch = true;
+  }
   const denied = [];
   for (const url of [`/api/projects/${slug}-missing`, `/api/media/catalog/${slug}/renders/final.mp4`, '/api/media/etc/passwd', `/api/media/catalog/${slug}/%2e%2e%2f%2e%2e%2f%2e%2e%2fetc/passwd`]) {
     const response = await context.request.get(`${base}${url}`, { maxRedirects: 0 });
     assert.ok([400, 403, 404].includes(response.status()), `Out-of-scope or absent resource unexpectedly served: ${url}`);
     denied.push({ url, status: response.status() });
   }
-  report.checks.push({ name: 'external-catalog-details-and-media-isolation', passed: true, facts: { engine: details.engine, absent_master: true, brief_bytes_match: true, denied } });
+  report.checks.push({ name: 'external-catalog-details-and-media-isolation', passed: true, facts: { engine: details.engine, absent_master: true, brief_present: Boolean(details.brief_url), brief_bytes_match: briefBytesMatch, denied } });
 
   checkpoint.write('real-agent-configuration');
   if (process.env.UAT_REAL_AGENT !== '1') throw new Error('REAL_AGENT_UNCONFIGURED: set UAT_REAL_AGENT=1 and mount a dedicated model configuration explicitly; no fake agent is permitted');

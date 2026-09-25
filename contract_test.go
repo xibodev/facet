@@ -642,6 +642,9 @@ func TestLocalUATActivatesUIFromTheInstalledStudioBundle(t *testing.T) {
 	if !strings.Contains(string(browser), "const mediaPrefix = `/api/media/catalog/${details.slug}/`;") {
 		t.Error("browser UAT does not validate the catalog media route using the canonical project ID")
 	}
+	if !strings.Contains(string(browser), "if (details.brief_url)") {
+		t.Error("browser UAT requires optional brief evidence on a fresh project")
+	}
 	smoke, err := os.ReadFile(".release-harness/scenarios/smoke.json")
 	if err != nil {
 		t.Fatal(err)
