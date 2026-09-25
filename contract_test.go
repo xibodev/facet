@@ -657,6 +657,30 @@ func TestLocalUATActivatesUIFromTheInstalledStudioBundle(t *testing.T) {
 	}
 }
 
+func TestFacetUIContainsBattleTestHardeningContracts(t *testing.T) {
+	data, err := os.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := strings.ReplaceAll(string(data), "\r\n", "\n")
+	for _, required := range []string{
+		".shell {\n      height: calc(100vh - 24px);",
+		`id="reviewDecisionNote"`,
+		`id="rejectReviewButton"`,
+		"/api/review/decision",
+		"reviewReportSummary(report)",
+	} {
+		if !strings.Contains(content, required) {
+			t.Errorf("web/index.html does not contain %q", required)
+		}
+	}
+	mediumStart := strings.Index(content, "@media (max-width: 1160px)")
+	narrowStart := strings.Index(content, "@media (max-width: 880px)")
+	if mediumStart < 0 || narrowStart <= mediumStart || !strings.Contains(content[mediumStart:narrowStart], ".workspace-head { align-items: flex-start; flex-direction: column; }") {
+		t.Error("medium-width UI does not stack the workspace title above its tabs")
+	}
+}
+
 func TestMarkdownProductPathsDistinguishesTargetInstallRoots(t *testing.T) {
 	tests := []struct {
 		name           string

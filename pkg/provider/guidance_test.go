@@ -93,6 +93,59 @@ func TestBundleGuidanceToolRejectsUndeclaredFile(t *testing.T) {
 	}
 }
 
+func TestCapabilitySchemasDistinguishDescribeAndEstimate(t *testing.T) {
+	describe := (capabilityTool{operation: "describe"}).Parameters()
+	describeProperties := describe["properties"].(map[string]any)
+	if _, ok := describeProperties["input"]; ok {
+		t.Fatal("facet_describe exposes an ignored input parameter")
+	}
+	if describe["additionalProperties"] != false {
+		t.Fatal("facet_describe accepts undeclared wrapper parameters")
+	}
+
+	estimate := (capabilityTool{operation: "estimate"}).Parameters()
+	estimateProperties := estimate["properties"].(map[string]any)
+	if _, ok := estimateProperties["input"]; ok {
+		t.Fatal("facet_estimate still exposes the lossy nested object transport")
+	}
+	input := estimateProperties["input_json"].(map[string]any)
+	if input["type"] != "string" || !strings.Contains(input["description"].(string), "serialized JSON object") {
+		t.Fatalf("facet_estimate input_json schema is ambiguous: %#v", input)
+	}
+	if estimate["additionalProperties"] != false {
+		t.Fatal("facet_estimate accepts undeclared wrapper parameters")
+	}
+}
+
+func TestCapabilityEstimateRejectsInvalidInputJSON(t *testing.T) {
+	result := (capabilityTool{operation: "estimate"}).Execute(context.Background(), map[string]any{
+		"tool":       "video_compose",
+		"input_json": `[{"cuts":[]}]`,
+	})
+	if !result.IsError || !strings.Contains(result.ForLLM, "input_json must encode one JSON object") {
+		t.Fatalf("invalid estimate input result = %#v", result)
+	}
+}
+
+func TestStandaloneGuidanceShowsNativeCapabilityArgumentShapes(t *testing.T) {
+	root := t.TempDir()
+	parts, err := (guidanceContributor{workspace: root}).ContributePrompt(context.Background(), agent.PromptBuildRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := parts[0].Content
+	for _, expected := range []string{
+		`facet_describe: {"tool":"video_compose"}`,
+		`facet_estimate: {"tool":"video_compose","input_json":"{...serialized video_compose arguments...}"}`,
+		"`input_json` must encode one object",
+		"A missing dependency discovered after approval is a new decision",
+	} {
+		if !strings.Contains(content, expected) {
+			t.Fatalf("standalone guidance missing %q", expected)
+		}
+	}
+}
+
 func TestProjectArgumentsPreserveRemoteMediaAndProse(t *testing.T) {
 	root := t.TempDir()
 	args := map[string]any{"input": "assets/a.mp4", "prompt": "hello world", "cuts": []any{map[string]any{"source": "https://example.com/a.mp4"}}, "audio": map[string]any{"src": "narration/a.wav"}}

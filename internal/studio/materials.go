@@ -141,14 +141,28 @@ func (s *Server) handleReviewOutput(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, 200, result)
 }
 
-func (s *Server) handleAcceptOutput(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleReviewDecision(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		Dir  string `json:"dir"`
-		Path string `json:"path"`
-		Note string `json:"note"`
+		Dir      string `json:"dir"`
+		Path     string `json:"path"`
+		Decision string `json:"decision"`
+		Note     string `json:"note"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		respondJSON(w, 400, map[string]any{"error": "invalid review decision"})
+		return
+	}
+	decision := strings.ToLower(strings.TrimSpace(request.Decision))
+	if decision == "" {
+		decision = "accept"
+	}
+	switch decision {
+	case "accept", "accepted":
+		decision = "accepted"
+	case "reject", "rejected":
+		decision = "rejected"
+	default:
+		respondJSON(w, 400, map[string]any{"error": "review decision must be accept or reject"})
 		return
 	}
 	name, err := s.materialPath(request.Dir, request.Path)
@@ -167,18 +181,32 @@ func (s *Server) handleAcceptOutput(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	record := map[string]any{"human_approved": true, "artifact": request.Path, "sha256": hex.EncodeToString(digest.Sum(nil)), "note": request.Note, "approved_by": "user via Facet review view"}
+	approved := decision == "accepted"
+	record := map[string]any{"decision": decision, "human_approved": approved, "artifact": request.Path, "sha256": hex.EncodeToString(digest.Sum(nil)), "note": request.Note, "decided_by": "user via Facet review view"}
 	encoded, _ := json.MarshalIndent(record, "", "  ")
 	dir, err := s.reviewDirectory(request.Dir)
 	if err != nil {
 		respondJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	if err := fileutil.WriteFileAtomic(filepath.Join(dir, "acceptance.json"), encoded, 0644); err != nil {
+	acceptancePath := filepath.Join(dir, "acceptance.json")
+	if !approved {
+		if err := os.Remove(acceptancePath); err != nil && !os.IsNotExist(err) {
+			respondJSON(w, 500, map[string]any{"error": err.Error()})
+			return
+		}
+	}
+	if err := fileutil.WriteFileAtomic(filepath.Join(dir, "decision.json"), encoded, 0644); err != nil {
 		respondJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	respondJSON(w, 200, map[string]any{"ok": true, "message": "Your review decision is recorded against this exact file digest."})
+	if approved {
+		if err := fileutil.WriteFileAtomic(acceptancePath, encoded, 0644); err != nil {
+			respondJSON(w, 500, map[string]any{"error": err.Error()})
+			return
+		}
+	}
+	respondJSON(w, 200, map[string]any{"ok": true, "decision": decision, "message": "Your review decision is recorded against this exact file digest."})
 }
 
 func (s *Server) handleRenderMaterial(w http.ResponseWriter, r *http.Request) {

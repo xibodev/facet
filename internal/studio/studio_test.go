@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -356,6 +357,64 @@ func TestMarkdownTableParser(t *testing.T) {
 	}
 	if beats[1].Index != "2" || beats[1].TimeRange != "5.0-10.0" || beats[1].Title != "Outro" || beats[1].Narration != "Goodbye world." {
 		t.Fatalf("unexpected beat 1: %#v", beats[1])
+	}
+}
+
+func TestPrepareWorkspaceRootCreatesMissingDirectory(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "nested", "workspace")
+
+	got, err := prepareWorkspaceRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != root {
+		t.Fatalf("prepared root = %q, want %q", got, root)
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("prepared workspace is not a directory: %s", root)
+	}
+}
+
+func TestPrepareWorkspaceRootRejectsFile(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "workspace")
+	if err := os.WriteFile(root, []byte("not a directory"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := prepareWorkspaceRoot(root); err == nil {
+		t.Fatal("workspace file accepted as a directory")
+	}
+}
+
+func TestReviewDecisionRecordsRejectionWithoutApproval(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "projects", "project")
+	video := filepath.Join(project, "renders", "final.mp4")
+	mustWriteTestFile(t, video, "rendered video")
+	mustWriteTestFile(t, filepath.Join(project, "review", "acceptance.json"), `{"human_approved":true}`)
+	server := NewServer(root)
+	body := fmt.Sprintf(`{"dir":%q,"path":"renders/final.mp4","decision":"reject","note":"Typography needs revision."}`, project)
+	rec := serveSecurityRequest(server, http.MethodPost, "/api/review/decision", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("review decision returned %d: %s", rec.Code, rec.Body.String())
+	}
+	data, err := os.ReadFile(filepath.Join(project, "review", "decision.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decision map[string]any
+	if err := json.Unmarshal(data, &decision); err != nil {
+		t.Fatal(err)
+	}
+	if decision["decision"] != "rejected" || decision["human_approved"] != false || decision["note"] != "Typography needs revision." {
+		t.Fatalf("recorded rejection = %#v", decision)
+	}
+	if _, err := os.Stat(filepath.Join(project, "review", "acceptance.json")); !os.IsNotExist(err) {
+		t.Fatal("rejection created an acceptance record")
 	}
 }
 

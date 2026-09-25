@@ -104,7 +104,7 @@ func (g guidanceContributor) ContributePrompt(ctx context.Context, _ agent.Promp
 		}
 		fmt.Fprintf(&text, "\n\n## Selected pack: %s\n%s", pack, body)
 	}
-	text.WriteString("\n## Standalone transport binding (applies to all examples above)\nThis is the embedded Facet application. Any `facet tools run NAME --input FILE` example means: read FILE, then call the native NAME tool with the file's JSON object as its arguments. For video_compose, passing only input_path pointing at saved props JSON loads those props directly, preserving their exact profile. Do not run a facet executable from PATH: it may be a different version. Use native facet_describe and facet_estimate. File-writing tools accept serialized text content, not a JSON object in their content field. Never substitute a renderer or silently change the requested profile after a tool failure.\n")
+	text.WriteString("\n## Standalone transport binding (applies to all examples above)\nThis is the embedded Facet application. Any `facet tools run NAME --input FILE` example means: read FILE, then call the native NAME tool with the file's JSON object as its arguments. For video_compose, passing only input_path pointing at saved props JSON loads those props directly, preserving their exact profile. Do not run a facet executable from PATH: it may be a different version. Use native capability calls with these exact shapes: facet_describe: {\"tool\":\"video_compose\"}; facet_estimate: {\"tool\":\"video_compose\",\"input_json\":\"{...serialized video_compose arguments...}\"}. `input_json` must encode one object; preserve nested arrays as JSON arrays inside the string and do not add `item`, `props`, `request`, or `arguments` wrappers. A missing dependency discovered after approval is a new decision: if resolving it downloads data, uses the network, installs software, or writes outside the project, stop and request explicit approval before attempting the change. File-writing tools accept serialized text content, not a JSON object in their content field. Never substitute a renderer or silently change the requested profile after a tool failure.\n")
 	return []agent.PromptPart{{ID: "facet.producer", Layer: agent.PromptLayerCapability, Slot: agent.PromptSlotActiveSkill, Source: agent.PromptSource{ID: "facet.capability"}, Content: text.String()}}, nil
 }
 
@@ -121,16 +121,34 @@ func (t capabilityTool) Description() string {
 	case "guidance":
 		return "Read bundled Facet guidance and schemas by canonical path (skills/, packs/, agents/, schemas/)."
 	case "estimate":
-		return "Estimate a Facet operation without executing it."
+		return "Estimate a Facet operation without executing it. Pass tool plus input_json containing one serialized JSON object with that tool's direct native arguments."
 	default:
-		return "Describe a native Facet tool's input contract."
+		return "Describe a native Facet tool's input contract. Pass only the tool name."
 	}
 }
 func (t capabilityTool) Parameters() map[string]any {
 	if t.operation == "guidance" {
-		return map[string]any{"type": "object", "required": []string{"path"}, "properties": map[string]any{"path": map[string]any{"type": "string"}}}
+		return map[string]any{"type": "object", "additionalProperties": false, "required": []string{"path"}, "properties": map[string]any{"path": map[string]any{"type": "string"}}}
 	}
-	return map[string]any{"type": "object", "required": []string{"tool"}, "properties": map[string]any{"tool": map[string]any{"type": "string"}, "input": map[string]any{"type": "object"}}}
+	if t.operation == "describe" {
+		return map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"required":             []string{"tool"},
+			"properties": map[string]any{
+				"tool": map[string]any{"type": "string", "description": "Exact registered native Facet tool name, for example video_compose."},
+			},
+		}
+	}
+	return map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"tool", "input_json"},
+		"properties": map[string]any{
+			"tool":       map[string]any{"type": "string", "description": "Exact registered native Facet tool name, for example video_compose."},
+			"input_json": map[string]any{"type": "string", "description": "One serialized JSON object containing the direct native tool arguments. Arrays must remain JSON arrays inside this string."},
+		},
+	}
 }
 func (t capabilityTool) Execute(ctx context.Context, args map[string]any) *shared.ToolResult {
 	if err := ctx.Err(); err != nil {
@@ -147,9 +165,10 @@ func (t capabilityTool) Execute(ctx context.Context, args map[string]any) *share
 	name, _ := args["tool"].(string)
 	argv := []string{"tools", t.operation, name}
 	if t.operation == "estimate" {
-		input, _ := args["input"].(map[string]any)
-		if input == nil {
-			input = map[string]any{}
+		raw, _ := args["input_json"].(string)
+		input := map[string]any{}
+		if err := json.Unmarshal([]byte(raw), &input); err != nil {
+			return &shared.ToolResult{ForLLM: "input_json must encode one JSON object: " + err.Error(), IsError: true}
 		}
 		data, _ := json.Marshal(toolbox.ProjectArguments(input, t.workspace))
 		argv = append(argv, "--input", string(data))

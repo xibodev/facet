@@ -94,6 +94,7 @@
       padding: 12px;
     }
     .shell {
+      height: calc(100vh - 24px);
       min-height: calc(100vh - 24px);
       overflow: hidden;
       display: grid;
@@ -599,11 +600,14 @@
       .shell { grid-template-columns: 205px minmax(0, 1fr) 300px; }
       .health { max-width: 210px; }
       .health:first-child { display: none; }
+      .workspace-head { align-items: flex-start; flex-direction: column; }
+      .view-tabs { width: 100%; overflow-x: auto; }
     }
 
     @media (max-width: 880px) {
       .app { padding: 0; }
       .shell {
+        height: auto;
         min-height: 100vh;
         border: 0;
         border-radius: 0;
@@ -784,8 +788,10 @@
               </div>
               <hr style="width:100%;border:0;border-top:1px solid var(--line-soft)">
               <label class="check"><input id="acceptConfirm" type="checkbox">I reviewed the current video and want to record my decision</label>
+              <label class="field">Decision note<textarea id="reviewDecisionNote" rows="3" placeholder="Optional for acceptance; explain what must change when rejecting."></textarea></label>
               <div class="action-row">
                 <button class="secondary" id="acceptReviewButton" type="button">Record acceptance</button>
+                <button class="danger" id="rejectReviewButton" type="button">Record rejection</button>
               </div>
               <p class="feedback" id="reviewFeedback" role="status"></p>
             </article>
@@ -1089,6 +1095,19 @@
           report = next;
         }
         return report && typeof report === 'object' ? report : null;
+      }
+
+      function reviewReportSummary(report) {
+        if (!report || typeof report !== 'object') return 'Review report available.';
+        const status = String(report.review_status ?? report.status ?? 'not reported');
+        const gates = Array.isArray(report.gates) ? report.gates : [];
+        const counts = new Map();
+        gates.forEach(gate => {
+          const value = String(gate?.status || 'unknown');
+          counts.set(value, (counts.get(value) || 0) + 1);
+        });
+        const details = [...counts.entries()].map(([name, count]) => `${count} ${name}`).join(' · ');
+        return [`Status: ${status}`, details].filter(Boolean).join(' · ');
       }
 
       function currentChat() {
@@ -1434,7 +1453,7 @@
         }
         const report = parseReport(project.review_report);
         if (report || project.review_report_url || project.review_report_path) {
-          records.push(evidenceCard('Review report', report ? textValue(report) : project.review_report_path, safeMediaURL(project.review_report_url), 'Open report'));
+          records.push(evidenceCard('Review report', report ? reviewReportSummary(report) : project.review_report_path, safeMediaURL(project.review_report_url), 'Open report'));
         }
         const composition = resource(project, 'composition');
         if (project.remotion_props || composition.path || composition.url) {
@@ -1503,10 +1522,12 @@
         root.replaceChildren();
         const run = $('#runReviewButton');
         const accept = $('#acceptReviewButton');
+        const reject = $('#rejectReviewButton');
         const video = videoResource(project);
         const duration = Number($('#reviewDuration').value);
         run.disabled = !project || !video.path || !state.tokenReady || state.busy || !Number.isFinite(duration) || duration <= 0;
         accept.disabled = run.disabled || !$('#acceptConfirm').checked;
+        reject.disabled = accept.disabled;
         if (!project) {
           root.appendChild(node('p', 'dialog-note', 'Select a project to inspect review evidence.'));
           return;
@@ -1519,11 +1540,11 @@
         }
         if (report) {
           const facts = node('div', 'review-facts');
-          const status = report.review_status ?? report.status ?? 'Not reported';
+          const status = reviewReportSummary(report);
           const reviewed = report.output_facts?.input ?? report.input ?? '';
           const gateValue = report.gates ?? report.technical_gates ?? report.checks;
           const gates = Array.isArray(gateValue) ? gateValue.length : gateValue && typeof gateValue === 'object' ? Object.keys(gateValue).length : 0;
-          [['Reported status', textValue(status)], ['Reviewed file', textValue(reviewed) || 'Not reported'], ['Technical checks', String(gates)]].forEach(([label, value]) => {
+          [['Technical status', status], ['Reviewed file', textValue(reviewed) || 'Not reported'], ['Technical checks', String(gates)]].forEach(([label, value]) => {
             const fact = node('div', 'fact');
             fact.append(node('span', '', label), node('strong', '', value));
             facts.appendChild(fact);
@@ -1927,17 +1948,20 @@
         }
       }
 
-      async function acceptReview() {
+      async function recordReviewDecision(decision) {
         const feedback = $('#reviewFeedback');
         if (!$('#acceptConfirm').checked) return setFeedback(feedback, 'Confirm that you reviewed the current video first.', 'error');
         const video = videoResource(state.project);
         if (!state.project || !video.path) return setFeedback(feedback, 'The project does not expose a video path.', 'error');
+        const note = $('#reviewDecisionNote').value.trim();
+        if (decision === 'reject' && !note) return setFeedback(feedback, 'Explain what must change before recording a rejection.', 'error');
         $('#acceptReviewButton').disabled = true;
+        $('#rejectReviewButton').disabled = true;
         setFeedback(feedback, 'Recording decision...');
         try {
-          const data = await requestJSON('/api/review/accept', {
+          const data = await requestJSON('/api/review/decision', {
             method: 'POST',
-            body: JSON.stringify({ dir: state.project.path, path: projectRelativePath(video.path) })
+            body: JSON.stringify({ dir: state.project.path, path: projectRelativePath(video.path), decision, note })
           }, true);
           setFeedback(feedback, data.message || 'The review decision was recorded.', 'success');
           await refreshProject();
@@ -1966,7 +1990,8 @@
       $('#discoverModelsButton').addEventListener('click', discoverModels);
       $('#runReviewButton').addEventListener('click', runReview);
       $('#reviewDuration').addEventListener('input', () => renderReview(state.project));
-      $('#acceptReviewButton').addEventListener('click', acceptReview);
+      $('#acceptReviewButton').addEventListener('click', () => recordReviewDecision('accept'));
+      $('#rejectReviewButton').addEventListener('click', () => recordReviewDecision('reject'));
       $('#acceptConfirm').addEventListener('change', () => renderReview(state.project));
       $('#composer').addEventListener('submit', event => {
         event.preventDefault();

@@ -91,6 +91,13 @@ with `FACET_BUNDLE_DIR` or `--bundle`. The bundle, not compiled fallback
 guidance, is authoritative for capability identity, instructions, packs, tool
 vocabulary, compatibility, and integrity.
 
+Set `FACET_HOME` to run Facet.UI with an isolated model configuration, catalog,
+and default productions directory. Browser/UAT runs should give every run a
+fresh `FACET_HOME`, workspace, port, and browser context; set `HOME`,
+`USERPROFILE`, `APPDATA`, and `LOCALAPPDATA` to the same disposable profile
+when external tools must also be isolated. Only copy screenshots, logs, and
+explicit output evidence out of that profile.
+
 ## Production packs
 
 | Pack | Purpose |

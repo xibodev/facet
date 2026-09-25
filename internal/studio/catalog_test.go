@@ -54,6 +54,20 @@ func TestCatalogOperations(t *testing.T) {
 	}
 }
 
+func TestFacetHomeIsolatesCatalogAndProductions(t *testing.T) {
+	stateDir := filepath.Join(t.TempDir(), "facet-state")
+	t.Setenv("FACET_HOME", stateDir)
+	t.Setenv("LOCALAPPDATA", filepath.Join(t.TempDir(), "platform-state"))
+	t.Setenv("HOME", t.TempDir())
+
+	if got, want := GetDefaultProductionsRoot(), filepath.Join(stateDir, "productions"); got != want {
+		t.Fatalf("default productions root = %q, want %q", got, want)
+	}
+	if got, want := GetCatalogPath(), filepath.Join(stateDir, "catalog.json"); got != want {
+		t.Fatalf("catalog path = %q, want %q", got, want)
+	}
+}
+
 func TestCreateProjectRefusesExistingAndEscapingDirectory(t *testing.T) {
 	root := t.TempDir()
 	project, err := CreateNewProject("Existing", "existing", root, "studio", nil, root)
@@ -75,6 +89,17 @@ func TestCreateProjectRefusesExistingAndEscapingDirectory(t *testing.T) {
 		if _, err := CreateNewProject("Invalid", slug, root, "studio", nil, root); err == nil {
 			t.Fatalf("unsafe slug accepted: %s", slug)
 		}
+	}
+}
+
+func TestCreateProjectUsesFolderSlugAsCatalogID(t *testing.T) {
+	root := t.TempDir()
+	project, err := CreateNewProject("Launch Film 2026!", "launch-film-2026", root, "studio", nil, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.ID != "launch-film-2026" {
+		t.Fatalf("project ID = %q, want folder slug", project.ID)
 	}
 }
 

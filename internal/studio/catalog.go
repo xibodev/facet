@@ -46,6 +46,9 @@ type PackInfo struct {
 
 // GetDefaultProductionsRoot returns the default path for new productions.
 func GetDefaultProductionsRoot() string {
+	if home := strings.TrimSpace(os.Getenv("FACET_HOME")); home != "" {
+		return filepath.Join(home, "productions")
+	}
 	if runtime.GOOS == "windows" {
 		if localApp := os.Getenv("LOCALAPPDATA"); localApp != "" {
 			return filepath.Join(localApp, "Facet", "productions")
@@ -60,6 +63,9 @@ func GetDefaultProductionsRoot() string {
 
 // GetCatalogPath returns the absolute path to catalog.json.
 func GetCatalogPath(rootDir ...string) string {
+	if home := strings.TrimSpace(os.Getenv("FACET_HOME")); home != "" {
+		return filepath.Join(home, "catalog.json")
+	}
 	if len(rootDir) > 0 && rootDir[0] != "" {
 		localCat := filepath.Join(rootDir[0], ".facet", "catalog.json")
 		if _, err := os.Stat(localCat); err == nil {
@@ -161,6 +167,10 @@ func SaveCatalog(cat *Catalog, rootDir ...string) error {
 
 // RegisterOrUpdateProject adds or touches a project in the catalog.
 func RegisterOrUpdateProject(name, targetPath, engine string, packs []string, rootDir ...string) (*CatalogProject, error) {
+	return registerOrUpdateProject(name, targetPath, engine, packs, "", rootDir...)
+}
+
+func registerOrUpdateProject(name, targetPath, engine string, packs []string, idOverride string, rootDir ...string) (*CatalogProject, error) {
 	absPath, err := filepath.Abs(targetPath)
 	if err != nil {
 		absPath = targetPath
@@ -201,8 +211,11 @@ func RegisterOrUpdateProject(name, targetPath, engine string, packs []string, ro
 		if name == "" {
 			name = filepath.Base(absPath)
 		}
-		id := strings.ToLower(name)
-		id = strings.ReplaceAll(id, " ", "-")
+		id := strings.TrimSpace(idOverride)
+		if id == "" {
+			id = strings.ToLower(name)
+			id = strings.ReplaceAll(id, " ", "-")
+		}
 
 		newProj := CatalogProject{
 			ID:           id,
@@ -443,7 +456,7 @@ func CreateNewProject(name, slug, baseDir, engine string, packs []string, rootDi
 		return nil, fmt.Errorf("project initialization failed: %w", err)
 	}
 
-	return RegisterOrUpdateProject(name, targetDir, engine, packs, rootDir...)
+	return registerOrUpdateProject(name, targetDir, engine, packs, slug, rootDir...)
 }
 
 // OpenExistingProject registers an existing folder and refreshes its projections.

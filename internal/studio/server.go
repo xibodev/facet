@@ -155,7 +155,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/materials", s.guardRequest(tokenHeader, s.handleSaveMaterial))
 	s.mux.HandleFunc("POST /api/materials/render", s.guardRequest(tokenHeader, s.handleRenderMaterial))
 	s.mux.HandleFunc("POST /api/review", s.guardRequest(tokenHeader, s.handleReviewOutput))
-	s.mux.HandleFunc("POST /api/review/accept", s.guardRequest(tokenHeader, s.handleAcceptOutput))
+	s.mux.HandleFunc("POST /api/review/accept", s.guardRequest(tokenHeader, s.handleReviewDecision))
+	s.mux.HandleFunc("POST /api/review/decision", s.guardRequest(tokenHeader, s.handleReviewDecision))
 }
 
 func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
@@ -326,13 +327,38 @@ func RunWithOption(addr, dir string, autoOpen bool) error {
 	return RunWithBundleOption(addr, dir, "", autoOpen)
 }
 
+func prepareWorkspaceRoot(dir string) (string, error) {
+	if strings.TrimSpace(dir) == "" {
+		dir = "."
+	}
+	root, err := filepath.Abs(dir)
+	if err != nil {
+		return "", fmt.Errorf("resolve Studio workspace: %w", err)
+	}
+	if err := os.MkdirAll(root, 0755); err != nil {
+		return "", fmt.Errorf("create Studio workspace %s: %w", root, err)
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		return "", fmt.Errorf("inspect Studio workspace %s: %w", root, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("Studio workspace is not a directory: %s", root)
+	}
+	return root, nil
+}
+
 // RunWithBundleOption starts Studio with an explicit installed capability
 // bundle. An empty path uses FACET_BUNDLE_DIR or the standard user location.
 func RunWithBundleOption(addr, dir, bundleDir string, autoOpen bool) error {
 	if err := InitializeApplication(); err != nil {
 		return err
 	}
-	server := NewServer(dir)
+	root, err := prepareWorkspaceRoot(dir)
+	if err != nil {
+		return err
+	}
+	server := NewServer(root)
 	if strings.TrimSpace(bundleDir) != "" {
 		abs, err := filepath.Abs(bundleDir)
 		if err != nil {
