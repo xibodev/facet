@@ -601,6 +601,7 @@ func TestLocalUATActivatesUIFromTheInstalledStudioBundle(t *testing.T) {
 			"spawn('/home/facet/.facet/bin/facet', ['ui', '--port', '8787', '--dir', '/home/facet/studio', '--no-open']",
 		},
 	}
+
 	for name, required := range checks {
 		data, err := os.ReadFile(name)
 		if err != nil {
@@ -654,6 +655,22 @@ func TestLocalUATActivatesUIFromTheInstalledStudioBundle(t *testing.T) {
 	}
 	if !strings.Contains(string(smoke), `nav[aria-label='Projects']`) {
 		t.Error("smoke scenario does not target the rebuilt project navigation")
+	}
+}
+
+func TestWindowsSourceInstallerBuildsTheRequiredStudioBundle(t *testing.T) {
+	data, err := os.ReadFile("scripts/install-source.ps1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	for _, required := range []string{
+		`bundle --target studio --out`,
+		`Join-Path $BundleDir 'studio/facet-bundle.json'`,
+	} {
+		if !strings.Contains(content, required) {
+			t.Errorf("Windows source installer is missing %q", required)
+		}
 	}
 }
 

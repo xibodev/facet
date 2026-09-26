@@ -25,7 +25,7 @@ try {
     Push-Location $work
     try {
         & $installer -NonInteractive -NoPath -NoShortcuts -Isolated -HomeDir $homeDir -InstallDir $bin
-        foreach ($file in @('skills/facet/SKILL.md', 'packs/explainer/SKILL.md', 'remotion-composer/package-lock.json', 'remotion-composer/node_modules/remotion/package.json')) {
+        foreach ($file in @('skills/facet/SKILL.md', 'packs/explainer/SKILL.md', 'remotion-composer/package-lock.json', 'remotion-composer/node_modules/remotion/package.json', 'studio/facet-bundle.json', 'studio/AGENT.md')) {
             if (-not (Test-Path -LiteralPath (Join-Path $bundle $file) -PathType Leaf)) { throw "Missing installed file: $file" }
         }
         if ([IO.File]::ReadAllText($config) -cne $originalConfig) { throw 'User config was modified.' }

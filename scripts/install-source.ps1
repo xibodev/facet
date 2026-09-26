@@ -126,6 +126,12 @@ try {
             & go build -o (Join-Path $InstallDir "$name.exe") "./cmd/$name"
             if ($LASTEXITCODE -ne 0) { throw "Failed to build cmd/$name." }
         }
+        & (Join-Path $InstallDir 'facet.exe') bundle --target studio --out $BundleDir
+        if ($LASTEXITCODE -ne 0) { throw 'Failed to build the installed Studio bundle.' }
+        $studioManifest = Join-Path $BundleDir 'studio/facet-bundle.json'
+        if (-not (Test-Path -LiteralPath $studioManifest -PathType Leaf)) {
+            throw "Studio bundle build did not create its manifest: $studioManifest"
+        }
     } finally { Pop-Location }
 
     Write-Host 'Installing skills, packs and Remotion source (excluding dependencies and render/cache outputs)...'
@@ -181,6 +187,7 @@ try {
     }
     Write-Host "Installed binaries: $InstallDir"
     Write-Host "Installed bundle: $BundleDir"
+    Write-Host "Installed Studio bundle: $(Join-Path $BundleDir 'studio')"
     Write-Host 'No Facet configuration files were changed. This is a source install, not a standalone release download.'
     Write-Host 'Run facet doctor for diagnostics; doctor is not a render-success gate. Install/authenticate your agent separately.'
     Write-Host 'Rendering requires a supported Chromium browser and its dependencies. No video render was verified by this installer.'
