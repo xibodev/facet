@@ -1,0 +1,20 @@
+{
+  "id": "SMOKE-001",
+  "name": "Facet availability",
+  "origin_id": "web-app",
+  "tier": "smoke",
+  "policy": "required",
+  "steps": [
+    {
+      "action": "navigate",
+      "target": "/"
+    },
+    {
+      "action": "assert",
+      "target": "nav[aria-label='Projects']"
+    },
+    {
+      "action": "screenshot"
+    }
+  ]
+}

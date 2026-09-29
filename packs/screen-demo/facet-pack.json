@@ -1,0 +1,25 @@
+{
+  "name": "@xibodev/facet-pack-screendemo",
+  "version": "1.0.0",
+  "description": "Facet-owned guidance for recorded and synthetic software demos.",
+  "kind": "content",
+  "methods": ["product-demo"],
+  "requirements": {
+    "probes": ["facet.probe.ffmpeg.v1", "facet.probe.ffprobe.v1"]
+  },
+  "declarations": {
+    "suggestedTools": ["output_review", "source_edit", "video_compose"],
+    "networkIntent": "none",
+    "costIntent": "none",
+    "filesystemIntent": "project-local"
+  },
+  "exports": {
+    "skills": [
+      {
+        "id": "screen-demo",
+        "path": "SKILL.md",
+        "description": "Entry guidance for Facet screen-demo production"
+      }
+    ]
+  }
+}

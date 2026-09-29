@@ -1,0 +1,59 @@
+{
+  "name": "@xibodev/facet",
+  "version": "1.1.0",
+  "description": "Agent-first video production tools, guidance, and browser app",
+  "main": "bin/facet-cli.js",
+  "bin": {
+    "facet": "bin/facet-cli.js",
+    "facet-ui": "bin/facet-ui-cli.js"
+  },
+  "files": [
+    "bin",
+    "agents",
+    "skills",
+    "packs",
+    "schemas",
+    "remotion-composer/src",
+    "remotion-composer/legacy-composer-manifest.json",
+    "remotion-composer/package.json",
+    "remotion-composer/package-lock.json",
+    "remotion-composer/tsconfig.json",
+    "web",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test:launchers": "node --test bin/launchers.test.js",
+    "test:installer": "node --test scripts/installer-selection.test.mjs",
+    "doctor": "node bin/facet-cli.js doctor",
+    "ui": "node bin/facet-ui-cli.js",
+    "check-pr": "release-harness check-pr",
+    "run-local": "release-harness run-local",
+    "clean": "release-harness clean"
+  },
+  "keywords": [
+    "video",
+    "video-production",
+    "agentic",
+    "ai",
+    "claude-code",
+    "opencode",
+    "copilot",
+    "ffmpeg",
+    "remotion",
+    "edge-tts"
+  ],
+  "author": "Facet Contributors",
+  "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@xibodev/release-harness": "1.2.0",
+    "playwright": "1.63.0"
+  }
+}

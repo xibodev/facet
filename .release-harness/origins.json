@@ -1,0 +1,15 @@
+[
+  {
+    "origin_id": "web-app",
+    "type": "browser_app",
+    "auth": "none",
+    "url_source": "env:UAT_APP_URL (default http://127.0.0.1:31000)",
+    "route_families": [
+      "/"
+    ],
+    "safe_for_live": true,
+    "evidence": [
+      "package.json"
+    ]
+  }
+]

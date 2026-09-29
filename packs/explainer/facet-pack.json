@@ -1,0 +1,26 @@
+{
+  "name": "@xibodev/facet-pack-explainer",
+  "version": "1.0.0",
+  "description": "Facet-owned guidance for 2D explainers and motion graphics.",
+  "kind": "content",
+  "methods": ["animation", "explainer"],
+  "requirements": {
+    "probes": ["facet.probe.ffmpeg.v1", "facet.probe.node.v1"],
+    "runtimes": ["remotion"]
+  },
+  "declarations": {
+    "suggestedTools": ["edge_tts", "flux_image", "openai_image", "output_review", "piper_tts", "video_compose"],
+    "networkIntent": "provider-optional",
+    "costIntent": "may-charge-optional",
+    "filesystemIntent": "project-local"
+  },
+  "exports": {
+    "skills": [
+      {
+        "id": "explainer",
+        "path": "SKILL.md",
+        "description": "Entry guidance for Facet explainer production"
+      }
+    ]
+  }
+}

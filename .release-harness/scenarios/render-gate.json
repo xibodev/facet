@@ -1,0 +1,27 @@
+{
+  "id": "RENDER-GATE-001",
+  "name": "Real OpenCode production, revision and playback plus independent installation checks",
+  "origin_id": "web-app",
+  "tier": "core",
+  "policy": "required",
+  "steps": [
+    {
+      "action": "navigate",
+      "target": "/"
+    }
+  ],
+  "expected_side_effects": [
+    {
+      "service": "custom",
+      "probe_type": "custom",
+      "params": {
+        "command": "node",
+        "args": [
+          "scripts/uat-probe.mjs"
+        ],
+        "expect_exit_code": 0,
+        "timeoutMs": 1980000
+      }
+    }
+  ]
+}

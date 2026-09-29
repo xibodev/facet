@@ -1,0 +1,19 @@
+{
+  "request_id": "req_0000000000000000000000000000fake",
+  "tool": "gflow_image",
+  "input": {
+    "prompt": "a paper landscape",
+    "model": "narwhal",
+    "aspect_ratio": "landscape",
+    "count": 1,
+    "output_path": "assets/landscape.png"
+  },
+  "consent": {
+    "paid_generation_approved": true,
+    "approved_by": "operator",
+    "note": "Cost is unknown before execution; approved explicitly by a human."
+  },
+  "binaries": {
+    "gflow": "/absolute/path/to/gflow"
+  }
+}

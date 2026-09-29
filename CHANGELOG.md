@@ -1,0 +1,69 @@
+# Changelog
+
+## 1.1.0
+
+- Replaced the retired embedded kernel with Compa v1.0.0 while preserving
+  Facet's native tools, approvals, streaming events, sessions, and model setup.
+- Added the verified `app` capability bundle as the authoritative Facet app
+  contract and included it in native release packages.
+- Renamed the public standalone installer target from `studio` to `app`.
+  Existing v1.0.4 standalone receipts migrate to `app` during update while
+  user files, configuration, and unmanaged instructions remain preserved.
+- Updated the source and prebuilt installers for Go 1.26.6, deterministic
+  app-bundle packaging, lifecycle verification, and the v1.1.0 release assets.
+- Refreshed the repository, installation guide, and website for the Facet app
+  preview and its embedded Compa kernel.
+
+The Facet app is a preview and still requires editorial review of generated
+work. Provider access, quota, cost, and model availability remain external
+conditions; failed production calls are never replaced with mock delivery.
+
+## 1.0.4
+
+- Arrow-key CLI/action menus, Space-toggle optional dependencies, numbered stages,
+  concise progress, retained diagnostic logs, and plain/noninteractive fallback.
+- Repeat setup reuses configured dependencies. Add, repair, and update build
+  isolated replacement runtimes and preserve working project bindings on failure.
+- Explicit migration of v1.0.3 integrations keeps the original skill and state in
+  a project backup; modified managed files are never silently overwritten.
+- Windows PowerShell 5.1 compatibility, POSIX-shell web bootstrap, pipe-friendly
+  environment options, retrying downloads, and verified product-download caching.
+- Release tests cover terminal interaction, repeat setup, repair, legacy migration,
+  dependency failure recovery, and clean Linux Docker rendering.
+
+Windows rich-menu rendering still needs interactive user acceptance. Uninstall
+is not implemented; old runtime generations and migration backups are retained.
+Automatic Linux system dependencies target apt-based distributions.
+
+## 1.0.3
+
+- Script-owned interactive installation for OpenCode, Codex, Claude Code, and GitHub Copilot CLI, using prebuilt Windows, Linux, and macOS binaries on x64 and ARM64.
+- Shared dependency/host manifest and selectable Remotion, Piper, gflow, and HyperFrames runtimes with approximate download sizes.
+- Checksummed product downloads, project-local launchers, preserved user instructions, and local media verification. Contributor source builds moved to `scripts/install-source.*`.
+- Native script integration tests and clean Ubuntu Docker installation with real rendering are release-cutting CI gates.
+- Agentic CLI use is recommended; Facet Standalone is experimental. Optional media providers report their own configuration requirements.
+
+Scope: core integration checks cover the native platforms; complete optional-runtime installation and rendering are exercised on Windows x64 locally and Ubuntu x64 in Docker. External paid generation and every renderer/platform combination are not certified. Piper is unavailable on Windows ARM64 in this installer.
+
+## 1.0.2 Candidate (Unreleased)
+
+- Install the full production bundle and locked composer dependencies from source;
+  preserve configuration and user-owned skills. Fix CLI help side effects, launch
+  error propagation, npm launcher recursion and Windows install discovery. Existing
+  Windows shortcuts remain unchanged unless recognized links are explicitly migrated.
+- Fail explicitly on missing provider credentials or failed Remotion rendering,
+  without substituting mock media. Preserve failed gflow downloads for recovery,
+  validate CLI receipts and report unknown provider costs as unknown.
+- Support project-local media staging and explicit Explainer export profiles;
+  contain the authored canvas at smaller/portrait sizes, retain bounded timeout
+  progress, and bind output facts to delivered bytes. Fix replacement-audio editing.
+- Repair Studio catalog media links, scoped downloads, production scanning and
+  completed-conversation recovery within the same tab and running Studio process.
+- Add offline regressions, Linux/Windows CI and Docker UAT helpers with bounded,
+  sanitized evidence capture. Clarify installation, provider and production guidance.
+
+Known limitations: no in-flight or server-restart conversation recovery; portrait
+Explainer output uses containment/letterboxing. Fresh post-fix paid gflow generation
+has not been verified. Hosted-model UAT uses open egress and cannot certify the
+sealed network policy. Local checks and prior dirty-source UAT are not a clean-source
+release verdict; no sealed PASS or publication is claimed for this candidate.

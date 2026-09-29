@@ -1,0 +1,2078 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Facet</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%231d1d1f'/%3E%3Cpath d='M19 16h28v8H28v8h15v8H28v16h-9z' fill='white'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f5f7;
+      --panel: #ffffff;
+      --panel-soft: #fbfbfd;
+      --ink: #1d1d1f;
+      --ink-2: #424245;
+      --muted: #6e6e73;
+      --line: #d2d2d7;
+      --line-soft: #e8e8ed;
+      --blue: #0071e3;
+      --blue-hover: #0077ed;
+      --green: #218739;
+      --amber: #9a6400;
+      --red: #c9342d;
+      --theater: #050506;
+      --radius-s: 8px;
+      --radius-m: 12px;
+      --radius-l: 18px;
+      --radius-xl: 28px;
+      --shadow: 0 24px 70px rgba(0, 0, 0, .1);
+      --focus: 0 0 0 4px color-mix(in srgb, var(--blue), transparent 68%);
+      --display: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --text: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --bg: #161617;
+        --panel: #242426;
+        --panel-soft: #1d1d1f;
+        --ink: #f5f5f7;
+        --ink-2: #e5e5ea;
+        --muted: #aeaeb2;
+        --line: #48484a;
+        --line-soft: #38383a;
+        --blue: #0a84ff;
+        --blue-hover: #409cff;
+        --green: #30b94d;
+        --amber: #e4a126;
+        --red: #ff6961;
+        --shadow: 0 24px 70px rgba(0, 0, 0, .35);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html { min-width: 320px; min-height: 100%; background: var(--bg); }
+    body {
+      min-width: 320px;
+      min-height: 100vh;
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, select, textarea { color: inherit; font: inherit; }
+    button, select { cursor: pointer; }
+    button:disabled, input:disabled, select:disabled, textarea:disabled { cursor: not-allowed; opacity: .48; }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible, summary:focus-visible {
+      outline: 0;
+      box-shadow: var(--focus);
+    }
+    a { color: var(--blue); }
+    img, video, audio { max-width: 100%; }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .app {
+      width: min(100%, 1800px);
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: 12px;
+    }
+    .shell {
+      height: calc(100vh - 24px);
+      min-height: calc(100vh - 24px);
+      overflow: hidden;
+      display: grid;
+      grid-template: 64px minmax(0, 1fr) auto / 238px minmax(0, 1fr) 340px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow);
+    }
+
+    .header {
+      grid-column: 1 / -1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--line-soft);
+      background: color-mix(in srgb, var(--panel), transparent 3%);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      flex: none;
+      font: 650 17px var(--display);
+      letter-spacing: -.02em;
+    }
+    .brand-mark {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 9px;
+      background: var(--ink);
+      color: var(--panel);
+      font-size: 15px;
+      font-weight: 750;
+    }
+    .health-strip {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+      overflow: hidden;
+    }
+    .health {
+      min-width: 0;
+      min-height: 36px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 11px;
+      border: 1px solid var(--line-soft);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+    .health span:last-child {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--amber); }
+    .health[data-state="ready"] { color: var(--green); }
+    .health[data-state="ready"] .dot { background: var(--green); }
+    .health[data-state="failed"] { color: var(--red); }
+    .health[data-state="failed"] .dot { background: var(--red); }
+    .icon-button, .button, .primary, .secondary, .danger {
+      min-height: 44px;
+      border: 0;
+      border-radius: 999px;
+      font-weight: 650;
+    }
+    .icon-button {
+      width: 44px;
+      flex: none;
+      display: grid;
+      place-items: center;
+      background: var(--bg);
+      font-size: 19px;
+    }
+    .icon-button:hover, .secondary:hover { background: color-mix(in srgb, var(--bg), var(--ink) 5%); }
+    .button, .primary, .secondary, .danger { padding: 0 16px; }
+    .primary { background: var(--blue); color: #fff; }
+    .primary:hover:not(:disabled) { background: var(--blue-hover); }
+    .secondary { border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+    .danger { background: var(--red); color: #fff; }
+
+    .project-rail {
+      grid-row: 2 / 4;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--line-soft);
+      background: var(--panel-soft);
+    }
+    .rail-head { padding: 18px 14px 10px; }
+    .rail-label, .section-label {
+      margin: 0;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .rail-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 12px; }
+    .rail-actions button {
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-s);
+      background: var(--panel);
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .rail-actions button:hover { background: var(--bg); }
+    .project-list {
+      min-height: 0;
+      flex: 1;
+      overflow: auto;
+      margin: 0;
+      padding: 2px 8px 16px;
+      list-style: none;
+    }
+    .project-button {
+      width: 100%;
+      min-height: 58px;
+      display: grid;
+      grid-template-columns: 8px minmax(0, 1fr);
+      align-content: center;
+      gap: 3px 9px;
+      padding: 8px 10px;
+      border: 0;
+      border-radius: var(--radius-m);
+      background: transparent;
+      color: var(--ink);
+      text-align: left;
+    }
+    .project-button:hover { background: var(--panel); }
+    .project-button[aria-current="true"] { background: var(--panel); box-shadow: 0 0 0 1px var(--line); }
+    .project-button .dot { grid-row: 1 / 3; align-self: center; background: var(--muted); }
+    .project-name { overflow: hidden; font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .project-meta { overflow: hidden; color: var(--muted); font: 10px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+    .rail-empty { padding: 16px 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+    .workspace {
+      min-width: 0;
+      overflow: auto;
+      padding: 24px clamp(18px, 3vw, 42px) 28px;
+      background: var(--panel);
+    }
+    .workspace-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .eyebrow {
+      margin: 0 0 5px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 0;
+      overflow-wrap: anywhere;
+      font: 650 clamp(28px, 4vw, 44px)/1.05 var(--display);
+      letter-spacing: -.025em;
+    }
+    .workspace-subtitle { margin: 7px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .view-tabs {
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+      border-radius: 999px;
+      background: var(--bg);
+    }
+    .view-tab {
+      min-height: 40px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .view-tab[aria-selected="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+
+    .theater-shell {
+      overflow: hidden;
+      border-radius: var(--radius-l);
+      background: var(--theater);
+      box-shadow: 0 0 0 1px rgba(128, 128, 128, .24);
+    }
+    .theater {
+      position: relative;
+      aspect-ratio: 16 / 9;
+      min-height: 280px;
+      display: grid;
+      place-items: center;
+      background: #000;
+      color: #f5f5f7;
+    }
+    .theater video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+    .video-empty {
+      max-width: 36ch;
+      display: grid;
+      justify-items: center;
+      gap: 10px;
+      padding: 28px;
+      color: #98989d;
+      text-align: center;
+    }
+    .empty-glyph {
+      width: 48px;
+      height: 34px;
+      border: 1px solid #636366;
+      border-radius: 8px;
+      position: relative;
+    }
+    .empty-glyph::after {
+      content: "";
+      position: absolute;
+      inset: 9px 14px;
+      border-left: 10px solid #98989d;
+      border-top: 7px solid transparent;
+      border-bottom: 7px solid transparent;
+    }
+    .video-empty strong { color: #d2d2d7; font-size: 14px; }
+    .video-empty span { font-size: 12px; line-height: 1.5; }
+    .video-badge {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      padding: 6px 9px;
+      border: 1px solid rgba(255, 255, 255, .28);
+      border-radius: 999px;
+      background: rgba(20, 20, 22, .76);
+      color: #f5f5f7;
+      font: 9px var(--mono);
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .video-meta {
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 7px 12px 7px 16px;
+      background: #111113;
+      color: #a8a8ad;
+    }
+    .video-path { min-width: 0; flex: 1; overflow: hidden; font: 10px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+    .video-link {
+      min-height: 38px;
+      display: inline-flex;
+      align-items: center;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: #f5f5f7;
+      color: #1d1d1f;
+      font-size: 11px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .evidence-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .evidence-card, .empty-card, .asset-card, .review-card {
+      min-width: 0;
+      padding: 18px;
+      border: 1px solid var(--line-soft);
+      border-radius: var(--radius-l);
+      background: var(--panel-soft);
+    }
+    .evidence-card h2, .review-card h2, .section-head h2 {
+      margin: 0;
+      font: 650 15px var(--display);
+    }
+    .evidence-copy {
+      margin: 12px 0 0;
+      max-height: 240px;
+      overflow: auto;
+      color: var(--ink-2);
+      font: 12px/1.65 var(--mono);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .evidence-list { margin: 12px 0 0; padding-left: 20px; color: var(--ink-2); font-size: 13px; line-height: 1.55; }
+    .empty-card { color: var(--muted); font-size: 13px; line-height: 1.55; }
+    .link-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .file-link {
+      min-height: 40px;
+      display: inline-flex;
+      align-items: center;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      font-size: 11px;
+      font-weight: 650;
+      text-decoration: none;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .count { color: var(--muted); font: 10px var(--mono); }
+    .asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+    .asset-card { display: flex; flex-direction: column; gap: 7px; }
+    .asset-kind { color: var(--blue); font-size: 9px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; }
+    .asset-name { overflow-wrap: anywhere; font-size: 13px; font-weight: 650; }
+    .asset-info { color: var(--muted); font: 10px/1.45 var(--mono); overflow-wrap: anywhere; }
+    .asset-card a { margin-top: auto; font-size: 12px; font-weight: 650; }
+    .media-preview { margin-top: 6px; border-radius: var(--radius-s); }
+
+    .review-layout { display: grid; gap: 14px; }
+    .review-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 14px; }
+    .fact { padding: 12px; border-radius: var(--radius-m); background: var(--panel); }
+    .fact span { display: block; color: var(--muted); font-size: 10px; }
+    .fact strong { display: block; margin-top: 4px; overflow-wrap: anywhere; font-size: 13px; }
+    .report-json {
+      max-height: 340px;
+      overflow: auto;
+      margin: 12px 0 0;
+      padding: 12px;
+      border-radius: var(--radius-m);
+      background: var(--panel);
+      font: 11px/1.55 var(--mono);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .frame-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 12px; }
+    .frame { margin: 0; overflow: hidden; border: 1px solid var(--line-soft); border-radius: var(--radius-m); background: var(--panel); }
+    .frame img { width: 100%; aspect-ratio: 16 / 9; display: block; object-fit: cover; background: #000; }
+    .frame figcaption { padding: 8px; color: var(--muted); font: 9px var(--mono); overflow-wrap: anywhere; }
+    .review-controls { display: grid; gap: 12px; }
+    .field-row { display: grid; grid-template-columns: repeat(5, minmax(74px, 1fr)); gap: 8px; }
+    .field { display: grid; gap: 6px; color: var(--muted); font-size: 10px; font-weight: 650; }
+    .field input, .field select, .field textarea {
+      width: 100%;
+      min-height: 44px;
+      padding: 9px 11px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-s);
+      background: var(--panel);
+    }
+    .check { min-height: 44px; display: flex; align-items: center; gap: 9px; font-size: 12px; }
+    .check input { width: 18px; height: 18px; accent-color: var(--blue); }
+    .action-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .feedback { min-height: 20px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .feedback.error { color: var(--red); }
+    .feedback.success { color: var(--green); }
+
+    .inspector {
+      grid-column: 3;
+      grid-row: 2;
+      min-width: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      border-left: 1px solid var(--line-soft);
+      background: var(--panel-soft);
+    }
+    .inspector-head {
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+    .inspector-head h2 { margin: 0; font: 650 14px var(--display); }
+    .inspector-close { display: none; }
+    .stream-state { color: var(--muted); font: 9px var(--mono); text-transform: uppercase; }
+    .stream-state[data-state="working"] { color: var(--blue); }
+    .stream-state[data-state="failed"] { color: var(--red); }
+    .stream-state[data-state="ready"] { color: var(--green); }
+    .activity {
+      min-height: 0;
+      flex: 1;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      padding: 12px;
+    }
+    .activity-empty { margin: auto; max-width: 28ch; color: var(--muted); font-size: 12px; line-height: 1.55; text-align: center; }
+    .message {
+      padding: 12px;
+      border: 1px solid var(--line-soft);
+      border-radius: var(--radius-m);
+      background: var(--panel);
+    }
+    .message.user { margin-left: 28px; background: color-mix(in srgb, var(--blue), var(--panel) 91%); }
+    .message.tool { background: var(--panel-soft); }
+    .message.error { border-color: color-mix(in srgb, var(--red), transparent 55%); }
+    .message.warning { border-color: color-mix(in srgb, var(--amber), transparent 55%); }
+    .message-head { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+    .message-title { min-width: 0; flex: 1; overflow: hidden; font-size: 11px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+    .message-status { color: var(--muted); font: 9px var(--mono); }
+    .message-text {
+      margin: 0;
+      color: var(--ink-2);
+      font: 12px/1.58 var(--text);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .message.tool .message-text, .tool-detail { font-family: var(--mono); font-size: 10px; }
+    .tool-detail { margin-top: 8px; }
+    .tool-detail summary { min-height: 36px; display: flex; align-items: center; color: var(--muted); cursor: pointer; font-weight: 650; }
+    .tool-detail pre { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .approval-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 10px; }
+    .approval-actions button { min-height: 44px; border-radius: var(--radius-s); }
+
+    .composer {
+      grid-column: 2 / 4;
+      grid-row: 3;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 9px;
+      padding: 12px;
+      border-top: 1px solid var(--line-soft);
+      background: var(--panel);
+    }
+    .composer-input {
+      min-height: 50px;
+      max-height: 140px;
+      resize: vertical;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-l);
+      background: var(--panel-soft);
+      line-height: 1.45;
+    }
+    .send {
+      min-width: 92px;
+      min-height: 50px;
+      align-self: end;
+      border: 0;
+      border-radius: var(--radius-l);
+      background: var(--blue);
+      color: #fff;
+      font-weight: 700;
+    }
+    .composer-status {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font: 9px/1.4 var(--mono);
+    }
+
+    dialog {
+      width: min(560px, calc(100vw - 28px));
+      max-height: calc(100vh - 28px);
+      overflow: auto;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-l);
+      background: var(--panel);
+      color: var(--ink);
+      box-shadow: 0 28px 90px rgba(0, 0, 0, .32);
+    }
+    dialog::backdrop { background: rgba(0, 0, 0, .38); backdrop-filter: blur(5px); }
+    .dialog-head {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      min-height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--line-soft);
+      background: var(--panel);
+    }
+    .dialog-head h2 { margin: 0; font: 650 18px var(--display); }
+    .dialog-body { display: grid; gap: 14px; padding: 18px; }
+    .dialog-body .field { font-size: 12px; }
+    .dialog-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .model-summary { padding: 12px; border-radius: var(--radius-m); background: var(--panel-soft); color: var(--muted); font: 10px/1.5 var(--mono); overflow-wrap: anywhere; }
+
+    @media (max-width: 1160px) {
+      .shell { grid-template-columns: 205px minmax(0, 1fr) 300px; }
+      .health { max-width: 210px; }
+      .health:first-child { display: none; }
+      .workspace-head { align-items: flex-start; flex-direction: column; }
+      .view-tabs { width: 100%; overflow-x: auto; }
+    }
+
+    @media (max-width: 880px) {
+      .app { padding: 0; }
+      .shell {
+        height: auto;
+        min-height: 100vh;
+        border: 0;
+        border-radius: 0;
+        grid-template: auto auto minmax(0, 1fr) auto / minmax(0, 1fr);
+      }
+      .header { grid-column: 1; grid-row: 1; min-height: 62px; padding: 8px 12px; }
+      .brand span:last-child { display: none; }
+      .health-strip { gap: 5px; }
+      .health { max-width: 160px; min-height: 34px; padding: 0 9px; }
+      .project-rail {
+        grid-column: 1;
+        grid-row: 2;
+        border-right: 0;
+        border-bottom: 1px solid var(--line-soft);
+      }
+      .rail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; }
+      .rail-label { display: none; }
+      .rail-actions { margin: 0; }
+      .rail-actions button { min-width: 72px; min-height: 40px; }
+      .project-list { display: flex; gap: 6px; overflow-x: auto; padding: 7px 10px 10px; }
+      .project-list li { flex: 0 0 190px; }
+      .project-button { min-height: 50px; background: var(--panel); box-shadow: 0 0 0 1px var(--line-soft); }
+      .workspace { grid-column: 1; grid-row: 3; padding: 18px 12px 150px; }
+      .workspace-head { align-items: flex-start; flex-direction: column; }
+      .view-tabs { width: 100%; overflow-x: auto; }
+      .view-tab { flex: 1 0 auto; }
+      .theater { min-height: 190px; }
+      .evidence-grid { grid-template-columns: 1fr; }
+      .field-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .inspector {
+        position: fixed;
+        z-index: 30;
+        inset: 74px 10px 118px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-l);
+        box-shadow: var(--shadow);
+        transform: translateY(calc(100% + 130px));
+        transition: transform 180ms ease;
+      }
+      .inspector.open { transform: translateY(0); }
+      .inspector-close {
+        width: 40px;
+        height: 40px;
+        display: grid;
+        place-items: center;
+        border: 0;
+        border-radius: 50%;
+        background: var(--bg);
+        font-size: 18px;
+      }
+      .composer {
+        position: fixed;
+        z-index: 20;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        grid-column: 1;
+        grid-row: auto;
+        padding: 9px 10px max(9px, env(safe-area-inset-bottom));
+        box-shadow: 0 -10px 30px rgba(0, 0, 0, .08);
+      }
+      .composer-input { min-height: 48px; resize: none; }
+      .send { min-width: 72px; min-height: 48px; }
+      .composer-status { display: none; }
+    }
+
+    @media (max-width: 560px) {
+      .health[data-kind="model"] { display: none; }
+      .workspace-head h1 { font-size: 30px; }
+      .asset-grid { grid-template-columns: 1fr; }
+      .video-meta { align-items: flex-start; flex-direction: column; }
+      .field-row { grid-template-columns: 1fr 1fr; }
+      .action-row > button { flex: 1; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <main class="shell" aria-label="Facet production workspace">
+      <header class="header">
+        <div class="brand" aria-label="Facet">
+          <span class="brand-mark" aria-hidden="true">F</span>
+          <span>Facet</span>
+        </div>
+        <div class="health-strip" aria-label="Runtime status">
+          <div class="health" id="bundleHealth" data-state="loading" title="Checking installed bundle">
+            <span class="dot" aria-hidden="true"></span>
+            <span id="bundleHealthText">Checking bundle</span>
+          </div>
+          <div class="health" id="modelHealth" data-kind="model" data-state="loading" title="Checking configured model">
+            <span class="dot" aria-hidden="true"></span>
+            <span id="modelHealthText">Checking model</span>
+          </div>
+        </div>
+        <button class="icon-button" id="chatToggle" type="button" aria-label="Show agent conversation" aria-expanded="false">A</button>
+        <button class="icon-button" id="settingsButton" type="button" aria-label="Open settings">...</button>
+      </header>
+
+      <nav class="project-rail" aria-label="Projects">
+        <div class="rail-head">
+          <p class="rail-label">Projects</p>
+          <div class="rail-actions">
+            <button id="newProjectButton" type="button">New</button>
+            <button id="openProjectButton" type="button">Open</button>
+          </div>
+        </div>
+        <ul class="project-list" id="projectList">
+          <li class="rail-empty">Loading projects...</li>
+        </ul>
+      </nav>
+
+      <section class="workspace" aria-labelledby="workspaceTitle">
+        <div class="workspace-head">
+          <div>
+            <p class="eyebrow" id="workspaceEyebrow">Production evidence</p>
+            <h1 id="workspaceTitle" tabindex="-1">Select a project</h1>
+            <p class="workspace-subtitle" id="workspaceSubtitle">Facet shows only evidence exposed by the selected project.</p>
+          </div>
+          <div class="view-tabs" role="tablist" aria-label="Project views">
+            <button class="view-tab" type="button" role="tab" aria-selected="true" aria-controls="productionView" data-view="production">Production</button>
+            <button class="view-tab" type="button" role="tab" aria-selected="false" aria-controls="evidenceView" data-view="evidence">Evidence</button>
+            <button class="view-tab" type="button" role="tab" aria-selected="false" aria-controls="reviewView" data-view="review">Review</button>
+            <button class="view-tab" type="button" role="tab" aria-selected="false" aria-controls="assetsView" data-view="assets">Assets</button>
+          </div>
+        </div>
+
+        <section id="productionView" role="tabpanel" data-panel="production">
+          <div class="theater-shell">
+            <div class="theater">
+              <video id="projectVideo" controls playsinline preload="metadata" hidden aria-label="Project video"></video>
+              <div class="video-empty" id="videoEmpty">
+                <span class="empty-glyph" aria-hidden="true"></span>
+                <strong id="videoEmptyTitle">No project selected</strong>
+                <span id="videoEmptyCopy">Choose a project to inspect its actual video output.</span>
+              </div>
+              <span class="video-badge" id="videoBadge" hidden></span>
+            </div>
+            <div class="video-meta" id="videoMeta" hidden>
+              <span class="video-path" id="videoPath"></span>
+              <a class="video-link" id="videoLink" href="#" download>Open video</a>
+            </div>
+          </div>
+          <div class="evidence-grid" id="productionEvidence"></div>
+        </section>
+
+        <section id="evidenceView" role="tabpanel" data-panel="evidence" hidden>
+          <div class="section-head">
+            <h2>Project evidence</h2>
+            <span class="count" id="evidenceCount">0 records</span>
+          </div>
+          <div class="evidence-grid" id="evidenceGrid"></div>
+        </section>
+
+        <section id="reviewView" role="tabpanel" data-panel="review" hidden>
+          <div class="review-layout">
+            <article class="review-card" id="reviewReportCard">
+              <h2>Review evidence</h2>
+              <div id="reviewReport"></div>
+            </article>
+            <article class="review-card review-controls">
+              <div>
+                <h2>Technical review</h2>
+                <p class="dialog-note">Runs checks against the selected project's actual video. Results do not imply creative acceptance.</p>
+              </div>
+              <div class="field-row">
+                <label class="field">Width<input id="reviewWidth" type="number" min="1" value="1920"></label>
+                <label class="field">Height<input id="reviewHeight" type="number" min="1" value="1080"></label>
+                <label class="field">FPS<input id="reviewFps" type="number" min="1" step="0.01" value="30"></label>
+                <label class="field">Duration<input id="reviewDuration" type="number" min="0.1" step="0.1" placeholder="Seconds" required></label>
+                <label class="check"><input id="reviewAudio" type="checkbox" checked>Check audio</label>
+              </div>
+              <div class="action-row">
+                <button class="primary" id="runReviewButton" type="button">Run review</button>
+              </div>
+              <hr style="width:100%;border:0;border-top:1px solid var(--line-soft)">
+              <label class="check"><input id="acceptConfirm" type="checkbox">I reviewed the current video and want to record my decision</label>
+              <label class="field">Decision note<textarea id="reviewDecisionNote" rows="3" placeholder="Optional for acceptance; explain what must change when rejecting."></textarea></label>
+              <div class="action-row">
+                <button class="secondary" id="acceptReviewButton" type="button">Record acceptance</button>
+                <button class="danger" id="rejectReviewButton" type="button">Record rejection</button>
+              </div>
+              <p class="feedback" id="reviewFeedback" role="status"></p>
+            </article>
+          </div>
+        </section>
+
+        <section id="assetsView" role="tabpanel" data-panel="assets" hidden>
+          <div class="section-head">
+            <h2>Assets and artifacts</h2>
+            <span class="count" id="assetCount">0 items</span>
+          </div>
+          <div class="asset-grid" id="assetGrid"></div>
+        </section>
+      </section>
+
+      <aside class="inspector" id="inspector" aria-label="Agent conversation">
+        <div class="inspector-head">
+          <h2>Agent</h2>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="stream-state" id="streamState" data-state="idle">Idle</span>
+            <button class="inspector-close" id="inspectorClose" type="button" aria-label="Close agent conversation">x</button>
+          </div>
+        </div>
+        <div class="activity" id="activity" aria-live="polite">
+          <p class="activity-empty">Select a project and send a one-line idea to begin or continue its Facet conversation.</p>
+        </div>
+      </aside>
+
+      <form class="composer" id="composer">
+        <label class="sr-only" for="promptInput">Message Facet</label>
+        <textarea class="composer-input" id="promptInput" rows="1" placeholder="Preparing Facet..." disabled></textarea>
+        <button class="send" id="sendButton" type="submit" disabled>Send</button>
+        <div class="composer-status">
+          <span id="composerReadiness">Checking bundle, project, model, and session security.</span>
+          <span id="composerSession">No session</span>
+        </div>
+      </form>
+    </main>
+  </div>
+
+  <dialog id="settingsDialog" aria-labelledby="settingsTitle">
+    <div class="dialog-head">
+      <h2 id="settingsTitle">Facet settings</h2>
+      <button class="icon-button" type="button" data-close="settingsDialog" aria-label="Close settings">x</button>
+    </div>
+    <div class="dialog-body">
+      <label class="field">Configured model
+        <select id="modelSelect">
+          <option value="">Loading models...</option>
+        </select>
+      </label>
+      <div class="action-row">
+        <button class="primary" id="saveModelButton" type="button">Use model</button>
+        <button class="secondary" id="discoverModelsButton" type="button">Discover free models</button>
+      </div>
+      <p class="feedback" id="modelFeedback" role="status"></p>
+      <div class="model-summary" id="modelSummary">Model configuration is loading.</div>
+    </div>
+  </dialog>
+
+  <dialog id="newProjectDialog" aria-labelledby="newProjectTitle">
+    <form id="newProjectForm">
+      <div class="dialog-head">
+        <h2 id="newProjectTitle">New project</h2>
+        <button class="icon-button" type="button" data-close="newProjectDialog" aria-label="Close new project dialog">x</button>
+      </div>
+      <div class="dialog-body">
+        <label class="field">Name<input id="newProjectName" required autocomplete="off"></label>
+        <label class="field">Slug<input id="newProjectSlug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" autocomplete="off"></label>
+        <p class="dialog-note">Creates a Facet project and opens it in this workspace.</p>
+        <div class="action-row">
+          <button class="primary" id="createProjectButton" type="submit">Create project</button>
+          <button class="secondary" type="button" data-close="newProjectDialog">Cancel</button>
+        </div>
+        <p class="feedback" id="newProjectFeedback" role="status"></p>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="openProjectDialog" aria-labelledby="openProjectTitle">
+    <form id="openProjectForm">
+      <div class="dialog-head">
+        <h2 id="openProjectTitle">Open project folder</h2>
+        <button class="icon-button" type="button" data-close="openProjectDialog" aria-label="Close open project dialog">x</button>
+      </div>
+      <div class="dialog-body">
+        <label class="field">Project directory<input id="openProjectPath" required autocomplete="off" placeholder="C:\path\to\project"></label>
+        <p class="dialog-note">Opens an existing directory without inventing project evidence.</p>
+        <div class="action-row">
+          <button class="primary" id="openFolderButton" type="submit">Open folder</button>
+          <button class="secondary" type="button" data-close="openProjectDialog">Cancel</button>
+        </div>
+        <p class="feedback" id="openProjectFeedback" role="status"></p>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const TOKEN_HEADER = 'X-Facet-Session-Token';
+      const $ = selector => document.querySelector(selector);
+      const $$ = selector => Array.from(document.querySelectorAll(selector));
+      const state = {
+        capabilityReady: false,
+        capability: null,
+        tokenReady: false,
+        token: '',
+        modelsReady: false,
+        activeModel: '',
+        modelData: null,
+        projectsReady: false,
+        projects: [],
+        slug: '',
+        project: null,
+        projectSerial: 0,
+        view: 'production',
+        stream: null,
+        busy: false,
+        chats: new Map(),
+        restoredChats: new Set()
+      };
+
+      function node(tag, className, text) {
+        const value = document.createElement(tag);
+        if (className) value.className = className;
+        if (text !== undefined) value.textContent = text;
+        return value;
+      }
+
+      function textValue(value) {
+        if (value === undefined || value === null) return '';
+        if (typeof value === 'string') return value;
+        try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+      }
+
+      function errorMessage(data, fallback) {
+        if (typeof data?.error === 'string') return data.error;
+        if (typeof data?.error?.message === 'string') return data.error.message;
+        if (typeof data?.message === 'string') return data.message;
+        return fallback;
+      }
+
+      async function requestJSON(url, options = {}, authenticated = false) {
+        const headers = new Headers(options.headers || {});
+        headers.set('Accept', 'application/json');
+        if (options.body && !(options.body instanceof FormData)) headers.set('Content-Type', 'application/json');
+        if (authenticated && state.token) headers.set(TOKEN_HEADER, state.token);
+        const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', ...options, headers });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(errorMessage(data, `${response.status} ${response.statusText}`));
+        return data;
+      }
+
+      function booleanLike(value) {
+        if (value === true || value === 1 || value === 'true' || value === '1') return true;
+        if (value === false || value === 0 || value === 'false' || value === '0') return false;
+        return undefined;
+      }
+
+      function formatBytes(value) {
+        const bytes = Number(value);
+        if (!Number.isFinite(bytes) || bytes < 0) return '';
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+        if (bytes < 1073741824) return `${(bytes / 1048576).toFixed(1)} MB`;
+        return `${(bytes / 1073741824).toFixed(1)} GB`;
+      }
+
+      function formatDate(value) {
+        if (!value) return '';
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? '' : date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+      }
+
+      function safeMediaURL(value) {
+        if (!value || typeof value !== 'string') return '';
+        try {
+          const url = new URL(value, location.origin);
+          if (url.origin !== location.origin || !url.pathname.startsWith('/api/media/')) return '';
+          return url.pathname + url.search;
+        } catch {
+          return '';
+        }
+      }
+
+      function mediaPathURL(path) {
+        const segments = String(path || '').split(/[\\/]+/).filter(Boolean);
+        if (!segments.length || segments.some(part => part === '.' || part === '..')) return '';
+        return '/api/media/' + segments.map(encodeURIComponent).join('/');
+      }
+
+      function projectMediaURL(slug, path) {
+        if (!slug || String(slug).includes('/') || String(slug).includes('\\')) return '';
+        const parts = String(path || '').split(/[\\/]+/).filter(Boolean);
+        if (!parts.length || parts.some(part => part === '.' || part === '..')) return '';
+        return mediaPathURL(['projects', slug, ...parts].join('/'));
+      }
+
+      function resource(project, key, fallback = '') {
+        const suppliedURL = safeMediaURL(project?.[`${key}_url`]);
+        const suppliedPath = project?.[`${key}_path`];
+        const path = String(suppliedPath || (!project?.[`${key}_url`] ? fallback : '') || '');
+        let url = suppliedURL;
+        if (!url && path) {
+          url = safeMediaURL(path);
+          if (!url && /^projects[\\/]/.test(path)) url = mediaPathURL(path);
+          if (!url && !path.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(path)) url = projectMediaURL(project?.slug || state.slug, path);
+        }
+        return { path: path || suppliedURL, url };
+      }
+
+      function videoResource(project) {
+        const master = resource(project, 'video');
+        const preview = resource(project, 'preview_video');
+        if (master.url || master.path) return { ...master, kind: 'video' };
+        if (preview.url || preview.path) return { ...preview, kind: 'preview' };
+        return { path: '', url: '', kind: '' };
+      }
+
+      function artifactFrom(value, kind = 'artifact', name = '') {
+        if (typeof value === 'string') {
+          const url = safeMediaURL(value) || (/^projects[\\/]/.test(value) ? mediaPathURL(value) : '');
+          return { name: name || value.split(/[\\/]/).pop() || kind, path: value, url, kind, info: value };
+        }
+        if (!value || typeof value !== 'object') return null;
+        const path = String(value.relative_path || value.path || '');
+        let url = safeMediaURL(value.url);
+        if (!url && /^projects[\\/]/.test(path)) url = mediaPathURL(path);
+        if (!url && path && !path.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(path)) url = projectMediaURL(state.slug, path);
+        return {
+          name: String(value.name || value.label || path.split(/[\\/]/).pop() || name || kind),
+          path,
+          url,
+          kind: String(value.kind || value.type || kind),
+          info: [formatBytes(value.size), formatDate(value.last_modified), path].filter(Boolean).join(' | ')
+        };
+      }
+
+      function collectArtifacts(project) {
+        if (!project) return [];
+        const items = [];
+        const add = value => { if (value) items.push(value); };
+        const brief = resource(project, 'brief', project.brief ? 'brief.md' : '');
+        const script = resource(project, 'script', project.script ? 'script.md' : '');
+        const composition = resource(project, 'composition', project.remotion_props ? 'composition.json' : '');
+        if (project.brief || brief.path || brief.url) add({ name: brief.path.split(/[\\/]/).pop() || 'brief.md', path: brief.path, url: brief.url, kind: 'brief', info: 'Production brief' });
+        if (project.script || script.path || script.url) add({ name: script.path.split(/[\\/]/).pop() || 'script.md', path: script.path, url: script.url, kind: 'script', info: `${Array.isArray(project.beats) ? project.beats.length : 0} parsed beats` });
+        if (project.remotion_props || composition.path || composition.url) add({ name: composition.path.split(/[\\/]/).pop() || 'composition', path: composition.path, url: composition.url, kind: 'composition', info: 'Composition metadata' });
+        if (project.review_report_url || project.review_report_path) add({
+          name: String(project.review_report_path || 'review-report.json').split(/[\\/]/).pop(),
+          path: project.review_report_path || '',
+          url: safeMediaURL(project.review_report_url),
+          kind: 'review',
+          info: 'Review report'
+        });
+        [
+          ['narration', project.narration],
+          ['image', project.images],
+          ['frame', project.qa_frames],
+          ['frame', project.review_frames],
+          ['media', project.media],
+          ['media', project.media_files],
+          ['asset', project.assets]
+        ].forEach(([kind, values]) => {
+          if (Array.isArray(values)) values.forEach(value => add(artifactFrom(value, kind)));
+        });
+        if (project.assets && typeof project.assets === 'object' && !Array.isArray(project.assets)) {
+          Object.entries(project.assets).forEach(([name, value]) => add(artifactFrom(value, 'asset', name)));
+        }
+        if (Array.isArray(project.artifacts)) {
+          project.artifacts.forEach(value => add(artifactFrom(value)));
+        } else if (project.artifacts && typeof project.artifacts === 'object') {
+          Object.entries(project.artifacts).forEach(([name, value]) => add(artifactFrom(value, 'artifact', name)));
+        }
+        const preview = resource(project, 'preview_video');
+        const video = resource(project, 'video');
+        if (preview.path || preview.url) add({ name: (preview.path || 'preview.mp4').split(/[\\/]/).pop(), path: preview.path, url: preview.url, kind: 'preview', info: preview.path || preview.url });
+        if (video.path || video.url) add({ name: (video.path || 'video.mp4').split(/[\\/]/).pop(), path: video.path, url: video.url, kind: 'video', info: video.path || video.url });
+        const seen = new Set();
+        return items.filter(item => {
+          const key = `${item.url}|${item.path}|${item.name}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      }
+
+      function parseReport(value) {
+        let report = value;
+        if (typeof report === 'string') {
+          try { report = JSON.parse(report); } catch { return { raw: value }; }
+        }
+        for (let index = 0; index < 3 && report && typeof report === 'object' && !Array.isArray(report) && report.result !== undefined; index += 1) {
+          let next = report.result;
+          if (typeof next === 'string') {
+            try { next = JSON.parse(next); } catch { break; }
+          }
+          if (!next || typeof next !== 'object' || Array.isArray(next)) break;
+          report = next;
+        }
+        return report && typeof report === 'object' ? report : null;
+      }
+
+      function reviewReportSummary(report) {
+        if (!report || typeof report !== 'object') return 'Review report available.';
+        const status = String(report.review_status ?? report.status ?? 'not reported');
+        const gates = Array.isArray(report.gates) ? report.gates : [];
+        const counts = new Map();
+        gates.forEach(gate => {
+          const value = String(gate?.status || 'unknown');
+          counts.set(value, (counts.get(value) || 0) + 1);
+        });
+        const details = [...counts.entries()].map(([name, count]) => `${count} ${name}`).join(' · ');
+        return [`Status: ${status}`, details].filter(Boolean).join(' · ');
+      }
+
+      function currentChat() {
+        if (!state.slug) return null;
+        if (!state.chats.has(state.slug)) state.chats.set(state.slug, { session: '', items: [], tools: new Map(), assistant: null });
+        return state.chats.get(state.slug);
+      }
+
+      function addChatItem(item) {
+        const chat = currentChat();
+        if (!chat) return null;
+        chat.items.push(item);
+        renderChat();
+        return item;
+      }
+
+      function renderChat() {
+        const activity = $('#activity');
+        activity.replaceChildren();
+        const chat = currentChat();
+        if (!chat || !chat.items.length) {
+          activity.appendChild(node('p', 'activity-empty', state.project ? 'Send a one-line idea or continue this project conversation.' : 'Select a project to begin a Facet conversation.'));
+          return;
+        }
+        chat.items.forEach((item, index) => {
+          const article = node('article', `message ${item.kind || ''} ${item.level || ''}`);
+          const head = node('div', 'message-head');
+          head.append(node('span', 'message-title', item.title || 'Facet'), node('span', 'message-status', item.status || ''));
+          article.appendChild(head);
+          if (item.text !== undefined && item.text !== '') article.appendChild(node('pre', 'message-text', textValue(item.text)));
+          (item.details || []).forEach(detail => {
+            const disclosure = node('details', 'tool-detail');
+            disclosure.append(node('summary', '', detail.label), node('pre', '', textValue(detail.value)));
+            article.appendChild(disclosure);
+          });
+          if (item.kind === 'approval' && item.pending) {
+            const actions = node('div', 'approval-actions');
+            const deny = node('button', 'secondary', 'Deny');
+            deny.type = 'button';
+            deny.dataset.approvalIndex = String(index);
+            deny.dataset.allow = 'false';
+            const allow = node('button', 'primary', 'Allow');
+            allow.type = 'button';
+            allow.dataset.approvalIndex = String(index);
+            allow.dataset.allow = 'true';
+            actions.append(deny, allow);
+            article.appendChild(actions);
+          }
+          activity.appendChild(article);
+        });
+        activity.scrollTop = activity.scrollHeight;
+      }
+
+      function setStreamState(label, value) {
+        $('#streamState').textContent = label;
+        $('#streamState').dataset.state = value;
+      }
+
+      function readiness() {
+        if (!state.capabilityReady) return { ready: false, message: 'Installed Facet bundle is unavailable.' };
+        if (!state.projectsReady) return { ready: false, message: 'Projects are still loading.' };
+        if (!state.project) return { ready: false, message: 'Select or create a project.' };
+        if (!state.modelsReady || !state.activeModel) return { ready: false, message: 'Select a configured model in Settings.' };
+        if (!state.tokenReady || !state.token) return { ready: false, message: 'Secure session token is unavailable.' };
+        if (state.busy) return { ready: false, message: 'Facet is working on the current request.' };
+        return { ready: true, message: 'Ready for a one-line idea or the next instruction.' };
+      }
+
+      function updateComposer() {
+        const result = readiness();
+        const input = $('#promptInput');
+        input.disabled = !result.ready;
+        $('#sendButton').disabled = !result.ready || !input.value.trim();
+        input.placeholder = result.ready ? 'Describe what to make or ask Facet to continue...' : result.message;
+        $('#composerReadiness').textContent = result.message;
+        const session = currentChat()?.session;
+        $('#composerSession').textContent = session ? `Session ${session.length > 12 ? session.slice(-10) : session}` : 'New conversation';
+      }
+
+      function setFeedback(element, message, type = '') {
+        element.textContent = message || '';
+        element.className = `feedback${type ? ` ${type}` : ''}`;
+      }
+
+      async function loadCapability() {
+        const health = $('#bundleHealth');
+        try {
+          const data = await requestJSON('/api/capability');
+          if (!data.ready) throw new Error(data.error || 'Installed bundle did not report ready.');
+          state.capability = data;
+          state.capabilityReady = true;
+          health.dataset.state = 'ready';
+          const version = data.facet_version ? ` ${data.facet_version}` : '';
+          const tools = Number.isFinite(Number(data.tool_count)) ? ` | ${data.tool_count} tools` : '';
+          $('#bundleHealthText').textContent = `Facet${version}${tools}`;
+          health.title = [data.capability_id, data.bundle_digest].filter(Boolean).join(' | ');
+        } catch (error) {
+          state.capabilityReady = false;
+          health.dataset.state = 'failed';
+          $('#bundleHealthText').textContent = 'Bundle unavailable';
+          health.title = error.message;
+        }
+        updateComposer();
+      }
+
+      async function loadToken() {
+        try {
+          const data = await requestJSON('/api/session-token');
+          if (!data.token || typeof data.token !== 'string') throw new Error('Invalid session token response.');
+          state.token = data.token;
+          state.tokenReady = true;
+        } catch {
+          state.token = '';
+          state.tokenReady = false;
+        }
+        updateComposer();
+        if (state.tokenReady && state.project) restoreConversation(state.project);
+      }
+
+      async function loadModels() {
+        const health = $('#modelHealth');
+        const select = $('#modelSelect');
+        try {
+          const data = await requestJSON('/api/models');
+          const models = Array.isArray(data.models) ? data.models : [];
+          state.modelData = data;
+          state.activeModel = String(data.active_model || '');
+          const modelIDs = new Set(models.map(model => String(model.id || '')));
+          state.modelsReady = data.configured === true && modelIDs.has(state.activeModel);
+          select.replaceChildren(new Option(models.length ? 'Choose a model' : 'No configured models', ''));
+          models.forEach(model => select.appendChild(new Option(model.name || model.id, model.id)));
+          select.value = modelIDs.has(state.activeModel) ? state.activeModel : '';
+          health.dataset.state = state.modelsReady ? 'ready' : 'failed';
+          $('#modelHealthText').textContent = state.modelsReady ? state.activeModel : 'Model not selected';
+          health.title = data.config_path || 'Facet model settings';
+          $('#modelSummary').textContent = [
+            state.activeModel ? `Active: ${state.activeModel}` : 'No active model',
+            `${models.length} configured model${models.length === 1 ? '' : 's'}`,
+            data.config_path ? `Config: ${data.config_path}` : ''
+          ].filter(Boolean).join('\n');
+          if (!state.modelsReady) setFeedback($('#modelFeedback'), 'Choose a configured model or discover free models.');
+        } catch (error) {
+          state.modelsReady = false;
+          state.activeModel = '';
+          health.dataset.state = 'failed';
+          $('#modelHealthText').textContent = 'Models unavailable';
+          health.title = error.message;
+          select.replaceChildren(new Option('Models unavailable', ''));
+          setFeedback($('#modelFeedback'), error.message, 'error');
+        }
+        updateComposer();
+      }
+
+      function projectListPayload(payload) {
+        if (Array.isArray(payload)) return payload;
+        return Array.isArray(payload?.projects) ? payload.projects : [];
+      }
+
+      function renderProjectList() {
+        const list = $('#projectList');
+        list.replaceChildren();
+        if (!state.projects.length) {
+          list.appendChild(node('li', 'rail-empty', 'No projects are exposed. Create a project or open an existing folder.'));
+          return;
+        }
+        state.projects.forEach(project => {
+          if (!project || typeof project.slug !== 'string') return;
+          const item = node('li');
+          const button = node('button', 'project-button');
+          button.type = 'button';
+          button.dataset.slug = project.slug;
+          button.setAttribute('aria-current', String(project.slug === state.slug));
+          const video = videoResource(project);
+          button.append(
+            node('span', 'dot'),
+            node('span', 'project-name', project.name || project.slug),
+            node('span', 'project-meta', [video.kind || '', formatDate(project.last_modified)].filter(Boolean).join(' | ') || project.slug)
+          );
+          item.appendChild(button);
+          list.appendChild(item);
+        });
+      }
+
+      async function loadProjects(selectSlug = '') {
+        try {
+          const payload = await requestJSON('/api/projects');
+          state.projects = projectListPayload(payload).filter(project => project && typeof project.slug === 'string');
+          state.projectsReady = true;
+          renderProjectList();
+          const remembered = sessionStorage.getItem('facet-project') || '';
+          const next = selectSlug || state.slug || (state.projects.some(project => project.slug === remembered) ? remembered : '') || state.projects[0]?.slug || '';
+          if (next) await selectProject(next);
+          else clearProject();
+        } catch (error) {
+          state.projectsReady = false;
+          state.projects = [];
+          $('#projectList').replaceChildren(node('li', 'rail-empty', `Projects unavailable: ${error.message}`));
+          clearProject();
+        }
+        updateComposer();
+      }
+
+      function clearProject() {
+        state.slug = '';
+        state.project = null;
+        renderProjectList();
+        $('#workspaceEyebrow').textContent = 'Production evidence';
+        $('#workspaceTitle').textContent = 'Select a project';
+        $('#workspaceSubtitle').textContent = 'Facet shows only evidence exposed by the selected project.';
+        renderProject();
+        renderChat();
+        updateComposer();
+      }
+
+      async function selectProject(slug) {
+        if (!slug) return clearProject();
+        const serial = ++state.projectSerial;
+        state.slug = slug;
+        state.project = null;
+        renderProjectList();
+        $('#workspaceTitle').textContent = slug;
+        $('#workspaceSubtitle').textContent = 'Loading project evidence...';
+        updateComposer();
+        try {
+          const project = await requestJSON(`/api/projects/${encodeURIComponent(slug)}`);
+          if (serial !== state.projectSerial || state.slug !== slug) return;
+          state.project = project;
+          sessionStorage.setItem('facet-project', slug);
+          renderProjectList();
+          renderProject();
+          renderChat();
+          updateComposer();
+          restoreConversation(project);
+        } catch (error) {
+          if (serial !== state.projectSerial || state.slug !== slug) return;
+          state.project = null;
+          $('#workspaceEyebrow').textContent = 'Project unavailable';
+          $('#workspaceTitle').textContent = slug;
+          $('#workspaceSubtitle').textContent = error.message;
+          renderProject();
+          updateComposer();
+        }
+      }
+
+      function renderProject() {
+        const project = state.project;
+        if (project) {
+          $('#workspaceEyebrow').textContent = 'Production evidence';
+          $('#workspaceTitle').textContent = project.name || project.slug || state.slug;
+          $('#workspaceSubtitle').textContent = [project.path || '', formatDate(project.last_modified) ? `Updated ${formatDate(project.last_modified)}` : ''].filter(Boolean).join(' | ') || 'Project evidence loaded.';
+        }
+        renderVideo(project);
+        renderEvidence(project);
+        renderAssets(project);
+        renderReview(project);
+      }
+
+      function renderVideo(project) {
+        const video = $('#projectVideo');
+        const empty = $('#videoEmpty');
+        const value = videoResource(project);
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+        video.hidden = true;
+        empty.hidden = false;
+        $('#videoBadge').hidden = true;
+        $('#videoMeta').hidden = true;
+        if (!project) {
+          $('#videoEmptyTitle').textContent = state.slug ? 'Project could not be loaded' : 'No project selected';
+          $('#videoEmptyCopy').textContent = state.slug ? 'Facet could not read this project.' : 'Choose a project to inspect its actual video output.';
+          return;
+        }
+        if (!value.url) {
+          $('#videoEmptyTitle').textContent = 'No video evidence';
+          $('#videoEmptyCopy').textContent = value.path ? `The project references ${value.path}, but no playable media URL was exposed.` : 'This project does not currently expose video_url or preview_video_url.';
+          return;
+        }
+        video.src = value.url;
+        video.hidden = false;
+        empty.hidden = true;
+        $('#videoBadge').hidden = false;
+        $('#videoBadge').textContent = value.kind === 'preview' ? 'Preview' : 'Video';
+        $('#videoMeta').hidden = false;
+        $('#videoPath').textContent = value.path || value.url;
+        $('#videoLink').href = value.url;
+        $('#videoLink').textContent = value.kind === 'preview' ? 'Open preview' : 'Open video';
+        video.setAttribute('aria-label', value.kind === 'preview' ? 'Project preview video' : 'Project video');
+        video.addEventListener('error', () => {
+          video.hidden = true;
+          empty.hidden = false;
+          $('#videoEmptyTitle').textContent = 'Video could not be loaded';
+          $('#videoEmptyCopy').textContent = 'The project still references this file. Its path remains available in Assets.';
+        }, { once: true });
+      }
+
+      function evidenceCard(title, content, url = '', urlLabel = 'Open file') {
+        const card = node('article', 'evidence-card');
+        card.appendChild(node('h2', '', title));
+        if (content) card.appendChild(node('pre', 'evidence-copy', content));
+        else card.appendChild(node('p', 'dialog-note', 'No content is exposed for this record.'));
+        if (url) {
+          const links = node('div', 'link-row');
+          const link = node('a', 'file-link', urlLabel);
+          link.href = url;
+          link.target = '_blank';
+          link.rel = 'noopener';
+          links.appendChild(link);
+          card.appendChild(links);
+        }
+        return card;
+      }
+
+      function renderEvidence(project) {
+        const production = $('#productionEvidence');
+        const grid = $('#evidenceGrid');
+        production.replaceChildren();
+        grid.replaceChildren();
+        if (!project) {
+          const empty = node('div', 'empty-card', 'Select a project to inspect its brief, script, review evidence, and artifacts.');
+          production.appendChild(empty);
+          grid.appendChild(empty.cloneNode(true));
+          $('#evidenceCount').textContent = '0 records';
+          return;
+        }
+        const records = [];
+        const brief = resource(project, 'brief');
+        const script = resource(project, 'script');
+        if (project.brief || brief.path || brief.url) records.push(evidenceCard('Brief', project.brief || brief.path, brief.url, 'Open brief'));
+        if (project.script || script.path || script.url || Array.isArray(project.beats)) {
+          const scriptText = project.script || script.path || '';
+          const card = evidenceCard('Script', scriptText, script.url, 'Open script');
+          if (Array.isArray(project.beats) && project.beats.length) {
+            const list = node('ol', 'evidence-list');
+            project.beats.forEach((beat, index) => {
+              const title = beat?.title || beat?.beat || `Beat ${index + 1}`;
+              const detail = beat?.narration || beat?.visual || beat?.time_range || '';
+              list.appendChild(node('li', '', detail ? `${title}: ${detail}` : title));
+            });
+            card.appendChild(list);
+          }
+          records.push(card);
+        }
+        const report = parseReport(project.review_report);
+        if (report || project.review_report_url || project.review_report_path) {
+          records.push(evidenceCard('Review report', report ? reviewReportSummary(report) : project.review_report_path, safeMediaURL(project.review_report_url), 'Open report'));
+        }
+        const composition = resource(project, 'composition');
+        if (project.remotion_props || composition.path || composition.url) {
+          records.push(evidenceCard('Composition', project.remotion_props ? textValue(project.remotion_props) : composition.path, composition.url, 'Open composition'));
+        }
+        if (!records.length) records.push(node('div', 'empty-card', 'No brief, script, composition, or review report is exposed by this project.'));
+        records.forEach((record, index) => {
+          grid.appendChild(record);
+          if (index < 2) production.appendChild(record.cloneNode(true));
+        });
+        if (!production.childElementCount) production.appendChild(node('div', 'empty-card', 'No written production evidence is currently exposed.'));
+        $('#evidenceCount').textContent = `${records.length} record${records.length === 1 ? '' : 's'}`;
+      }
+
+      function mediaType(artifact) {
+        const name = artifact.name.toLowerCase();
+        if (/\.(png|jpe?g|webp|gif)$/.test(name)) return 'image';
+        if (/\.(mp3|wav|ogg|m4a)$/.test(name)) return 'audio';
+        if (/\.(mp4|webm|mov)$/.test(name)) return 'video';
+        return '';
+      }
+
+      function renderAssets(project) {
+        const grid = $('#assetGrid');
+        grid.replaceChildren();
+        const artifacts = collectArtifacts(project);
+        $('#assetCount').textContent = `${artifacts.length} item${artifacts.length === 1 ? '' : 's'}`;
+        if (!artifacts.length) {
+          grid.appendChild(node('div', 'empty-card', project ? 'No assets or artifacts are exposed by this project.' : 'Select a project to inspect assets.'));
+          return;
+        }
+        artifacts.forEach(artifact => {
+          const card = node('article', 'asset-card');
+          card.append(
+            node('span', 'asset-kind', artifact.kind),
+            node('span', 'asset-name', artifact.name),
+            node('span', 'asset-info', artifact.info || artifact.path || 'Project artifact')
+          );
+          const type = mediaType(artifact);
+          if (artifact.url && type === 'image') {
+            const image = node('img', 'media-preview');
+            image.src = artifact.url;
+            image.alt = artifact.name;
+            image.loading = 'lazy';
+            card.appendChild(image);
+          } else if (artifact.url && type === 'audio') {
+            const audio = node('audio', 'media-preview');
+            audio.controls = true;
+            audio.preload = 'metadata';
+            audio.src = artifact.url;
+            card.appendChild(audio);
+          }
+          if (artifact.url) {
+            const link = node('a', '', type === 'video' ? 'Open media' : 'Open artifact');
+            link.href = artifact.url;
+            link.target = '_blank';
+            link.rel = 'noopener';
+            card.appendChild(link);
+          }
+          grid.appendChild(card);
+        });
+      }
+
+      function renderReview(project) {
+        const root = $('#reviewReport');
+        root.replaceChildren();
+        const run = $('#runReviewButton');
+        const accept = $('#acceptReviewButton');
+        const reject = $('#rejectReviewButton');
+        const video = videoResource(project);
+        const duration = Number($('#reviewDuration').value);
+        run.disabled = !project || !video.path || !state.tokenReady || state.busy || !Number.isFinite(duration) || duration <= 0;
+        accept.disabled = run.disabled || !$('#acceptConfirm').checked;
+        reject.disabled = accept.disabled;
+        if (!project) {
+          root.appendChild(node('p', 'dialog-note', 'Select a project to inspect review evidence.'));
+          return;
+        }
+        const report = parseReport(project.review_report);
+        const frames = (Array.isArray(project.qa_frames) && project.qa_frames.length ? project.qa_frames : project.review_frames) || [];
+        if (!report && !frames.length) {
+          root.appendChild(node('p', 'dialog-note', 'No review report or sampled frames are exposed. This does not imply acceptance or failure.'));
+          return;
+        }
+        if (report) {
+          const facts = node('div', 'review-facts');
+          const status = reviewReportSummary(report);
+          const reviewed = report.output_facts?.input ?? report.input ?? '';
+          const gateValue = report.gates ?? report.technical_gates ?? report.checks;
+          const gates = Array.isArray(gateValue) ? gateValue.length : gateValue && typeof gateValue === 'object' ? Object.keys(gateValue).length : 0;
+          [['Technical status', status], ['Reviewed file', textValue(reviewed) || 'Not reported'], ['Technical checks', String(gates)]].forEach(([label, value]) => {
+            const fact = node('div', 'fact');
+            fact.append(node('span', '', label), node('strong', '', value));
+            facts.appendChild(fact);
+          });
+          root.appendChild(facts);
+          const details = node('details');
+          details.append(node('summary', '', 'View report data'), node('pre', 'report-json', textValue(report)));
+          root.appendChild(details);
+        }
+        if (frames.length) {
+          const frameGrid = node('div', 'frame-grid');
+          frames.forEach((frame, index) => {
+            const artifact = artifactFrom(frame, 'frame', `Frame ${index + 1}`);
+            if (!artifact?.url) return;
+            const figure = node('figure', 'frame');
+            const image = node('img');
+            image.src = artifact.url;
+            image.alt = artifact.name;
+            image.loading = 'lazy';
+            figure.append(image, node('figcaption', '', artifact.path || artifact.name));
+            frameGrid.appendChild(figure);
+          });
+          if (frameGrid.childElementCount) root.appendChild(frameGrid);
+        }
+      }
+
+      function projectRelativePath(path) {
+        let value = String(path || '').replaceAll('\\', '/');
+        for (const prefix of [`projects/${state.slug}/`, `catalog/${state.slug}/`]) {
+          if (value.startsWith(prefix)) value = value.slice(prefix.length);
+        }
+        return value;
+      }
+
+      async function restoreConversation(project) {
+        if (!project?.path || !state.tokenReady || state.restoredChats.has(state.slug)) return;
+        const slug = state.slug;
+        state.restoredChats.add(slug);
+        try {
+          const query = new URLSearchParams({ dir: project.path });
+          const data = await requestJSON(`/api/conversation?${query}`, {}, true);
+          if (state.slug !== slug) return;
+          const chat = currentChat();
+          if (data.session?.id) chat.session = String(data.session.id);
+          if (!chat.items.length) {
+            (data.messages || []).forEach(message => {
+              if (!['user', 'assistant'].includes(message.role) || !message.content) return;
+              chat.items.push({
+                kind: message.role === 'user' ? 'user' : 'assistant',
+                title: message.role === 'user' ? 'You' : 'Facet',
+                text: String(message.content),
+                status: 'history'
+              });
+            });
+          }
+          renderChat();
+          updateComposer();
+        } catch {
+          state.restoredChats.delete(slug);
+        }
+      }
+
+      function parseEvent(event) {
+        if (!event?.data) return {};
+        try { return JSON.parse(event.data); } catch { return { content: event.data }; }
+      }
+
+      function ensureAssistant(chat) {
+        if (!chat.assistant) {
+          chat.assistant = { kind: 'assistant', title: 'Facet', text: '', status: 'streaming' };
+          chat.items.push(chat.assistant);
+        }
+        return chat.assistant;
+      }
+
+      function handleStreamEvent(payload, fallbackType = '') {
+        if (!state.stream || state.stream.slug !== state.slug) return;
+        const type = payload.type || fallbackType;
+        const chat = currentChat();
+        if (!chat) return;
+        if (type === 'session') {
+          const session = payload.server_session_id || payload.session_id || payload.session || payload.id;
+          if (session) chat.session = String(session);
+          setStreamState('Working', 'working');
+          updateComposer();
+          return;
+        }
+        if (type === 'text_delta' || type === 'text_replace') {
+          const message = ensureAssistant(chat);
+          const text = String(payload.content ?? payload.text ?? payload.delta ?? '');
+          message.text = type === 'text_replace' ? text : message.text + text;
+          renderChat();
+          return;
+        }
+        if (type === 'tool_use') {
+          if (chat.assistant) {
+            chat.assistant.status = 'received';
+            chat.assistant = null;
+          }
+          const id = String(payload.tool_id || payload.id || `tool-${chat.items.length}`);
+          const item = {
+            kind: 'tool',
+            title: payload.tool_name || payload.name || 'Tool',
+            text: '',
+            status: 'running',
+            details: []
+          };
+          const input = payload.tool_input ?? payload.input ?? payload.arguments;
+          if (input !== undefined) item.details.push({ label: 'Input', value: input });
+          chat.tools.set(id, item);
+          chat.items.push(item);
+          renderChat();
+          return;
+        }
+        if (type === 'tool_result') {
+          const id = String(payload.tool_id || payload.tool_use_id || payload.id || '');
+          const item = chat.tools.get(id) || [...chat.tools.values()].at(-1) || {
+            kind: 'tool',
+            title: payload.tool_name || 'Tool result',
+            text: '',
+            status: '',
+            details: []
+          };
+          if (!chat.items.includes(item)) chat.items.push(item);
+          const failed = booleanLike(payload.is_error ?? payload.error) === true;
+          const warning = booleanLike(payload.warning) === true || String(payload.level || '').toLowerCase() === 'warning';
+          item.status = failed ? 'error' : warning ? 'warning' : 'complete';
+          item.level = failed ? 'error' : warning ? 'warning' : '';
+          item.details.push({ label: failed ? 'Error' : warning ? 'Warning' : 'Output', value: payload.tool_output ?? payload.output ?? payload.content ?? payload.result });
+          renderChat();
+          refreshProject();
+          return;
+        }
+        if (type === 'approval') {
+          if (chat.assistant) {
+            chat.assistant.status = 'received';
+            chat.assistant = null;
+          }
+          chat.items.push({
+            kind: 'approval',
+            level: 'warning',
+            title: 'Approval required',
+            text: [payload.tool_name || '', payload.content || payload.message || 'Facet requested explicit approval.'].filter(Boolean).join('\n'),
+            status: 'waiting',
+            pending: true,
+            toolId: payload.tool_id || payload.id || ''
+          });
+          renderChat();
+          return;
+        }
+        if (type === 'done') {
+          if (chat.assistant) {
+            chat.assistant.status = 'received';
+            chat.assistant = null;
+          }
+          setStreamState('Finishing', 'working');
+          return;
+        }
+        if (type === 'end') {
+          const ok = booleanLike(payload.ok);
+          finishStream(ok !== false, payload.message || payload.reason || payload.error || '');
+          return;
+        }
+        if (type === 'error') {
+          const message = payload.message || payload.error || payload.content || 'The Facet stream failed.';
+          addChatItem({ kind: 'error', level: 'error', title: 'Stream error', text: textValue(message), status: 'failed' });
+          finishStream(false, textValue(message), true);
+        }
+      }
+
+      function finishStream(success, reason = '', alreadyReported = false) {
+        const current = state.stream;
+        if (!current) return;
+        current.source.close();
+        state.stream = null;
+        state.busy = false;
+        const chat = currentChat();
+        if (chat?.assistant) {
+          chat.assistant.status = success ? 'received' : 'interrupted';
+          if (!chat.assistant.text) {
+            chat.items.splice(chat.items.indexOf(chat.assistant), 1);
+          }
+          chat.assistant = null;
+        }
+        if (!success && !alreadyReported) {
+          addChatItem({ kind: 'error', level: 'error', title: 'Request interrupted', text: reason || 'The live stream ended before a successful response.', status: 'failed' });
+        }
+        setStreamState(success ? 'Ready' : 'Failed', success ? 'ready' : 'failed');
+        renderChat();
+        updateComposer();
+        refreshProject();
+        if (success) $('#promptInput').focus();
+      }
+
+      function startChat(prompt) {
+        const ready = readiness();
+        const text = String(prompt || '').trim();
+        if (!ready.ready || !text) return;
+        const chat = currentChat();
+        chat.items.push({ kind: 'user', title: 'You', text, status: 'sent' });
+        renderChat();
+        state.busy = true;
+        setStreamState('Connecting', 'working');
+        updateComposer();
+        const parameters = new URLSearchParams({
+          prompt: text,
+          token: state.token,
+          dir: state.project.path || `projects/${state.slug}`,
+          engine: 'studio',
+          mode: 'rw'
+        });
+        if (chat.session) parameters.set('session', chat.session);
+        const source = new EventSource(`/api/chat?${parameters}`);
+        state.stream = { source, slug: state.slug };
+        const normalized = ['session', 'text_delta', 'text_replace', 'tool_use', 'tool_result', 'approval', 'done', 'end'];
+        normalized.forEach(type => source.addEventListener(type, event => handleStreamEvent({ ...parseEvent(event), type }, type)));
+        source.addEventListener('cc', event => handleStreamEvent(parseEvent(event)));
+        source.addEventListener('message', event => handleStreamEvent(parseEvent(event)));
+        source.addEventListener('error', event => {
+          if (!state.stream || state.stream.source !== source) return;
+          if (event.data) {
+            handleStreamEvent({ ...parseEvent(event), type: 'error' }, 'error');
+            return;
+          }
+          finishStream(false, 'The live Facet connection closed unexpectedly.');
+        });
+      }
+
+      async function submitApproval(index, allow) {
+        const chat = currentChat();
+        const item = chat?.items[index];
+        if (!item || item.kind !== 'approval' || !item.pending) return;
+        item.status = allow ? 'allowing' : 'denying';
+        renderChat();
+        try {
+          const data = await requestJSON('/api/approval', {
+            method: 'POST',
+            body: JSON.stringify({ session: chat.session, id: item.toolId, allow })
+          }, true);
+          item.pending = false;
+          item.status = allow ? 'allowed' : 'denied';
+          item.details = [{ label: 'Result', value: data.message || (allow ? 'Operation allowed.' : 'Operation denied.') }];
+        } catch (error) {
+          item.status = 'failed';
+          item.level = 'error';
+          item.details = [{ label: 'Error', value: error.message }];
+        }
+        renderChat();
+      }
+
+      async function refreshProject() {
+        if (!state.slug || state.busy) return;
+        const slug = state.slug;
+        try {
+          const project = await requestJSON(`/api/projects/${encodeURIComponent(slug)}`);
+          if (state.slug !== slug) return;
+          state.project = project;
+          renderProject();
+          updateComposer();
+        } catch {
+          // Keep the last successful evidence snapshot visible.
+        }
+      }
+
+      function showView(view) {
+        state.view = view;
+        $$('[data-panel]').forEach(panel => { panel.hidden = panel.dataset.panel !== view; });
+        $$('.view-tab').forEach(tab => tab.setAttribute('aria-selected', String(tab.dataset.view === view)));
+        if (view === 'review') renderReview(state.project);
+      }
+
+      function openDialog(id) {
+        const dialog = $(`#${id}`);
+        if (!dialog.open) dialog.showModal();
+        requestAnimationFrame(() => dialog.querySelector('input, select, button:not([data-close])')?.focus());
+      }
+
+      function closeDialog(id) {
+        const dialog = $(`#${id}`);
+        if (dialog.open) dialog.close();
+      }
+
+      async function saveModel() {
+        const model = $('#modelSelect').value;
+        if (!model) return setFeedback($('#modelFeedback'), 'Choose a model first.', 'error');
+        $('#saveModelButton').disabled = true;
+        setFeedback($('#modelFeedback'), 'Applying model...');
+        try {
+          const data = await requestJSON('/api/models', { method: 'POST', body: JSON.stringify({ model }) }, true);
+          if (data.ok === false) throw new Error(data.error || 'Model could not be applied.');
+          const chat = currentChat();
+          if (chat?.session) {
+            try {
+              await requestJSON('/api/close', {
+                method: 'POST',
+                body: JSON.stringify({ session: chat.session })
+              }, true);
+            } catch {}
+            chat.session = '';
+            chat.items = [];
+            chat.tools = new Map();
+            chat.assistant = null;
+            renderChat();
+          }
+          await loadModels();
+          setFeedback($('#modelFeedback'), data.message || 'Model selected. The next message starts a new conversation.', 'success');
+        } catch (error) {
+          setFeedback($('#modelFeedback'), error.message, 'error');
+        } finally {
+          $('#saveModelButton').disabled = false;
+        }
+      }
+
+      async function discoverModels() {
+        $('#discoverModelsButton').disabled = true;
+        setFeedback($('#modelFeedback'), 'Discovering free model catalogs...');
+        try {
+          const data = await requestJSON('/api/models/discover', { method: 'POST' }, true);
+          await loadModels();
+          setFeedback($('#modelFeedback'), data.message || 'Model discovery completed.', 'success');
+        } catch (error) {
+          setFeedback($('#modelFeedback'), error.message, 'error');
+        } finally {
+          $('#discoverModelsButton').disabled = false;
+        }
+      }
+
+      async function createProject(event) {
+        event.preventDefault();
+        const feedback = $('#newProjectFeedback');
+        const button = $('#createProjectButton');
+        button.disabled = true;
+        setFeedback(feedback, 'Creating project...');
+        const name = $('#newProjectName').value.trim();
+        const slug = $('#newProjectSlug').value.trim();
+        try {
+          const data = await requestJSON('/api/catalog/new', {
+            method: 'POST',
+            body: JSON.stringify({ name, slug, engine: 'studio', packs: [] })
+          }, true);
+          closeDialog('newProjectDialog');
+          $('#newProjectForm').reset();
+          await loadProjects(data.slug || data.id || slug);
+        } catch (error) {
+          setFeedback(feedback, error.message, 'error');
+        } finally {
+          button.disabled = false;
+        }
+      }
+
+      async function openProject(event) {
+        event.preventDefault();
+        const feedback = $('#openProjectFeedback');
+        const button = $('#openFolderButton');
+        const path = $('#openProjectPath').value.trim();
+        button.disabled = true;
+        setFeedback(feedback, 'Opening project...');
+        try {
+          const data = await requestJSON('/api/catalog/open', {
+            method: 'POST',
+            body: JSON.stringify({ path, engine: 'studio' })
+          }, true);
+          closeDialog('openProjectDialog');
+          $('#openProjectForm').reset();
+          await loadProjects(data.slug || data.id || '');
+        } catch (error) {
+          setFeedback(feedback, error.message, 'error');
+        } finally {
+          button.disabled = false;
+        }
+      }
+
+      async function runReview() {
+        const feedback = $('#reviewFeedback');
+        const video = videoResource(state.project);
+        if (!state.project || !video.path) return setFeedback(feedback, 'The project does not expose a reviewable video path.', 'error');
+        const duration = Number($('#reviewDuration').value);
+        if (!Number.isFinite(duration) || duration <= 0) return setFeedback(feedback, 'Enter the expected positive video duration.', 'error');
+        $('#runReviewButton').disabled = true;
+        setFeedback(feedback, 'Running technical review...');
+        try {
+          const data = await requestJSON('/api/review', {
+            method: 'POST',
+            body: JSON.stringify({
+              dir: state.project.path,
+              path: projectRelativePath(video.path),
+              width: Number($('#reviewWidth').value),
+              height: Number($('#reviewHeight').value),
+              fps: Number($('#reviewFps').value),
+              duration,
+              audio: $('#reviewAudio').checked
+            })
+          }, true);
+          const status = data.result?.review_status || data.result?.status || data.message || 'Review completed.';
+          setFeedback(feedback, `Technical review reported: ${status}`, 'success');
+          await refreshProject();
+        } catch (error) {
+          setFeedback(feedback, error.message, 'error');
+        } finally {
+          renderReview(state.project);
+        }
+      }
+
+      async function recordReviewDecision(decision) {
+        const feedback = $('#reviewFeedback');
+        if (!$('#acceptConfirm').checked) return setFeedback(feedback, 'Confirm that you reviewed the current video first.', 'error');
+        const video = videoResource(state.project);
+        if (!state.project || !video.path) return setFeedback(feedback, 'The project does not expose a video path.', 'error');
+        const note = $('#reviewDecisionNote').value.trim();
+        if (decision === 'reject' && !note) return setFeedback(feedback, 'Explain what must change before recording a rejection.', 'error');
+        $('#acceptReviewButton').disabled = true;
+        $('#rejectReviewButton').disabled = true;
+        setFeedback(feedback, 'Recording decision...');
+        try {
+          const data = await requestJSON('/api/review/decision', {
+            method: 'POST',
+            body: JSON.stringify({ dir: state.project.path, path: projectRelativePath(video.path), decision, note })
+          }, true);
+          setFeedback(feedback, data.message || 'The review decision was recorded.', 'success');
+          await refreshProject();
+        } catch (error) {
+          setFeedback(feedback, error.message, 'error');
+        } finally {
+          renderReview(state.project);
+        }
+      }
+
+      $('#projectList').addEventListener('click', event => {
+        const button = event.target.closest('[data-slug]');
+        if (button) selectProject(button.dataset.slug);
+      });
+      $$('.view-tab').forEach(tab => tab.addEventListener('click', () => showView(tab.dataset.view)));
+      $('#newProjectButton').addEventListener('click', () => openDialog('newProjectDialog'));
+      $('#openProjectButton').addEventListener('click', () => openDialog('openProjectDialog'));
+      $('#settingsButton').addEventListener('click', () => openDialog('settingsDialog'));
+      $$('[data-close]').forEach(button => button.addEventListener('click', () => closeDialog(button.dataset.close)));
+      $('#newProjectForm').addEventListener('submit', createProject);
+      $('#openProjectForm').addEventListener('submit', openProject);
+      $('#newProjectName').addEventListener('input', event => {
+        $('#newProjectSlug').value = event.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      });
+      $('#saveModelButton').addEventListener('click', saveModel);
+      $('#discoverModelsButton').addEventListener('click', discoverModels);
+      $('#runReviewButton').addEventListener('click', runReview);
+      $('#reviewDuration').addEventListener('input', () => renderReview(state.project));
+      $('#acceptReviewButton').addEventListener('click', () => recordReviewDecision('accept'));
+      $('#rejectReviewButton').addEventListener('click', () => recordReviewDecision('reject'));
+      $('#acceptConfirm').addEventListener('change', () => renderReview(state.project));
+      $('#composer').addEventListener('submit', event => {
+        event.preventDefault();
+        const input = $('#promptInput');
+        const value = input.value;
+        input.value = '';
+        startChat(value);
+      });
+      $('#promptInput').addEventListener('input', updateComposer);
+      $('#promptInput').addEventListener('keydown', event => {
+        if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+          event.preventDefault();
+          $('#composer').requestSubmit();
+        }
+      });
+      $('#activity').addEventListener('click', event => {
+        const button = event.target.closest('[data-approval-index]');
+        if (button) submitApproval(Number(button.dataset.approvalIndex), button.dataset.allow === 'true');
+      });
+      $('#chatToggle').addEventListener('click', () => {
+        const inspector = $('#inspector');
+        inspector.classList.toggle('open');
+        const open = inspector.classList.contains('open');
+        $('#chatToggle').setAttribute('aria-expanded', String(open));
+        if (open && innerWidth <= 880) {
+          inspector.setAttribute('role', 'dialog');
+          inspector.setAttribute('aria-modal', 'true');
+          requestAnimationFrame(() => $('#inspectorClose').focus());
+        } else {
+          inspector.removeAttribute('role');
+          inspector.removeAttribute('aria-modal');
+        }
+      });
+      $('#inspectorClose').addEventListener('click', () => {
+        $('#inspector').classList.remove('open');
+        $('#inspector').removeAttribute('role');
+        $('#inspector').removeAttribute('aria-modal');
+        $('#chatToggle').setAttribute('aria-expanded', 'false');
+        $('#chatToggle').focus();
+      });
+      document.addEventListener('keydown', event => {
+        const inspector = $('#inspector');
+        if (innerWidth > 880 || !inspector.classList.contains('open')) return;
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          $('#inspectorClose').click();
+          return;
+        }
+        if (event.key !== 'Tab') return;
+        const controls = Array.from(inspector.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'))
+          .filter(element => element.getClientRects().length);
+        if (!controls.length) return;
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      });
+      $$('dialog').forEach(dialog => {
+        dialog.addEventListener('click', event => {
+          if (event.target === dialog) dialog.close();
+        });
+      });
+
+      setStreamState('Idle', 'idle');
+      renderProject();
+      renderChat();
+      updateComposer();
+      Promise.allSettled([loadCapability(), loadToken(), loadModels(), loadProjects()]).then(() => {
+        updateComposer();
+        renderReview(state.project);
+        if (state.project) restoreConversation(state.project);
+      });
+      window.setInterval(() => {
+        if (state.project && !state.busy && document.visibilityState === 'visible') refreshProject();
+      }, 5000);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+  "name": "@xibodev/facet-pack-talkinghead",
+  "version": "1.0.0",
+  "description": "Facet-owned guidance for presenter-led and consented avatar video.",
+  "kind": "content",
+  "methods": ["avatar"],
+  "requirements": {
+    "probes": ["facet.probe.ffmpeg.v1"]
+  },
+  "declarations": {
+    "suggestedTools": ["audio_mix", "edge_tts", "output_review", "source_edit"],
+    "networkIntent": "provider-optional",
+    "costIntent": "none",
+    "filesystemIntent": "project-local"
+  },
+  "exports": {
+    "skills": [
+      {
+        "id": "talking-head",
+        "path": "SKILL.md",
+        "description": "Entry guidance for Facet talking-head production"
+      }
+    ]
+  }
+}
