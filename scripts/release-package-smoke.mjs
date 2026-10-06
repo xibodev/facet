@@ -37,6 +37,7 @@ const [pack] = JSON.parse(result.stdout);
 assert.equal(pack.name, manifest.name);
 assert.equal(pack.version, manifest.version);
 const files = new Set(pack.files.map(file => file.path.replaceAll('\\', '/')));
-assert.deepEqual([...files].sort(), ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'bin/facet-cli.js', 'package.json'],
-  'npm ships the launcher, its package manifest and the license notices only');
+// npm always adds the README; it explains that this package is only a launcher.
+assert.deepEqual([...files].sort(), ['LICENSE', 'README.md', 'THIRD_PARTY_NOTICES.md', 'bin/facet-cli.js', 'package.json'],
+  'npm ships the launcher, its package manifest, the README and the license notices only');
 console.log(`PASS: ${manifest.name}@${manifest.version}, facet source and release version stamps, ${files.size} npm files. Native distribution and publishing are not tested here.`);

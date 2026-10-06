@@ -270,8 +270,9 @@ func TestActiveProductDocsDescribeGuidanceNotWorkflowContracts(t *testing.T) {
 
 // The npm package is only the launcher: the guidance is compiled into the
 // facet binary and the composer ships in the release archive, so an npm copy
-// of either could only drift from what actually runs.
-func TestNpmPackageShipsOnlyTheLauncherAndNotices(t *testing.T) {
+// of either could only drift from what actually runs. npm always adds the
+// README, which says the package is only a launcher.
+func TestNpmPackageShipsOnlyTheLauncherReadmeAndNotices(t *testing.T) {
 	command := exec.Command("npm", "pack", "--dry-run", "--json", "--ignore-scripts")
 	raw, err := command.Output()
 	if err != nil {
@@ -293,7 +294,7 @@ func TestNpmPackageShipsOnlyTheLauncherAndNotices(t *testing.T) {
 		shipped = append(shipped, filepath.ToSlash(file.Path))
 	}
 	sort.Strings(shipped)
-	want := []string{"LICENSE", "THIRD_PARTY_NOTICES.md", "bin/facet-cli.js", "package.json"}
+	want := []string{"LICENSE", "README.md", "THIRD_PARTY_NOTICES.md", "bin/facet-cli.js", "package.json"}
 	if strings.Join(shipped, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("npm package ships:\n%s\nwant:\n%s", strings.Join(shipped, "\n"), strings.Join(want, "\n"))
 	}
