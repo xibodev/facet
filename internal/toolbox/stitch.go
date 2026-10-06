@@ -123,7 +123,7 @@ func doVideoStitchContext(ctx context.Context, op string, data []byte) (any, []s
 	case "stitch", "preview_stitch":
 		outPath := r.OutputPath
 		if outPath == "" {
-			outPath = "stitched_output.mp4"
+			outPath = defaultOutput(ctx, "stitched_output.mp4")
 		}
 		if err := outputPath(outPath, true, false); err != nil {
 			return nil, nil, err
@@ -272,7 +272,7 @@ func doVideoStitchContext(ctx context.Context, op string, data []byte) (any, []s
 		}
 		outPath := r.OutputPath
 		if outPath == "" {
-			outPath = "spatial_output.mp4"
+			outPath = defaultOutput(ctx, "spatial_output.mp4")
 		}
 		if err := outputPath(outPath, true, false); err != nil {
 			return nil, nil, err

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -149,6 +150,20 @@ func TestKlingVideoEstimateAndMock(t *testing.T) {
 		"output_path": outVid,
 		"mock":        true,
 	})
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		// Without FFmpeg there is no honest placeholder video: mock mode fails.
+		if _, _, err := doKlingVideo("run", runReq); err == nil {
+			t.Fatal("mock mode succeeded without ffmpeg")
+		}
+		t.Skip("ffmpeg not installed")
+	}
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		// Without FFmpeg there is no honest placeholder video: mock mode fails.
+		if _, _, err := doKlingVideo("run", runReq); err == nil {
+			t.Fatal("mock mode succeeded without ffmpeg")
+		}
+		t.Skip("ffmpeg not installed")
+	}
 	res, _, err := doKlingVideo("run", runReq)
 	if err != nil {
 		t.Fatalf("kling_video run failed in mock mode: %v", err)
@@ -196,6 +211,20 @@ func TestSoraVideoEstimateAndMock(t *testing.T) {
 		"output_path": outVid,
 		"mock":        true,
 	})
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		// Without FFmpeg there is no honest placeholder video: mock mode fails.
+		if _, _, err := doSoraVideo("run", runReq); err == nil {
+			t.Fatal("mock mode succeeded without ffmpeg")
+		}
+		t.Skip("ffmpeg not installed")
+	}
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		// Without FFmpeg there is no honest placeholder video: mock mode fails.
+		if _, _, err := doSoraVideo("run", runReq); err == nil {
+			t.Fatal("mock mode succeeded without ffmpeg")
+		}
+		t.Skip("ffmpeg not installed")
+	}
 	res, _, err := doSoraVideo("run", runReq)
 	if err != nil {
 		t.Fatalf("sora_video run failed in mock mode: %v", err)
@@ -292,8 +321,9 @@ func TestImageSelectorRankingAndFacts(t *testing.T) {
 	}
 	resMap := res.(map[string]any)
 	candidates := resMap["candidates"].([]imageCandidateFact)
-	if len(candidates) < 4 {
-		t.Fatalf("expected at least 4 image candidates, got %d", len(candidates))
+	// openai_image, flux_image and wikimedia: only tools Facet has.
+	if len(candidates) < 3 {
+		t.Fatalf("expected at least 3 image candidates, got %d", len(candidates))
 	}
 	if resMap["selected_recommendation"] == "" {
 		t.Fatalf("missing selected_recommendation: %#v", resMap)

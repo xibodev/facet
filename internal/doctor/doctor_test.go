@@ -1,99 +1,17 @@
-package config
+package doctor
 
 import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/xibodev/facet/internal/facethome"
 	"github.com/xibodev/facet/internal/toolbox"
 	"github.com/xibodev/facet/internal/wire"
 )
-
-func TestDefaultConfig(t *testing.T) {
-	cfg := DefaultConfig()
-	if cfg == nil {
-		t.Fatal("expected non-nil default config")
-	}
-
-	if cfg.Defaults.Engine != "claude" {
-		t.Errorf("expected engine claude, got %s", cfg.Defaults.Engine)
-	}
-	if cfg.Defaults.Voice != "en-US-ChristopherNeural" {
-		t.Errorf("expected voice en-US-ChristopherNeural, got %s", cfg.Defaults.Voice)
-	}
-	if cfg.Defaults.Resolution != "1920x1080" {
-		t.Errorf("expected resolution 1920x1080, got %s", cfg.Defaults.Resolution)
-	}
-	if cfg.Defaults.FPS != 30 {
-		t.Errorf("expected fps 30, got %d", cfg.Defaults.FPS)
-	}
-	if cfg.Defaults.AspectRatio != "16:9" {
-		t.Errorf("expected aspect ratio 16:9, got %s", cfg.Defaults.AspectRatio)
-	}
-	if cfg.Defaults.PermissionMode != "rw" {
-		t.Errorf("expected permission mode rw, got %s", cfg.Defaults.PermissionMode)
-	}
-	if len(cfg.EnvProbes) == 0 {
-		t.Errorf("expected non-empty env probes")
-	}
-}
-
-func TestSaveAndLoad(t *testing.T) {
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, ".facet.yaml")
-
-	cfg := DefaultConfig()
-	cfg.Project = "test-video"
-	cfg.Defaults.Engine = "opencode"
-	cfg.Defaults.Voice = "custom-voice"
-	cfg.Paths.FFmpeg = "/custom/path/ffmpeg"
-
-	if err := cfg.Save(configPath); err != nil {
-		t.Fatalf("failed to save config: %v", err)
-	}
-
-	if _, err := os.Stat(configPath); err != nil {
-		t.Fatalf("config file was not created: %v", err)
-	}
-
-	loaded, err := Load(configPath)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	if loaded.Project != "test-video" {
-		t.Errorf("expected project test-video, got %s", loaded.Project)
-	}
-	if loaded.Defaults.Engine != "opencode" {
-		t.Errorf("expected engine opencode, got %s", loaded.Defaults.Engine)
-	}
-	if loaded.Defaults.Voice != "custom-voice" {
-		t.Errorf("expected voice custom-voice, got %s", loaded.Defaults.Voice)
-	}
-	if loaded.Paths.FFmpeg != "/custom/path/ffmpeg" {
-		t.Errorf("expected ffmpeg path /custom/path/ffmpeg, got %s", loaded.Paths.FFmpeg)
-	}
-}
-
-func TestAutoDetect(t *testing.T) {
-	cfg := DefaultConfig()
-	// Pin custom FFmpeg path
-	cfg.Paths.FFmpeg = "/pinned/ffmpeg"
-
-	detected := cfg.AutoDetect()
-	if detected == nil {
-		t.Fatal("expected non-nil detected map")
-	}
-
-	// Pinned path should not be overwritten
-	if cfg.Paths.FFmpeg != "/pinned/ffmpeg" {
-		t.Errorf("pinned FFmpeg path was overwritten: %s", cfg.Paths.FFmpeg)
-	}
-}
 
 // isolate points every home-directory lookup at a fresh temporary home and
 // moves into an empty working directory, so the doctor reads nothing of the
@@ -114,28 +32,24 @@ func isolate(t *testing.T) (home, cwd string) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	t.Setenv("CODEX_HOME", "")
+	t.Setenv(facethome.EnvVar, "")
+	t.Setenv(toolbox.ComposerDirEnv, "")
 	t.Chdir(cwd)
 	return home, cwd
 }
 
 func TestRunDoctor(t *testing.T) {
 	home, cwd := isolate(t)
-	cfg := DefaultConfig()
 	var buf bytes.Buffer
 
-	report, err := RunDoctorWithWriter(cfg, &buf)
+	report, err := Run(&buf)
 	if err != nil {
-		t.Fatalf("RunDoctorWithWriter failed: %v", err)
+		t.Fatalf("Run failed: %v", err)
 	}
-
 	if report == nil {
 		t.Fatal("expected non-nil report")
 	}
 
-	// Verify System Runtimes
-	if len(report.Runtimes) < 5 {
-		t.Errorf("expected at least 5 runtimes probed, got %d", len(report.Runtimes))
-	}
 	runtimeNames := map[string]bool{}
 	for _, r := range report.Runtimes {
 		runtimeNames[r.Name] = true
@@ -146,10 +60,6 @@ func TestRunDoctor(t *testing.T) {
 		}
 	}
 
-	// Verify Agent CLIs
-	if len(report.CLIs) < 4 {
-		t.Errorf("expected at least 4 CLIs probed, got %d", len(report.CLIs))
-	}
 	cliNames := map[string]bool{}
 	for _, c := range report.CLIs {
 		cliNames[c.Name] = true
@@ -160,14 +70,11 @@ func TestRunDoctor(t *testing.T) {
 		}
 	}
 
-	// Verify Tools
-	if len(report.Tools) < 33 {
-		t.Errorf("expected at least 33 toolbox tools, got %d", len(report.Tools))
+	if len(report.Tools) != len(toolbox.Names()) {
+		t.Errorf("expected %d toolbox tools, got %d", len(toolbox.Names()), len(report.Tools))
 	}
-
-	// Verify Env Vars
-	if len(report.EnvVars) == 0 {
-		t.Errorf("expected non-empty env vars in report")
+	if len(report.EnvVars) != len(EnvProbes()) {
+		t.Errorf("expected %d env vars in report, got %d", len(EnvProbes()), len(report.EnvVars))
 	}
 
 	// A fresh home has no runtime, no wiring, and no 1.x leftovers.
@@ -175,7 +82,6 @@ func TestRunDoctor(t *testing.T) {
 		t.Errorf("fresh home report: facet=%+v wiring=%v (%s) legacy=%v", report.Facet, report.Wiring, report.WiringError, report.Legacy)
 	}
 
-	// Verify Output Formatting
 	out := buf.String()
 	for _, section := range []string{"=== Facet System Doctor ===", "[Facet]", "[Wiring]", "[Facet 1.x Integrations]", "[System Runtimes]", "[Agent CLIs]", "[Environment Variables]", "[Toolbox Tools ("} {
 		if !strings.Contains(out, section) {
@@ -186,13 +92,9 @@ func TestRunDoctor(t *testing.T) {
 		t.Errorf("output does not explain the empty wiring:\n%s", out)
 	}
 
-	// Verify JSON output helper
 	jsonBytes, err := report.JSON()
-	if err != nil {
-		t.Fatalf("report.JSON() error: %v", err)
-	}
-	if len(jsonBytes) == 0 {
-		t.Errorf("expected non-empty json output")
+	if err != nil || len(jsonBytes) == 0 {
+		t.Fatalf("report.JSON() = %d bytes, %v", len(jsonBytes), err)
 	}
 
 	// The doctor only reads.
@@ -204,10 +106,53 @@ func TestRunDoctor(t *testing.T) {
 }
 
 func TestDoctorProbesOnlyToolCredentials(t *testing.T) {
-	for _, name := range DefaultEnvProbes() {
+	probes := map[string]bool{}
+	for _, name := range EnvProbes() {
+		probes[name] = true
 		if name == "ANTHROPIC_API_KEY" {
 			t.Error("the doctor probes a model credential; models are the harness's concern")
 		}
+	}
+	// The alternative names the provider tools accept are reported too.
+	for _, name := range []string{"FAL_KEY", "FLUX_API_KEY", "KLING_API_KEY"} {
+		if !probes[name] {
+			t.Errorf("the doctor does not report %s, which a provider tool reads", name)
+		}
+	}
+}
+
+// The doctor resolves programs exactly as the tools do. A configuration file
+// can no longer pin a program the tools would never run.
+func TestDoctorAgreesWithTheToolbox(t *testing.T) {
+	_, cwd := isolate(t)
+	if err := os.WriteFile(filepath.Join(cwd, ".facet.yaml"), []byte("paths:\n  ffmpeg: /pinned/nowhere/ffmpeg\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	report := Generate()
+	for _, r := range report.Runtimes {
+		if r.Name != "FFmpeg" {
+			continue
+		}
+		want, err := toolbox.ResolveProgram("ffmpeg")
+		if (err == nil) != r.Available || (err == nil && r.Path != want) {
+			t.Errorf("doctor FFmpeg = %+v; the toolbox resolves %q (%v)", r, want, err)
+		}
+		if strings.Contains(r.Path, "pinned") {
+			t.Errorf("doctor read a configuration file: %+v", r)
+		}
+	}
+
+	composer := filepath.Join(cwd, "composer")
+	if err := os.MkdirAll(composer, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(composer, "package.json"), []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(toolbox.ComposerDirEnv, composer)
+	got := probeRemotionComposer()
+	if got.Status != StatusWarning || got.Available || !strings.Contains(got.Details, "dependencies not installed") {
+		t.Errorf("a composer without its dependencies: %+v", got)
 	}
 }
 
@@ -279,15 +224,40 @@ func TestDoctorReportsTheActiveRuntime(t *testing.T) {
 	}
 }
 
+// FACET_HOME moves the active runtime the doctor checks, as it moves the
+// installer's and facet wire's.
+func TestDoctorFollowsFacetHome(t *testing.T) {
+	home, _ := isolate(t)
+	moved := filepath.Join(t.TempDir(), "app-facet")
+	t.Setenv(facethome.EnvVar, moved)
+	name := "facet"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	if err := os.MkdirAll(filepath.Join(moved, "current", "bin"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(moved, "current", "bin", name), []byte("fake"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	saved := facetVersionOf
+	t.Cleanup(func() { facetVersionOf = saved })
+	facetVersionOf = func(string) string { return "2.0.0" }
+	got := probeFacetRuntime(home, "2.0.0")
+	if got.Status != StatusOK || got.Current != filepath.Join(moved, "current") {
+		t.Fatalf("FACET_HOME runtime: %+v", got)
+	}
+}
+
 func TestDoctorNamesV1IntegrationsAndTheirCleanup(t *testing.T) {
 	home, cwd := isolate(t)
 	marked := "# Facet\n\n## This installation\n- Invoke Facet through `run-facet.ps1` followed by the normal arguments.\n"
-	writeConfigFixture(t, filepath.Join(home, ".facet-install", "installation.json"), `{"schema":1,"version":"1.1.0","host":"opencode","components":["remotion"],"packs":[]}`)
-	writeConfigFixture(t, filepath.Join(home, ".opencode", "skills", "facet", "SKILL.md"), marked)
-	writeConfigFixture(t, filepath.Join(cwd, ".facet-install", "installation.tsv"), "version\t1.1.0\ninstallation\t/opt/facet\nhost\tclaude\ncomponents\tremotion\npacks\t\n")
+	writeFixture(t, filepath.Join(home, ".facet-install", "installation.json"), `{"schema":1,"version":"1.1.0","host":"opencode","components":["remotion"],"packs":[]}`)
+	writeFixture(t, filepath.Join(home, ".opencode", "skills", "facet", "SKILL.md"), marked)
+	writeFixture(t, filepath.Join(cwd, ".facet-install", "installation.tsv"), "version\t1.1.0\ninstallation\t/opt/facet\nhost\tclaude\ncomponents\tremotion\npacks\t\n")
 	// A skill without both markers is not a 1.x copy.
-	writeConfigFixture(t, filepath.Join(cwd, ".agents", "skills", "facet", "SKILL.md"), "# Facet\n\n## This installation\n")
-	writeConfigFixture(t, filepath.Join(cwd, ".github", "skills", "facet", "SKILL.md"), "uses run-facet but no section\n")
+	writeFixture(t, filepath.Join(cwd, ".agents", "skills", "facet", "SKILL.md"), "# Facet\n\n## This installation\n")
+	writeFixture(t, filepath.Join(cwd, ".github", "skills", "facet", "SKILL.md"), "uses run-facet but no section\n")
 
 	checks := legacyChecks("windows", cwd, home)
 	if len(checks) != 2 {
@@ -315,7 +285,7 @@ func TestDoctorNamesV1IntegrationsAndTheirCleanup(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	report, err := RunDoctorWithWriter(DefaultConfig(), &buf)
+	report, err := Run(&buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,23 +348,12 @@ func TestEdgeTTSDoctorDistinguishesBuiltInClientFromServiceReachability(t *testi
 	}
 }
 
-func writeConfigFixture(t *testing.T, path, content string) {
+func writeFixture(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestBundleResolutionOrder(t *testing.T) {
-	root := t.TempDir()
-	cwd := filepath.Join(root, "checkout", "projects", "demo")
-	home := filepath.Join(root, "home")
-	executable := filepath.Join(root, "install", "bin", "facet")
-	want := []string{cwd, filepath.Dir(cwd), filepath.Join(root, "checkout"), filepath.Join(root, "install", "bundle"), filepath.Join(root, "install"), filepath.Join(home, ".facet", "bundle")}
-	if got := bundleCandidatesFor(cwd, home, executable); !reflect.DeepEqual(got, want) {
-		t.Fatalf("candidate order = %v, want %v", got, want)
 	}
 }

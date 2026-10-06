@@ -4,11 +4,12 @@ import "testing"
 
 // An estimate said nothing about TIME. It reported cost — which is zero for a
 // local render and therefore says nothing — while the decision a caller
-// actually faces is whether the render fits the host's deadline or needs to go
-// async.
+// actually faces is whether the render fits an MCP client's call limit or
+// should run from a shell.
 //
-// A 15-second explainer takes ~43 seconds to render and does NOT fit the
-// host's 60-second default. Nothing in the estimate revealed that.
+// A 15-second explainer takes ~43 seconds to render and, under load, does NOT
+// fit the shortest default MCP call limit (60 seconds). Nothing in the
+// estimate revealed that.
 func TestRenderEstimateReportsDuration(t *testing.T) {
 	// 450 frames at 1280x720: measured 42.7s idle.
 	got := estimateRender([]string{"video_compose_remotion_render"}, 450, 1280, 720)
@@ -31,8 +32,8 @@ func TestRenderEstimateReportsDuration(t *testing.T) {
 		t.Errorf("max %vs does not cover the 170.9s measured under load", max)
 	}
 
-	if exceeds, _ := got["exceeds_default_host_deadline"].(bool); !exceeds {
-		t.Error("a 43s render was not flagged as exceeding the 60s default deadline")
+	if preferShell, _ := got["prefer_shell"].(bool); !preferShell {
+		t.Error("a 43s render (171s under load) was not sent to the shell route")
 	}
 }
 
@@ -51,9 +52,9 @@ func TestShortRenderIsNotPredictedInstant(t *testing.T) {
 	if max < 16.5 {
 		t.Errorf("max %vs does not cover the 16.5s actually measured", max)
 	}
-	// It fits the default deadline, so it must not be flagged.
-	if exceeds, _ := got["exceeds_default_host_deadline"].(bool); exceeds {
-		t.Error("a render that fits the default deadline was flagged as exceeding it")
+	// It fits the shortest MCP call limit, so it must stay an MCP call.
+	if preferShell, _ := got["prefer_shell"].(bool); preferShell {
+		t.Error("a render that fits the shortest MCP call limit was sent to the shell route")
 	}
 }
 

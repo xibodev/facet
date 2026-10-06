@@ -42,14 +42,27 @@ func tomlString(s string) string {
 	return b.String()
 }
 
-// tomlServerBlock renders the table that registers the MCP server.
+// codexToolTimeoutSec is the MCP call limit facet wire sets for Facet in
+// Codex. Codex stops an MCP call after mcp_servers.<id>.tool_timeout_sec, 60
+// seconds unless configured, which a render often needs more than. Longer
+// work belongs on the shell route (facet tools run), where no MCP limit applies.
+const codexToolTimeoutSec = 600
+
+// tomlServerBlock renders the table that registers the MCP server: its
+// command, the call limit, and an approval_mode = "prompt" table for each
+// tool that may charge, so Codex asks before every paid call.
 func tomlServerBlock(name, command string, args []string) string {
 	quoted := make([]string, len(args))
 	for i, a := range args {
 		quoted[i] = tomlString(a)
 	}
-	return fmt.Sprintf("# Facet MCP server, managed by facet wire\n[mcp_servers.%s]\ncommand = %s\nargs = [%s]\n",
-		name, tomlString(command), strings.Join(quoted, ", "))
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Facet MCP server, managed by facet wire\n[mcp_servers.%s]\ncommand = %s\nargs = [%s]\ntool_timeout_sec = %d\n",
+		name, tomlString(command), strings.Join(quoted, ", "), codexToolTimeoutSec)
+	for _, tool := range paidTools() {
+		fmt.Fprintf(&b, "\n[mcp_servers.%s.tools.%s]\napproval_mode = \"prompt\"\n", name, tool)
+	}
+	return b.String()
 }
 
 // tomlLine is one logical line with its comment removed.

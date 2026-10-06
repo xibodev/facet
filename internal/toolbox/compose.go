@@ -15,8 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 type composeCut struct {
@@ -342,7 +340,7 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 			outPath = r.Output
 		}
 		if outPath == "" {
-			outPath = "composed_output.mp4"
+			outPath = defaultOutput(ctx, "composed_output.mp4")
 		}
 		if err := outputPath(outPath, true, false); err != nil {
 			return nil, nil, err
@@ -362,7 +360,7 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 			outPath = r.Output
 		}
 		if outPath == "" {
-			outPath = "remotion_output.mp4"
+			outPath = defaultOutput(ctx, "remotion_output.mp4")
 		}
 		if err := outputPath(outPath, true, false); err != nil {
 			return nil, nil, err
@@ -378,7 +376,7 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 		}
 		outPath := r.OutputPath
 		if outPath == "" {
-			outPath = "subtitled_output.mp4"
+			outPath = defaultOutput(ctx, "subtitled_output.mp4")
 		}
 		if err := outputPath(outPath, true, false); err != nil {
 			return nil, nil, err
@@ -403,7 +401,7 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 		}
 		outPath := r.OutputPath
 		if outPath == "" {
-			outPath = "overlay_output.mp4"
+			outPath = defaultOutput(ctx, "overlay_output.mp4")
 		}
 		if err := outputPath(outPath, true, false); err != nil {
 			return nil, nil, err
@@ -445,7 +443,7 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 		}
 		outPath := r.OutputPath
 		if outPath == "" {
-			outPath = "encoded_output.mp4"
+			outPath = defaultOutput(ctx, "encoded_output.mp4")
 		}
 		if err := outputPath(outPath, true, false); err != nil {
 			return nil, nil, err
@@ -576,90 +574,29 @@ func doFFmpegComposeContext(ctx context.Context, r composeRequest, outPath strin
 	}, nil, nil
 }
 
-// findComposerDir locates the Remotion composer: explicit configuration
-// first, then a project-local checkout, then the installed bundle beside the
-// executable (<runtime>/bundle/remotion-composer).
+// ComposerDirEnv names the one explicit override of the Remotion composer's
+// location, for development checkouts and tests.
+const ComposerDirEnv = "FACET_REMOTION_COMPOSER"
+
+// findComposerDir locates the Remotion composer: FACET_REMOTION_COMPOSER when
+// it is set, else the runtime's own copy beside the executable
+// (<runtime>/dependencies/remotion-composer), like every other dependency.
+//
+// Nothing is searched relative to the working directory or the user's home,
+// and no configuration file is read: which composer renders must not depend
+// on where a call happens to run, and a second Toolkit (the Facet App's) must
+// never pick up the user-wide one's.
 func findComposerDir() (string, error) {
-	home, _ := os.UserHomeDir()
-	configPaths := []string{".facet.yaml"}
-	if home != "" {
-		configPaths = append(configPaths, filepath.Join(home, ".config", "facet", "config.yaml"))
-	}
-	// Read only runtime paths here: config imports toolbox, so importing it would cycle.
-	var cfg struct {
-		Paths struct {
-			RemotionComposer string `yaml:"remotion_composer"`
-			Bundle           string `yaml:"bundle"`
-		} `yaml:"paths"`
-	}
-	for _, path := range configPaths {
-		if !fileExists(path) {
-			continue
+	if dir := strings.TrimSpace(os.Getenv(ComposerDirEnv)); dir != "" {
+		if !fileExists(filepath.Join(dir, "package.json")) {
+			return "", failure("dependency_missing", ComposerDirEnv+" names no Remotion composer (package.json not found)", map[string]any{"path": dir})
 		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return "", failure("invalid_request", "unable to read runtime config: "+err.Error(), nil)
-		}
-		if err := yaml.Unmarshal(data, &cfg); err != nil {
-			return "", failure("invalid_request", "unable to parse runtime config: "+err.Error(), nil)
-		}
-		break
+		return filepath.Abs(dir)
 	}
-	if cfg.Paths.RemotionComposer != "" {
-		if !fileExists(filepath.Join(cfg.Paths.RemotionComposer, "package.json")) {
-			return "", failure("dependency_missing", "configured Remotion Composer package.json not found", map[string]any{"path": cfg.Paths.RemotionComposer})
-		}
-		return filepath.Abs(cfg.Paths.RemotionComposer)
+	if dir := runtimeDependency("remotion-composer"); dir != "" && fileExists(filepath.Join(dir, "package.json")) {
+		return dir, nil
 	}
-	candidates := []string{
-		"remotion-composer",
-		filepath.Join("..", "remotion-composer"),
-		filepath.Join("..", "..", "remotion-composer"),
-		filepath.Join("..", "..", "..", "remotion-composer"),
-		filepath.Join("packs", "explainer", "runtime"),
-		filepath.Join("..", "packs", "explainer", "runtime"),
-		filepath.Join("..", "..", "packs", "explainer", "runtime"),
-	}
-	if cfg.Paths.Bundle != "" {
-		candidates = append([]string{filepath.Join(cfg.Paths.Bundle, "remotion-composer")}, candidates...)
-	}
-	for _, cand := range candidates {
-		if fileExists(filepath.Join(cand, "package.json")) {
-			return filepath.Abs(cand)
-		}
-	}
-
-	curr, err := os.Getwd()
-	if err == nil {
-		for {
-			cand := filepath.Join(curr, "remotion-composer")
-			if fileExists(filepath.Join(cand, "package.json")) {
-				return filepath.Abs(cand)
-			}
-			parent := filepath.Dir(curr)
-			if parent == curr || parent == "." {
-				break
-			}
-			curr = parent
-		}
-	}
-
-	candidates = nil
-	if root := runtimeRoot(); root != "" {
-		candidates = append(candidates, filepath.Join(root, "bundle", "remotion-composer"), filepath.Join(root, "remotion-composer"))
-	}
-	// Kept because install, container and CI layouts still place the bundle
-	// at ~/.facet/bundle even when the executable lives elsewhere.
-	if home != "" {
-		candidates = append(candidates, filepath.Join(home, ".facet", "bundle", "remotion-composer"))
-	}
-	for _, cand := range candidates {
-		if fileExists(filepath.Join(cand, "package.json")) {
-			return filepath.Abs(cand)
-		}
-	}
-
-	return "", failure("dependency_missing", "Remotion Composer runtime not found; install the Facet bundle or configure paths.remotion_composer", nil)
+	return "", failure("dependency_missing", "Remotion composer not found beside this facet; install Facet with the remotion component, or set "+ComposerDirEnv+" to a composer checkout", nil)
 }
 
 // truncatedAudioWarning reports narration that will not fit the timeline.

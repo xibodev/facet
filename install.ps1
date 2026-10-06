@@ -6,9 +6,10 @@ Install, update, roll back, or uninstall Facet for the current user.
 Facet installs once per user. Each runtime lives in
 ~/.facet/runtimes/<version>-windows-<arch>; the active one is the directory
 junction ~/.facet/current, and ~/.facet/current/bin is added to the user PATH.
-Optional components (remotion, piper, hyperframes) are installed into the
-runtime and verified before it is activated. The previous runtime is kept for
-rollback.
+FACET_HOME, when set, replaces ~/.facet. Optional components (remotion, piper,
+hyperframes) are installed into the runtime and verified before it is
+activated. The previous runtime is kept for rollback, and recorded CLI wirings
+are refreshed to the active runtime after every install, update and rollback.
 
 Wiring Facet into an agentic CLI is a separate decision made with
 `facet wire`. This script runs it only when asked: interactively, or with
@@ -278,7 +279,15 @@ $runtimePattern = '^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-windows-(?:amd64|arm64)$'
 
 $userHome = if ($HOME) { $HOME } else { $env:USERPROFILE }
 if (-not $userHome -or -not [IO.Path]::IsPathRooted($userHome)) { throw 'The home directory is unknown; set USERPROFILE.' }
+# FACET_HOME moves Facet's home folder (runtimes, current, wiring record). It is
+# resolved once and handed to every facet this script runs, so they agree.
 $facetHome = Join-Path $userHome '.facet'
+if ("$env:FACET_HOME".Trim()) {
+    $facetHome = Resolve-UserPath "$env:FACET_HOME".Trim()
+    $env:FACET_HOME = $facetHome
+}
+# Facet 1.x kept its releases in ~/.facet whatever FACET_HOME says.
+$legacyHome = Join-Path $userHome '.facet'
 $runtimesDir = Join-Path $facetHome 'runtimes'
 $currentLink = Join-Path $facetHome 'current'
 $statePath = Join-Path $facetHome 'installer.json'
@@ -349,7 +358,7 @@ function Get-PreviousRuntimeName([string]$Active) {
     return ''
 }
 function Test-V1Install {
-    $releases = Join-Path $facetHome 'releases'
+    $releases = Join-Path $legacyHome 'releases'
     if (-not (Test-Path -LiteralPath $releases -PathType Container)) { return $false }
     return [bool]@(Get-ChildItem -LiteralPath $releases -Directory -Force -ErrorAction SilentlyContinue | Where-Object Name -Like '1.*').Count
 }
@@ -357,7 +366,7 @@ function Write-V1Note {
     if (Test-V1Install) {
         Write-Host ''
         Write-Host 'Facet v1 project integrations are separate; remove them with the v1.1.0 installer --action uninstall (-Action uninstall on Windows) in each project.' -ForegroundColor Yellow
-        Write-Host "  The v1 runtimes in $(Join-Path $facetHome 'releases') are left untouched."
+        Write-Host "  The v1 runtimes in $(Join-Path $legacyHome 'releases') are left untouched."
     }
 }
 
@@ -708,7 +717,7 @@ function Update-UserPath([switch]$Remove) {
 # ------------------------------------------------------------------- wiring
 
 function Get-Wirings {
-    # Every wiring recorded in facet wire's own registry, ~/.facet/wiring.json.
+    # Every wiring recorded in facet wire's own registry, wiring.json in Facet's home folder.
     $registry = Read-JsonFile (Join-Path $facetHome 'wiring.json')
     $result = @()
     foreach ($wiring in @(Get-JsonValue $registry 'wirings')) {
@@ -836,20 +845,17 @@ function Complete-Activation([string]$Name, [string[]]$Verified, [bool]$Unverifi
     }
     $wireFailed = $false
     $activeVersion = Get-RuntimeVersion $Name
-    # facet wire registers ~/.facet/current/bin/facet.exe, so every wiring
-    # follows the active runtime; only the skills it copied can be older.
+    # facet wire registers current/bin/facet.exe, so every wiring follows the
+    # active runtime; only the skills it copied can be older. They are
+    # refreshed after every install, update and rollback, so each CLI's Facet
+    # guidance matches the active runtime. Files a person changed are never
+    # overwritten: facet wire reports them and leaves them alone.
     $stale = @(Get-Wirings | Where-Object { $_.Version -ne $activeVersion })
-    if ($stale.Count -and -not $batch -and $OfferWiring) {
-        Write-Host ''
-        Write-Host "Wired by another Facet version: $(@($stale | ForEach-Object { Format-Wiring $_ }) -join ', ')"
-        if (Confirm-Choice 'Refresh these wirings with this version?' $true) {
-            Section 'Refresh wirings'
-            foreach ($group in @(Group-Wirings $stale)) {
-                $code = Invoke-FacetWire $currentExe (@(@($group.Clis) -join ',') + (Get-WireArguments $group.Scope $group.Project))
-                if ($code -ne 0) { $wireFailed = $true }
-            }
-            $stale = @(Get-Wirings | Where-Object { $_.Version -ne $activeVersion })
-        }
+    if ($stale.Count) {
+        Section 'Refresh wirings'
+        $code = Invoke-FacetWire $currentExe @('--refresh')
+        if ($code -ne 0) { $wireFailed = $true }
+        $stale = @(Get-Wirings | Where-Object { $_.Version -ne $activeVersion })
     }
     $requested = @($wireTargets)
     $requestedScope = $wireScope
@@ -886,7 +892,7 @@ function Complete-Activation([string]$Name, [string[]]$Verified, [bool]$Unverifi
     elseif (@($Verified).Count) { Write-Host "  Checks:   $($Verified -join ', ')" }
     if ($recorded.Count) { Write-Host "  Wired:    $(@($recorded | ForEach-Object { Format-Wiring $_ }) -join ', ')" }
     if ($stale.Count) {
-        Write-Host "  Note:     $($stale.Count) wiring(s) carry skills from another Facet version; refresh with facet wire <cli> (see facet wire --status)."
+        Write-Host "  Note:     $($stale.Count) wiring(s) still carry skills from another Facet version; see facet wire --status, then rerun facet wire --refresh."
     }
     if (-not $recorded.Count) { Write-Host '  Next:     facet wire <claude|codex|copilot|opencode> to use Facet from your CLI; facet doctor to check dependencies' }
     Write-V1Note
@@ -959,7 +965,7 @@ function Invoke-Install([string[]]$Selected) {
             Step 'Unpack Facet' {
                 New-Item -ItemType Directory -Path $stage | Out-Null
                 Expand-SafeZip $script:sourceArchive $stage
-                foreach ($required in @('bin/facet.exe','bundle/remotion-composer/package.json','bundle/remotion-composer/package-lock.json','bundle/remotion-composer/composer-manifest.json')) {
+                foreach ($required in @('bin/facet.exe','dependencies/remotion-composer/package.json','dependencies/remotion-composer/package-lock.json','dependencies/remotion-composer/composer-manifest.json')) {
                     if (-not (Test-Path -LiteralPath (Join-Path $stage $required) -PathType Leaf)) { throw "Release archive is missing $required." }
                 }
                 $reported = Invoke-Probe (Join-Path $stage 'bin/facet.exe') @('version')
@@ -976,7 +982,7 @@ function Invoke-Install([string[]]$Selected) {
         }
         $deps = Join-Path $runtimeDir 'dependencies'
         New-Item -ItemType Directory -Path $deps -Force | Out-Null
-        $composer = Join-Path $runtimeDir 'bundle/remotion-composer'
+        $composer = Join-Path $deps 'remotion-composer'
         $hfDir = Join-Path $deps 'hyperframes'
         $hfEntry = Join-Path $hfDir 'node_modules/hyperframes/bin/hyperframes.mjs'
         $piperDir = Join-Path $deps 'piper'
@@ -1053,15 +1059,16 @@ function Invoke-Install([string[]]$Selected) {
                 Step 'Verify a Remotion render with facet tools run video_compose' {
                     $renderDir = Join-Path $verify 'remotion'
                     New-Item -ItemType Directory -Path $renderDir | Out-Null
-                    # An empty project configuration keeps a user-level paths
-                    # override from redirecting the check: the runtime's own
-                    # composer, found beside its executable, is what renders.
-                    [IO.File]::WriteAllText((Join-Path $renderDir '.facet.yaml'), "{}`n", $utf8NoBom)
                     $video = Join-Path $renderDir 'render.mp4'
                     $request = "{`"width`": 320, `"height`": 180, `"fps`": 24, `"duration_seconds`": 1, `"output_path`": $(ConvertTo-JsonText $video), `"cuts`": [{`"type`": `"text_card`", `"text`": `"Facet setup`", `"in_seconds`": 0, `"out_seconds`": 1}]}"
                     [IO.File]::WriteAllText((Join-Path $renderDir 'render.json'), $request, $utf8NoBom)
+                    # The runtime's own composer, found beside its executable, is
+                    # what renders: a development override must not redirect the check.
+                    $savedComposer = $env:FACET_REMOTION_COMPOSER
+                    $env:FACET_REMOTION_COMPOSER = $null
                     Push-Location $renderDir
-                    try { Run $runtimeExe @('tools','run','video_compose','--input',(Join-Path $renderDir 'render.json')) } finally { Pop-Location }
+                    try { Run $runtimeExe @('tools','run','video_compose','--input',(Join-Path $renderDir 'render.json')) }
+                    finally { Pop-Location; $env:FACET_REMOTION_COMPOSER = $savedComposer }
                     if (-not (Test-Path -LiteralPath $video -PathType Leaf)) { throw 'The Remotion render produced no video.' }
                     Run ffprobe @('-v','error','-show_streams',$video)
                     Run ffmpeg @('-v','error','-i',$video,'-f','null','-')
@@ -1196,7 +1203,7 @@ if ($selectedAction -in @('install','update')) {
         $purgeRuntimes = Confirm-Choice "Also delete the installed runtimes in $runtimesDir?" $false
     }
     Write-Host ''
-    Write-Host ("  Action:      uninstall: remove recorded CLI wirings and ~/.facet/current" + $(if (-not $skipPath) { ', and its user PATH entry' } else { '' }))
+    Write-Host ("  Action:      uninstall: remove recorded CLI wirings and $currentLink" + $(if (-not $skipPath) { ', and its user PATH entry' } else { '' }))
     Write-Host "  Runtimes:    $(if ($purgeRuntimes) { "deleted ($runtimesDir)" } else { "kept in $runtimesDir" })"
 }
 if (-not $batch) {

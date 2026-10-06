@@ -11,7 +11,7 @@ import (
 	"syscall"
 
 	"github.com/xibodev/facet/internal/bundle"
-	"github.com/xibodev/facet/internal/config"
+	"github.com/xibodev/facet/internal/doctor"
 	"github.com/xibodev/facet/internal/mcpserver"
 	"github.com/xibodev/facet/internal/routes"
 	"github.com/xibodev/facet/internal/toolbox"
@@ -81,12 +81,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "Doctor error: unexpected arguments")
 			return 1
 		}
-		cfg, err := config.Load()
-		if err != nil {
-			fmt.Fprintf(stderr, "Config warning: %v\n", err)
-			cfg = config.DefaultConfig()
-		}
-		if err := config.RunDoctor(cfg); err != nil {
+		if _, err := doctor.Run(stdout); err != nil {
 			fmt.Fprintf(stderr, "Doctor error: %v\n", err)
 			return 1
 		}

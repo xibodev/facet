@@ -52,7 +52,7 @@ func TestPermanentFailuresAreNotRetryable(t *testing.T) {
 // tell an impossible render from one given four seconds too few.
 func TestTimeoutMessageNamesTheBudgetAndTheFix(t *testing.T) {
 	got := timeoutMessage("node", 7*time.Second)
-	for _, want := range []string{"7s", "timeout_seconds", "deadline_ms"} {
+	for _, want := range []string{"7s", "timeout_seconds", "facet tools run"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the timeout message does not mention %q: %q", want, got)
 		}

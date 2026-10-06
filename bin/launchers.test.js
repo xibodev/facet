@@ -88,18 +88,16 @@ for (const platform of ['linux', 'darwin', 'win32']) {
       assertLaunched(launch({ platform, arch, files: [at.userRuntime] }), at.userRuntime);
     });
 
-    test(`${label}: maps the packaged binary to Go platform names`, () => {
-      const expected = at.packaged(arch);
-      assert.ok(expected.endsWith(`facet-${goos[platform]}-${goarch[arch]}${at.exe}`));
-      assertLaunched(launch({ platform, arch, files: [expected] }), expected);
-    });
-
-    test(`${label}: prefers the user runtime over a packaged binary`, () => {
-      assertLaunched(launch({ platform, arch, files: [at.packaged(arch), at.userRuntime] }), at.userRuntime);
+    test(`${label}: FACET_HOME moves the active runtime it uses`, () => {
+      const moved = at.paths.join(at.home, 'App Facet');
+      const runtime = at.paths.join(moved, 'current', 'bin', `facet${at.exe}`);
+      const env = { FACET_HOME: moved };
+      assertLaunched(launch({ platform, arch, env, files: [runtime, at.userRuntime] }), runtime);
+      assertMissing(launch({ platform, arch, env, files: [at.userRuntime] }));
     });
 
     test(`${label}: an existing FACET_BIN wins`, () => {
-      const files = [at.explicit, at.userRuntime, at.packaged(arch)];
+      const files = [at.explicit, at.userRuntime];
       assertLaunched(launch({ platform, arch, env: { FACET_BIN: at.explicit }, files }), at.explicit);
     });
 
@@ -109,11 +107,11 @@ for (const platform of ['linux', 'darwin', 'win32']) {
       assertMissing(launch({ platform, arch, env }));
     });
 
-    test(`${label}: ignores other architectures, Node arch names and retired locations`, () => {
-      // Node names (win32, x64) differ from Go names except linux|darwin/arm64.
+    test(`${label}: never runs a binary beside the launcher or in a retired location`, () => {
+      // The npm package ships no binary; one placed beside the launcher is
+      // not a Facet runtime the installer manages.
       const nodeNamed = at.paths.join(at.packageBin, `facet-${platform}-${arch}${at.exe}`);
-      const decoys = [at.packaged(other), ...at.retired, ...(nodeNamed === at.packaged(arch) ? [] : [nodeNamed])];
-      assertMissing(launch({ platform, arch, files: decoys }));
+      assertMissing(launch({ platform, arch, files: [at.packaged(arch), at.packaged(other), nodeNamed, ...at.retired] }));
     });
   }
 
@@ -121,15 +119,11 @@ for (const platform of ['linux', 'darwin', 'win32']) {
     const argv = ['tools', 'run', 'video_compose', '--input', 'my props.json'];
     assertLaunched(launch({ platform, files: [at.userRuntime], argv }), at.userRuntime, argv);
   });
-
-  test(`${platform}: an unsupported architecture never selects a packaged binary`, () => {
-    assertMissing(launch({ platform, arch: 'ia32', files: [at.packaged('x64')] }));
-    assertLaunched(launch({ platform, arch: 'ia32', files: [at.userRuntime] }), at.userRuntime);
-  });
 }
 
 test('the npm package exposes only the facet launcher', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
   assert.deepEqual(manifest.bin, { facet: 'bin/facet-cli.js' });
   assert.deepEqual(fs.readdirSync(__dirname).filter(name => name.endsWith('-cli.js')), ['facet-cli.js']);
+  assert.deepEqual(manifest.files, ['bin/facet-cli.js', 'LICENSE', 'THIRD_PARTY_NOTICES.md']);
 });

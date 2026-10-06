@@ -668,13 +668,7 @@ func dependency(name string) map[string]any {
 // available made video_compose claim it was configured while every render
 // failed.
 func composerDependency() map[string]any {
-	dir, err := findComposerDir()
-	usable := false
-	if err == nil && dir != "" {
-		if _, err := os.Stat(filepath.Join(dir, "node_modules", "@remotion", "cli", "remotion-cli.js")); err == nil {
-			usable = true
-		}
-	}
+	dir, usable, _ := ComposerStatus()
 	return map[string]any{
 		"name": "remotion-composer", "available": usable, "path": dir, "type": "runtime",
 		// Satisfied or unsatisfied, never unknown: usability is decided by the
@@ -693,6 +687,22 @@ func envDependency(name string) map[string]any {
 		// present here and the provider returns 402.
 		"resolution": resolutionOf(val != "", "env"),
 	}
+}
+
+// envAnyDependency is a credential a tool reads under any of names, in that
+// order. It is reported under the name that is set (else the first), with
+// every accepted name in alternatives, exactly as the tool resolves it.
+func envAnyDependency(names ...string) map[string]any {
+	chosen := names[0]
+	for _, name := range names {
+		if os.Getenv(name) != "" {
+			chosen = name
+			break
+		}
+	}
+	dep := envDependency(chosen)
+	dep["alternatives"] = append([]string(nil), names...)
+	return dep
 }
 
 func summary(name string) map[string]any {
@@ -731,8 +741,10 @@ func summary(name string) map[string]any {
 		deps = append(deps, envDependency("OPENAI_API_KEY"))
 	case "elevenlabs_tts":
 		deps = append(deps, envDependency("ELEVENLABS_API_KEY"))
-	case "flux_image", "kling_video":
-		deps = append(deps, envDependency("FAL_KEY"))
+	case "flux_image":
+		deps = append(deps, envAnyDependency("FAL_KEY", "FLUX_API_KEY"))
+	case "kling_video":
+		deps = append(deps, envAnyDependency("FAL_KEY", "KLING_API_KEY"))
 	case "piper_tts":
 		deps = append(deps, dependency("piper"))
 	case "gflow_video", "gflow_image":
@@ -1325,7 +1337,7 @@ func executeContext(ctx context.Context, tool, op string, data []byte) (any, []s
 	case "video_compose":
 		return doVideoComposeContext(ctx, op, data)
 	case "subtitle_gen":
-		return doSubtitleGen(op, data)
+		return doSubtitleGenContext(ctx, op, data)
 	case "ffmpeg_caption_burn":
 		return doFFmpegCaptionBurnContext(ctx, op, data)
 	case "silence_cutter":
@@ -1730,16 +1742,19 @@ func exitedCleanly(cmd *proctree.Cmd, err error) bool {
 // "node was cancelled or timed out" names the binary rather than the work and
 // suggests nothing. An agent reading it cannot tell whether the render was
 // impossible or merely given four seconds too few — and the honest answer is
-// usually the latter, because a host may clamp a tool's timeout to its own
-// remaining budget.
+// usually the latter. The other budget that can run out is the MCP client's
+// own limit on one call, which Facet cannot raise; the shell route
+// (facet tools run) has no such limit.
 func timeoutMessage(program string, budget time.Duration) string {
 	if budget > 0 {
 		return fmt.Sprintf(
-			"%s did not finish within %s; raise timeout_seconds, or the host's "+
-				"deadline_ms if that is the smaller budget", program, budget)
+			"%s did not finish within %s; raise timeout_seconds, or run the call "+
+				"with facet tools run from a shell if the MCP client's own call "+
+				"limit is the smaller budget", program, budget)
 	}
 	return program + " did not finish in the time allowed; raise timeout_seconds, " +
-		"or the host's deadline_ms if that is the smaller budget"
+		"or run the call with facet tools run from a shell if the MCP client's " +
+		"own call limit is the smaller budget"
 }
 
 func runCommandContext(ctx context.Context, program string, args ...string) ([]byte, error) {
@@ -1829,45 +1844,41 @@ const referencePixels = 1280 * 720
 // running, so a caller choosing a deadline needs the pessimistic figure.
 const renderLoadFactor = 4.0
 
-// DefaultHostDeadline is the host's deadline_ms default, from compa
-// internal/module/runner.go:43 (DefaultDeadline = 60 * time.Second).
+// ShortestMCPCallLimit is the shortest default limit that an MCP client facet
+// wire supports puts on a single tool call: Codex stops an MCP call after
+// mcp_servers.<id>.tool_timeout_sec, 60 seconds unless configured.
 //
-// Facet does not own this number and cannot enforce it. It is duplicated here
-// because an estimate must say whether a render fits BEFORE the host has sent
-// a request to read a real deadline_ms from — the whole point of the estimate
-// is to inform the choice of deadline_ms, so it cannot depend on one.
-//
-// Note the RFC (§8) states 180000 ms while the host SHIPS 60s. The shipped
-// constant is what kills the process, so this tracks the code, not the prose.
-// Raised as a discrepancy in compa's lane rather than resolved here.
-const DefaultHostDeadline = 60 * time.Second
+// Facet does not own this number and cannot enforce it. It is needed here
+// because an estimate must say whether a call should leave MCP BEFORE any call
+// is made: a call that may outlast the client's limit belongs on the shell
+// route (facet tools run), which no MCP limit applies to.
+const ShortestMCPCallLimit = 60 * time.Second
 
-// DeadlineSafetyMargin is reserved from any host budget so Facet can still
-// write an envelope after a tool gives up. A tool returning exactly at the
-// deadline is killed before its error can be reported, and the host then sees
-// a dead process rather than a failure it can explain.
+// MCPCallMargin is reserved from that limit so Facet can still return a result
+// after a tool gives up. A tool returning exactly at the limit is abandoned
+// before its result or error reaches the client.
 //
 // Measured: a whole invocation completes in ~0.1s and sha256 over a 200MB
 // artifact takes 0.15s, so one second is roughly 5x the worst case observed.
-const DeadlineSafetyMargin = time.Second
+const MCPCallMargin = time.Second
 
-// FitsDefaultHostDeadline is the longest render that still answers inside the
-// default budget.
+// FitsShortestMCPCallLimit is the longest render that still answers inside the
+// shortest default MCP call limit.
 //
-// DERIVED, never written as a literal. It was previously hardcoded 55, correct
-// when the margin was 5s; the margin later dropped to 1s and the literal did
-// not follow, so for months the estimate warned about renders that had four
+// DERIVED, never written as a literal. An earlier threshold was hardcoded 55,
+// correct when the margin was 5s; the margin later dropped to 1s and the
+// literal did not follow, so the estimate warned about renders that had four
 // spare seconds. That is the duplicated-constant defect this codebase fixed in
 // chargeability and determinism, surviving in the estimate because a stale
 // number stays plausible in a way a stale list does not.
-var FitsDefaultHostDeadline = DefaultHostDeadline - DeadlineSafetyMargin
+var FitsShortestMCPCallLimit = ShortestMCPCallLimit - MCPCallMargin
 
 // estimateRender adds an expected wall-clock duration to an estimate.
 //
 // Without it a caller cannot tell that a 15-second explainer takes 43 seconds
-// to render and will not fit the host's 60-second default deadline. That is
-// the decision async exists to inform, and the estimate mentioned time
-// nowhere — only cost, which is zero for a local render and says nothing.
+// to render, and may not finish inside an MCP client's 60-second call limit.
+// prefer_shell turns that into the decision the caller faces: run the render
+// as an MCP call, or from a shell with facet tools run.
 func estimateRender(ops []string, frames int, width, height int) map[string]any {
 	out := estimateResult(ops)
 	if frames <= 0 || width <= 0 || height <= 0 {
@@ -1877,9 +1888,8 @@ func estimateRender(ops []string, frames int, width, height int) map[string]any 
 	expected := renderFixedSeconds + float64(frames)*renderSecondsPerFrame*scale
 	out["estimated_duration_seconds"] = roundFloat(expected, 1)
 	out["estimated_duration_seconds_max"] = roundFloat(expected*renderLoadFactor, 1)
-	// True means: ask for a longer deadline_ms, or use async.
-	out["exceeds_default_host_deadline"] =
-		expected*renderLoadFactor > FitsDefaultHostDeadline.Seconds()
+	// True means: run it from a shell (facet tools run), not as an MCP call.
+	out["prefer_shell"] = expected*renderLoadFactor > FitsShortestMCPCallLimit.Seconds()
 	return out
 }
 

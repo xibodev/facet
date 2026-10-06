@@ -391,7 +391,7 @@ func doVideoTrimmerContext(ctx context.Context, op string, data []byte) (any, []
 		}
 		outPath := r.OutputPath
 		if outPath == "" {
-			outPath = "concat_output.mp4"
+			outPath = defaultOutput(ctx, "concat_output.mp4")
 		}
 		if err := outputPath(outPath, true, false); err != nil {
 			return nil, nil, err

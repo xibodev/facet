@@ -46,6 +46,7 @@ type plan struct {
 	mkdirs   []string // directories to create, outermost first
 	rmdirs   []string // recorded directories to delete when empty, deepest first
 	mcp      mcpStep
+	rules    rulesStep
 	problems []string
 	notes    []string
 	warnings []string
@@ -60,7 +61,8 @@ func (p *plan) changed(e *env) bool {
 	if p.prev == nil || p.prev.Pending || p.removing {
 		return true
 	}
-	if p.prev.FacetVersion != e.version || !samePath(p.prev.Executable, e.exe) || len(p.mkdirs) > 0 {
+	if p.prev.FacetVersion != e.version || !samePath(p.prev.Executable, e.exe) ||
+		p.prev.ExplicitExecutable != e.explicitExe || len(p.mkdirs) > 0 {
 		return true
 	}
 	for _, f := range p.files {
@@ -70,6 +72,18 @@ func (p *plan) changed(e *env) bool {
 	}
 	for _, s := range p.stale {
 		if s.op != "" {
+			return true
+		}
+	}
+	switch p.rules.op {
+	case "add":
+		return true
+	case "skip":
+		if p.prev.Rules == nil || p.prev.Rules.Skipped == "" {
+			return true
+		}
+	case "unchanged":
+		if p.prev.Rules == nil {
 			return true
 		}
 	}
@@ -228,14 +242,22 @@ func (e *env) planInstall(reg *Registry, t bundle.Target, scope bundle.Scope, pr
 	}
 
 	var prevMCP *MCPRecord
+	var prevRules *RulesRecord
 	if p.prev != nil {
-		prevMCP = p.prev.MCP
+		prevMCP, prevRules = p.prev.MCP, p.prev.Rules
 	}
 	step, problems := e.planMCPInstall(t, scope, project, p.root, prevMCP)
 	p.mcp = step
 	p.problems = append(p.problems, problems...)
 	if step.file != "" && step.after != nil && !step.existed {
 		dirs.need(filepath.Dir(step.file))
+	}
+	p.rules = e.planRules(t, scope, project, &p.mcp, prevRules)
+	p.warnings = append(p.warnings, p.rules.warnings...)
+	if p.rules.op == "add" {
+		if _, err := os.Stat(p.rules.file); err != nil {
+			dirs.need(filepath.Dir(p.rules.file))
+		}
 	}
 	p.mkdirs = dirs.list
 	p.notes = append(p.notes, e.wiringNotes(t, scope, project)...)
@@ -249,6 +271,8 @@ func (e *env) wiringNotes(t bundle.Target, scope bundle.Scope, project string) [
 		notes = append(notes, "Claude Code asks you to approve project MCP servers from .mcp.json the first time it starts in this project.")
 	case t == bundle.TargetCodex && scope == bundle.ScopeProject:
 		notes = append(notes, fmt.Sprintf("Codex reads %s only for projects you have marked as trusted.", filepath.Join(project, ".codex", "config.toml")))
+	case t == bundle.TargetCopilot:
+		notes = append(notes, "Copilot CLI asks before every Facet tool that is not read-only, which includes every paid tool; it has no per-tool rule facet wire could add.")
 	}
 	notes = append(notes, fmt.Sprintf("Start a new %s session to load the skills and the MCP server.", t))
 	return notes
@@ -259,10 +283,13 @@ func (e *env) wiringNotes(t bundle.Target, scope bundle.Scope, project string) [
 // turns Facet's own files into "modified" ones.
 func (p *plan) pendingRecord(e *env) *Wiring {
 	w := &Wiring{CLI: string(p.cli), Scope: string(p.scope), Project: p.project, Root: p.root,
-		FacetVersion: e.version, Executable: e.exe, WiredAt: e.now().Format("2006-01-02T15:04:05Z"), Pending: true}
+		FacetVersion: e.version, Executable: e.exe, ExplicitExecutable: e.explicitExe,
+		WiredAt: e.now().Format("2006-01-02T15:04:05Z"), Pending: true}
 	if p.prev != nil {
 		w.FacetVersion, w.Executable, w.WiredAt = p.prev.FacetVersion, p.prev.Executable, p.prev.WiredAt
+		w.ExplicitExecutable = p.prev.ExplicitExecutable
 		w.MCP = p.prev.MCP
+		w.Rules = p.prev.Rules
 		w.Dirs = append(w.Dirs, p.prev.Dirs...)
 	}
 	recorded := map[string]OwnedFile{}
@@ -288,9 +315,10 @@ func (p *plan) pendingRecord(e *env) *Wiring {
 }
 
 // finalRecord describes the wiring once applied.
-func (p *plan) finalRecord(e *env, mcp *MCPRecord) *Wiring {
+func (p *plan) finalRecord(e *env, mcp *MCPRecord, rules *RulesRecord) *Wiring {
 	w := &Wiring{CLI: string(p.cli), Scope: string(p.scope), Project: p.project, Root: p.root,
-		FacetVersion: e.version, Executable: e.exe, WiredAt: e.now().Format("2006-01-02T15:04:05Z"), MCP: mcp}
+		FacetVersion: e.version, Executable: e.exe, ExplicitExecutable: e.explicitExe,
+		WiredAt: e.now().Format("2006-01-02T15:04:05Z"), MCP: mcp, Rules: rules}
 	for _, f := range p.files {
 		w.Files = append(w.Files, OwnedFile{Path: f.path, Kind: f.kind, Digest: f.digest})
 	}
@@ -352,12 +380,22 @@ func (e *env) applyInstall(reg *Registry, p *plan) error {
 	} else if mcpErr != nil {
 		mcp = nil
 	}
-	reg.put(p.finalRecord(e, mcp))
+	// The MCP registration may have created the file that also takes the
+	// rules (OpenCode); the rules are then removed with it.
+	createdFile := p.rules.method == RulesOpenCode && mcpErr == nil && p.mcp.op == "register" && !p.mcp.existed
+	rules, rulesErr := e.applyRules(&p.rules, createdFile)
+	if rulesErr != nil && p.prev != nil {
+		rules = p.prev.Rules
+	}
+	reg.put(p.finalRecord(e, mcp, rules))
 	if err := reg.Save(regPath); err != nil {
 		return fmt.Errorf("recording the wiring in %s: %w", regPath, err)
 	}
 	if mcpErr != nil {
 		return fmt.Errorf("the skills are installed, but registering the MCP server failed: %w", mcpErr)
+	}
+	if rulesErr != nil {
+		return fmt.Errorf("the skills and the MCP server are installed, but adding the ask rules for paid tools to %s failed: %w", p.rules.file, rulesErr)
 	}
 	return nil
 }
@@ -383,6 +421,10 @@ func (e *env) planRemove(w *Wiring) *plan {
 	if w.MCP != nil {
 		p.mcp = e.planMCPRemove(w.MCP)
 	}
+	p.rules = rulesStep{op: "none", prev: w.Rules}
+	if w.Rules != nil && (len(w.Rules.Added) > 0 || w.Rules.CreatedParent) {
+		p.rules.op, p.rules.method, p.rules.file = "remove", w.Rules.Method, w.Rules.File
+	}
 	return p
 }
 
@@ -402,13 +444,23 @@ func (e *env) applyRemove(reg *Registry, p *plan) error {
 	if mcpErr == nil && p.mcp.op == "keep" && p.mcp.cliMissing {
 		mcpErr = errors.New(strings.Join(p.mcp.warnings, "; "))
 	}
+	rulesWarnings, rulesErr := removeRules(p.prev.Rules)
+	for _, warning := range rulesWarnings {
+		fmt.Fprintf(e.out, "  warning: %s\n", warning)
+	}
 	for _, dir := range p.rmdirs {
 		_ = os.Remove(dir) // only empty directories are removed
 	}
-	if mcpErr != nil {
+	if mcpErr != nil || rulesErr != nil {
 		// Keep what is needed to finish the removal later.
 		w := *p.prev
 		w.Files = nil
+		if mcpErr == nil {
+			w.MCP = nil
+		}
+		if rulesErr == nil {
+			w.Rules = nil
+		}
 		var kept []string
 		for _, dir := range p.prev.Dirs {
 			if _, err := os.Lstat(dir); err == nil {
@@ -420,7 +472,10 @@ func (e *env) applyRemove(reg *Registry, p *plan) error {
 		if err := reg.Save(e.registryPath()); err != nil {
 			return err
 		}
-		return fmt.Errorf("the files are removed, but unregistering the MCP server failed: %w", mcpErr)
+		if mcpErr != nil {
+			return fmt.Errorf("the files are removed, but unregistering the MCP server failed: %w", mcpErr)
+		}
+		return fmt.Errorf("the files and the MCP server are removed, but removing the ask rules for paid tools from %s failed: %w", p.prev.Rules.File, rulesErr)
 	}
 	reg.drop(p.prev.CLI, p.prev.Scope, p.prev.Project)
 	return reg.Save(e.registryPath())
@@ -455,6 +510,14 @@ func (e *env) printPlan(p *plan) {
 		}
 	}
 	e.printMCP(p.mcp, line)
+	switch p.rules.op {
+	case "add":
+		line("ask", fmt.Sprintf("%s (ask before each of %d paid tools)", p.rules.file, len(paidTools())))
+	case "unchanged":
+		line("unchanged", "ask rules for paid tools in "+p.rules.file)
+	case "remove":
+		line("remove", "ask rules for paid tools from "+p.rules.file)
+	}
 	for _, dir := range p.rmdirs {
 		line("rmdir", dir+" (if empty)")
 	}

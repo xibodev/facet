@@ -14,7 +14,7 @@ import (
 // runtime directory, the parent of the directory holding the executable:
 //
 //	<runtime>/bin/facet[.exe]
-//	<runtime>/bundle/remotion-composer/
+//	<runtime>/dependencies/remotion-composer/  composer sources (+ node_modules)
 //	<runtime>/dependencies/node/          optional private Node (node.exe, or bin/node)
 //	<runtime>/dependencies/piper/         Python venv (Scripts\piper.exe, or bin/piper)
 //	<runtime>/dependencies/voices/<voice>.onnx (+ .onnx.json)
@@ -95,4 +95,20 @@ func lookPath(program string) (string, error) {
 		return path, nil
 	}
 	return exec.LookPath(program)
+}
+
+// ResolveProgram returns the program the toolbox runs for name, resolved
+// exactly as its tools resolve it, so a report (facet doctor) can never
+// disagree with what a tool would run.
+func ResolveProgram(name string) (string, error) { return lookPath(name) }
+
+// ComposerStatus reports the Remotion composer this facet renders with and
+// whether it can render: its render CLI must be installed, not merely its
+// directory present.
+func ComposerStatus() (dir string, usable bool, err error) {
+	dir, err = findComposerDir()
+	if err != nil || dir == "" {
+		return dir, false, err
+	}
+	return dir, fileExists(filepath.Join(dir, "node_modules", "@remotion", "cli", "remotion-cli.js")), nil
 }

@@ -12,21 +12,29 @@ import (
 
 // WiringStatus is the observed state of one recorded wiring.
 type WiringStatus struct {
-	CLI          string   `json:"cli"`
-	Scope        string   `json:"scope"`
-	Project      string   `json:"project,omitempty"`
-	Root         string   `json:"root"`
-	FacetVersion string   `json:"facet_version"`
-	Executable   string   `json:"executable"`
-	WiredAt      string   `json:"wired_at"`
-	Files        int      `json:"files"`
-	Missing      []string `json:"missing,omitempty"`
-	Modified     []string `json:"modified,omitempty"`
-	MCPMethod    string   `json:"mcp_method,omitempty"`
+	CLI          string `json:"cli"`
+	Scope        string `json:"scope"`
+	Project      string `json:"project,omitempty"`
+	Root         string `json:"root"`
+	FacetVersion string `json:"facet_version"`
+	Executable   string `json:"executable"`
+	// ExplicitExecutable is set when --exe chose the executable.
+	ExplicitExecutable bool     `json:"explicit_executable,omitempty"`
+	WiredAt            string   `json:"wired_at"`
+	Files              int      `json:"files"`
+	Missing            []string `json:"missing,omitempty"`
+	Modified           []string `json:"modified,omitempty"`
+	MCPMethod          string   `json:"mcp_method,omitempty"`
 	// MCPState is ok, missing, modified, unknown (the configuration could
 	// not be read), or none (no registration recorded).
 	MCPState string `json:"mcp_state"`
 	MCPFile  string `json:"mcp_file,omitempty"`
+	// RulesState says whether the CLI still asks before every paid tool:
+	// ok, missing, unknown, skipped (the settings did not allow rules),
+	// absent (none recorded), or none (the CLI keeps no separate rules).
+	RulesState string `json:"rules_state"`
+	RulesFile  string `json:"rules_file,omitempty"`
+	RulesNote  string `json:"rules_note,omitempty"`
 	// Stale is set when another Facet version wired it.
 	Stale bool `json:"stale,omitempty"`
 	// ExecutableChanged is set when the stable executable is no longer the
@@ -39,7 +47,8 @@ type WiringStatus struct {
 // Drifted reports whether anything differs from what was wired.
 func (s WiringStatus) Drifted() bool {
 	return len(s.Missing) > 0 || len(s.Modified) > 0 || s.MCPState != "ok" || s.Stale ||
-		s.ExecutableChanged || s.ExecutableMissing || s.Pending
+		s.ExecutableChanged || s.ExecutableMissing || s.Pending ||
+		s.RulesState == "missing" || s.RulesState == "unknown" || s.RulesState == "absent"
 }
 
 // Label names the wiring for people.
@@ -52,6 +61,9 @@ func (s WiringStatus) RewireCommand() string {
 	cmd := "facet wire " + s.CLI
 	if s.Scope == string(bundle.ScopeProject) {
 		cmd += " --scope project --project " + commandLine([]string{s.Project})
+	}
+	if s.ExplicitExecutable {
+		cmd += " --exe " + commandLine([]string{s.Executable})
 	}
 	return cmd
 }
@@ -74,6 +86,14 @@ func (s WiringStatus) Problems(running string) []string {
 		out = append(out, fmt.Sprintf("could not read %s to check the MCP server", s.MCPFile))
 	case "none":
 		out = append(out, "no MCP server registration is recorded")
+	}
+	switch s.RulesState {
+	case "missing":
+		out = append(out, fmt.Sprintf("ask rules for paid tools are missing from %s", s.RulesFile))
+	case "unknown":
+		out = append(out, fmt.Sprintf("could not read %s to check the ask rules for paid tools", s.RulesFile))
+	case "absent":
+		out = append(out, "no ask rules for paid tools are recorded")
 	}
 	if s.Stale {
 		out = append(out, fmt.Sprintf("wired by facet v%s; this is facet v%s", s.FacetVersion, running))
@@ -100,7 +120,7 @@ type Report struct {
 // Inspect reports every recorded wiring against the running facet without
 // changing anything.
 func Inspect(runningVersion string) (*Report, error) {
-	e, err := newEnv(runningVersion, nil, nil)
+	e, err := newEnv(runningVersion, nil, nil, "")
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +141,7 @@ func (e *env) inspect() (*Report, error) {
 
 func (e *env) inspectWiring(w *Wiring) WiringStatus {
 	s := WiringStatus{CLI: w.CLI, Scope: w.Scope, Project: w.Project, Root: w.Root, FacetVersion: w.FacetVersion,
-		Executable: w.Executable, WiredAt: w.WiredAt, Files: len(w.Files), Pending: w.Pending}
+		Executable: w.Executable, ExplicitExecutable: w.ExplicitExecutable, WiredAt: w.WiredAt, Files: len(w.Files), Pending: w.Pending}
 	for _, f := range w.Files {
 		got, err := fileDigest(f.Path)
 		switch {
@@ -135,11 +155,17 @@ func (e *env) inspectWiring(w *Wiring) WiringStatus {
 	if _, err := os.Stat(w.Executable); err != nil {
 		s.ExecutableMissing = true
 	}
-	s.ExecutableChanged = !samePath(w.Executable, e.exe)
+	// An executable chosen with --exe is the wiring's own; only its absence
+	// is drift.
+	s.ExecutableChanged = !w.ExplicitExecutable && !samePath(w.Executable, e.exe)
 	s.MCPState = "none"
 	if w.MCP != nil {
 		s.MCPMethod, s.MCPFile = w.MCP.Method, w.MCP.File
 		s.MCPState = mcpState(w.MCP)
+	}
+	s.RulesState = rulesState(w.CLI, w.Rules)
+	if w.Rules != nil {
+		s.RulesFile, s.RulesNote = w.Rules.File, w.Rules.Skipped
 	}
 	return s
 }
@@ -236,6 +262,15 @@ func (e *env) status() int {
 			fmt.Fprintln(e.out, "  mcp:      not registered")
 		} else {
 			fmt.Fprintf(e.out, "  mcp:      %s (%s, %s)\n", s.MCPState, s.MCPMethod, s.MCPFile)
+		}
+		switch s.RulesState {
+		case "none":
+		case "skipped":
+			fmt.Fprintf(e.out, "  ask:      not added (%s)\n", s.RulesNote)
+		case "absent":
+			fmt.Fprintln(e.out, "  ask:      no rules for paid tools recorded")
+		default:
+			fmt.Fprintf(e.out, "  ask:      %s (%s)\n", s.RulesState, s.RulesFile)
 		}
 		fmt.Fprintf(e.out, "  runs:     %s\n", commandLine(append([]string{s.Executable}, bundle.MCPServerArgs()...)))
 		if s.Drifted() {

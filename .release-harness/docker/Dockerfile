@@ -24,22 +24,14 @@ RUN useradd --create-home --uid 10001 facet
 COPY scripts/uat-*.mjs scripts/probe-artifact.* /opt/uat/
 COPY . /opt/facet-source
 WORKDIR /opt/facet-source
-# Release archive in the scripts/package-release.py layout: the single `facet`
-# binary, the guidance bundle, LICENSE and the generated third-party notices.
+# The release archive, built exactly as a release builds it: the single `facet`
+# binary (-X main.Version=${FACET_VERSION}, from package.json), the composer
+# sources under dependencies/remotion-composer, LICENSE and the generated
+# third-party notices.
 RUN set -eu; \
     arch="$(go env GOARCH)"; \
-    archive="facet-${FACET_VERSION}-linux-${arch}.zip"; \
-    stage="$(mktemp -d)"; \
-    mkdir -p "$stage/bin" "$stage/bundle/remotion-composer" /tmp/facet-release; \
-    CGO_ENABLED=0 go build -trimpath -ldflags "-X main.Version=${FACET_VERSION}" -o "$stage/bin/facet" ./cmd/facet; \
-    cp -R skills packs agents schemas "$stage/bundle/"; \
-    cp -R remotion-composer/src remotion-composer/package.json remotion-composer/package-lock.json \
-        remotion-composer/tsconfig.json remotion-composer/composer-manifest.json "$stage/bundle/remotion-composer/"; \
-    cp LICENSE "$stage/"; \
-    python3 scripts/generate-notices.py --goos linux --goarch "$arch" --out "$stage/THIRD_PARTY_NOTICES.md"; \
-    (cd "$stage" && zip -qrX "/tmp/facet-release/$archive" .); \
-    (cd /tmp/facet-release && sha256sum "$archive" > "checksums-linux-${arch}.txt"); \
-    rm -rf "$stage"; \
+    python3 scripts/package-release.py --os linux --arch "$arch" --out /tmp/facet-release; \
+    test -f "/tmp/facet-release/facet-${FACET_VERSION}-linux-${arch}.zip"; \
     chmod -R a+rX /tmp/facet-release
 USER facet
 WORKDIR /home/facet

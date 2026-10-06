@@ -79,7 +79,7 @@ func doGFlowVideoContext(ctx context.Context, op string, data []byte) (any, []st
 		return gflowEstimate("gflow_video_generate", r.Mock), nil, nil
 	}
 	if r.OutputPath == "" {
-		r.OutputPath = "gflow_video.mp4"
+		r.OutputPath = defaultOutput(ctx, "gflow_video.mp4")
 	}
 	res := map[string]any{"provider": "google_flow", "model": r.Model, "prompt": r.Prompt,
 		"duration": r.Duration, "aspect_ratio": r.AspectRatio, "resolution": r.Resolution,
@@ -89,7 +89,7 @@ func doGFlowVideoContext(ctx context.Context, op string, data []byte) (any, []st
 			return nil, nil, err
 		}
 		if err := createMockVideo(r.OutputPath, 1920, 1080, r.Duration); err != nil {
-			return nil, nil, failure("command_failed", "failed to create mock video", nil)
+			return nil, nil, err
 		}
 		return res, nil, nil
 	}
@@ -141,7 +141,7 @@ func doGFlowImageContext(ctx context.Context, op string, data []byte) (any, []st
 		return gflowEstimate("gflow_image_generate", r.Mock), nil, nil
 	}
 	if r.OutputPath == "" {
-		r.OutputPath = "gflow_image.png"
+		r.OutputPath = defaultOutput(ctx, "gflow_image.png")
 	}
 	res := map[string]any{"provider": "google_flow", "model": r.Model, "prompt": r.Prompt,
 		"aspect_ratio": r.AspectRatio, "output": r.OutputPath, "mock": r.Mock}
@@ -278,11 +278,14 @@ func generateGFlowContext(caller context.Context, args []string, prompt, kind, o
 	}
 	quarantine := false
 	defer func() {
-		if !quarantine {
+		// A failed or timed-out CLI may already have downloaded paid media:
+		// that is kept and reported as recovery_path, never deleted. An empty
+		// staging folder holds nothing to recover and is removed, so a failure
+		// leaves no stray folder behind.
+		if !quarantine || emptyDir(stage) {
 			_ = os.RemoveAll(stage)
 			return
 		}
-		// A failed or timed-out CLI may already have downloaded paid media.
 		var toolErr *toolFailure
 		if errors.As(resultErr, &toolErr) {
 			toolErr.err.Details["recovery_path"] = stage
@@ -418,6 +421,19 @@ func generateGFlowContext(caller context.Context, args []string, prompt, kind, o
 	}
 	quarantine = false
 	return outputs, nil
+}
+
+// emptyDir reports whether dir exists and holds nothing. Anything else —
+// entries, or an error reading it — counts as not empty, so nothing that
+// might be recovered is ever deleted on a guess.
+func emptyDir(dir string) bool {
+	f, err := os.Open(dir)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	names, err := f.Readdirnames(1)
+	return len(names) == 0 && errors.Is(err, io.EOF)
 }
 
 // detectMediaType reports the media type implied by a file's own signature, or

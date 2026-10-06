@@ -723,9 +723,10 @@ func fileURI(path string) string {
 	return "file://" + slashed
 }
 
-// The root is only resolved for a path argument, so an unusable client root
-// fails the calls that need it, and only those, saying which root it was.
-func TestCallsWithoutPathsNeverNeedTheRoot(t *testing.T) {
+// The root is only resolved when a call needs it: for a path argument, or for
+// a tool that may write, whose default output lands inside the root. An
+// unusable client root fails exactly those calls, saying which root it was.
+func TestOnlyCallsThatNeedTheRootResolveIt(t *testing.T) {
 	foreign := "file://fileserver/share/project" // a remote host is never a local root off Windows
 	if runtime.GOOS == "windows" {
 		foreign = "file:///home/me/project" // no drive: not a local absolute path on Windows
@@ -734,16 +735,59 @@ func TestCallsWithoutPathsNeverNeedTheRoot(t *testing.T) {
 		rec := &recorder{}
 		setRunner(t, rec.run)
 		cs := connect(t, Options{}, nil, &mcp.Root{URI: uri})
-		if res, env := call(t, cs, "edge_tts", map[string]any{"text": "hello"}); res.IsError {
-			t.Fatalf("%s: a call without paths failed on the client's root: %+v", uri, env.Error)
+		if res, env := call(t, cs, "video_selector", map[string]any{"query": "hello"}); res.IsError {
+			t.Fatalf("%s: a read-only call without paths failed on the client's root: %+v", uri, env.Error)
 		}
-		res, env := call(t, cs, "edge_tts", map[string]any{"text": "hello", "output_path": "hello.mp3"})
-		if !res.IsError || env.Error.Code != "root_unavailable" || !strings.Contains(env.Error.Message, uri) {
-			t.Errorf("%s: want root_unavailable naming the client's root, got %+v", uri, env.Error)
+		for _, args := range []map[string]any{{"text": "hello"}, {"text": "hello", "output_path": "hello.mp3"}} {
+			res, env := call(t, cs, "edge_tts", args)
+			if !res.IsError || env.Error.Code != "root_unavailable" || !strings.Contains(env.Error.Message, uri) {
+				t.Errorf("%s %v: want root_unavailable naming the client's root, got %+v", uri, args, env.Error)
+			}
 		}
 		if got := rec.received(t); len(got) != 1 {
-			t.Errorf("%s: the tool ran %d times, want once", uri, len(got))
+			t.Errorf("%s: tools ran %d times, want once (the read-only one)", uri, len(got))
 		}
+	}
+}
+
+// A default output (the file a tool names itself when a request names none)
+// lands inside the allowed root, never in the server's working directory.
+func TestDefaultOutputsLandInsideTheRoot(t *testing.T) {
+	root := t.TempDir()
+	elsewhere := t.TempDir()
+	t.Chdir(elsewhere)
+	cs := connect(t, Options{Root: root}, nil)
+	resolved, err := resolveRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		tool, file string
+		args       map[string]any
+	}{
+		{"subtitle_gen", "subtitles.srt", map[string]any{"segments": []any{map[string]any{"text": "Hello", "start": 0, "end": 1}}}},
+		{"openai_image", "openai_image.png", map[string]any{"prompt": "a test card", "mock": true}},
+		{"flux_image", "flux_image.png", map[string]any{"prompt": "a test card", "mock": true}},
+	} {
+		res, env := call(t, cs, c.tool, c.args)
+		if res.IsError || !env.OK {
+			t.Fatalf("%s failed: %+v", c.tool, env.Error)
+		}
+		want := filepath.Join(resolved, c.file)
+		if _, err := os.Stat(want); err != nil {
+			t.Errorf("%s: the default output is not inside the root: %v", c.tool, err)
+		}
+		if len(env.Artifacts) != 1 || !samePath(env.Artifacts[0].Path, want) {
+			t.Errorf("%s: artifacts = %+v, want %s", c.tool, env.Artifacts, want)
+		}
+	}
+	// Every tool, called with the least it accepts, writes nothing beside the
+	// server either: most refuse the request, none may escape the root.
+	for _, name := range toolbox.Names() {
+		_, _ = call(t, cs, name, map[string]any{})
+	}
+	if entries, _ := os.ReadDir(elsewhere); len(entries) != 0 {
+		t.Errorf("tools wrote into the server's working directory: %v", entries)
 	}
 }
 

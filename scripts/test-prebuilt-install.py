@@ -2,8 +2,9 @@
 media-provider calls, system package installs or PATH changes.
 
 Always: checks the platform archive and the installer archive against the 2.0
-release contract (one `facet` binary, the allowlisted composer bundle,
-generated third-party notices, exactly five installer files, checksums) and
+release contract (one `facet` binary, the allowlisted composer sources under
+dependencies/remotion-composer, generated third-party notices, the four
+installer files, checksums) and
 runs the binary when the archive targets this machine.
 
 With FACET_INSTALL_SMOKE=1 it also runs the platform's real installer, taken
@@ -41,6 +42,7 @@ COMPOSER_METADATA = ("package.json", "package-lock.json", "tsconfig.json", "comp
 ISOLATED_VARIABLES = (
     "FACET_ACTION", "FACET_VERSION", "FACET_COMPONENTS", "FACET_WIRE", "FACET_SCOPE", "FACET_PROJECT",
     "FACET_YES", "FACET_NO_PATH", "FACET_SKIP_VERIFY", "FACET_PURGE", "FACET_PLAIN", "FACET_LOG_DIR",
+    "FACET_HOME", "FACET_REMOTION_COMPOSER",
     "CLAUDE_CONFIG_DIR", "CODEX_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME",
 )
 VALUE_FLAGS = {
@@ -80,7 +82,7 @@ def check_archives(release, version, os_name, arch, updated_installer):
     archive = release / f"facet-{version}-{os_name}-{arch}.zip"
     installer = release / f"facet-installer-{version}.zip"
     manifest = json.loads((REPO / "remotion-composer" / "composer-manifest.json").read_text(encoding="utf-8"))
-    composer = {f"bundle/remotion-composer/{name}" for name in (*COMPOSER_METADATA, *manifest["allowedSourcePaths"])}
+    composer = {f"dependencies/remotion-composer/{name}" for name in (*COMPOSER_METADATA, *manifest["allowedSourcePaths"])}
     expected = {"bin/facet" + suffix, "LICENSE", "THIRD_PARTY_NOTICES.md"} | composer
     with zipfile.ZipFile(archive) as z:
         names = {name for name in z.namelist() if not name.endswith("/")}
@@ -112,16 +114,19 @@ class Lifecycle:
         self.skip_media = os.environ.get("FACET_INSTALL_SKIP_MEDIA") == "1"
         self.shell = os.environ.get("FACET_TEST_POWERSHELL", "pwsh")
         self.home = None
+        # FACET_HOME for the installer, when a test moves Facet's home folder.
+        self.moved_home = None
 
     def new_home(self, name):
         self.home = self.root / name
+        self.moved_home = None
         for directory in (self.home / "AppData" / "Roaming", self.home / "AppData" / "Local", self.home / ".config"):
             directory.mkdir(parents=True)
         return self.home
 
     @property
     def facet_home(self):
-        return self.home / ".facet"
+        return self.moved_home or self.home / ".facet"
 
     def runtime(self, version=None):
         return self.facet_home / "runtimes" / f"{version or self.version}-{self.os_name}-{self.arch}"
@@ -130,6 +135,8 @@ class Lifecycle:
         env = {key: value for key, value in os.environ.items() if key not in ISOLATED_VARIABLES}
         env.update(HOME=str(self.home), USERPROFILE=str(self.home),
                    APPDATA=str(self.home / "AppData" / "Roaming"), LOCALAPPDATA=str(self.home / "AppData" / "Local"))
+        if self.moved_home:
+            env.update(FACET_HOME=str(self.moved_home))
         if not self.windows:
             env.update(XDG_CONFIG_HOME=str(self.home / ".config"), XDG_DATA_HOME=str(self.home / ".local" / "share"),
                        XDG_CACHE_HOME=str(self.home / ".cache"))
@@ -186,8 +193,17 @@ class Lifecycle:
         assert reported.returncode == 0 and reported.stdout.strip() == f"facet v{version}", reported
         record = json.loads((runtime / "components.json").read_text(encoding="utf-8"))
         assert record["version"] == version and record["components"] == [], record
+        # The composer is a media dependency of the runtime, beside the others.
+        assert (runtime / "dependencies" / "remotion-composer" / "package.json").is_file(), "composer not under dependencies/"
         for retired in ("bin", "bundle"):
             assert not (self.facet_home / retired).exists(), f"retired ~/.facet/{retired} layout created"
+            assert not (runtime / "bundle").exists(), "retired <runtime>/bundle layout created"
+
+    def wired_versions(self):
+        registry = self.facet_home / "wiring.json"
+        if not registry.exists():
+            return {}
+        return {(w["cli"], w["scope"]): w["facet_version"] for w in json.loads(registry.read_text(encoding="utf-8"))["wirings"]}
 
     def assert_no_profile_edits(self):
         if self.windows:
@@ -283,6 +299,24 @@ def lifecycle(life, temp):
     registry = json.loads((life.facet_home / "wiring.json").read_text(encoding="utf-8"))
     assert any(w["cli"] == "opencode" and w["scope"] == "project" for w in registry["wirings"]), registry
 
+    if variant:
+        # Every install, update and rollback refreshes the recorded wirings,
+        # so a CLI's Facet guidance always matches the active runtime.
+        life.install(action="update", version=other, archive=variant[0], checksums=variant[1])
+        life.assert_active(other)
+        assert life.wired_versions() == {("opencode", "project"): other}, life.wired_versions()
+        life.install(action="rollback")
+        life.assert_active(life.version)
+        assert life.wired_versions() == {("opencode", "project"): life.version}, life.wired_versions()
+        # A third build: only the active runtime and the one before it are kept.
+        third = build_variant(life, f"{life.version}-prune.1", temp)
+        newest = f"{life.version}-prune.1"
+        life.install(action="update", version=newest, archive=third[0], checksums=third[1])
+        kept = sorted(p.name for p in (life.facet_home / "runtimes").iterdir() if not p.name.startswith("."))
+        assert kept == sorted([life.runtime().name, life.runtime(newest).name]), f"runtimes kept: {kept}"
+        life.install(action="rollback")
+        life.assert_active(life.version)
+
     output = life.install(action="uninstall")
     assert not os.path.lexists(life.facet_home / "current"), "uninstall left ~/.facet/current"
     assert life.runtime().is_dir(), "uninstall without --purge removed the runtime"
@@ -300,6 +334,17 @@ def lifecycle(life, temp):
     life.assert_no_profile_edits()
     if life.windows:
         assert user_path() == path_before, "-NoPath changed the user PATH"
+
+
+def moved_home(life, temp):
+    """FACET_HOME moves the whole installation: nothing lands in ~/.facet."""
+    home = life.new_home("moved")
+    life.moved_home = temp / "moved facet home"
+    life.install()
+    life.assert_active(life.version)
+    assert not (home / ".facet").exists(), "the installer wrote ~/.facet although FACET_HOME is set"
+    life.install(action="uninstall", purge=True)
+    assert not (life.facet_home / "runtimes").exists() and not os.path.lexists(life.facet_home / "current")
 
 
 def rejections(life, temp):
@@ -365,9 +410,11 @@ def main():
                 z.extractall(temp / "installer")
             life = Lifecycle(args.os, args.arch, version, archive, release / f"checksums-{args.os}-{args.arch}.txt", temp / "installer", temp)
             lifecycle(life, temp)
+            moved_home(life, temp)
             rejections(life, temp)
-            print("Installer lifecycle passed: install, reuse, repair, update/rollback, wiring, uninstall, purge and rejections.")
-    print("Native binary, script installer package, bundle contents and checksums passed.")
+            print("Installer lifecycle passed: install, reuse, repair, update/rollback, wiring refresh, pruning, "
+                  "FACET_HOME, uninstall, purge and rejections.")
+    print("Native binary, script installer package, composer contents and checksums passed.")
 
 
 if __name__ == "__main__":

@@ -63,8 +63,8 @@ export async function journey(evidence, { home = os.homedir(), version = process
     updated_at: new Date().toISOString(), checks: report.checks.map(({ name, passed }) => ({ name, passed })),
   });
   // No shell; every argument is fixed by this script.
-  const run = (command, args, { cwd = home, timeout = 120000, allowFailure = false } = {}) => {
-    const result = spawnSync(command, args, { cwd, encoding: 'utf8', timeout, maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+  const run = (command, args, { cwd = home, timeout = 120000, allowFailure = false, env = process.env } = {}) => {
+    const result = spawnSync(command, args, { cwd, env, encoding: 'utf8', timeout, maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
     if (result.error) throw new Error(`${command} could not run: ${result.error.message}`);
     if (!allowFailure && result.status !== 0) throw new Error(`${command} ${args.join(' ')} exited ${result.status ?? result.signal}: ${(result.stderr || result.stdout).trim().slice(-2000)}`);
     return result;
@@ -243,10 +243,12 @@ export async function journey(evidence, { home = os.homedir(), version = process
   await check('broken-runtime-pin-rejected', () => {
     const broken = fs.mkdtempSync(path.join(home, 'uat-broken-runtime-'));
     fs.mkdirSync(path.join(broken, 'artifacts'));
-    fs.writeFileSync(path.join(broken, '.facet.yaml'), 'paths:\n  remotion_composer: /nonexistent-uat-runtime\n');
     const output = path.join(broken, 'renders', 'must-not-exist.mp4');
     fs.writeFileSync(path.join(broken, 'artifacts', 'props.json'), JSON.stringify({ ...renderRequest, audio_path: undefined, output: 'renders/must-not-exist.mp4' }));
-    const result = tool(['tools', 'run', 'video_compose', '--input', 'artifacts/props.json'], { cwd: broken, timeout: 60000 });
+    // The one explicit composer override, pointing nowhere: the render must
+    // fail rather than fall back to another composer.
+    const env = { ...process.env, FACET_REMOTION_COMPOSER: '/nonexistent-uat-runtime' };
+    const result = tool(['tools', 'run', 'video_compose', '--input', 'artifacts/props.json'], { cwd: broken, timeout: 60000, env });
     save('broken-runtime.log', result.log);
     assert.notEqual(result.status, 0, 'a broken runtime pin must fail');
     assert.equal(result.envelope?.ok, false);

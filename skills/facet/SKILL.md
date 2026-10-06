@@ -10,7 +10,9 @@ Each Facet operation is a tool of the `facet` MCP server named after the
 operation (`media_probe`, `video_compose`, ...); discover and plan with
 `tools_list`, `describe`, `estimate`, `routes_list`, `routes_describe`, and
 `routes_assess`. Your harness may prefix these names and owns permissions.
-Without MCP, use the CLI with JSON request files (`facet routes ...` likewise):
+Use MCP by default. The CLI runs the same tools (`facet routes ...` likewise);
+render with it, in the background if allowed, when an estimate reports
+`prefer_shell: true` or a render would outlast your harness's MCP time limit:
 ```sh
 facet tools describe video_compose
 facet tools estimate video_compose --input request.json
@@ -36,6 +38,9 @@ the offline or privacy-preserving fallback, not a silent downgrade.
 - Facet declares effects such as `may_charge` and never enforces consent. Paid
   execution and publication require the person's explicit consent, given through
   your harness; never assume or supply it for them. Unknown cost is not free.
+  Run paid tools only through MCP, where your harness asks first; never the shell.
+- A paid call cut off midway may already be charged and still running at the
+  provider: read the error and any `recovery_path`, and ask before running it again.
 - The proposal is a conversational checkpoint, not stored workflow state.
   Ordinary local revisions remain covered by approval. Do not silently change
   provider, cost, data exposure, identity/rights use, or quality; explain material

@@ -103,7 +103,7 @@ func doKlingVideoContext(parent context.Context, op string, data []byte) (any, [
 	}
 	outPath := r.OutputPath
 	if outPath == "" {
-		outPath = "kling_video.mp4"
+		outPath = defaultOutput(parent, "kling_video.mp4")
 	}
 	if err := outputPath(outPath, true, false); err != nil {
 		return nil, nil, err
@@ -111,7 +111,7 @@ func doKlingVideoContext(parent context.Context, op string, data []byte) (any, [
 
 	if r.Mock {
 		if err := createMockVideo(outPath, 640, 360, duration); err != nil {
-			return nil, nil, failure("command_failed", "failed to create mock video: "+err.Error(), nil)
+			return nil, nil, err
 		}
 		return map[string]any{
 			"provider":     "kling",
@@ -335,7 +335,7 @@ func doSoraVideoContext(parent context.Context, op string, data []byte) (any, []
 	}
 	outPath := r.OutputPath
 	if outPath == "" {
-		outPath = "sora_video.mp4"
+		outPath = defaultOutput(parent, "sora_video.mp4")
 	}
 	if err := outputPath(outPath, true, false); err != nil {
 		return nil, nil, err
@@ -343,7 +343,7 @@ func doSoraVideoContext(parent context.Context, op string, data []byte) (any, []
 
 	if r.Mock {
 		if err := createMockVideo(outPath, 1280, 720, duration); err != nil {
-			return nil, nil, failure("command_failed", "failed to create mock video: "+err.Error(), nil)
+			return nil, nil, err
 		}
 		return map[string]any{
 			"provider":     "sora",
@@ -479,6 +479,10 @@ DownloadSoraVideo:
 	}, nil, nil
 }
 
+// createMockVideo makes a real, playable placeholder video with FFmpeg, so mock
+// mode exercises everything downstream of generation. Without FFmpeg there is
+// no honest placeholder: the run fails rather than writing bytes that only
+// claim to be video.
 func createMockVideo(path string, width, height int, duration float64) error {
 	if width <= 0 {
 		width = 640
@@ -489,27 +493,26 @@ func createMockVideo(path string, width, height int, duration float64) error {
 	if duration <= 0 {
 		duration = 1.0
 	}
+	if _, err := lookPath("ffmpeg"); err != nil {
+		return failure("dependency_missing", "mock mode makes its placeholder video with ffmpeg, which is not available", nil)
+	}
 	parent := filepath.Dir(path)
 	if parent != "." {
 		if err := os.MkdirAll(parent, 0755); err != nil {
-			return err
+			return failure("command_failed", "unable to create the output directory: "+err.Error(), nil)
 		}
 	}
-
-	if _, err := lookPath("ffmpeg"); err == nil {
-		durStr := fmt.Sprintf("%.2f", duration)
-		sizeStr := fmt.Sprintf("%dx%d", width, height)
-		args := []string{
-			"-hide_banner", "-loglevel", "error", "-y",
-			"-f", "lavfi", "-i", fmt.Sprintf("color=c=navy:size=%s:rate=24:duration=%s", sizeStr, durStr),
-			"-f", "lavfi", "-i", fmt.Sprintf("sine=frequency=440:sample_rate=48000:duration=%s", durStr),
-			"-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest",
-			path,
-		}
-		if _, err := runCommand(30*time.Second, "ffmpeg", args...); err == nil {
-			return nil
-		}
+	durStr := fmt.Sprintf("%.2f", duration)
+	sizeStr := fmt.Sprintf("%dx%d", width, height)
+	args := []string{
+		"-hide_banner", "-loglevel", "error", "-y",
+		"-f", "lavfi", "-i", fmt.Sprintf("color=c=navy:size=%s:rate=24:duration=%s", sizeStr, durStr),
+		"-f", "lavfi", "-i", fmt.Sprintf("sine=frequency=440:sample_rate=48000:duration=%s", durStr),
+		"-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest",
+		path,
 	}
-
-	return os.WriteFile(path, []byte("mock video payload for "+path), 0644)
+	if _, err := runCommand(30*time.Second, "ffmpeg", args...); err != nil {
+		return err
+	}
+	return nil
 }

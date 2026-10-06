@@ -59,6 +59,10 @@ type cue struct {
 }
 
 func doSubtitleGen(op string, data []byte) (any, []string, error) {
+	return doSubtitleGenContext(context.Background(), op, data)
+}
+
+func doSubtitleGenContext(ctx context.Context, op string, data []byte) (any, []string, error) {
 	var r subtitleGenRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
@@ -108,7 +112,7 @@ func doSubtitleGen(op string, data []byte) (any, []string, error) {
 
 	outPath := r.OutputPath
 	if outPath == "" {
-		outPath = "subtitles" + ext
+		outPath = defaultOutput(ctx, "subtitles"+ext)
 	}
 	if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
 		return nil, nil, failure("command_failed", "unable to create output directory", nil)
@@ -137,7 +141,7 @@ func doFFmpegCaptionBurnContext(ctx context.Context, op string, data []byte) (an
 		return nil, nil, err
 	}
 	if r.OutputPath == "" {
-		r.OutputPath = "captioned_output.mp4"
+		r.OutputPath = defaultOutput(ctx, "captioned_output.mp4")
 	}
 	if err := outputPath(r.OutputPath, true, false); err != nil {
 		return nil, nil, err

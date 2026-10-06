@@ -211,7 +211,7 @@ func TestRemotionLocalMediaOfflineRender(t *testing.T) {
 		t.Fatal("offline render requires existing composer dependencies and browser")
 	}
 	_, workspace := isolateComposeRuntime(t)
-	composeRuntimeFixture(t, filepath.Join(workspace, ".facet.yaml"), "paths:\n  remotion_composer: '"+filepath.ToSlash(composer)+"'\n")
+	t.Setenv(ComposerDirEnv, composer)
 	composeDeliveryMedia(t, filepath.Join(workspace, "clip.mp4"), false)
 	composeDeliveryMedia(t, filepath.Join(workspace, "tone.wav"), true)
 	props := map[string]any{

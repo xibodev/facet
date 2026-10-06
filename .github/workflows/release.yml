@@ -107,16 +107,23 @@ jobs:
             if [ -e "$HOME/$profile" ]; then echo "--no-path wrote $profile" >&2; exit 1; fi
           done
       - name: Smoke install from the archive (Windows, no optional components, PATH untouched)
-        if: matrix.os == 'windows' && matrix.arch == 'amd64'
+        if: matrix.os == 'windows'
         shell: pwsh
+        env:
+          # The Windows arm64 runner has no FFmpeg package to install, so its
+          # install skips media verification; everything else is the same.
+          SKIP_VERIFY: ${{ matrix.arch == 'arm64' && '1' || '' }}
         run: |
           $ErrorActionPreference = 'Stop'
           $version = (Get-Content -Raw package.json | ConvertFrom-Json).version
           $release = Join-Path $env:GITHUB_WORKSPACE 'build/release'
           $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-          ./install.ps1 -NonInteractive -Components none -NoPath `
-            -ArchivePath (Join-Path $release "facet-$version-windows-amd64.zip") `
-            -ChecksumPath (Join-Path $release 'checksums-windows-amd64.txt')
+          $arch = '${{ matrix.arch }}'
+          $skip = @{}
+          if ($env:SKIP_VERIFY -eq '1') { $skip['SkipVerify'] = $true }
+          ./install.ps1 -NonInteractive -Components none -NoPath @skip `
+            -ArchivePath (Join-Path $release "facet-$version-windows-$arch.zip") `
+            -ChecksumPath (Join-Path $release "checksums-windows-$arch.txt")
           $facet = Join-Path $HOME '.facet/current/bin/facet.exe'
           $reported = & $facet version
           if ($LASTEXITCODE -ne 0 -or $reported -ne "facet v$version") { throw "Unexpected version: $reported" }
@@ -124,9 +131,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ([Environment]::GetEnvironmentVariable('Path', 'User') -ne $userPath) { throw '-NoPath changed the user PATH' }
       - name: Exercise CLI integrations and media check
-        if: matrix.os != 'windows' || matrix.arch == 'amd64'
         env:
           FACET_INSTALL_SMOKE: '1'
+          FACET_INSTALL_SKIP_MEDIA: ${{ matrix.os == 'windows' && matrix.arch == 'arm64' && '1' || '' }}
         run: python scripts/test-prebuilt-install.py --os ${{ matrix.os }} --arch ${{ matrix.arch }} --release-dir build/release
       - name: Windows PowerShell 5.1 lifecycle acceptance
         if: matrix.os == 'windows' && matrix.arch == 'amd64'

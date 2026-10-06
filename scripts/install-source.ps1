@@ -122,7 +122,7 @@ if ("$version" -notmatch '^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$') { throw "package
 $devVersion = "$version-dev"
 $arch = if ("$env:PROCESSOR_ARCHITECTURE $env:PROCESSOR_ARCHITEW6432" -match 'ARM64') { 'arm64' } else { 'amd64' }
 $userHome = if ($HOME) { $HOME } else { $env:USERPROFILE }
-$facetHome = Join-Path $userHome '.facet'
+$facetHome = if ("$env:FACET_HOME".Trim()) { $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath("$env:FACET_HOME".Trim()) } else { Join-Path $userHome '.facet' }
 $runtimesDir = Join-Path $facetHome 'runtimes'
 $runtimeName = "$devVersion-windows-$arch"
 $runtimeDir = Join-Path $runtimesDir $runtimeName
@@ -187,7 +187,7 @@ try {
         if ($name -match '(^|[\\/])\.\.([\\/]|$)|:' -or $name.StartsWith('/')) { throw "Unsafe composer path: $name" }
         $source = Join-Path $repo "remotion-composer/$name"
         if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Composer file missing: remotion-composer/$name" }
-        $target = Join-Path $stage "bundle/remotion-composer/$name"
+        $target = Join-Path $stage "dependencies/remotion-composer/$name"
         New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
         Copy-Item -LiteralPath $source -Destination $target
     }
@@ -197,7 +197,7 @@ try {
     if ($Components -eq 'remotion') {
         Write-Host 'Installing the locked Remotion composer packages (network access may be required)...'
         $npmCli = Join-Path (Split-Path -Parent $node) 'node_modules/npm/bin/npm-cli.js'
-        $composer = Join-Path $stage 'bundle/remotion-composer'
+        $composer = Join-Path $stage 'dependencies/remotion-composer'
         if (Test-Path -LiteralPath $npmCli -PathType Leaf) { Invoke-Native $node @($npmCli, 'ci', '--prefix', $composer, '--no-audit', '--no-fund') }
         else { Invoke-Native 'npm.cmd' @('ci', '--prefix', $composer, '--no-audit', '--no-fund') }
         $installed += 'remotion'
@@ -272,7 +272,7 @@ try {
     Write-Host "  Runtime:  $runtimeDir"
     Write-Host "  Command:  $(Join-Path $pathEntry 'facet.exe')"
     Write-Host "  PATH:     $pathNote"
-    if ($installed.Count) { Write-Host '  Remotion: packages installed; fetch its headless browser with: node node_modules/@remotion/cli/remotion-cli.js browser ensure (in bundle\remotion-composer)' }
+    if ($installed.Count) { Write-Host '  Remotion: packages installed; fetch its headless browser with: node node_modules/@remotion/cli/remotion-cli.js browser ensure (in dependencies\remotion-composer)' }
     if ($previousState) { Write-Host "  Previous: $previousState (kept; the release installer's -Action rollback returns to it)" }
     Write-Host '  No render was verified. Run facet doctor, then facet wire <cli> to use it from your agentic CLI.'
 } catch {

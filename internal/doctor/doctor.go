@@ -1,4 +1,12 @@
-package config
+// Package doctor reports what a Facet installation can do: the active
+// runtime, the wirings, Facet 1.x leftovers, the media programs the tools
+// would run, the agentic CLIs on PATH, the provider credentials the tools
+// read, and every tool's readiness.
+//
+// It only reads. Programs are resolved exactly as the tools resolve them, so
+// the report can never disagree with what a tool would run; there is no
+// configuration file to pin anything else.
+package doctor
 
 import (
 	"bytes"
@@ -14,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/xibodev/facet/internal/facethome"
 	"github.com/xibodev/facet/internal/toolbox"
 	"github.com/xibodev/facet/internal/wire"
 )
@@ -30,7 +39,8 @@ const (
 )
 
 // FacetRuntimeCheck reports the running facet and the active runtime at
-// ~/.facet/current, whose executable is what facet wire registers.
+// current in Facet's home folder, whose executable is what facet wire
+// registers.
 type FacetRuntimeCheck struct {
 	Running    string      `json:"running_version"`
 	Executable string      `json:"executable,omitempty"`
@@ -103,32 +113,32 @@ type DoctorReport struct {
 	Tools       []ToolCheck       `json:"tools"`
 }
 
-// RunDoctor executes all system discovery checks and prints the formatted report to stdout.
-func RunDoctor(cfg *Config) error {
-	_, err := RunDoctorWithWriter(cfg, os.Stdout)
-	return err
+// EnvProbes returns the environment variables probed: the credentials Facet's
+// own provider-backed tools read, including the alternative names some tools
+// accept. The harness's model credentials are the harness's concern and are
+// not probed.
+func EnvProbes() []string {
+	return []string{
+		"OPENAI_API_KEY",
+		"ELEVENLABS_API_KEY",
+		"FAL_KEY",
+		"FLUX_API_KEY",
+		"KLING_API_KEY",
+		"PEXELS_API_KEY",
+		"PIXABAY_API_KEY",
+	}
 }
 
-// RunDoctorWithWriter executes all discovery checks, formats and prints the output to w, and returns the report.
-func RunDoctorWithWriter(cfg *Config, w io.Writer) (*DoctorReport, error) {
-	if cfg == nil {
-		var err error
-		cfg, err = Load()
-		if err != nil {
-			cfg = DefaultConfig()
-		}
-	} else {
-		cfg.AutoDetect()
-	}
-
-	report := GenerateDoctorReport(cfg)
+// Run executes every check and prints the formatted report to w.
+func Run(w io.Writer) (*DoctorReport, error) {
+	report := Generate()
 	formatDoctorReport(report, w)
 	return report, nil
 }
 
-// GenerateDoctorReport inspects the environment and produces a structured DoctorReport.
+// Generate inspects the environment and produces a structured report.
 // It only reads: nothing is installed, wired, or repaired.
-func GenerateDoctorReport(cfg *Config) *DoctorReport {
+func Generate() *DoctorReport {
 	report := &DoctorReport{
 		Wiring:   make([]WiringCheck, 0),
 		Legacy:   make([]LegacyCheck, 0),
@@ -146,70 +156,38 @@ func GenerateDoctorReport(cfg *Config) *DoctorReport {
 	report.Wiring, report.WiringError = wiringChecks(running)
 	report.Legacy = legacyChecks(runtime.GOOS, cwd, home)
 
-	// 1. System Runtimes
-	report.Runtimes = append(report.Runtimes, probeBinaryRuntime("FFmpeg", cfg.Paths.FFmpeg, "ffmpeg", "-version"))
-	report.Runtimes = append(report.Runtimes, probeBinaryRuntime("FFprobe", cfg.Paths.FFprobe, "ffprobe", "-version"))
-	report.Runtimes = append(report.Runtimes, probeBinaryRuntime("Node", cfg.Paths.Node, "node", "-v"))
-	report.Runtimes = append(report.Runtimes, probeRemotionComposer(cfg.Paths.RemotionComposer))
+	// 1. The programs the tools would run, resolved as the tools resolve
+	// them: the runtime's private copy first, then PATH.
+	report.Runtimes = append(report.Runtimes, probeProgram("FFmpeg", "ffmpeg", "-version"))
+	report.Runtimes = append(report.Runtimes, probeProgram("FFprobe", "ffprobe", "-version"))
+	report.Runtimes = append(report.Runtimes, probeProgram("Node", "node", "-v"))
+	report.Runtimes = append(report.Runtimes, probeRemotionComposer())
 	report.Runtimes = append(report.Runtimes, probeEdgeTTS())
 
-	// 2. Agent CLIs
-	report.CLIs = append(report.CLIs, probeAgentCLI("Claude Code", cfg.Paths.Claude, "claude", "claude-code"))
-	report.CLIs = append(report.CLIs, probeAgentCLI("OpenCode", cfg.Paths.OpenCode, "opencode"))
-	report.CLIs = append(report.CLIs, probeAgentCLI("GitHub Copilot", cfg.Paths.Copilot, "copilot", "github-copilot-cli", "gh-copilot"))
-	report.CLIs = append(report.CLIs, probeAgentCLI("OpenAI Codex", cfg.Paths.Codex, "codex", "openai-codex"))
+	// 2. Agentic CLIs, found on PATH as facet wire finds them.
+	report.CLIs = append(report.CLIs, probeAgentCLI("Claude Code", "claude"))
+	report.CLIs = append(report.CLIs, probeAgentCLI("OpenCode", "opencode"))
+	report.CLIs = append(report.CLIs, probeAgentCLI("GitHub Copilot", "copilot"))
+	report.CLIs = append(report.CLIs, probeAgentCLI("OpenAI Codex", "codex"))
 
 	// 3. Environment Variables
-	probes := cfg.EnvProbes
-	if len(probes) == 0 {
-		probes = DefaultEnvProbes()
-	}
-	for _, envVar := range probes {
-		val := os.Getenv(envVar)
-		isSet := strings.TrimSpace(val) != ""
+	for _, envVar := range EnvProbes() {
+		isSet := strings.TrimSpace(os.Getenv(envVar)) != ""
 		display := "not set"
 		if isSet {
 			display = "set"
 		}
-		report.EnvVars = append(report.EnvVars, EnvVarCheck{
-			Name:    envVar,
-			IsSet:   isSet,
-			Display: display,
-		})
+		report.EnvVars = append(report.EnvVars, EnvVarCheck{Name: envVar, IsSet: isSet, Display: display})
 	}
 
-	// 4. 33 Toolbox Tools
+	// 4. Every toolbox tool.
 	envList, ok := toolbox.CLI([]string{"tools", "list"})
 	if ok && envList.Result != nil {
 		if resMap, ok := envList.Result.(map[string]any); ok {
 			if toolList, ok := resMap["tools"].([]any); ok {
 				for _, item := range toolList {
 					if tMap, ok := item.(map[string]any); ok {
-						name, _ := tMap["name"].(string)
-						capab, _ := tMap["capability"].(string)
-						conf, _ := tMap["configured"].(bool)
-						var missing []string
-						if deps, ok := tMap["dependencies"].([]any); ok {
-							for _, d := range deps {
-								if dm, ok := d.(map[string]any); ok {
-									if avail, ok := dm["available"].(bool); ok && !avail {
-										depName, _ := dm["name"].(string)
-										depType, _ := dm["type"].(string)
-										if depType == "env" {
-											missing = append(missing, fmt.Sprintf("env:%s", depName))
-										} else {
-											missing = append(missing, depName)
-										}
-									}
-								}
-							}
-						}
-						report.Tools = append(report.Tools, ToolCheck{
-							Name:        name,
-							Capability:  capab,
-							Configured:  conf,
-							MissingDeps: missing,
-						})
+						report.Tools = append(report.Tools, toolCheck(tMap))
 					}
 				}
 			}
@@ -217,6 +195,44 @@ func GenerateDoctorReport(cfg *Config) *DoctorReport {
 	}
 
 	return report
+}
+
+func toolCheck(tMap map[string]any) ToolCheck {
+	name, _ := tMap["name"].(string)
+	capab, _ := tMap["capability"].(string)
+	conf, _ := tMap["configured"].(bool)
+	var missing []string
+	if deps, ok := tMap["dependencies"].([]any); ok {
+		for _, d := range deps {
+			dm, ok := d.(map[string]any)
+			if !ok {
+				continue
+			}
+			if avail, ok := dm["available"].(bool); ok && !avail {
+				depName, _ := dm["name"].(string)
+				switch alternatives := dm["alternatives"].(type) {
+				case []string:
+					if len(alternatives) > 0 {
+						depName = strings.Join(alternatives, "|")
+					}
+				case []any:
+					names := make([]string, 0, len(alternatives))
+					for _, a := range alternatives {
+						names = append(names, fmt.Sprint(a))
+					}
+					if len(names) > 0 {
+						depName = strings.Join(names, "|")
+					}
+				}
+				if depType, _ := dm["type"].(string); depType == "env" {
+					missing = append(missing, fmt.Sprintf("env:%s", depName))
+				} else {
+					missing = append(missing, depName)
+				}
+			}
+		}
+	}
+	return ToolCheck{Name: name, Capability: capab, Configured: conf, MissingDeps: missing}
 }
 
 // facetVersionOf runs `<exe> version` with a hard timeout and returns the
@@ -264,12 +280,13 @@ func probeFacetRuntime(home, running string) FacetRuntimeCheck {
 	if exe, err := os.Executable(); err == nil {
 		check.Executable = exe
 	}
-	if home == "" {
+	facetHome := facethome.For(home)
+	if facetHome == "" {
 		check.Status = StatusWarning
-		check.Details = "the home directory is unknown, so ~/.facet/current cannot be checked"
+		check.Details = "the home directory is unknown, so the active runtime cannot be checked; set " + facethome.EnvVar
 		return check
 	}
-	current := filepath.Join(home, ".facet", "current")
+	current := filepath.Join(facetHome, "current")
 	if _, err := os.Lstat(current); err != nil {
 		check.Status = StatusNotFound
 		check.Details = "no active runtime at " + current + "; facet wire registers the running executable instead"
@@ -303,7 +320,7 @@ func probeFacetRuntime(home, running string) FacetRuntimeCheck {
 	return check
 }
 
-// wiringChecks summarizes the wirings recorded in ~/.facet/wiring.json.
+// wiringChecks summarizes the wirings recorded in wiring.json.
 func wiringChecks(running string) ([]WiringCheck, string) {
 	checks := make([]WiringCheck, 0)
 	report, err := wire.Inspect(running)
@@ -336,95 +353,54 @@ func legacyChecks(goos string, dirs ...string) []LegacyCheck {
 	return checks
 }
 
-func probeBinaryRuntime(name, pinnedPath, defaultBinary string, versionArg string) RuntimeCheck {
-	target := pinnedPath
-	if target == "" {
-		target = FindExecutable(defaultBinary)
-	}
-
-	if target == "" {
+// probeProgram reports the program the tools would run for program.
+func probeProgram(name, program, versionArg string) RuntimeCheck {
+	target, err := toolbox.ResolveProgram(program)
+	if err != nil || target == "" {
 		return RuntimeCheck{
 			Name:      name,
 			Status:    StatusNotFound,
 			Available: false,
-			Details:   fmt.Sprintf("%s not found in PATH or config", defaultBinary),
+			Details:   fmt.Sprintf("%s not found beside this facet or on PATH", program),
 		}
 	}
-
 	versionStr := ""
 	if versionArg != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, target, versionArg)
-		out, err := cmd.Output()
-		if err == nil {
-			lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-			if len(lines) > 0 {
+		if out, err := exec.CommandContext(ctx, target, versionArg).Output(); err == nil {
+			if lines := strings.Split(strings.TrimSpace(string(out)), "\n"); len(lines) > 0 {
 				versionStr = strings.TrimSpace(lines[0])
 			}
 		}
 	}
-
-	return RuntimeCheck{
-		Name:      name,
-		Status:    StatusOK,
-		Path:      target,
-		Version:   versionStr,
-		Available: true,
-	}
+	return RuntimeCheck{Name: name, Status: StatusOK, Path: target, Version: versionStr, Available: true}
 }
 
-func probeRemotionComposer(composerPath string) RuntimeCheck {
-	candidates := []string{composerPath, "remotion-composer", filepath.Join("..", "remotion-composer")}
-	for _, cand := range candidates {
-		if cand == "" {
-			continue
+// probeRemotionComposer reports the composer video_compose renders with.
+func probeRemotionComposer() RuntimeCheck {
+	dir, usable, err := toolbox.ComposerStatus()
+	switch {
+	case err != nil || dir == "":
+		details := "not found"
+		if err != nil {
+			details = err.Error()
 		}
-		pkgJson := filepath.Join(cand, "package.json")
-		if fi, err := os.Stat(pkgJson); err == nil && !fi.IsDir() {
-			abs, _ := filepath.Abs(cand)
-			nodeModules := filepath.Join(cand, "node_modules")
-			hasModules := false
-			if nmFi, err := os.Stat(nodeModules); err == nil && nmFi.IsDir() {
-				hasModules = true
-			}
-			// A composer without its dependencies cannot render, so it is a
-			// WARNING rather than OK.
-			//
-			// Verified on a fresh install: doctor printed
-			//   OK (.../remotion-composer (node_modules missing - run npm install))
-			// and the very next render failed with dependency_missing. A user
-			// scanning for problems sees a tick and moves on, then hits the
-			// failure anyway — the check knew and said it in a parenthetical.
-			//
-			// Available stays false for the same reason: a caller asking
-			// whether the composer is usable is asking whether it can render.
-			if !hasModules {
-				return RuntimeCheck{
-					Name:   "Remotion Composer",
-					Status: StatusWarning,
-					Path:   abs,
-					Details: abs + " (dependencies not installed; run `npm ci` there " +
-						"before rendering)",
-					Available: false,
-				}
-			}
-			return RuntimeCheck{
-				Name:      "Remotion Composer",
-				Status:    StatusOK,
-				Path:      abs,
-				Details:   abs,
-				Available: true,
-			}
+		return RuntimeCheck{Name: "Remotion Composer", Status: StatusNotFound, Available: false, Details: details}
+	case !usable:
+		// A composer without its dependencies cannot render, so it is a
+		// WARNING rather than OK, and Available stays false: a caller asking
+		// whether the composer is usable is asking whether it can render.
+		return RuntimeCheck{
+			Name:   "Remotion Composer",
+			Status: StatusWarning,
+			Path:   dir,
+			Details: dir + " (dependencies not installed; reinstall Facet with the remotion component, " +
+				"or run `npm ci` there before rendering)",
+			Available: false,
 		}
 	}
-
-	return RuntimeCheck{
-		Name:      "Remotion Composer",
-		Status:    StatusNotFound,
-		Available: false,
-		Details:   "remotion-composer/package.json not found",
-	}
+	return RuntimeCheck{Name: "Remotion Composer", Status: StatusOK, Path: dir, Details: dir, Available: true}
 }
 
 func probeEdgeTTS() RuntimeCheck {
@@ -436,26 +412,15 @@ func probeEdgeTTS() RuntimeCheck {
 	}
 }
 
-func probeAgentCLI(displayName, pinnedPath string, binaryNames ...string) AgentCLICheck {
-	target := pinnedPath
-	if target == "" {
-		target = FindExecutable(binaryNames...)
-	}
-
-	if target != "" {
-		return AgentCLICheck{
-			Name:      displayName,
-			Status:    StatusFound,
-			Path:      target,
-			Available: true,
+// probeAgentCLI finds an agentic CLI on PATH, where facet wire runs it.
+func probeAgentCLI(displayName, binary string) AgentCLICheck {
+	if path, err := exec.LookPath(binary); err == nil && path != "" {
+		if abs, err := filepath.Abs(path); err == nil {
+			path = abs
 		}
+		return AgentCLICheck{Name: displayName, Status: StatusFound, Path: path, Available: true}
 	}
-
-	return AgentCLICheck{
-		Name:      displayName,
-		Status:    StatusNotFound,
-		Available: false,
-	}
+	return AgentCLICheck{Name: displayName, Status: StatusNotFound, Available: false}
 }
 
 func formatDoctorReport(report *DoctorReport, w io.Writer) {

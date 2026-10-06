@@ -1,5 +1,7 @@
-// Validate npm content and version surfaces. npm ships a launcher and guidance,
-// never a native binary installer; native distribution is tested by release.yml.
+// Validate npm content and version surfaces. npm ships only the launcher: the
+// guidance is compiled into the facet binary and the composer ships in the
+// release archive, so npm copies of either could only drift. Native
+// distribution is tested by release.yml.
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -9,7 +11,6 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const read = file => JSON.parse(readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'));
 const manifest = read('package.json');
 const lock = read('package-lock.json');
-const composerManifest = read('remotion-composer/composer-manifest.json');
 
 assert.equal(lock.version, manifest.version);
 assert.equal(lock.packages[''].version, manifest.version);
@@ -36,25 +37,6 @@ const [pack] = JSON.parse(result.stdout);
 assert.equal(pack.name, manifest.name);
 assert.equal(pack.version, manifest.version);
 const files = new Set(pack.files.map(file => file.path.replaceAll('\\', '/')));
-for (const file of [
-  'package.json', 'bin/facet-cli.js',
-  'skills/facet/SKILL.md', 'packs/explainer/SKILL.md', 'agents/facet-creative.md',
-  'remotion-composer/package.json', 'remotion-composer/package-lock.json',
-  'remotion-composer/tsconfig.json', 'remotion-composer/composer-manifest.json',
-  'remotion-composer/src/index.tsx', 'remotion-composer/src/contract.ts',
-  'LICENSE', 'THIRD_PARTY_NOTICES.md',
-]) assert.ok(files.has(file), `Missing npm content: ${file}`);
-assert.ok([...files].some(file => file.startsWith('schemas/')), 'Missing npm content: schemas/');
-for (const file of files) {
-  assert.doesNotMatch(file, /^(web|remotion-composer\/tests|scripts|cmd|internal)\//, `Not npm content: ${file}`);
-  assert.doesNotMatch(file, /(^|\/)(node_modules|\.git|\.env(?:\.[^/]*)?|\.quality-run)(\/|$)/);
-  if (file.startsWith('bin/')) {
-    assert.match(file, /^bin\/(facet-cli\.js|facet-(linux|darwin|windows)-(amd64|arm64)(\.exe)?)$/, `Unexpected npm bin content: ${file}`);
-  }
-}
-const composerSource = [...files]
-  .filter(file => file.startsWith('remotion-composer/src/'))
-  .map(file => file.slice('remotion-composer/'.length))
-  .sort();
-assert.deepEqual(composerSource, [...composerManifest.allowedSourcePaths].sort());
+assert.deepEqual([...files].sort(), ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'bin/facet-cli.js', 'package.json'],
+  'npm ships the launcher, its package manifest and the license notices only');
 console.log(`PASS: ${manifest.name}@${manifest.version}, facet source and release version stamps, ${files.size} npm files. Native distribution and publishing are not tested here.`);

@@ -6,8 +6,8 @@
 // unless `facet wire` is invoked. The CLI keeps ownership of approvals and
 // permissions, and its instruction files (AGENTS.md, CLAUDE.md, ...) are never
 // edited. Everything facet wire writes is recorded with its digest in
-// ~/.facet/wiring.json; only recorded, unmodified items are ever replaced or
-// removed.
+// wiring.json in Facet's home folder (~/.facet, or FACET_HOME); only recorded,
+// unmodified items are ever replaced or removed.
 package wire
 
 import (
@@ -22,11 +22,13 @@ import (
 	"time"
 
 	"github.com/xibodev/facet/internal/bundle"
+	"github.com/xibodev/facet/internal/facethome"
 )
 
 const usage = `Usage:
-  facet wire <cli>[,<cli>...]|all [--scope user|project] [--project DIR] [--dry-run]
+  facet wire <cli>[,<cli>...]|all [--scope user|project] [--project DIR] [--exe PATH] [--dry-run]
   facet wire --remove <cli>[,<cli>...]|all [--scope user|project] [--project DIR] [--dry-run]
+  facet wire --refresh [--dry-run]
   facet wire --status
 
 Wires Facet into an agentic CLI: installs the facet skill, one facet-<pack>
@@ -41,14 +43,21 @@ Options:
   --scope user|project  where the CLI should find Facet (default: user)
   --project DIR         the project for project scope (default: the current
                         directory); implies --scope project
+  --exe PATH            the facet executable to register as the MCP server
+                        (default: current/bin/facet in Facet's home folder
+                        when it exists, else this facet)
   --dry-run             print the exact actions without changing anything
   --remove              reverse a wiring; only recorded, unmodified items are
                         removed
+  --refresh             bring every recorded wiring to this facet's version;
+                        files changed since facet wire wrote them are never
+                        overwritten
   --status              report every wiring and any drift
 
-Everything written is recorded in ~/.facet/wiring.json. Existing files that
-facet wire did not write, or that changed since it wrote them, are never
-overwritten or deleted.
+Everything written is recorded in wiring.json in Facet's home folder
+(~/.facet, or FACET_HOME when it is set). Existing files that facet wire did
+not write, or that changed since it wrote them, are never overwritten or
+deleted.
 `
 
 // commandTimeout bounds every CLI subprocess.
@@ -56,17 +65,20 @@ const commandTimeout = 60 * time.Second
 
 // env is the process context wiring runs in.
 type env struct {
-	home    string
-	cwd     string
-	getenv  func(string) string
-	exe     string // facet executable registered as the MCP server
-	version string
-	out     io.Writer
-	errOut  io.Writer
-	now     func() time.Time
+	home   string // the user's home directory: user-scope CLI locations
+	cwd    string
+	getenv func(string) string
+	exe    string // facet executable registered as the MCP server
+	// explicitExe is set when --exe chose the executable: a later --status
+	// does not call it drift, and --refresh keeps it.
+	explicitExe bool
+	version     string
+	out         io.Writer
+	errOut      io.Writer
+	now         func() time.Time
 }
 
-func newEnv(version string, stdout, stderr io.Writer) (*env, error) {
+func newEnv(version string, stdout, stderr io.Writer, exeOverride string) (*env, error) {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return nil, fmt.Errorf("cannot determine the home directory: %v", err)
@@ -75,32 +87,54 @@ func newEnv(version string, stdout, stderr io.Writer) (*env, error) {
 	if err != nil {
 		return nil, err
 	}
-	exe, err := StableExecutable(home)
-	if err != nil {
+	exe, explicit := "", false
+	if exeOverride != "" {
+		if exe, err = explicitExecutable(exeOverride); err != nil {
+			return nil, err
+		}
+		explicit = true
+	} else if exe, err = StableExecutable(home); err != nil {
 		return nil, fmt.Errorf("cannot determine the facet executable: %w", err)
 	}
 	return &env{
-		home:    filepath.Clean(home),
-		cwd:     cwd,
-		getenv:  os.Getenv,
-		exe:     exe,
-		version: version,
-		out:     stdout,
-		errOut:  stderr,
-		now:     func() time.Time { return time.Now().UTC() },
+		home:        filepath.Clean(home),
+		cwd:         cwd,
+		getenv:      os.Getenv,
+		exe:         exe,
+		explicitExe: explicit,
+		version:     version,
+		out:         stdout,
+		errOut:      stderr,
+		now:         func() time.Time { return time.Now().UTC() },
 	}, nil
+}
+
+// explicitExecutable checks an --exe path: it must name an existing regular
+// file, and is recorded as an absolute path.
+func explicitExecutable(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("--exe %s: %w", path, err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", fmt.Errorf("--exe %s: %w", abs, err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("--exe %s is not a regular file", abs)
+	}
+	return filepath.Clean(abs), nil
 }
 
 func (e *env) registryPath() string { return RegistryPath(e.home) }
 
 // StableExecutable returns the facet executable to register with CLIs:
-// ~/.facet/current/bin/facet[.exe] when it exists, so registrations survive
-// upgrades of the active runtime, otherwise the running executable.
+// current/bin/facet[.exe] in Facet's home folder when it exists, so
+// registrations survive upgrades of the active runtime, otherwise the running
+// executable.
 func StableExecutable(home string) (string, error) {
-	if home != "" {
-		if current := CurrentExecutable(home); current != "" {
-			return current, nil
-		}
+	if current := CurrentExecutable(home); current != "" {
+		return current, nil
 	}
 	exe, err := os.Executable()
 	if err != nil {
@@ -109,13 +143,18 @@ func StableExecutable(home string) (string, error) {
 	return filepath.Clean(exe), nil
 }
 
-// CurrentExecutable returns ~/.facet/current/bin/facet[.exe] when it exists.
+// CurrentExecutable returns current/bin/facet[.exe] in Facet's home folder
+// (~/.facet, or FACET_HOME) when it exists.
 func CurrentExecutable(home string) string {
+	dir := facethome.For(home)
+	if dir == "" {
+		return ""
+	}
 	name := "facet"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
-	path := filepath.Join(home, ".facet", "current", "bin", name)
+	path := filepath.Join(dir, "current", "bin", name)
 	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
 		return path
 	}
@@ -128,6 +167,7 @@ const (
 	modeInstall mode = iota
 	modeRemove
 	modeStatus
+	modeRefresh
 )
 
 type request struct {
@@ -136,6 +176,7 @@ type request struct {
 	scope    bundle.Scope
 	scopeSet bool
 	project  string
+	exe      string
 	dryRun   bool
 }
 
@@ -155,7 +196,7 @@ func parseArgs(args []string) (*request, bool, error) {
 		*i++
 		return args[*i], nil
 	}
-	removeSet, statusSet := false, false
+	removeSet, statusSet, refreshSet := false, false, false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		name, inline, hasInline := strings.Cut(arg, "=")
@@ -181,6 +222,11 @@ func parseArgs(args []string) (*request, bool, error) {
 				return nil, false, usageError{"--status takes no value"}
 			}
 			statusSet = true
+		case "refresh":
+			if hasInline {
+				return nil, false, usageError{"--refresh takes no value"}
+			}
+			refreshSet = true
 		case "scope":
 			v := inline
 			if !hasInline {
@@ -206,16 +252,35 @@ func parseArgs(args []string) (*request, bool, error) {
 				return nil, false, usageError{"--project requires a directory"}
 			}
 			req.project, projectSet = v, true
+		case "exe":
+			v := inline
+			if !hasInline {
+				var err error
+				if v, err = value(&i, "--exe"); err != nil {
+					return nil, false, err
+				}
+			}
+			if strings.TrimSpace(v) == "" {
+				return nil, false, usageError{"--exe requires a path"}
+			}
+			req.exe = v
 		default:
 			return nil, false, usageError{fmt.Sprintf("unknown option %s", arg)}
 		}
 	}
 	switch {
-	case statusSet && (removeSet || req.dryRun || len(names) > 0 || req.scopeSet || projectSet):
+	case statusSet && (removeSet || refreshSet || req.dryRun || len(names) > 0 || req.scopeSet || projectSet || req.exe != ""):
 		return nil, false, usageError{"--status takes no other arguments"}
 	case statusSet:
 		req.mode = modeStatus
 		return req, false, nil
+	case refreshSet && (removeSet || len(names) > 0 || req.scopeSet || projectSet || req.exe != ""):
+		return nil, false, usageError{"--refresh takes only --dry-run; it refreshes every recorded wiring as it was made"}
+	case refreshSet:
+		req.mode = modeRefresh
+		return req, false, nil
+	case removeSet && req.exe != "":
+		return nil, false, usageError{"--exe applies only when wiring; --remove reverses what was recorded"}
 	case removeSet:
 		req.mode = modeRemove
 	}
@@ -247,7 +312,7 @@ func CLI(args []string, stdout, stderr io.Writer, version string) int {
 		fmt.Fprintf(stderr, "wire: %v\n\n%s", err, usage)
 		return 2
 	}
-	e, err := newEnv(version, stdout, stderr)
+	e, err := newEnv(version, stdout, stderr, req.exe)
 	if err != nil {
 		fmt.Fprintf(stderr, "wire: %v\n", err)
 		return 1
@@ -257,6 +322,8 @@ func CLI(args []string, stdout, stderr io.Writer, version string) int {
 		return e.status()
 	case modeRemove:
 		return e.remove(req)
+	case modeRefresh:
+		return e.refresh(req)
 	default:
 		return e.install(req)
 	}
@@ -388,6 +455,86 @@ func (e *env) remove(req *request) int {
 		fmt.Fprintf(e.out, "%s: removed\n", label)
 	}
 	return code
+}
+
+// refresh re-applies every recorded wiring with this facet: the skills,
+// agent and MCP registration move to this version, exactly as `facet wire
+// <cli>` would install them. The installer runs it after every update and
+// rollback, so the Bundle in each CLI always matches the active Toolkit.
+// A wiring made with --exe keeps its executable.
+func (e *env) refresh(req *request) int {
+	reg, err := LoadRegistry(e.registryPath())
+	if err != nil {
+		fmt.Fprintf(e.errOut, "wire: %v\n", err)
+		return 1
+	}
+	if len(reg.Wirings) == 0 {
+		fmt.Fprintln(e.out, "No wirings recorded; nothing to refresh.")
+		return 0
+	}
+	if req.dryRun {
+		fmt.Fprintln(e.out, "Dry run: nothing will be changed.")
+	}
+	// Applying a plan replaces records in reg, so walk a snapshot.
+	recorded := append([]*Wiring(nil), reg.Wirings...)
+	code := 0
+	for _, w := range recorded {
+		we := *e
+		if w.ExplicitExecutable {
+			we.exe, we.explicitExe = w.Executable, true
+		}
+		label := w.label()
+		if w.Scope == string(bundle.ScopeProject) {
+			if info, err := os.Stat(w.Project); err != nil || !info.IsDir() {
+				fmt.Fprintf(e.errOut, "%s: the project directory is gone; remove the wiring with `%s`\n", label, removeCommand(w))
+				code = 1
+				continue
+			}
+		}
+		target, err := bundle.ParseTargets(w.CLI)
+		if err != nil || len(target) != 1 {
+			fmt.Fprintf(e.errOut, "%s: not a CLI this facet wires; remove the wiring with `%s`\n", label, removeCommand(w))
+			code = 1
+			continue
+		}
+		p := we.planInstall(reg, target[0], bundle.Scope(w.Scope), w.Project)
+		if len(p.problems) > 0 {
+			fmt.Fprintf(e.errOut, "%s: cannot refresh; nothing of it was changed:\n", label)
+			for _, problem := range p.problems {
+				fmt.Fprintf(e.errOut, "  - %s\n", problem)
+			}
+			code = 1
+			continue
+		}
+		if !p.changed(&we) {
+			fmt.Fprintf(e.out, "%s: up to date (facet v%s)\n", label, we.version)
+			continue
+		}
+		we.printPlan(p)
+		if req.dryRun {
+			continue
+		}
+		before := len(p.mcp.warnings)
+		if err := we.applyInstall(reg, p); err != nil {
+			fmt.Fprintf(e.errOut, "%s: %v\n", label, err)
+			code = 1
+			continue
+		}
+		for _, warning := range p.mcp.warnings[before:] {
+			fmt.Fprintf(e.errOut, "  warning: %s\n", warning)
+		}
+		fmt.Fprintf(e.out, "%s: refreshed to facet v%s\n", label, we.version)
+	}
+	return code
+}
+
+// removeCommand is the command that reverses w.
+func removeCommand(w *Wiring) string {
+	cmd := "facet wire --remove " + w.CLI
+	if w.Scope == string(bundle.ScopeProject) {
+		cmd += " --scope project --project " + commandLine([]string{w.Project})
+	}
+	return cmd
 }
 
 // temporaryExecutable reports whether the registered executable lives in the

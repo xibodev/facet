@@ -97,7 +97,7 @@ func doOpenAITTSContext(ctx context.Context, op string, data []byte) (any, []str
 
 	outPath := r.OutputPath
 	if outPath == "" {
-		outPath = fmt.Sprintf("openai_tts.%s", fmtType)
+		outPath = defaultOutput(ctx, fmt.Sprintf("openai_tts.%s", fmtType))
 	}
 	if err := outputPath(outPath, true, false); err != nil {
 		return nil, nil, err
@@ -223,7 +223,7 @@ func doElevenLabsTTSContext(ctx context.Context, op string, data []byte) (any, [
 		if strings.Contains(outFormat, "pcm") || strings.Contains(outFormat, "wav") {
 			ext = "wav"
 		}
-		outPath = fmt.Sprintf("elevenlabs_tts.%s", ext)
+		outPath = defaultOutput(ctx, fmt.Sprintf("elevenlabs_tts.%s", ext))
 	}
 	if err := outputPath(outPath, true, false); err != nil {
 		return nil, nil, err
@@ -323,7 +323,7 @@ func doPiperTTSContext(parent context.Context, op string, data []byte) (any, []s
 
 	outPath := r.OutputPath
 	if outPath == "" {
-		outPath = "piper_tts.wav"
+		outPath = defaultOutput(parent, "piper_tts.wav")
 	}
 	if err := outputPath(outPath, true, false); err != nil {
 		return nil, nil, err

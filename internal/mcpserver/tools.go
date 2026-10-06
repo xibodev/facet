@@ -261,11 +261,26 @@ func methodIDs() []string {
 
 // runFacetTool runs one registry tool with the request's context, so a
 // client's cancellation, or its hanging up, kills the run.
+//
+// A tool that may write runs with the allowed root as its working folder, so
+// a default output (a file the tool names itself when the request names none)
+// lands inside the root like every path the request names, never in the
+// server's own working directory.
 func (s *server) runFacetTool(name string) operation {
 	return func(ctx context.Context, req *mcp.CallToolRequest) outcome {
-		data, refused := s.facetRequest(ctx, req.Session, name, "run", req.Params.Arguments)
+		root := s.lazyRoot(ctx, req.Session)
+		data, refused := s.facetRequest(root, name, "run", req.Params.Arguments)
 		if refused != nil {
 			return *refused
+		}
+		if !toolbox.EffectsFor(name).ReadOnly {
+			dir, err := root()
+			if err != nil {
+				return failure(name, "run", "root_unavailable",
+					"the allowed root for this tool's outputs is unavailable: "+err.Error()+
+						" (facet mcp --root DIR sets the root explicitly)", nil)
+			}
+			ctx = toolbox.WithWorkDir(ctx, dir)
 		}
 		envelope := s.run(ctx, name, data)
 		return outcome{envelope, envelope.OK}
@@ -308,7 +323,7 @@ func (s *server) estimate(ctx context.Context, req *mcp.CallToolRequest) outcome
 	if !ok {
 		return unknownTool(in.Tool, "estimate")
 	}
-	data, refused := s.facetRequest(ctx, req.Session, tool, "estimate", in.Arguments)
+	data, refused := s.facetRequest(s.lazyRoot(ctx, req.Session), tool, "estimate", in.Arguments)
 	if refused != nil {
 		return *refused
 	}

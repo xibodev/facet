@@ -1,7 +1,9 @@
 **
 !go.mod
 !go.sum
+!package.json
 !install.sh
+!install.ps1
 !installer/
 !installer/**
 !LICENSE
@@ -13,10 +15,6 @@
 !cmd/**
 !internal/
 !internal/**
-!pkg/
-!pkg/**
-!web/
-!web/**
 !skills/
 !skills/**
 !packs/

@@ -3,9 +3,11 @@
 #
 # Installs one Facet runtime per user under ~/.facet/runtimes/<version>-<os>-<arch>,
 # verifies it, activates it through the ~/.facet/current symbolic link and adds
-# ~/.facet/current/bin to the user PATH. Wiring Facet into agentic CLIs is a
-# separate, explicit step (`facet wire`), offered at the end. Nothing here edits
-# project files or CLI instruction files.
+# ~/.facet/current/bin to the user PATH. FACET_HOME, when set, replaces ~/.facet.
+# Wiring Facet into agentic CLIs is a separate, explicit step (`facet wire`),
+# offered at the end; wirings already recorded are refreshed to the active
+# runtime after every install, update and rollback. Nothing here edits project
+# files or CLI instruction files.
 set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 MANIFEST="$SCRIPT_DIR/installer/manifest.tsv"
@@ -77,7 +79,15 @@ absolute() { case "$1" in /*) printf '%s' "$1";; *) printf '%s/%s' "$PWD" "$1";;
 if [[ -n "$ARCHIVE" ]]; then ARCHIVE=$(absolute "$ARCHIVE"); SUMS=$(absolute "$SUMS"); fi
 if [[ -n "$PROJECT" ]]; then PROJECT=$(absolute "$PROJECT"); fi
 
-FACET_HOME_DIR="$HOME/.facet"
+# FACET_HOME moves Facet's home folder (runtimes, current, wiring record). It is
+# made absolute once and handed to every facet this script runs, so they agree.
+if [[ -n "${FACET_HOME:-}" ]]; then
+    FACET_HOME_DIR=$(absolute "$FACET_HOME"); export FACET_HOME="$FACET_HOME_DIR"
+else
+    FACET_HOME_DIR="$HOME/.facet"
+fi
+# Facet 1.x kept its releases in ~/.facet whatever FACET_HOME says.
+LEGACY_HOME="$HOME/.facet"
 RUNTIMES="$FACET_HOME_DIR/runtimes"
 CURRENT="$FACET_HOME_DIR/current"
 STATE_FILE="$FACET_HOME_DIR/installer.json"
@@ -256,11 +266,22 @@ activate() {
 }
 v1_notice() {
     local d
-    for d in "$FACET_HOME_DIR"/releases/1.*-*; do
+    for d in "$LEGACY_HOME"/releases/1.*-*; do
         if [[ -d "$d" ]]; then
             printf '%s\n' 'Facet v1 project integrations are separate; remove them with the v1.1.0 installer --action uninstall in each project.'
             return 0
         fi
+    done
+}
+prune_runtimes() {
+    # One earlier runtime is kept for rollback; older ones are removed.
+    local keep=$1 previous=$2 dir name
+    for dir in "$RUNTIMES"/*; do
+        [[ -d "$dir" && ! -L "$dir" ]] || continue
+        name=$(basename -- "$dir")
+        [[ "$name" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?-(linux|darwin)-(amd64|arm64)$ ]] || continue
+        [[ "$name" != "$keep" && "$name" != "$previous" ]] || continue
+        if rm -rf -- "$dir"; then printf '  OK Removed older runtime %s\n' "$name"; else printf '  Older runtime %s could not be removed and was kept.\n' "$name"; fi
     done
 }
 
@@ -278,12 +299,18 @@ remove_profile_block() {
     cat "$file.facet-tmp" > "$file"; rm -f -- "$file.facet-tmp"
 }
 add_path() {
-    local file changed=0
+    local file changed=0 line
+    # The default home is written as $HOME so the profile line stays portable;
+    # a FACET_HOME is written as the absolute path it resolved to.
+    line='export PATH="$HOME/.facet/current/bin:$PATH"'
+    if [[ "$FACET_HOME_DIR" != "$HOME/.facet" ]]; then
+        line="export PATH=\"$(printf '%s' "$CURRENT/bin" | sed 's/[\\"$`]/\\&/g'):\$PATH\""
+    fi
     while IFS= read -r file; do
         [[ ! -L "$file" ]] || { printf '  Skipped linked profile %s\n' "$file"; continue; }
         if [[ -f "$file" ]] && grep -qxF "$PROFILE_START" "$file"; then continue; fi
-        printf '\n%s\nexport PATH="$HOME/.facet/current/bin:$PATH"\n%s\n' "$PROFILE_START" "$PROFILE_END" >> "$file"
-        printf '  OK Added ~/.facet/current/bin to PATH in %s\n' "$file"; changed=1
+        printf '\n%s\n%s\n%s\n' "$PROFILE_START" "$line" "$PROFILE_END" >> "$file"
+        printf '  OK Added %s to PATH in %s\n' "$CURRENT/bin" "$file"; changed=1
     done < <(profile_files)
     [[ $changed == 0 ]] || printf '%s\n' '  Open a new terminal to use the facet command.'
 }
@@ -304,7 +331,7 @@ wire_scope_args() {
     if [[ "$1" == project ]]; then printf '%s\n' --scope project --project "$2"; else printf '%s\n' --scope user; fi
 }
 recorded_wire_groups() {
-    # Prints "scope<TAB>project" per recorded group from ~/.facet/wiring.json.
+    # Prints "scope<TAB>project" per recorded group from facet wire's registry.
     [[ -f "$WIRING_FILE" ]] || return 0
     if command -v python3 >/dev/null; then
         python3 - "$WIRING_FILE" <<'PY'
@@ -320,6 +347,15 @@ PY
     else
         printf 'user\t\n'
     fi
+}
+refresh_wirings() {
+    # facet wire registers current/bin/facet, so every wiring follows the
+    # active runtime; only the skills it copied can be older. Refreshing them
+    # keeps each CLI's Facet guidance at the active runtime's version. Files a
+    # person changed are never overwritten: facet wire reports them.
+    [[ -f "$WIRING_FILE" ]] || return 0
+    section 'Refresh wirings'
+    run_wire "$CURRENT/bin/facet" --refresh
 }
 
 # --------------------------------------------------------- system packages
@@ -410,9 +446,11 @@ do_rollback() {
     if [[ $VERSION_EXPLICIT == 1 ]]; then target="$VERSION-$OS-$ARCH"; else target=$(read_state previous); fi
     [[ -n "$target" && "$target" != "$active" ]] || die 'No previous Facet runtime is installed to roll back to.'
     runtime_record_ok "$target" || die "Runtime $target is not installed."
+    [[ $("$(runtime_dir "$target")/bin/facet" version 2>/dev/null) == "facet v${target%-$OS-$ARCH}" ]] || die "Runtime $target does not run; reinstall it."
     activate "$target"
     write_state "$target" "$active"
     printf '  OK Active runtime: %s\n' "$target"
+    refresh_wirings || die 'Facet was rolled back, but refreshing the recorded wirings failed; see the output above.'
 }
 
 do_install() {
@@ -475,10 +513,10 @@ do_install() {
         STAGE=$(mktemp -d "$RUNTIMES/.facet-stage-XXXXXX")
         expand_zip "$ARCHIVE" "$STAGE"
         local required
-        for required in bin/facet bundle/remotion-composer/package-lock.json; do [[ -f "$STAGE/$required" ]] || die "Release missing $required"; done
+        for required in bin/facet dependencies/remotion-composer/package-lock.json; do [[ -f "$STAGE/$required" ]] || die "Release missing $required"; done
         chmod +x "$STAGE/bin/facet"
         [[ $("$STAGE/bin/facet" version) == "facet v$VERSION" ]] || die 'Binary version mismatch.'
-        (cd "$STAGE" && find bin bundle -type f | LC_ALL=C sort | while IFS= read -r f; do "${SHA_CMD[@]}" "$f"; done) > "$STAGE/.facet-files.sha256"
+        (cd "$STAGE" && find bin dependencies -type f | LC_ALL=C sort | while IFS= read -r f; do "${SHA_CMD[@]}" "$f"; done) > "$STAGE/.facet-files.sha256"
         # Components are installed at the final path: Python virtual
         # environments and npm launchers record absolute paths.
         mv -- "$STAGE" "$runtime"; STAGE=''; NEW_RUNTIME=$runtime
@@ -531,7 +569,9 @@ do_install() {
         if has remotion; then
             video="$dir/render.mp4"
             printf '{"width":320,"height":180,"fps":24,"duration_seconds":1,"output_path":%s,"cuts":[{"type":"text_card","text":"Facet setup","in_seconds":0,"out_seconds":1}]}\n' "$(json_string "$video")" > "$dir/render.json"
-            (cd "$dir" && "$runtime/bin/facet" tools run video_compose --input "$dir/render.json")
+            # The runtime's own composer, beside its executable, is what
+            # renders: a development override must not redirect the check.
+            (cd "$dir" && env -u FACET_REMOTION_COMPOSER "$runtime/bin/facet" tools run video_compose --input "$dir/render.json")
         fi
         ffprobe -v error -show_streams "$video"; ffmpeg -v error -i "$video" -f null -
         if has piper; then
@@ -558,7 +598,7 @@ do_install() {
     printf '{\n  "schema": 1,\n  "version": %s,\n  "os": %s,\n  "arch": %s,\n  "components": [%s],\n  "verified": %s,\n  "archive_sha256": %s,\n  "installed_at": %s\n}\n' \
         "$(json_string "$VERSION")" "$(json_string "$OS")" "$(json_string "$ARCH")" "$list" "$verified" "$(json_string "$archive_hash")" "$(json_string "$(utc_now)")" > "$runtime/components.json"
 
-    local active previous
+    local active previous refresh_failed=0
     active=$(active_runtime)
     activate "$runtime_name"
     previous=$(read_state previous)
@@ -566,7 +606,9 @@ do_install() {
     write_state "$runtime_name" "$previous"
     COMMITTED=1
     printf '  OK Active runtime: %s\n' "$runtime_name"
-    if [[ $NO_PATH != 1 ]]; then add_path; else printf '%s\n' '  PATH unchanged (--no-path). Run the command as ~/.facet/current/bin/facet'; fi
+    prune_runtimes "$runtime_name" "$previous"
+    if [[ $NO_PATH != 1 ]]; then add_path; else printf '  PATH unchanged (--no-path). Run the command as %s\n' "$CURRENT/bin/facet"; fi
+    refresh_wirings || refresh_failed=1
 
     section 'Wire agentic CLIs'
     local exe="$CURRENT/bin/facet" detected='' cli
@@ -590,6 +632,7 @@ do_install() {
         printf '%s\n' '  Not wired. Later: facet wire <claude|codex|copilot|opencode|all> [--scope user|project]'
     fi
     v1_notice
+    [[ $refresh_failed == 0 ]] || die 'Facet is installed and active, but refreshing the recorded wirings failed; see the output above.'
     printf '\nFacet v%s is ready.\n  Check it: facet doctor\n' "$VERSION"
 }
 

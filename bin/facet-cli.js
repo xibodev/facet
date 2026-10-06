@@ -3,14 +3,11 @@
 
 // npm supplies this launcher, not the Facet runtime. It runs an existing native
 // `facet` binary and never installs one. It never resolves `facet` through PATH
-// (that would find this launcher again) and never runs another platform's binary.
+// (that would find this launcher again).
 const { spawn } = require('child_process');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
-
-const GOOS = { win32: 'windows', darwin: 'darwin', linux: 'linux' };
-const GOARCH = { x64: 'amd64', arm64: 'arm64' };
 
 const MISSING = [
   'Facet native binary not found. The npm package is only a launcher; install the Facet runtime once per user:',
@@ -19,19 +16,17 @@ const MISSING = [
   'Or set FACET_BIN to an existing facet executable.',
 ].join('\n');
 
-// Search order: an explicit FACET_BIN, the active user runtime installed by the
-// Facet installer, then a binary for exactly this platform shipped beside this file.
+// Search order: an explicit FACET_BIN, then the active runtime the Facet
+// installer manages in Facet's home folder: FACET_HOME when set, else ~/.facet.
 function candidates() {
-  const platform = os.platform();
-  const exe = platform === 'win32' ? '.exe' : '';
+  const exe = os.platform() === 'win32' ? '.exe' : '';
   const list = [];
   if (process.env.FACET_BIN) list.push(process.env.FACET_BIN);
-  let home = '';
-  try { home = os.homedir(); } catch { /* No resolvable home directory. */ }
-  if (home) list.push(path.join(home, '.facet', 'current', 'bin', `facet${exe}`));
-  const goos = GOOS[platform];
-  const goarch = GOARCH[os.arch()];
-  if (goos && goarch) list.push(path.join(__dirname, `facet-${goos}-${goarch}${exe}`));
+  let facetHome = (process.env.FACET_HOME || '').trim();
+  if (!facetHome) {
+    try { facetHome = path.join(os.homedir(), '.facet'); } catch { /* No resolvable home directory. */ }
+  }
+  if (facetHome) list.push(path.join(facetHome, 'current', 'bin', `facet${exe}`));
   return list;
 }
 

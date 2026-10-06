@@ -214,6 +214,7 @@ func newSandbox(t *testing.T, clis ...string) *sandbox {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(s.home, ".config"))
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	t.Setenv("CODEX_HOME", "")
+	t.Setenv("FACET_HOME", "")
 	t.Setenv("PATH", s.bin)
 	t.Setenv("FACET_WIRE_FAKE_LOG", s.log)
 	t.Setenv("FACET_WIRE_FAKE_FAIL", "")
@@ -375,6 +376,71 @@ func loadRegistry(t *testing.T, home string) *Registry {
 	return reg
 }
 
+// expectAskRules checks that every CLI that has an approval setting asks
+// before each tool that may charge.
+func expectAskRules(t *testing.T, s *sandbox, scope bundle.Scope, project string) {
+	t.Helper()
+	paid := paidTools()
+	if len(paid) == 0 {
+		t.Fatal("no tool declares may_charge")
+	}
+	claudeFile := filepath.Join(s.home, ".claude", "settings.json")
+	codexFile := filepath.Join(s.home, ".codex", "config.toml")
+	opencodeFile := filepath.Join(s.home, ".config", "opencode", "opencode.json")
+	if scope == bundle.ScopeProject {
+		claudeFile = filepath.Join(project, ".claude", "settings.json")
+		codexFile = filepath.Join(project, ".codex", "config.toml")
+		opencodeFile = filepath.Join(project, "opencode.json")
+	}
+
+	ask := map[string]bool{}
+	if list, ok := dig(readJSON(t, claudeFile), "permissions", "ask").([]any); ok {
+		for _, item := range list {
+			ask[fmt.Sprint(item)] = true
+		}
+	}
+	codex, err := os.ReadFile(codexFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(codex), "tool_timeout_sec = 600") {
+		t.Errorf("%s sets no MCP call limit for facet:\n%s", codexFile, codex)
+	}
+	data, err := os.ReadFile(opencodeFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := parseJSONC(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	perm, _ := root.member("permission")
+	if perm == nil || perm.value.kind != '{' {
+		t.Fatalf("%s has no permission object:\n%s", opencodeFile, data)
+	}
+	members := perm.value.members
+	if len(members) < len(paid) {
+		t.Fatalf("%s permission = %s", opencodeFile, data[perm.value.start:perm.value.end])
+	}
+	// OpenCode lets the last matching rule win: Facet's rules come last.
+	last := map[string]string{}
+	for _, m := range members[len(members)-len(paid):] {
+		value, _ := stringValue(data, m.value)
+		last[m.key] = value
+	}
+	for _, tool := range paid {
+		if !ask["mcp__facet__"+tool] || !ask["Bash(facet tools run "+tool+" *)"] {
+			t.Errorf("claude does not ask before %s: %v", tool, ask)
+		}
+		if !strings.Contains(string(codex), "[mcp_servers.facet.tools."+tool+"]\napproval_mode = \"prompt\"") {
+			t.Errorf("codex does not ask before %s:\n%s", tool, codex)
+		}
+		if last["facet_"+tool] != "ask" {
+			t.Errorf("opencode does not ask before %s: %v", tool, last)
+		}
+	}
+}
+
 func TestWireUserScopeUsesEachCLIsNativeLocationsAndRegistration(t *testing.T) {
 	s := newSandbox(t, "claude", "codex")
 	out := mustRun(t, "all")
@@ -401,10 +467,9 @@ func TestWireUserScopeUsesEachCLIsNativeLocationsAndRegistration(t *testing.T) {
 	calls := s.calls(t)
 	want := map[string][]string{
 		"claude": {"mcp", "add", "--scope", "user", "--transport", "stdio", "facet", "--", s.exe, "mcp"},
-		"codex":  {"mcp", "add", "facet", "--", s.exe, "mcp"},
 	}
-	if len(calls) != 2 {
-		t.Fatalf("CLI calls = %+v, want one registration each for claude and codex", calls)
+	if len(calls) != 1 {
+		t.Fatalf("CLI calls = %+v, want one registration for claude; codex is registered by its config block", calls)
 	}
 	for _, c := range calls {
 		if strings.Join(c.Args, "\x00") != strings.Join(want[c.CLI], "\x00") {
@@ -413,6 +478,13 @@ func TestWireUserScopeUsesEachCLIsNativeLocationsAndRegistration(t *testing.T) {
 	}
 	if got := dig(readJSON(t, filepath.Join(s.home, ".claude.json")), "mcpServers", "facet", "command"); got != s.exe {
 		t.Errorf("claude registration command = %v", got)
+	}
+	codexConfig, err := os.ReadFile(filepath.Join(s.home, ".codex", "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := inspectTOMLServer(string(codexConfig), "facet"); !st.parsed || st.command != s.exe || strings.Join(st.args, " ") != "mcp" {
+		t.Errorf("codex user config = %q", codexConfig)
 	}
 	copilot := readJSON(t, filepath.Join(s.home, ".copilot", "mcp-config.json"))
 	if dig(copilot, "mcpServers", "facet", "command") != s.exe || dig(copilot, "mcpServers", "facet", "type") != "local" {
@@ -440,9 +512,10 @@ func TestWireUserScopeUsesEachCLIsNativeLocationsAndRegistration(t *testing.T) {
 			}
 		}
 	}
-	if methods["claude"] != MethodCommand || methods["codex"] != MethodCommand || methods["copilot"] != MethodJSON || methods["opencode"] != MethodJSON {
+	if methods["claude"] != MethodCommand || methods["codex"] != MethodTOML || methods["copilot"] != MethodJSON || methods["opencode"] != MethodJSON {
 		t.Errorf("registration methods = %v", methods)
 	}
+	expectAskRules(t, s, bundle.ScopeUser, "")
 
 	// Facet never writes instruction files.
 	for name := range tree(t, s.home) {
@@ -514,6 +587,7 @@ func TestWireProjectScope(t *testing.T) {
 	if dig(readJSON(t, filepath.Join(s.project, "opencode.json")), "mcp", "facet", "enabled") != true {
 		t.Error("OpenCode project registration missing")
 	}
+	expectAskRules(t, s, bundle.ScopeProject, s.project)
 	// Only the registry changes in the home directory.
 	homeAfter := tree(t, s.home)
 	for name := range homeAfter {
@@ -549,7 +623,8 @@ func TestDryRunHasNoSideEffects(t *testing.T) {
 		"Dry run",
 		"create",
 		commandLine([]string{"claude", "mcp", "add", "--scope", "user", "--transport", "stdio", "facet", "--", s.exe, "mcp"}),
-		commandLine([]string{"codex", "mcp", "add", "facet", "--", s.exe, "mcp"}),
+		filepath.Join(s.home, ".codex", "config.toml"),
+		filepath.Join(s.home, ".claude", "settings.json") + " (ask before each of",
 		filepath.Join(s.home, ".copilot", "mcp-config.json"),
 		filepath.Join(s.home, ".config", "opencode", "opencode.json"),
 		RegistryPath(s.home),
@@ -612,7 +687,9 @@ func TestRemoveReversesOnlyRecordedUnmodifiedItems(t *testing.T) {
 	for _, gone := range []string{
 		filepath.Join(s.home, ".claude", "skills", "facet"),
 		filepath.Join(s.home, ".claude", "agents"),
+		filepath.Join(s.home, ".claude", "settings.json"),
 		filepath.Join(s.home, ".codex", "skills"),
+		filepath.Join(s.home, ".codex", "config.toml"),
 		filepath.Join(s.home, ".copilot", "skills"),
 		filepath.Join(s.home, ".copilot", "agents"),
 		filepath.Join(s.home, ".config", "opencode", "opencode.json"),
@@ -621,10 +698,6 @@ func TestRemoveReversesOnlyRecordedUnmodifiedItems(t *testing.T) {
 		if _, err := os.Stat(gone); !os.IsNotExist(err) {
 			t.Errorf("%s survived removal", gone)
 		}
-	}
-	// The CLI's own configuration file stays; only the registration left it.
-	if st := observeTOMLServer(filepath.Join(s.home, ".codex", "config.toml")); st.present {
-		t.Error("codex registration survived removal")
 	}
 	if dig(readJSON(t, filepath.Join(s.home, ".claude.json")), "mcpServers", "facet") != nil {
 		t.Error("claude registration survived removal")
@@ -636,7 +709,7 @@ func TestRemoveReversesOnlyRecordedUnmodifiedItems(t *testing.T) {
 		}
 	}
 	sort.Strings(removes)
-	if strings.Join(removes, "|") != "claude mcp remove --scope user facet|codex mcp remove facet" {
+	if strings.Join(removes, "|") != "claude mcp remove --scope user facet" {
 		t.Errorf("unregister commands = %v", removes)
 	}
 	if reg := loadRegistry(t, s.home); len(reg.Wirings) != 0 {
@@ -722,11 +795,11 @@ func TestWireRefusesWhatItDoesNotOwn(t *testing.T) {
 	})
 	t.Run("missing CLI", func(t *testing.T) {
 		s := newSandbox(t)
-		_, errOut, code := run(t, "codex")
-		if code != 1 || !strings.Contains(errOut, "codex was not found on PATH") {
+		_, errOut, code := run(t, "claude")
+		if code != 1 || !strings.Contains(errOut, "claude was not found on PATH") {
 			t.Fatalf("exit %d: %s", code, errOut)
 		}
-		if _, err := os.Stat(filepath.Join(s.home, ".codex")); !os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(s.home, ".claude")); !os.IsNotExist(err) {
 			t.Fatal("files were written although the CLI is missing")
 		}
 	})
@@ -967,7 +1040,7 @@ func TestInterruptedRunIsRecoverable(t *testing.T) {
 
 func TestApplyRefusesFilesThatAppearAfterPlanning(t *testing.T) {
 	s := newSandbox(t)
-	e, err := newEnv(testVersion, io.Discard, io.Discard)
+	e, err := newEnv(testVersion, io.Discard, io.Discard, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1042,5 +1115,327 @@ func TestArgumentHandling(t *testing.T) {
 	req, _, err := parseArgs([]string{"--dry-run", "opencode,claude", "--project=" + s.project})
 	if err != nil || !req.dryRun || req.scope != bundle.ScopeProject || len(req.targets) != 2 {
 		t.Fatalf("parseArgs = %+v, %v", req, err)
+	}
+	for name, args := range map[string][]string{
+		"refresh with CLI":     {"--refresh", "claude"},
+		"refresh with scope":   {"--refresh", "--scope", "user"},
+		"refresh with remove":  {"--refresh", "--remove", "claude"},
+		"refresh with exe":     {"--refresh", "--exe", s.exe},
+		"status with refresh":  {"--status", "--refresh"},
+		"status with exe":      {"--status", "--exe", s.exe},
+		"remove with exe":      {"--remove", "claude", "--exe", s.exe},
+		"exe without value":    {"claude", "--exe"},
+		"refresh with a value": {"--refresh=yes"},
+	} {
+		if _, errOut, code := run(t, args...); code != 2 || !strings.Contains(errOut, "Usage:") {
+			t.Errorf("%s: exit %d: %s", name, code, errOut)
+		}
+	}
+	req, _, err = parseArgs([]string{"--refresh", "--dry-run"})
+	if err != nil || req.mode != modeRefresh || !req.dryRun {
+		t.Fatalf("parseArgs(--refresh --dry-run) = %+v, %v", req, err)
+	}
+}
+
+// FACET_HOME moves the wiring record and the stable executable together, so
+// a second Toolkit (the Facet App's) keeps its own wirings apart from the
+// user-wide one.
+func TestFacetHomeMovesTheRegistryAndTheStableExecutable(t *testing.T) {
+	s := newSandbox(t)
+	moved := filepath.Join(s.root, "app", "facet-home")
+	name := filepath.Base(s.exe)
+	appExe := filepath.Join(moved, "current", "bin", name)
+	if err := os.MkdirAll(filepath.Dir(appExe), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(appExe, []byte("app facet"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FACET_HOME", moved)
+	mustRun(t, "copilot")
+
+	if _, err := os.Stat(filepath.Join(moved, "wiring.json")); err != nil {
+		t.Fatalf("the wiring was not recorded under FACET_HOME: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(s.home, ".facet", "wiring.json")); !os.IsNotExist(err) {
+		t.Fatal("the user-wide wiring record was written although FACET_HOME is set")
+	}
+	if got := dig(readJSON(t, filepath.Join(s.home, ".copilot", "mcp-config.json")), "mcpServers", "facet", "command"); got != appExe {
+		t.Fatalf("registered %v, want %s", got, appExe)
+	}
+}
+
+// --exe registers a chosen executable; it is the wiring's own, so status does
+// not call it drift and --refresh keeps it.
+func TestExplicitExecutableIsKeptAndIsNotDrift(t *testing.T) {
+	s := newSandbox(t)
+	chosen := filepath.Join(s.root, "app", "bin", filepath.Base(s.exe))
+	if err := os.MkdirAll(filepath.Dir(chosen), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(chosen, []byte("app facet"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, errOut, code := run(t, "copilot", "--exe", filepath.Join(s.root, "missing", "facet")); code != 1 || !strings.Contains(errOut, "--exe") {
+		t.Fatalf("a missing --exe: exit %d: %s", code, errOut)
+	}
+	if _, err := os.Stat(filepath.Join(s.home, ".copilot")); !os.IsNotExist(err) {
+		t.Fatal("a missing --exe still wired")
+	}
+
+	if _, errOut, code := runVersion(t, "1.9.0", "copilot", "--exe", chosen); code != 0 {
+		t.Fatalf("wire --exe: exit %d: %s", code, errOut)
+	}
+	config := filepath.Join(s.home, ".copilot", "mcp-config.json")
+	if got := dig(readJSON(t, config), "mcpServers", "facet", "command"); got != chosen {
+		t.Fatalf("registered %v, want %s", got, chosen)
+	}
+	reg := loadRegistry(t, s.home)
+	if len(reg.Wirings) != 1 || !reg.Wirings[0].ExplicitExecutable {
+		t.Fatalf("registry = %+v", reg.Wirings)
+	}
+	if out, _, _ := runVersion(t, "1.9.0", "--status"); strings.Contains(out, "drift") {
+		t.Errorf("an explicit executable is reported as drift:\n%s", out)
+	}
+
+	out := mustRun(t, "--refresh")
+	if !strings.Contains(out, "refreshed to facet v"+testVersion) {
+		t.Fatalf("refresh output:\n%s", out)
+	}
+	if got := dig(readJSON(t, config), "mcpServers", "facet", "command"); got != chosen {
+		t.Fatalf("refresh replaced the explicit executable with %v", got)
+	}
+	if out := mustRun(t, "--status"); strings.Contains(out, "drift") {
+		t.Errorf("status after refresh:\n%s", out)
+	}
+	// Removing the chosen executable is drift, and the fix keeps --exe.
+	if err := os.Remove(chosen); err != nil {
+		t.Fatal(err)
+	}
+	if out := mustRun(t, "--status"); !strings.Contains(out, "no longer exists") || !strings.Contains(out, "--exe") {
+		t.Errorf("status with the chosen executable gone:\n%s", out)
+	}
+}
+
+// --refresh brings every recorded wiring to the running version, leaves what
+// a person changed alone, and keeps going past a wiring it cannot refresh.
+func TestRefreshBringsEveryWiringToThisVersion(t *testing.T) {
+	s := newSandbox(t, "claude")
+	for _, cli := range []string{"copilot", "opencode", "claude"} {
+		if _, errOut, code := runVersion(t, "1.9.0", cli); code != 0 {
+			t.Fatalf("wire %s: exit %d: %s", cli, code, errOut)
+		}
+	}
+	if out := mustRun(t, "--status"); !strings.Contains(out, "wired by facet v1.9.0; this is facet v"+testVersion) {
+		t.Fatalf("status does not report the older version:\n%s", out)
+	}
+
+	// A person edited one of opencode's skills: that wiring must not be
+	// touched, and the others still refresh.
+	edited := filepath.Join(s.home, ".config", "opencode", "skills", "facet", "SKILL.md")
+	if err := os.WriteFile(edited, []byte("my notes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := len(s.calls(t))
+	out, errOut, code := run(t, "--refresh")
+	if code != 1 || !strings.Contains(errOut, "opencode (user): cannot refresh") {
+		t.Fatalf("refresh with an edited file: exit %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
+	}
+	if data, _ := os.ReadFile(edited); string(data) != "my notes" {
+		t.Fatal("refresh overwrote an edited file")
+	}
+	// The registration still runs the same executable, so no CLI is called.
+	if calls := s.calls(t); len(calls) != before {
+		t.Errorf("refresh re-registered an unchanged MCP server: %+v", calls[before:])
+	}
+	for _, w := range loadRegistry(t, s.home).Wirings {
+		want := testVersion
+		if w.CLI == "opencode" {
+			want = "1.9.0"
+		}
+		if w.FacetVersion != want || w.Pending {
+			t.Errorf("%s: facet_version %s pending %v, want %s", w.CLI, w.FacetVersion, w.Pending, want)
+		}
+	}
+
+	if err := os.Remove(edited); err != nil {
+		t.Fatal(err)
+	}
+	out = mustRun(t, "--refresh")
+	if !strings.Contains(out, "opencode (user): refreshed") || !strings.Contains(out, "copilot (user): up to date") {
+		t.Fatalf("second refresh:\n%s", out)
+	}
+	if status := mustRun(t, "--status"); strings.Contains(status, "drift") {
+		t.Errorf("drift after refresh:\n%s", status)
+	}
+	expectFiles(t, filepath.Join(s.home, ".config", "opencode"), bundle.TargetOpenCode)
+}
+
+func TestRefreshDryRunAndEmptyRegistry(t *testing.T) {
+	s := newSandbox(t)
+	if out := mustRun(t, "--refresh"); !strings.Contains(out, "nothing to refresh") {
+		t.Fatalf("empty refresh:\n%s", out)
+	}
+	if _, errOut, code := runVersion(t, "1.9.0", "copilot"); code != 0 {
+		t.Fatal(errOut)
+	}
+	out := mustRun(t, "--refresh", "--dry-run")
+	if !strings.Contains(out, "Dry run") {
+		t.Fatalf("dry run output:\n%s", out)
+	}
+	if w := loadRegistry(t, s.home).Wirings[0]; w.FacetVersion != "1.9.0" {
+		t.Fatalf("a dry run changed the record: %+v", w)
+	}
+}
+
+func TestRefreshReportsAProjectThatIsGone(t *testing.T) {
+	s := newSandbox(t)
+	mustRun(t, "copilot", "--scope", "project")
+	if err := os.Chdir(s.root); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(s.project); err != nil {
+		t.Fatal(err)
+	}
+	_, errOut, code := run(t, "--refresh")
+	if code != 1 || !strings.Contains(errOut, "project directory is gone") || !strings.Contains(errOut, "facet wire --remove copilot --scope project --project") {
+		t.Fatalf("refresh with a missing project: exit %d: %s", code, errOut)
+	}
+}
+
+// Rules the person wrote stay theirs: facet wire adds only what is missing,
+// records only what it added, and --remove restores their files exactly.
+func TestAskRulesKeepWhatThePersonWrote(t *testing.T) {
+	s := newSandbox(t, "claude")
+	claudeSettings := filepath.Join(s.home, ".claude", "settings.json")
+	opencodeConfig := filepath.Join(s.home, ".config", "opencode", "opencode.json")
+	claudeOriginal := []byte("{\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(git *)\"\n    ],\n    \"ask\": [\n      \"mcp__facet__sora_video\"\n    ]\n  },\n  \"theme\": \"dark\"\n}\n")
+	opencodeOriginal := []byte("{\n  // mine\n  \"permission\": {\n    \"facet_*\": \"allow\",\n    \"facet_kling_video\": \"deny\"\n  }\n}\n")
+	for path, content := range map[string][]byte{claudeSettings: claudeOriginal, opencodeConfig: opencodeOriginal} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, content, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out := mustRun(t, "claude,opencode")
+	if !strings.Contains(out, `permission.facet_kling_video in `) || !strings.Contains(out, `is already "deny"`) {
+		t.Errorf("the rule the person set is not reported:\n%s", out)
+	}
+	reg := loadRegistry(t, s.home)
+	for _, w := range reg.Wirings {
+		if w.Rules == nil {
+			t.Fatalf("%s: no rules recorded", w.CLI)
+		}
+		for _, rule := range w.Rules.Added {
+			if rule == "mcp__facet__sora_video" || rule == "facet_kling_video" {
+				t.Errorf("%s: recorded the person's own rule %s as facet wire's", w.CLI, rule)
+			}
+		}
+		if w.Rules.CreatedFile || w.Rules.CreatedParent {
+			t.Errorf("%s: claims to have created what existed: %+v", w.CLI, w.Rules)
+		}
+	}
+	data, _ := os.ReadFile(opencodeConfig)
+	if !strings.Contains(string(data), "// mine") || !strings.Contains(string(data), `"facet_kling_video": "deny"`) {
+		t.Errorf("the person's OpenCode settings changed:\n%s", data)
+	}
+	if out := mustRun(t, "--status"); strings.Contains(out, "drift") {
+		t.Errorf("drift right after wiring:\n%s", out)
+	}
+
+	mustRun(t, "--remove", "claude,opencode")
+	if data, _ := os.ReadFile(claudeSettings); !bytes.Equal(data, claudeOriginal) {
+		t.Errorf("claude settings not restored exactly:\n%s", data)
+	}
+	if data, _ := os.ReadFile(opencodeConfig); !bytes.Equal(data, opencodeOriginal) {
+		t.Errorf("opencode config not restored exactly:\n%s", data)
+	}
+}
+
+// A missing ask rule is drift, and rewiring puts it back.
+func TestMissingAskRuleIsDrift(t *testing.T) {
+	s := newSandbox(t, "claude")
+	mustRun(t, "claude")
+	settings := filepath.Join(s.home, ".claude", "settings.json")
+	data, err := os.ReadFile(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := strings.Replace(string(data), "\"mcp__facet__sora_video\",", "", 1)
+	if edited == string(data) {
+		t.Fatalf("fixture rule not found:\n%s", data)
+	}
+	if err := os.WriteFile(settings, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out := mustRun(t, "--status"); !strings.Contains(out, "ask rules for paid tools are missing") {
+		t.Fatalf("status does not report the missing rule:\n%s", out)
+	}
+	mustRun(t, "claude")
+	if out := mustRun(t, "--status"); strings.Contains(out, "drift") {
+		t.Errorf("drift after rewiring:\n%s", out)
+	}
+	expectClaude := readJSON(t, settings)
+	found := false
+	for _, item := range dig(expectClaude, "permissions", "ask").([]any) {
+		found = found || item == "mcp__facet__sora_video"
+	}
+	if !found {
+		t.Error("rewiring did not put the rule back")
+	}
+}
+
+// OpenCode's permission set to one action for every tool takes no rules; that
+// is noted once, not reported as drift forever.
+func TestOpenCodeBlanketPermissionIsANote(t *testing.T) {
+	s := newSandbox(t)
+	config := filepath.Join(s.home, ".config", "opencode", "opencode.json")
+	if err := os.MkdirAll(filepath.Dir(config), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config, []byte("{\"permission\": \"allow\"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := mustRun(t, "opencode")
+	if !strings.Contains(out, "applies one action to every tool") {
+		t.Errorf("the blanket permission is not reported:\n%s", out)
+	}
+	if out := mustRun(t, "--status"); strings.Contains(out, "drift") || !strings.Contains(out, "not added") {
+		t.Errorf("status:\n%s", out)
+	}
+}
+
+// A user wiring an earlier facet wire made with `codex mcp add` keeps that
+// registration rather than being refused for its own table.
+func TestEarlierCodexCommandRegistrationIsKept(t *testing.T) {
+	s := newSandbox(t, "codex")
+	config := filepath.Join(s.home, ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(config), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	table := fmt.Sprintf("[mcp_servers.facet]\ncommand = %s\nargs = [\"mcp\"]\n", tomlString(s.exe))
+	if err := os.WriteFile(config, []byte(table), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	spec := (&env{home: s.home, getenv: os.Getenv, exe: s.exe}).codexSpec()
+	reg := &Registry{Schema: RegistrySchema, Wirings: []*Wiring{{
+		CLI: "codex", Scope: "user", Root: filepath.Join(s.home, ".codex"), FacetVersion: testVersion, Executable: s.exe,
+		MCP: &MCPRecord{Method: MethodCommand, Name: "facet", Command: s.exe, Args: []string{"mcp"}, File: config,
+			CLI: "codex", AddArgv: spec.add, RemoveArgv: spec.remove, Dir: s.home},
+	}}}
+	if err := reg.Save(RegistryPath(s.home)); err != nil {
+		t.Fatal(err)
+	}
+	mustRun(t, "codex")
+	if w := loadRegistry(t, s.home).Wirings[0]; w.MCP.Method != MethodCommand {
+		t.Fatalf("the earlier registration was replaced: %+v", w.MCP)
+	}
+	if data, _ := os.ReadFile(config); string(data) != table {
+		t.Errorf("the earlier registration changed:\n%s", data)
+	}
+	if calls := s.calls(t); len(calls) != 0 {
+		t.Errorf("rewiring an unchanged registration ran codex: %+v", calls)
 	}
 }

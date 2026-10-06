@@ -70,8 +70,8 @@ func projectPathKey(key string) bool {
 }
 
 // rootSource yields the allowed root. Calls resolve it on first use, so a
-// call without path arguments never waits on, or fails for, the client's
-// roots.
+// call that neither names a path nor may write never waits on, or fails for,
+// the client's roots.
 type rootSource func() (string, error)
 
 func fixedRoot(root string) rootSource { return func() (string, error) { return root, nil } }

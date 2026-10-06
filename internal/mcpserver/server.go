@@ -55,7 +55,9 @@ const instructions = "Facet is a stateless media toolbox. Each tool runs one ope
 	"a JSON envelope (ok, result or error, warnings, execution, artifacts) as structured content. " +
 	"Effects are declared in each tool's annotations and _meta.facet (may_charge, network, " +
 	"external_write, deterministic, read_only); approval and consent belong to the harness. " +
-	"Relative paths resolve against the allowed root and paths outside it are refused."
+	"Relative paths resolve against the allowed root, paths outside it are refused, and a " +
+	"default output is written inside it. A call that may outlast this client's MCP time " +
+	"limit (an estimate reports prefer_shell) runs better from a shell: facet tools run."
 
 // Run serves MCP over the given streams (newline-delimited JSON-RPC, as on
 // stdio) until the client disconnects or ctx ends. Both end in-flight runs,
@@ -310,7 +312,7 @@ func execution(tool, op string) toolbox.Execution {
 // with every path argument resolved inside the allowed root. Arguments that
 // are not an object are passed on unchanged, so the tool rejects them in its
 // own words; a missing or null object is an empty request.
-func (s *server) facetRequest(ctx context.Context, ss *mcp.ServerSession, tool, op string, raw json.RawMessage) ([]byte, *outcome) {
+func (s *server) facetRequest(root rootSource, tool, op string, raw json.RawMessage) ([]byte, *outcome) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
 		trimmed = []byte("{}")
@@ -325,7 +327,7 @@ func (s *server) facetRequest(ctx context.Context, ss *mcp.ServerSession, tool, 
 	if !isObject {
 		return trimmed, nil
 	}
-	confined, refusal := confineArguments(s.lazyRoot(ctx, ss), args)
+	confined, refusal := confineArguments(root, args)
 	if refusal != nil {
 		o := failure(tool, op, refusal.code(), refusal.message(), refusal.details())
 		return nil, &o

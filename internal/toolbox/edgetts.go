@@ -72,7 +72,7 @@ func doEdgeTTSContext(ctx context.Context, op string, data []byte) (any, []strin
 		outPath = r.Output
 	}
 	if outPath == "" {
-		outPath = "edge_tts.mp3"
+		outPath = defaultOutput(ctx, "edge_tts.mp3")
 	}
 
 	if op == "estimate" {

@@ -22,6 +22,7 @@ type jnode struct {
 	start   int  // offset of the first byte of the value
 	end     int  // offset one past the last byte
 	members []jmember
+	elems   []jelem // array elements, in order
 }
 
 type jmember struct {
@@ -29,6 +30,12 @@ type jmember struct {
 	keyStart int // offset of the key's opening quote
 	value    *jnode
 	comma    int // offset of the comma after the value, or -1
+}
+
+// jelem is one array element and the comma after it, if any.
+type jelem struct {
+	value *jnode
+	comma int // offset of the comma after the value, or -1
 }
 
 func (n *jnode) member(key string) (*jmember, int) {
@@ -230,16 +237,21 @@ func (p *jparser) array(depth int) (*jnode, error) {
 			n.end = p.pos
 			return n, nil
 		}
-		if _, err := p.value(depth + 1); err != nil {
+		v, err := p.value(depth + 1)
+		if err != nil {
 			return nil, err
 		}
 		if err := p.skip(); err != nil {
 			return nil, err
 		}
+		e := jelem{value: v, comma: -1}
 		if p.pos < len(p.src) && p.src[p.pos] == ',' {
+			e.comma = p.pos
 			p.pos++
+			n.elems = append(n.elems, e)
 			continue
 		}
+		n.elems = append(n.elems, e)
 		if p.pos < len(p.src) && p.src[p.pos] == ']' {
 			p.pos++
 			n.end = p.pos
@@ -575,4 +587,176 @@ func renderJSONDocument(keyPath []string, value any) ([]byte, error) {
 		return nil, err
 	}
 	return append(out, '\n'), nil
+}
+
+// stringValue decodes n when it is a JSON string.
+func stringValue(src []byte, n *jnode) (string, bool) {
+	if n == nil || n.kind != '"' {
+		return "", false
+	}
+	var s string
+	if err := json.Unmarshal(src[n.start:n.end], &s); err != nil {
+		return "", false
+	}
+	return s, true
+}
+
+// jsonText renders v as compact JSON without HTML escaping.
+func jsonText(v any) (string, error) {
+	out, err := marshalIndent(v, "", "")
+	if err != nil {
+		return "", err
+	}
+	return string(bytes.ReplaceAll(out, []byte("\n"), nil)), nil
+}
+
+// appendArrayStrings returns src with values added as string elements after
+// the last element of arr, in the array's own layout: one per line when its
+// elements sit on lines of their own, inline otherwise. Nothing else in src
+// changes, and removeArrayElem deletes exactly the added text again.
+func appendArrayStrings(src []byte, arr *jnode, values []string) ([]byte, error) {
+	if len(values) == 0 {
+		return src, nil
+	}
+	nl := newline(src)
+	quoted := make([]string, len(values))
+	for i, v := range values {
+		q, err := jsonText(v)
+		if err != nil {
+			return nil, err
+		}
+		quoted[i] = q
+	}
+	var out bytes.Buffer
+	if len(arr.elems) == 0 {
+		arrIndent, _ := lineIndent(src, arr.start)
+		indent := arrIndent + indentUnit(src)
+		out.Write(src[:arr.start+1])
+		for i, q := range quoted {
+			out.WriteString(nl + indent + q)
+			if i < len(quoted)-1 {
+				out.WriteByte(',')
+			}
+		}
+		if len(bytes.TrimSpace(src[arr.start+1:arr.end-1])) == 0 {
+			// Whitespace-only arrays ([] or [ ]) take the new layout.
+			out.WriteString(nl + arrIndent)
+			out.Write(src[arr.end-1:])
+		} else {
+			out.Write(src[arr.start+1:])
+		}
+		return out.Bytes(), nil
+	}
+	last := arr.elems[len(arr.elems)-1]
+	indent, alone := lineIndent(src, last.value.start)
+	at := last.value.end
+	if last.comma >= 0 {
+		at = last.comma + 1
+	}
+	out.Write(src[:at])
+	for _, q := range quoted {
+		switch {
+		case alone && last.comma >= 0:
+			out.WriteString(nl + indent + q + ",")
+		case alone:
+			out.WriteString("," + nl + indent + q)
+		case last.comma >= 0:
+			out.WriteString(" " + q + ",")
+		default:
+			out.WriteString(", " + q)
+		}
+	}
+	out.Write(src[at:])
+	return out.Bytes(), nil
+}
+
+// removeArrayElem returns src without element i of arr, keeping comments and
+// the other elements' text. An array left with nothing but whitespace
+// collapses to [].
+func removeArrayElem(src []byte, arr *jnode, i int) []byte {
+	if len(arr.elems) == 1 {
+		e := arr.elems[0]
+		before := src[arr.start+1 : e.value.start]
+		after := src[e.value.end : arr.end-1]
+		if e.comma >= 0 {
+			after = src[e.comma+1 : arr.end-1]
+		}
+		if len(bytes.TrimSpace(before)) == 0 && len(bytes.TrimSpace(after)) == 0 {
+			out := append([]byte(nil), src[:arr.start+1]...)
+			return append(out, src[arr.end-1:]...)
+		}
+	}
+	e := arr.elems[i]
+	cut := func(start, end int) []byte {
+		out := append([]byte(nil), src[:start]...)
+		return append(out, src[end:]...)
+	}
+	if _, alone := lineIndent(src, e.value.start); alone {
+		end := e.value.end
+		if e.comma >= 0 {
+			end = e.comma + 1
+		}
+		start, end := wholeLines(src, e.value.start, end)
+		if e.comma < 0 && i > 0 && arr.elems[i-1].comma >= 0 {
+			c := arr.elems[i-1].comma
+			out := cut(start, end)
+			return append(out[:c], out[c+1:]...)
+		}
+		return cut(start, end)
+	}
+	if e.comma >= 0 {
+		end := e.comma + 1
+		for end < len(src) && (src[end] == ' ' || src[end] == '\t') {
+			end++
+		}
+		return cut(e.value.start, end)
+	}
+	if i > 0 && arr.elems[i-1].comma >= 0 {
+		return cut(arr.elems[i-1].comma, e.value.end)
+	}
+	return cut(e.value.start, e.value.end)
+}
+
+// appendMember returns src with "key": value added as the last member of
+// obj: for a reader that lets the last matching rule win, it decides.
+func appendMember(src []byte, obj *jnode, key string, value any) ([]byte, error) {
+	if len(obj.members) == 0 {
+		return insertMember(src, obj, key, value)
+	}
+	keyJSON, err := jsonText(key)
+	if err != nil {
+		return nil, err
+	}
+	nl := newline(src)
+	last := obj.members[len(obj.members)-1]
+	indent, alone := lineIndent(src, last.keyStart)
+	var rendered string
+	if alone {
+		out, err := marshalIndent(value, indent, indentUnit(src))
+		if err != nil {
+			return nil, err
+		}
+		rendered = string(bytes.ReplaceAll(out, []byte("\n"), []byte(nl)))
+	} else if rendered, err = jsonText(value); err != nil {
+		return nil, err
+	}
+	at := last.value.end
+	var insert string
+	switch {
+	case alone && last.comma >= 0:
+		at = last.comma + 1
+		insert = nl + indent + keyJSON + ": " + rendered + ","
+	case alone:
+		insert = "," + nl + indent + keyJSON + ": " + rendered
+	case last.comma >= 0:
+		at = last.comma + 1
+		insert = " " + keyJSON + ": " + rendered + ","
+	default:
+		insert = ", " + keyJSON + ": " + rendered
+	}
+	var out bytes.Buffer
+	out.Write(src[:at])
+	out.WriteString(insert)
+	out.Write(src[at:])
+	return out.Bytes(), nil
 }

@@ -10,15 +10,17 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+
+	"github.com/xibodev/facet/internal/facethome"
 )
 
 // RegistrySchema identifies the wiring registry format.
 const RegistrySchema = "xibodev.facet.wiring/v1"
 
-// Registry is ~/.facet/wiring.json: what facet wire installed, where, and how
-// the MCP server was registered. It is the ownership record: facet wire only
-// replaces or removes what this registry says it wrote, and only while the
-// content still matches the recorded digest.
+// Registry is wiring.json in Facet's home folder: what facet wire installed,
+// where, and how the MCP server was registered. It is the ownership record:
+// facet wire only replaces or removes what this registry says it wrote, and
+// only while the content still matches the recorded digest.
 type Registry struct {
 	Schema  string    `json:"schema"`
 	Wirings []*Wiring `json:"wirings"`
@@ -34,7 +36,11 @@ type Wiring struct {
 	FacetVersion string `json:"facet_version"`
 	// Executable is the facet executable registered as the MCP server.
 	Executable string `json:"executable"`
-	WiredAt    string `json:"wired_at"`
+	// ExplicitExecutable is set when --exe chose Executable: it is not
+	// drift when the stable executable is another one, and --refresh keeps
+	// it.
+	ExplicitExecutable bool   `json:"explicit_executable,omitempty"`
+	WiredAt            string `json:"wired_at"`
 	// Pending marks a record saved before its changes were applied; a run
 	// interrupted mid-way leaves it set, and both old and new digests are
 	// then accepted as Facet's.
@@ -44,6 +50,9 @@ type Wiring struct {
 	// they are empty.
 	Dirs []string   `json:"dirs,omitempty"`
 	MCP  *MCPRecord `json:"mcp,omitempty"`
+	// Rules are the approval rules facet wire added to the CLI's settings so
+	// it asks before every tool that may charge (see rules.go).
+	Rules *RulesRecord `json:"rules,omitempty"`
 }
 
 // OwnedFile is one installed file and the digest facet wire wrote.
@@ -104,9 +113,10 @@ type MCPRecord struct {
 	CreatedParent bool `json:"created_parent,omitempty"`
 }
 
-// RegistryPath returns ~/.facet/wiring.json for home.
+// RegistryPath returns wiring.json in Facet's home folder for the user whose
+// home directory is home: ~/.facet/wiring.json, or $FACET_HOME/wiring.json.
 func RegistryPath(home string) string {
-	return filepath.Join(home, ".facet", "wiring.json")
+	return filepath.Join(facethome.For(home), "wiring.json")
 }
 
 // LoadRegistry reads the registry. A missing registry is empty; an unreadable

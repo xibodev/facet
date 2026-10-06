@@ -93,7 +93,7 @@ func doHyperFramesComposeContext(ctx context.Context, op string, data []byte) (a
 
 	workspace := r.WorkspacePath
 	if workspace == "" {
-		workspace = "hyperframes_workspace"
+		workspace = defaultOutput(ctx, "hyperframes_workspace")
 	}
 
 	switch operation {

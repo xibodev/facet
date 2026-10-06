@@ -49,7 +49,8 @@ printf 'go.mod requires Go %s (found %s; Go downloads the required toolchain whe
 
 VERSION=$(node -p "require(process.argv[1]).version" "$SCRIPT_DIR/package.json")
 NAME="$VERSION-dev-$OS-$ARCH"
-FACET_HOME_DIR="${HOME:?HOME must be set}/.facet"
+FACET_HOME_DIR="${FACET_HOME:-${HOME:?HOME must be set}/.facet}"
+case "$FACET_HOME_DIR" in /*) ;; *) FACET_HOME_DIR="$PWD/$FACET_HOME_DIR" ;; esac
 RUNTIMES="$FACET_HOME_DIR/runtimes"
 RUNTIME="$RUNTIMES/$NAME"
 STAGE=$(mktemp -d "${TMPDIR:-/tmp}/facet-source.XXXXXX")
@@ -59,13 +60,13 @@ printf 'Building Facet %s from source...\n' "$VERSION"
 (cd "$SCRIPT_DIR" && go build -trimpath -ldflags "-X main.Version=$VERSION" -o "$STAGE/bin/facet" ./cmd/facet)
 
 printf '%s\n' 'Copying the Remotion composer sources...'
-mkdir -p "$STAGE/bundle/remotion-composer"
+mkdir -p "$STAGE/dependencies/remotion-composer"
 (
     cd "$SCRIPT_DIR/remotion-composer"
     node -e 'const m=require("./composer-manifest.json"); for (const p of [...m.allowedSourcePaths, "package.json", "package-lock.json", "tsconfig.json", "composer-manifest.json"]) console.log(p)' |
         while IFS= read -r path; do
-            mkdir -p "$STAGE/bundle/remotion-composer/$(dirname -- "$path")"
-            cp -- "$path" "$STAGE/bundle/remotion-composer/$path"
+            mkdir -p "$STAGE/dependencies/remotion-composer/$(dirname -- "$path")"
+            cp -- "$path" "$STAGE/dependencies/remotion-composer/$path"
         done
 )
 
@@ -74,7 +75,7 @@ rm -rf -- "$RUNTIME"
 mkdir -p "$RUNTIMES"
 mv -- "$STAGE" "$RUNTIME"
 STAGE=$(mktemp -d "${TMPDIR:-/tmp}/facet-source.XXXXXX")
-npm ci --prefix "$RUNTIME/bundle/remotion-composer" --no-audit --no-fund
+npm ci --prefix "$RUNTIME/dependencies/remotion-composer" --no-audit --no-fund
 printf '{\n  "schema": 1,\n  "version": "%s",\n  "os": "%s",\n  "arch": "%s",\n  "components": ["remotion"],\n  "verified": false,\n  "archive_sha256": "",\n  "installed_at": "%s"\n}\n' \
     "$VERSION" "$OS" "$ARCH" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$RUNTIME/components.json"
 

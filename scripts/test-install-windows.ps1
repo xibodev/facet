@@ -15,7 +15,7 @@ $shell = (Get-Process -Id $PID).Path
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 $moduleCache = "$(& go env GOMODCACHE)".Trim()
 if ($LASTEXITCODE -ne 0 -or -not $moduleCache) { throw 'go env GOMODCACHE failed; is Go installed?' }
-$names = @('HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'GOCACHE', 'GOMODCACHE', 'GOPATH')
+$names = @('HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'GOCACHE', 'GOMODCACHE', 'GOPATH', 'FACET_HOME', 'FACET_REMOTION_COMPOSER')
 $saved = @{}
 foreach ($name in $names) { $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
 Write-Host "Isolated test root: $root"
@@ -25,6 +25,7 @@ try {
     $env:HOME = $profileDir; $env:USERPROFILE = $profileDir
     $env:APPDATA = Join-Path $profileDir 'AppData\Roaming'; $env:LOCALAPPDATA = Join-Path $profileDir 'AppData\Local'
     $env:GOCACHE = Join-Path $root 'go-build'; $env:GOPATH = Join-Path $root 'go'; $env:GOMODCACHE = $moduleCache
+    $env:FACET_HOME = $null; $env:FACET_REMOTION_COMPOSER = $null
     $components = if ($WithComposer) { 'remotion' } else { 'none' }
     $facetHome = Join-Path $profileDir '.facet'
     $runtime = Join-Path $facetHome "runtimes\$version-dev-windows-$arch"
@@ -39,10 +40,10 @@ try {
         if ($LASTEXITCODE -ne 0 -or $reported -ne "facet v$version-dev") { throw "Unexpected version: $reported" }
         $record = Get-Content -Raw -LiteralPath (Join-Path $runtime 'components.json') | ConvertFrom-Json
         if ($record.version -ne "$version-dev" -or @($record.components).Count -ne [int][bool]$WithComposer) { throw 'components.json does not describe the build.' }
-        foreach ($file in @('bundle\remotion-composer\package-lock.json', 'bundle\remotion-composer\composer-manifest.json', 'LICENSE', 'THIRD_PARTY_NOTICES.md')) {
+        foreach ($file in @('dependencies\remotion-composer\package-lock.json', 'dependencies\remotion-composer\composer-manifest.json', 'LICENSE', 'THIRD_PARTY_NOTICES.md')) {
             if (-not (Test-Path -LiteralPath (Join-Path $runtime $file) -PathType Leaf)) { throw "Runtime is missing $file" }
         }
-        if ($WithComposer -and -not (Test-Path -LiteralPath (Join-Path $runtime 'bundle\remotion-composer\node_modules\remotion\package.json'))) { throw 'Remotion packages are missing.' }
+        if ($WithComposer -and -not (Test-Path -LiteralPath (Join-Path $runtime 'dependencies\remotion-composer\node_modules\remotion\package.json'))) { throw 'Remotion packages are missing.' }
         foreach ($retired in @('bin', 'bundle')) { if (Test-Path -LiteralPath (Join-Path $facetHome $retired)) { throw "Retired ~/.facet/$retired layout created." } }
         if (@(Get-ChildItem -LiteralPath (Join-Path $facetHome 'runtimes') -Force).Count -ne 1) { throw 'Staging or replaced runtimes were left behind.' }
     }

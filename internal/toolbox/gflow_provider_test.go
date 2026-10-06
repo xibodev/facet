@@ -278,6 +278,14 @@ func TestGFlowFailureNeverMocksOrRetries(t *testing.T) {
 			}
 			entries, _ := os.ReadDir(dir)
 			recovery, ok := toolErr.err.Details["recovery_path"].(string)
+			if mode == "missing-file" {
+				// Nothing was downloaded: no staging folder is left behind
+				// and no recovery is offered.
+				if ok || toolErr.err.Details["quarantined"] != nil || len(entries) != 1 {
+					t.Fatalf("an empty staging folder was kept: %#v %v", toolErr.err, entries)
+				}
+				return
+			}
 			// TempDir may retain forward slashes on Windows; require the same parent, not spelling.
 			parentRel, relErr := filepath.Rel(dir, filepath.Dir(recovery))
 			if !ok || !filepath.IsAbs(recovery) || relErr != nil || parentRel != "." || !strings.HasPrefix(filepath.Base(recovery), ".gflow-") || toolErr.err.Details["quarantined"] != true || len(entries) != 2 {
@@ -286,7 +294,7 @@ func TestGFlowFailureNeverMocksOrRetries(t *testing.T) {
 			if info, err := os.Stat(recovery); err != nil || !info.IsDir() {
 				t.Fatalf("recovery directory not retained: %v", err)
 			}
-			if mode != "missing-file" && mode != "empty" {
+			if mode != "empty" {
 				data, err := os.ReadFile(filepath.Join(recovery, "generated-0.mp4"))
 				if err != nil || string(data) != "offline provider fixture" {
 					t.Fatalf("download lost: %v", err)
@@ -319,7 +327,7 @@ func TestGFlowStdoutBound(t *testing.T) {
 
 func TestGFlowMissingDependencyAndExplicitMock(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
-	for _, fn := range []func(string, []byte) (any, []string, error){doGFlowVideo, doGFlowImage} {
+	for i, fn := range []func(string, []byte) (any, []string, error){doGFlowVideo, doGFlowImage} {
 		dir := t.TempDir()
 		out := filepath.Join(dir, "new", "output")
 		r := map[string]any{"prompt": "test", "output_path": out}
@@ -331,6 +339,13 @@ func TestGFlowMissingDependencyAndExplicitMock(t *testing.T) {
 		}
 		r["mock"] = true
 		value, _, err := fn("run", providerRequest(t, r))
+		if i == 0 {
+			// The video mock is made with FFmpeg, which this PATH lacks.
+			if err == nil || !strings.Contains(err.Error(), "ffmpeg") {
+				t.Fatalf("mock video without ffmpeg: %v %v", value, err)
+			}
+			continue
+		}
 		if err != nil || value.(map[string]any)["mock"] != true {
 			t.Fatalf("explicit mock: %v %v", value, err)
 		}

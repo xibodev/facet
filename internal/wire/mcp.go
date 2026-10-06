@@ -21,14 +21,18 @@ import (
 //	claude   user, project  `claude mcp add --scope <scope> --transport stdio facet -- <facet> mcp`
 //	                        (syntax from `claude mcp add --help`; user scope is stored in
 //	                        ~/.claude.json, project scope in <project>/.mcp.json)
-//	codex    user           `codex mcp add facet -- <facet> mcp` (syntax from
-//	                        `codex mcp add --help`; stored in $CODEX_HOME/config.toml)
-//	codex    project        no command exists; one [mcp_servers.facet] table is appended to
-//	                        <project>/.codex/config.toml, which Codex reads for trusted projects
+//	codex    user, project  one [mcp_servers.facet] block, with the call limit and the
+//	                        approval rules for paid tools that `codex mcp add` cannot set,
+//	                        is appended to $CODEX_HOME/config.toml (~/.codex/config.toml)
+//	                        or <project>/.codex/config.toml, which Codex reads for
+//	                        trusted projects. A user wiring an earlier facet wire made
+//	                        with `codex mcp add` keeps that registration.
 //	copilot  user, project  `copilot mcp add` exists but its syntax is not shown by
 //	                        `copilot mcp --help`, so one member is merged into
 //	                        ~/.copilot/mcp-config.json or <project>/.github/mcp.json, the
-//	                        locations `copilot mcp --help` lists
+//	                        locations `copilot mcp --help` lists. Its "tools" list only
+//	                        makes the tools available; Copilot CLI still asks before
+//	                        each one that is not read-only.
 //	opencode user, project  `opencode mcp add` is interactive, so one member is merged into
 //	                        opencode.json(c) in the global config directory or the project root
 
@@ -243,8 +247,10 @@ func (e *env) planMCPInstall(t bundle.Target, scope bundle.Scope, project, root 
 	switch {
 	case t == bundle.TargetClaude:
 		return e.planCommandInstall(e.claudeSpec(scope, project), prev)
-	case t == bundle.TargetCodex && scope == bundle.ScopeUser:
+	case t == bundle.TargetCodex && scope == bundle.ScopeUser && prev != nil && prev.Method == MethodCommand:
 		return e.planCommandInstall(e.codexSpec(), prev)
+	case t == bundle.TargetCodex && scope == bundle.ScopeUser:
+		return e.planTOMLInstall(e.codexUserConfig(), prev)
 	case t == bundle.TargetCodex:
 		return e.planTOMLInstall(filepath.Join(project, ".codex", "config.toml"), prev)
 	case t == bundle.TargetCopilot:
@@ -670,17 +676,18 @@ func (e *env) printMCP(step mcpStep, line func(verb, target string)) {
 				line("edit", fmt.Sprintf("%s (add %s)", step.file, key))
 			}
 		case MethodTOML:
+			block := fmt.Sprintf("[mcp_servers.%s], asking before each of %d paid tools", name, len(paidTools()))
 			switch {
 			case step.deleteFile:
 				line("delete", step.file)
 			case !step.existed:
-				line("create", fmt.Sprintf("%s ([mcp_servers.%s])", step.file, name))
+				line("create", fmt.Sprintf("%s (%s)", step.file, block))
 			case step.op == "unregister":
 				line("edit", fmt.Sprintf("%s (remove [mcp_servers.%s])", step.file, name))
 			case step.op == "update":
-				line("edit", fmt.Sprintf("%s (update [mcp_servers.%s])", step.file, name))
+				line("edit", fmt.Sprintf("%s (update %s)", step.file, block))
 			default:
-				line("edit", fmt.Sprintf("%s (append [mcp_servers.%s])", step.file, name))
+				line("edit", fmt.Sprintf("%s (append %s)", step.file, block))
 			}
 		}
 	case "unchanged":

@@ -268,7 +268,10 @@ func TestActiveProductDocsDescribeGuidanceNotWorkflowContracts(t *testing.T) {
 	}
 }
 
-func TestNpmPackageShipsCanonicalContractAndNotices(t *testing.T) {
+// The npm package is only the launcher: the guidance is compiled into the
+// facet binary and the composer ships in the release archive, so an npm copy
+// of either could only drift from what actually runs.
+func TestNpmPackageShipsOnlyTheLauncherAndNotices(t *testing.T) {
 	command := exec.Command("npm", "pack", "--dry-run", "--json", "--ignore-scripts")
 	raw, err := command.Output()
 	if err != nil {
@@ -285,29 +288,14 @@ func TestNpmPackageShipsCanonicalContractAndNotices(t *testing.T) {
 	if len(result) != 1 {
 		t.Fatalf("npm pack returned %d payloads, want 1", len(result))
 	}
-	shipped := make(map[string]bool, len(result[0].Files))
+	var shipped []string
 	for _, file := range result[0].Files {
-		shipped[filepath.ToSlash(file.Path)] = true
+		shipped = append(shipped, filepath.ToSlash(file.Path))
 	}
-
-	required := []string{
-		"LICENSE",
-		"THIRD_PARTY_NOTICES.md",
-		"skills/facet/SKILL.md",
-		"agents/facet-creative.md",
-	}
-	for _, pack := range PackNames() {
-		required = append(required, "packs/"+pack+"/SKILL.md")
-	}
-	var missing []string
-	for _, name := range required {
-		if !shipped[name] {
-			missing = append(missing, name)
-		}
-	}
-	sort.Strings(missing)
-	if len(missing) != 0 {
-		t.Fatalf("npm package omits canonical product files:\n%s", strings.Join(missing, "\n"))
+	sort.Strings(shipped)
+	want := []string{"LICENSE", "THIRD_PARTY_NOTICES.md", "bin/facet-cli.js", "package.json"}
+	if strings.Join(shipped, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("npm package ships:\n%s\nwant:\n%s", strings.Join(shipped, "\n"), strings.Join(want, "\n"))
 	}
 }
 
@@ -343,16 +331,95 @@ func TestReleasePackagingExcludesRemovedProductSurfaces(t *testing.T) {
 	}
 }
 
-func TestFacetAdoptsCompaWithoutRetiredKernelReferences(t *testing.T) {
+// agentEngineModules are module path prefixes of agent engines and
+// reasoning-model clients. Facet is never a harness: it links none of them.
+// The Facet App runs Compa's kernel beside the Toolkit as a separate program,
+// never as a Go dependency.
+var agentEngineModules = []string{
+	"github.com/xibodev/compa",
+	"github.com/xibodev/llm",
+	"github.com/openai/",
+	"github.com/anthropics/",
+	"github.com/sashabaranov/go-openai",
+	"google.golang.org/genai",
+	"github.com/google/generative-ai-go",
+	"github.com/tmc/langchaingo",
+	"github.com/cloudwego/eino",
+}
+
+func TestFacetLinksNoAgentEngine(t *testing.T) {
 	goMod, err := os.ReadFile("go.mod")
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if !strings.Contains(string(goMod), "github.com/xibodev/compa v1.0.0") {
-		t.Fatal("go.mod does not pin the released Compa kernel")
+	for _, line := range strings.Split(string(goMod), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		module := fields[0]
+		if module == "require" && len(fields) > 1 {
+			module = fields[1]
+		}
+		for _, engine := range agentEngineModules {
+			if strings.HasPrefix(module, engine) {
+				t.Errorf("go.mod requires agent engine module %s", module)
+			}
+		}
 	}
 
+	// The binary's own import graph: what is actually linked.
+	out, err := exec.Command("go", "list", "-deps", "-f",
+		"{{.ImportPath}}|{{if .Module}}{{.Module.Path}}{{end}}", "./cmd/facet").Output()
+	if err != nil {
+		t.Fatalf("go list -deps ./cmd/facet: %v", err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		importPath, module, _ := strings.Cut(strings.TrimSpace(line), "|")
+		for _, engine := range agentEngineModules {
+			if strings.HasPrefix(module, engine) {
+				t.Errorf("cmd/facet links agent engine package %s (module %s)", importPath, module)
+			}
+		}
+		// App code (the window's screen logic) is not part of the Toolkit.
+		if importPath == "github.com/xibodev/facet/internal/journeys" ||
+			strings.HasPrefix(importPath, "github.com/xibodev/facet/internal/journeys/") {
+			t.Errorf("cmd/facet links App code: %s", importPath)
+		}
+	}
+}
+
+// The Toolkit never calls a reasoning model: it calls media-generation
+// providers only when such a tool runs. No Go source in the binary's tree may
+// name a model-inference endpoint.
+func TestToolkitCallsNoReasoningModel(t *testing.T) {
+	forbidden := []string{
+		"/chat/completions", "/v1/completions", "/v1/responses", "/v1/messages",
+		"api.anthropic.com", "generativelanguage.googleapis.com", "bedrock-runtime",
+	}
+	for _, dir := range []string{"cmd", "internal"} {
+		err := filepath.WalkDir(dir, func(name string, entry fs.DirEntry, err error) error {
+			if err != nil || entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+				return err
+			}
+			data, err := os.ReadFile(name)
+			if err != nil {
+				return err
+			}
+			text := strings.ToLower(string(data))
+			for _, endpoint := range forbidden {
+				if strings.Contains(text, endpoint) {
+					t.Errorf("%s names the model endpoint %q", filepath.ToSlash(name), endpoint)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+func TestFacetCarriesNoRetiredKernelIdentity(t *testing.T) {
 	retired := "facet" + "-studio"
 	var violations []string
 	for _, name := range trackedFiles(t) {
@@ -372,13 +439,26 @@ func TestFacetAdoptsCompaWithoutRetiredKernelReferences(t *testing.T) {
 	}
 }
 
-func TestLocalUATUsesTheCompaToolchain(t *testing.T) {
+func TestLocalUATUsesTheModuleToolchain(t *testing.T) {
+	goMod, err := os.ReadFile("go.mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	version := ""
+	for _, line := range strings.Split(string(goMod), "\n") {
+		if fields := strings.Fields(line); len(fields) == 2 && fields[0] == "go" {
+			version = fields[1]
+		}
+	}
+	if version == "" {
+		t.Fatal("go.mod declares no go version")
+	}
 	dockerfile, err := os.ReadFile(".release-harness/docker/Dockerfile")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(dockerfile), "FROM golang:1.26.6-bookworm AS go") {
-		t.Fatal("local UAT does not use the Go toolchain required by Compa")
+	if !strings.Contains(string(dockerfile), "FROM golang:"+version+"-bookworm AS go") {
+		t.Fatalf("local UAT does not use the Go %s toolchain that go.mod requires", version)
 	}
 }
 
@@ -421,10 +501,10 @@ func TestLocalUATIncludesTheInstallerPackage(t *testing.T) {
 	}
 	for _, required := range []string{
 		"!installer/", "!installer/**",
+		"!install.sh", "!install.ps1", "!package.json",
 		"!agents/", "!agents/**",
 		"!LICENSE", "!THIRD_PARTY_NOTICES.md",
 		"!capability.go",
-		"!pkg/", "!pkg/**",
 	} {
 		if !strings.Contains(string(data), required) {
 			t.Errorf(".dockerignore does not contain %q", required)
@@ -592,7 +672,8 @@ func TestComposerSourceMatchesAllowlist(t *testing.T) {
 	}
 }
 
-// Local UAT must exercise the product installer, never a hand-built layout.
+// Local UAT must exercise the product installer on an archive the release
+// packaging built, never a hand-built layout.
 func TestLocalUATRunsTheProductInstallerWithoutFabricatedLayout(t *testing.T) {
 	data, err := os.ReadFile(".release-harness/docker/Dockerfile")
 	if err != nil {
@@ -600,7 +681,7 @@ func TestLocalUATRunsTheProductInstallerWithoutFabricatedLayout(t *testing.T) {
 	}
 	content := string(data)
 	for _, required := range []string{
-		`-X main.Version=${FACET_VERSION}`,
+		`python3 scripts/package-release.py --os linux --arch "$arch" --out /tmp/facet-release`,
 		"bash /opt/facet-source/install.sh --yes --components remotion --no-path",
 		`--archive "/tmp/facet-release/facet-${FACET_VERSION}-linux-${arch}.zip"`,
 		`ENTRYPOINT ["node", "/opt/uat/uat-entrypoint.mjs"]`,
@@ -609,7 +690,8 @@ func TestLocalUATRunsTheProductInstallerWithoutFabricatedLayout(t *testing.T) {
 			t.Errorf("Dockerfile does not contain %q", required)
 		}
 	}
-	for _, forbidden := range []string{"ln -s", ".facet/bin/facet", ".facet/bundle", "--target app", "facet-ui"} {
+	for _, forbidden := range []string{"ln -s", ".facet/bin/facet", ".facet/bundle", "--target app", "facet-ui",
+		"go build", "zip -q", "/bundle/", "cp -R skills"} {
 		if strings.Contains(content, forbidden) {
 			t.Errorf("Dockerfile fabricates or references a removed layout: %q", forbidden)
 		}
@@ -638,6 +720,8 @@ func TestRemovedTwoPointZeroSurfacesStayRemoved(t *testing.T) {
 	for _, name := range []string{
 		"internal/studio", "internal/module", "cmd/facet-ui", "cmd/facet-module", "web",
 		"pkg/viewdef", "internal/config/init.go", "scripts/package-windows.cjs", "bin/facet-ui-cli.js",
+		// The Compa embedding and the 1.x configuration file are gone too.
+		"pkg/provider", "internal/config",
 	} {
 		if _, err := os.Stat(filepath.FromSlash(name)); !os.IsNotExist(err) {
 			t.Errorf("removed surface returned: %s", name)
