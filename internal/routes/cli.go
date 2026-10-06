@@ -20,6 +20,17 @@ type Error struct {
 	Message string `json:"message"`
 }
 
+const routesUsage = `usage: facet routes <operation> [arguments]
+
+Operations:
+  list                              List the production methods and their routes
+  describe <method>                 Show one method's routes, inputs and operations
+  assess --input <request.json>     Report what a method needs and would use; runs nothing
+
+--input takes a path to a JSON file or an inline JSON object.
+Every command prints one JSON envelope; the exit status is zero when "ok" is true.
+Routes are advisory: they never execute, store state, or select providers.`
+
 func CLI(args []string) (Envelope, bool) {
 	fail := func(operation, message string) (Envelope, bool) {
 		return Envelope{
@@ -30,6 +41,18 @@ func CLI(args []string) (Envelope, bool) {
 	}
 	if len(args) == 0 {
 		return fail("", "usage: facet routes <list|describe|assess>")
+	}
+	// facet help points every command at --help, so routes answers it like
+	// facet tools does: a usage payload in a successful envelope.
+	help := args[0] == "help"
+	for _, arg := range args {
+		help = help || arg == "-h" || arg == "--help" || arg == "-help"
+	}
+	if help {
+		return Envelope{
+			OK: true, Operation: "help", Warnings: []string{},
+			Result: map[string]any{"usage": routesUsage},
+		}, true
 	}
 
 	switch args[0] {

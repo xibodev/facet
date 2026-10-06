@@ -15,6 +15,9 @@ func TestRoutesCLIIsMachineReadableAndReadOnly(t *testing.T) {
 		{name: "list", args: []string{"routes", "list"}},
 		{name: "describe", args: []string{"routes", "describe", "explainer"}},
 		{name: "assess-inline", args: []string{"routes", "assess", "--input", `{"method":"source-edit","inputs":{"source_media":"clip.mp4"}}`}},
+		// facet help sends people to "facet <command> --help".
+		{name: "help", args: []string{"routes", "--help"}},
+		{name: "operation-help", args: []string{"routes", "assess", "--help"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir, home := t.TempDir(), t.TempDir()
