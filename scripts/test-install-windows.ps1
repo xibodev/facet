@@ -12,7 +12,15 @@ $version = (Get-Content -Raw -LiteralPath (Join-Path $repo 'package.json') | Con
 $arch = if ("$env:PROCESSOR_ARCHITECTURE $env:PROCESSOR_ARCHITEW6432" -match 'ARM64') { 'arm64' } else { 'amd64' }
 $root = Join-Path ([IO.Path]::GetTempPath()) ('facet-source-install-' + [guid]::NewGuid().ToString('N'))
 $shell = (Get-Process -Id $PID).Path
-$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+function Get-StoredUserPath {
+    # The stored value, unexpanded: [Environment]::GetEnvironmentVariable
+    # expands a REG_EXPAND_SZ PATH such as %USERPROFILE%\AppData\... with this
+    # process's variables, which this test redirects to a throwaway profile.
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
+    if (-not $key) { return $null }
+    try { return $key.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) } finally { $key.Close() }
+}
+$userPath = Get-StoredUserPath
 $moduleCache = "$(& go env GOMODCACHE)".Trim()
 if ($LASTEXITCODE -ne 0 -or -not $moduleCache) { throw 'go env GOMODCACHE failed; is Go installed?' }
 $names = @('HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'GOCACHE', 'GOMODCACHE', 'GOPATH', 'FACET_HOME', 'FACET_REMOTION_COMPOSER')
@@ -49,7 +57,7 @@ try {
     }
     Push-Location $root
     try { & $facet doctor | Out-Null; if ($LASTEXITCODE -ne 0) { throw 'facet doctor failed.' } } finally { Pop-Location }
-    if ([Environment]::GetEnvironmentVariable('Path', 'User') -cne $userPath) { throw 'The user PATH changed.' }
+    if ((Get-StoredUserPath) -cne $userPath) { throw 'The user PATH changed.' }
     "PASS: source build into runtimes\$version-dev-windows-$arch, current junction, rebuild of the active runtime, doctor, PATH untouched."
 } finally {
     foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) }

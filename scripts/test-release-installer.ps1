@@ -94,7 +94,15 @@ function Invoke-Installer([string]$Shell, [string[]]$Arguments) {
 $names = @('HOME','USERPROFILE','APPDATA','LOCALAPPDATA','FACET_ACTION','FACET_COMPONENTS','FACET_WIRE','FACET_SCOPE','FACET_PROJECT','FACET_YES','FACET_PURGE','FACET_VERSION','FACET_LOG_DIR')
 $saved = @{}
 foreach ($name in $names) { $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
-$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+function Get-StoredUserPath {
+    # The stored value, unexpanded: [Environment]::GetEnvironmentVariable
+    # expands a REG_EXPAND_SZ PATH such as %USERPROFILE%\AppData\... with this
+    # process's variables, which this test redirects to a throwaway profile.
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
+    if (-not $key) { return $null }
+    try { return $key.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) } finally { $key.Close() }
+}
+$userPath = Get-StoredUserPath
 try {
     foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name, $null) }
     $profileDir = Join-Path $root 'profile'
@@ -128,7 +136,7 @@ try {
         if (Test-Path -LiteralPath (Join-Path $profileDir '.facet/current')) { throw 'A failed rollback created ~/.facet/current.' }
         Remove-Item -LiteralPath (Join-Path $profileDir '.facet') -Recurse -Force -ErrorAction SilentlyContinue
     }
-    if ([Environment]::GetEnvironmentVariable('Path', 'User') -cne $userPath) { throw 'The user PATH changed.' }
+    if ((Get-StoredUserPath) -cne $userPath) { throw 'The user PATH changed.' }
     $global:LASTEXITCODE = 0
     "Script installer parser, parameters, helpers and preflight passed ($($hosts -join ', '))."
 } finally {

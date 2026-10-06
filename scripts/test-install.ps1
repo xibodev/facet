@@ -19,7 +19,15 @@ if ($env:OS -ne 'Windows_NT') { 'PASS: parser and piped invocation (execution is
 
 $root = Join-Path ([IO.Path]::GetTempPath()) ('facet-source-preflight-' + [guid]::NewGuid().ToString('N'))
 $shell = (Get-Process -Id $PID).Path
-$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+function Get-StoredUserPath {
+    # The stored value, unexpanded: [Environment]::GetEnvironmentVariable
+    # expands a REG_EXPAND_SZ PATH such as %USERPROFILE%\AppData\... with this
+    # process's variables, which this test redirects to a throwaway profile.
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
+    if (-not $key) { return $null }
+    try { return $key.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) } finally { $key.Close() }
+}
+$userPath = Get-StoredUserPath
 $names = @('HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'PATH')
 $saved = @{}
 foreach ($name in $names) { $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
@@ -60,7 +68,7 @@ try {
     if ($result.Code -eq 0 -or $result.Output -notmatch 'Node\.js \d+\+ is required') { throw "Old Node: $($result.Output)" }
 
     if (Test-Path -LiteralPath (Join-Path $profileDir '.facet')) { throw 'Preflight wrote into the profile.' }
-    if ([Environment]::GetEnvironmentVariable('Path', 'User') -cne $userPath) { throw 'The user PATH changed.' }
+    if ((Get-StoredUserPath) -cne $userPath) { throw 'The user PATH changed.' }
     'PASS: parser, piped invocation, incomplete checkout, go.mod Go requirement, Node requirement, and no profile or PATH writes.'
 } finally {
     foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) }
