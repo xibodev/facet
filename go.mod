@@ -4,6 +4,7 @@ go 1.26.6
 
 require (
 	github.com/kolonist/edgetts v1.0.1
+	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/xibodev/compa v1.0.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -22,7 +23,6 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/modelcontextprotocol/go-sdk v1.6.1 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtp v1.10.2 // indirect

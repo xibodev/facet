@@ -5,8 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/xibodev/facet/internal/toolbox"
+	"github.com/xibodev/facet/internal/wire"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -91,7 +95,31 @@ func TestAutoDetect(t *testing.T) {
 	}
 }
 
+// isolate points every home-directory lookup at a fresh temporary home and
+// moves into an empty working directory, so the doctor reads nothing of the
+// real user's environment.
+func isolate(t *testing.T) (home, cwd string) {
+	t.Helper()
+	root := t.TempDir()
+	home, cwd = filepath.Join(root, "home"), filepath.Join(root, "work")
+	for _, dir := range []string{home, cwd} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+	t.Setenv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("CODEX_HOME", "")
+	t.Chdir(cwd)
+	return home, cwd
+}
+
 func TestRunDoctor(t *testing.T) {
+	home, cwd := isolate(t)
 	cfg := DefaultConfig()
 	var buf bytes.Buffer
 
@@ -119,14 +147,14 @@ func TestRunDoctor(t *testing.T) {
 	}
 
 	// Verify Agent CLIs
-	if len(report.CLIs) < 3 {
-		t.Errorf("expected at least 3 CLIs probed, got %d", len(report.CLIs))
+	if len(report.CLIs) < 4 {
+		t.Errorf("expected at least 4 CLIs probed, got %d", len(report.CLIs))
 	}
 	cliNames := map[string]bool{}
 	for _, c := range report.CLIs {
 		cliNames[c.Name] = true
 	}
-	for _, expected := range []string{"Claude Code", "OpenCode", "GitHub Copilot"} {
+	for _, expected := range []string{"Claude Code", "OpenCode", "GitHub Copilot", "OpenAI Codex"} {
 		if !cliNames[expected] {
 			t.Errorf("missing CLI check for %s", expected)
 		}
@@ -142,22 +170,20 @@ func TestRunDoctor(t *testing.T) {
 		t.Errorf("expected non-empty env vars in report")
 	}
 
+	// A fresh home has no runtime, no wiring, and no 1.x leftovers.
+	if report.Facet.Status != StatusNotFound || len(report.Wiring) != 0 || report.WiringError != "" || len(report.Legacy) != 0 {
+		t.Errorf("fresh home report: facet=%+v wiring=%v (%s) legacy=%v", report.Facet, report.Wiring, report.WiringError, report.Legacy)
+	}
+
 	// Verify Output Formatting
 	out := buf.String()
-	if !strings.Contains(out, "=== Facet System Doctor ===") {
-		t.Errorf("output missing title banner")
+	for _, section := range []string{"=== Facet System Doctor ===", "[Facet]", "[Wiring]", "[Facet 1.x Integrations]", "[System Runtimes]", "[Agent CLIs]", "[Environment Variables]", "[Toolbox Tools ("} {
+		if !strings.Contains(out, section) {
+			t.Errorf("output missing %s:\n%s", section, out)
+		}
 	}
-	if !strings.Contains(out, "[System Runtimes]") {
-		t.Errorf("output missing [System Runtimes]")
-	}
-	if !strings.Contains(out, "[Agent CLIs]") {
-		t.Errorf("output missing [Agent CLIs]")
-	}
-	if !strings.Contains(out, "[Environment Variables]") {
-		t.Errorf("output missing [Environment Variables]")
-	}
-	if !strings.Contains(out, "[Toolbox Tools (") {
-		t.Errorf("output missing [Toolbox Tools], output: %s", out)
+	if !strings.Contains(out, "No wirings recorded") {
+		t.Errorf("output does not explain the empty wiring:\n%s", out)
 	}
 
 	// Verify JSON output helper
@@ -167,6 +193,176 @@ func TestRunDoctor(t *testing.T) {
 	}
 	if len(jsonBytes) == 0 {
 		t.Errorf("expected non-empty json output")
+	}
+
+	// The doctor only reads.
+	for _, dir := range []string{home, cwd} {
+		if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+			t.Errorf("doctor wrote into %s: %v", dir, entries)
+		}
+	}
+}
+
+func TestDoctorProbesOnlyToolCredentials(t *testing.T) {
+	for _, name := range DefaultEnvProbes() {
+		if name == "ANTHROPIC_API_KEY" {
+			t.Error("the doctor probes a model credential; models are the harness's concern")
+		}
+	}
+}
+
+func TestDoctorReportsTheActiveRuntime(t *testing.T) {
+	home, _ := isolate(t)
+	if got := probeFacetRuntime(home, "2.0.0"); got.Status != StatusNotFound || !strings.Contains(got.Details, "current") {
+		t.Fatalf("no runtime: %+v", got)
+	}
+
+	osName, arch := runtime.GOOS, runtime.GOARCH
+	release := filepath.Join(home, ".facet", "runtimes", "2.0.0-"+osName+"-"+arch)
+	current := filepath.Join(home, ".facet", "current")
+	if err := os.MkdirAll(filepath.Join(release, "bin"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(release, current); err != nil {
+		// Unprivileged Windows accounts cannot create symlinks; a plain
+		// directory exercises the same reporting.
+		current = filepath.Join(home, ".facet", "current")
+		if err := os.MkdirAll(filepath.Join(current, "bin"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		release = current
+	}
+	if got := probeFacetRuntime(home, "2.0.0"); got.Status != StatusWarning || !strings.Contains(got.Details, "no bin/facet") {
+		t.Fatalf("runtime without executable: %+v", got)
+	}
+
+	name := "facet"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	exe := filepath.Join(release, "bin", name)
+	if err := os.WriteFile(exe, []byte("fake"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	var probed string
+	saved := facetVersionOf
+	t.Cleanup(func() { facetVersionOf = saved })
+	facetVersionOf = func(path string) string { probed = path; return "2.0.0" }
+
+	got := probeFacetRuntime(home, "2.0.0")
+	if got.Status != StatusOK || got.Version != "2.0.0" || got.Current != current {
+		t.Fatalf("matching runtime: %+v", got)
+	}
+	if !strings.HasSuffix(filepath.ToSlash(probed), "/.facet/current/bin/"+name) {
+		t.Errorf("probed %s, want the stable executable", probed)
+	}
+	if resolved, err := filepath.EvalSymlinks(release); err == nil && got.Target != resolved {
+		t.Errorf("target = %s, want %s", got.Target, resolved)
+	}
+
+	got = probeFacetRuntime(home, "2.1.0")
+	if got.Status != StatusWarning || !strings.Contains(got.Details, "v2.0.0") || !strings.Contains(got.Details, "v2.1.0") {
+		t.Fatalf("mismatched runtime: %+v", got)
+	}
+
+	var buf bytes.Buffer
+	formatDoctorReport(&DoctorReport{Facet: got}, &buf)
+	if !strings.Contains(buf.String(), current) || !strings.Contains(buf.String(), "facet v2.0.0") {
+		t.Errorf("formatted runtime:\n%s", buf.String())
+	}
+
+	if v := versionFromRuntimeDir(filepath.Join("x", "2.0.0-rc.1-linux-arm64")); v != "2.0.0-rc.1" {
+		t.Errorf("versionFromRuntimeDir = %q", v)
+	}
+	if v := versionFromRuntimeDir("current"); v != "" {
+		t.Errorf("versionFromRuntimeDir(current) = %q", v)
+	}
+}
+
+func TestDoctorNamesV1IntegrationsAndTheirCleanup(t *testing.T) {
+	home, cwd := isolate(t)
+	marked := "# Facet\n\n## This installation\n- Invoke Facet through `run-facet.ps1` followed by the normal arguments.\n"
+	writeConfigFixture(t, filepath.Join(home, ".facet-install", "installation.json"), `{"schema":1,"version":"1.1.0","host":"opencode","components":["remotion"],"packs":[]}`)
+	writeConfigFixture(t, filepath.Join(home, ".opencode", "skills", "facet", "SKILL.md"), marked)
+	writeConfigFixture(t, filepath.Join(cwd, ".facet-install", "installation.tsv"), "version\t1.1.0\ninstallation\t/opt/facet\nhost\tclaude\ncomponents\tremotion\npacks\t\n")
+	// A skill without both markers is not a 1.x copy.
+	writeConfigFixture(t, filepath.Join(cwd, ".agents", "skills", "facet", "SKILL.md"), "# Facet\n\n## This installation\n")
+	writeConfigFixture(t, filepath.Join(cwd, ".github", "skills", "facet", "SKILL.md"), "uses run-facet but no section\n")
+
+	checks := legacyChecks("windows", cwd, home)
+	if len(checks) != 2 {
+		t.Fatalf("legacy checks = %+v", checks)
+	}
+	byProject := map[string]LegacyCheck{}
+	for _, c := range checks {
+		byProject[c.Project] = c
+	}
+	homeCheck, cwdCheck := byProject[home], byProject[cwd]
+	if homeCheck.Host != "opencode" || len(homeCheck.Files) != 2 ||
+		homeCheck.Files[0] != filepath.Join(home, ".facet-install", "installation.json") ||
+		homeCheck.Files[1] != filepath.Join(home, ".opencode", "skills", "facet", "SKILL.md") {
+		t.Errorf("home check = %+v", homeCheck)
+	}
+	if want := `.\install.ps1 -Action uninstall -Target opencode -ProjectDir '` + home + `'`; homeCheck.Cleanup != want {
+		t.Errorf("windows cleanup = %q, want %q", homeCheck.Cleanup, want)
+	}
+	if cwdCheck.Host != "claude" || len(cwdCheck.Files) != 1 || cwdCheck.Files[0] != filepath.Join(cwd, ".facet-install", "installation.tsv") {
+		t.Errorf("cwd check = %+v", cwdCheck)
+	}
+	unix := legacyChecks("linux", cwd)
+	if want := "bash install.sh --action uninstall --target claude --project '" + cwd + "'"; len(unix) != 1 || unix[0].Cleanup != want {
+		t.Errorf("unix cleanup = %+v, want %q", unix, want)
+	}
+
+	var buf bytes.Buffer
+	report, err := RunDoctorWithWriter(DefaultConfig(), &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Legacy) != 2 {
+		t.Fatalf("doctor found %d 1.x installations", len(report.Legacy))
+	}
+	out := buf.String()
+	for _, want := range append(append([]string{}, homeCheck.Files...), "Action uninstall", "action uninstall", "shadows the user-wide Facet skill") {
+		if runtime.GOOS != "windows" && want == "Action uninstall" || runtime.GOOS == "windows" && want == "action uninstall" {
+			continue
+		}
+		if !strings.Contains(out, want) {
+			t.Errorf("doctor output omits %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestDoctorSummarizesWiring(t *testing.T) {
+	home, _ := isolate(t)
+	var stdout, stderr bytes.Buffer
+	if code := wire.CLI([]string{"copilot"}, &stdout, &stderr, toolbox.ProductVersion()); code != 0 {
+		t.Fatalf("wire copilot: %d\n%s%s", code, stdout.String(), stderr.String())
+	}
+	checks, errText := wiringChecks(toolbox.ProductVersion())
+	if errText != "" || len(checks) != 1 || checks[0].Status != StatusOK || checks[0].Label != "copilot (user)" {
+		t.Fatalf("wiring checks = %+v (%s)", checks, errText)
+	}
+	skill := filepath.Join(home, ".copilot", "skills", "facet", "SKILL.md")
+	if err := os.WriteFile(skill, []byte("edited"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	checks, _ = wiringChecks("9.9.9")
+	if len(checks) != 1 || checks[0].Status != StatusWarning || checks[0].Fix != "facet wire copilot" ||
+		!strings.Contains(checks[0].Details, "changed since facet wire installed them") || !strings.Contains(checks[0].Details, "v9.9.9") {
+		t.Fatalf("drifted wiring checks = %+v", checks)
+	}
+	var buf bytes.Buffer
+	formatDoctorReport(&DoctorReport{Facet: FacetRuntimeCheck{Status: StatusNotFound}, Wiring: checks}, &buf)
+	if !strings.Contains(buf.String(), "fix: facet wire copilot") {
+		t.Errorf("formatted wiring:\n%s", buf.String())
+	}
+
+	if err := os.WriteFile(wire.RegistryPath(home), []byte("not json"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, errText := wiringChecks("9.9.9"); errText == "" {
+		t.Error("an unreadable registry was not reported")
 	}
 }
 
@@ -182,142 +378,6 @@ func TestEdgeTTSDoctorDistinguishesBuiltInClientFromServiceReachability(t *testi
 	}
 }
 
-func TestRunInit(t *testing.T) {
-	// Create a dummy bundle directory with skills
-	bundleDir := t.TempDir()
-	skillsDir := filepath.Join(bundleDir, "skills", "creative")
-	if err := os.MkdirAll(skillsDir, 0755); err != nil {
-		t.Fatalf("failed to create dummy skills dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(skillsDir, "test-skill.md"), []byte("# Test Skill"), 0644); err != nil {
-		t.Fatalf("failed to write dummy skill: %v", err)
-	}
-
-	cfg := DefaultConfig()
-	cfg.Paths.Bundle = bundleDir
-	for _, name := range []string{"explainer", "cinematic"} {
-		writeConfigFixture(t, filepath.Join(bundleDir, "packs", name, "SKILL.md"), "# Pack")
-	}
-
-	adapters := []struct {
-		engine      string
-		skillsRoot  string
-		instruction string
-	}{
-		{"claude", ".claude/skills", "CLAUDE.md"},
-		{"copilot", ".github/skills", ".github/copilot-instructions.md"},
-		{"codex", ".agents/skills", "AGENTS.md"},
-		{"opencode", ".opencode/skills", "AGENTS.md"},
-		{"studio", "skills", "AGENTS.md"},
-	}
-	allInstructions := []string{"CLAUDE.md", "AGENTS.md", ".github/copilot-instructions.md"}
-	for _, adapter := range adapters {
-		t.Run("CoreOnly/"+adapter.engine, func(t *testing.T) {
-			projectDir := filepath.Join(t.TempDir(), adapter.engine+"-project")
-			var buf bytes.Buffer
-			res, err := RunInitWithWriter(projectDir, adapter.engine, cfg, &buf)
-			if err != nil {
-				t.Fatalf("RunInitWithWriter failed: %v", err)
-			}
-			if res.Engine != adapter.engine {
-				t.Errorf("expected engine %s, got %s", adapter.engine, res.Engine)
-			}
-			if len(res.Packs) != 0 {
-				t.Fatalf("default init activated packs: %v", res.Packs)
-			}
-			for _, path := range []string{".facet.yaml", "facet.lock.json", filepath.ToSlash(filepath.Join(adapter.skillsRoot, "facet", "SKILL.md")), adapter.instruction} {
-				if _, err := os.Stat(filepath.Join(projectDir, filepath.FromSlash(path))); err != nil {
-					t.Errorf("expected %s: %v", path, err)
-				}
-			}
-			for _, path := range []string{"assets", "artifacts", "renders", "narration"} {
-				if _, err := os.Stat(filepath.Join(projectDir, path)); !os.IsNotExist(err) {
-					t.Errorf("core-only init created unsolicited %s", path)
-				}
-			}
-			for _, instruction := range allInstructions {
-				_, err := os.Stat(filepath.Join(projectDir, filepath.FromSlash(instruction)))
-				if instruction == adapter.instruction {
-					if err != nil {
-						t.Errorf("selected instruction %s missing: %v", instruction, err)
-					}
-				} else if !os.IsNotExist(err) {
-					t.Errorf("%s init wrote unrelated governing file %s", adapter.engine, instruction)
-				}
-			}
-		})
-	}
-
-	// 4. Test InitWithOptions with packs and ownership
-	t.Run("PacksAndOwnership", func(t *testing.T) {
-		projectDir := filepath.Join(t.TempDir(), "packs-project")
-		var buf bytes.Buffer
-		opts := InitOptions{
-			ProjectDir: projectDir,
-			Engine:     "claude",
-			Packs:      []string{"explainer", "cinematic"},
-		}
-		res, err := RunInitWithOptions(opts, cfg, &buf)
-		if err != nil {
-			t.Fatalf("RunInitWithOptions failed: %v", err)
-		}
-
-		if len(res.Packs) != 2 {
-			t.Errorf("expected 2 packs, got %d", len(res.Packs))
-		}
-
-		// Verify facet.lock.json
-		lockFile := filepath.Join(projectDir, "facet.lock.json")
-		if _, err := os.Stat(lockFile); err != nil {
-			t.Errorf("expected facet.lock.json: %v", err)
-		}
-
-		// Verify .facet/ownership.json
-		ownFile := filepath.Join(projectDir, ".facet", "ownership.json")
-		if _, err := os.Stat(ownFile); err != nil {
-			t.Errorf("expected .facet/ownership.json: %v", err)
-		}
-
-		// Verify pack skill was linked
-		explainerSkill := filepath.Join(projectDir, ".claude", "skills", "explainer")
-		if _, err := os.Stat(explainerSkill); err != nil {
-			t.Errorf("expected .claude/skills/explainer: %v", err)
-		}
-
-		// Verify only the selected engine's governing file was scaffolded.
-		claudeFile := filepath.Join(projectDir, "CLAUDE.md")
-		claudeContent, err := os.ReadFile(claudeFile)
-		if err != nil {
-			t.Errorf("expected CLAUDE.md: %v", err)
-		} else {
-			contentStr := string(claudeContent)
-			if !strings.Contains(contentStr, "Produce and review the requested video here") {
-				t.Errorf("expected CLAUDE.md to contain anti-drift rules")
-			}
-			if !strings.Contains(contentStr, "Never substitute mock media in production") {
-				t.Errorf("expected CLAUDE.md to prohibit production mock substitution")
-			}
-			if !strings.Contains(contentStr, "facet tools run edge_tts") {
-				t.Errorf("expected CLAUDE.md to include edge_tts signature")
-			}
-			if !strings.Contains(contentStr, "facet tools run output_review") {
-				t.Errorf("expected CLAUDE.md to include output_review signature")
-			}
-			// Acceptance criteria: CLAUDE.md must be lean (<50 lines)
-			lines := strings.Split(contentStr, "\n")
-			if len(lines) >= 50 {
-				t.Errorf("expected CLAUDE.md to be <50 lines, got %d lines", len(lines))
-			}
-		}
-
-		for _, unrelated := range []string{"AGENTS.md", ".github/copilot-instructions.md"} {
-			if _, err := os.Stat(filepath.Join(projectDir, filepath.FromSlash(unrelated))); !os.IsNotExist(err) {
-				t.Errorf("unexpected unrelated instruction file %s", unrelated)
-			}
-		}
-	})
-}
-
 func writeConfigFixture(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
@@ -325,36 +385,6 @@ func writeConfigFixture(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestInstalledBundleFromUnrelatedDirectory(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
-	t.Setenv("LOCALAPPDATA", "")
-	t.Chdir(t.TempDir())
-	bundle := filepath.Join(home, ".facet", "bundle")
-	writeConfigFixture(t, filepath.Join(bundle, "skills", "facet", "SKILL.md"), "# Installed core")
-	writeConfigFixture(t, filepath.Join(bundle, "packs", "explainer", "SKILL.md"), "# Installed pack")
-	writeConfigFixture(t, filepath.Join(bundle, "remotion-composer", "package.json"), "{}")
-	cfg := DefaultConfig()
-	cfg.AutoDetect()
-	if cfg.Paths.Bundle != bundle || cfg.Paths.RemotionComposer != filepath.Join(bundle, "remotion-composer") {
-		t.Fatalf("unexpected installed paths: %+v", cfg.Paths)
-	}
-	if got := findPackSource("@xibodev/facet-pack-explainer", nil); got != filepath.Join(bundle, "packs", "explainer") {
-		t.Fatalf("home pack resolution = %q", got)
-	}
-	project := filepath.Join(t.TempDir(), "production")
-	_, err := RunInitWithOptions(InitOptions{ProjectDir: project, Engine: "opencode", Packs: []string{"explainer"}}, cfg, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, skill := range []string{"facet", "explainer"} {
-		if _, err := os.ReadFile(filepath.Join(project, ".opencode", "skills", skill, "SKILL.md")); err != nil {
-			t.Fatalf("installed skill %s not projected: %v", skill, err)
-		}
 	}
 }
 
@@ -366,59 +396,5 @@ func TestBundleResolutionOrder(t *testing.T) {
 	want := []string{cwd, filepath.Dir(cwd), filepath.Join(root, "checkout"), filepath.Join(root, "install", "bundle"), filepath.Join(root, "install"), filepath.Join(home, ".facet", "bundle")}
 	if got := bundleCandidatesFor(cwd, home, executable); !reflect.DeepEqual(got, want) {
 		t.Fatalf("candidate order = %v, want %v", got, want)
-	}
-}
-
-func TestPinnedPathsAndProjectDefaultsSurviveInit(t *testing.T) {
-	t.Chdir(t.TempDir())
-	bundle := t.TempDir()
-	writeConfigFixture(t, filepath.Join(bundle, "skills", "facet", "SKILL.md"), "# Custom core")
-	writeConfigFixture(t, filepath.Join(bundle, "packs", "explainer", "SKILL.md"), "# Custom pack")
-	// A local pack must not shadow the configured bundle.
-	writeConfigFixture(t, filepath.Join("packs", "explainer", "SKILL.md"), "# Other pack")
-	cfg := DefaultConfig()
-	cfg.Paths = PathsConfig{Bundle: bundle, RemotionComposer: "/custom/composer", FFmpeg: "/custom/ffmpeg", Node: "/custom/node", OpenCode: "/custom/opencode"}
-	cfg.Defaults.Voice = "custom-voice"
-	cfg.Defaults.Resolution = "720x1280"
-	cfg.Defaults.FPS = 24
-	wantPaths := cfg.Paths
-	cfg.AutoDetect()
-	if cfg.Paths.Bundle != wantPaths.Bundle || cfg.Paths.RemotionComposer != wantPaths.RemotionComposer || cfg.Paths.FFmpeg != wantPaths.FFmpeg || cfg.Paths.Node != wantPaths.Node || cfg.Paths.OpenCode != wantPaths.OpenCode {
-		t.Fatalf("pinned paths overwritten: %+v", cfg.Paths)
-	}
-
-	if got := findPackSource("explainer", cfg); got != filepath.Join(bundle, "packs", "explainer") {
-		t.Fatalf("configured pack not preferred: %s", got)
-	}
-	project := t.TempDir()
-	if err := cfg.Save(filepath.Join(project, ".facet.yaml")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := RunInitWithOptions(InitOptions{ProjectDir: project, Engine: "opencode"}, DefaultConfig(), nil); err != nil {
-		t.Fatal(err)
-	}
-	loaded, err := Load(filepath.Join(project, ".facet.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.Paths != cfg.Paths || loaded.Defaults.Voice != "custom-voice" || loaded.Defaults.Resolution != "720x1280" || loaded.Defaults.FPS != 24 || loaded.Defaults.Engine != "opencode" {
-		t.Fatalf("custom project configuration lost: %+v", loaded)
-	}
-}
-
-func TestSelectedPackMustExistBeforeProjectWrites(t *testing.T) {
-	root := t.TempDir()
-	project := filepath.Join(root, "project")
-	cfg := DefaultConfig()
-	cfg.Paths.Bundle = t.TempDir()
-	if _, err := RunInitWithOptions(InitOptions{
-		ProjectDir: project,
-		Engine:     "claude",
-		Packs:      []string{"missing"},
-	}, cfg, nil); err == nil {
-		t.Fatal("missing selected pack was accepted")
-	}
-	if _, err := os.Stat(project); !os.IsNotExist(err) {
-		t.Fatalf("failed pack selection wrote project files: %v", err)
 	}
 }

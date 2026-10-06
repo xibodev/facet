@@ -59,7 +59,7 @@ func TestUndecodableFrameFallsBackToSize(t *testing.T) {
 
 func render(t *testing.T, out, source, filter string) {
 	t.Helper()
-	cmd := exec.Command("ffmpeg", "-v", "error", "-y",
+	cmd := fixtureCommand(t, "ffmpeg", "-v", "error", "-y",
 		"-f", "lavfi", "-i", source, "-vf", filter, "-frames:v", "1", "-q:v", "2", out)
 	if err := cmd.Run(); err != nil {
 		t.Skipf("could not synthesise a test frame: %v", err)

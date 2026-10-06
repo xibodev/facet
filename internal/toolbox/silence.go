@@ -170,6 +170,8 @@ func doSilenceCutterContext(ctx context.Context, op string, data []byte) (any, [
 			outPath = strings.TrimSuffix(input, filepath.Ext(input)) + ".silence.json"
 		}
 		resData := map[string]any{
+			"mode":                     "mark",
+			"input":                    input,
 			"silences":                 silences,
 			"speech_segments":          speechSegments,
 			"total_duration":           totalDur,
@@ -179,7 +181,12 @@ func doSilenceCutterContext(ctx context.Context, op string, data []byte) (any, [
 			"output":                   outPath,
 		}
 		b, _ := json.MarshalIndent(resData, "", "  ")
-		_ = os.WriteFile(outPath, b, 0644)
+		if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+			return nil, nil, failure("command_failed", "unable to create output directory", map[string]any{"error": bounded(err.Error())})
+		}
+		if err := os.WriteFile(outPath, b, 0o644); err != nil {
+			return nil, nil, failure("command_failed", "unable to write the silence map", map[string]any{"path": outPath, "error": bounded(err.Error())})
+		}
 		return resData, nil, nil
 	}
 
@@ -277,7 +284,10 @@ func doSilenceCutterContext(ctx context.Context, op string, data []byte) (any, [
 		"input_duration":          totalDur,
 		"silence_removed_seconds": roundFloat(silenceDur, 2),
 		"silence_segments":        len(silences),
-		"speech_segments":         len(speechSegments),
+		// A count, named like mark's: speech_segments is mark's list of
+		// segments, and one field must not be an array in one mode and a
+		// number in another.
+		"speech_segments_count": len(speechSegments),
 	}, nil, nil
 }
 

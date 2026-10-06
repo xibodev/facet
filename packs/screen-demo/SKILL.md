@@ -1,5 +1,5 @@
 ---
-name: screen-demo
+name: facet-screen-demo
 description: Produce recorded or synthetic software walkthroughs with Facet.
 ---
 

@@ -2,20 +2,20 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "facet/tools/video_stitch",
   "title": "Video Stitch Tool",
-  "description": "Multi-clip assembly tool with validation, transitions, and spatial layouts.",
+  "description": "Request for video_stitch: clip validation, multi-clip assembly with transitions, and spatial layouts. The same contract `facet tools describe video_stitch` publishes.",
   "type": "object",
-  "required": ["operation"],
+  "required": ["operation", "clips"],
   "properties": {
     "operation": {
       "type": "string",
       "enum": ["validate", "stitch", "preview_stitch", "spatial"],
-      "description": "The operation to perform"
+      "description": "validate compares clip properties; stitch joins clips; preview_stitch joins them fast at 640x360; spatial composes two clips into one frame"
     },
     "clips": {
       "type": "array",
       "items": { "type": "string" },
       "minItems": 1,
-      "description": "List of input video file paths"
+      "description": "Input video file paths, in playback order"
     },
     "output_path": {
       "type": "string",
@@ -25,39 +25,39 @@
       "type": "string",
       "enum": ["cut", "crossfade", "fade"],
       "default": "cut",
-      "description": "Transition type between clips. 'cut' = hard cut (concat demuxer), 'crossfade' = blend between clips, 'fade' = fade through black"
+      "description": "Transition between clips. 'cut' = hard cut, 'crossfade' = blend between clips, 'fade' = fade through black"
     },
     "transition_duration": {
       "type": "number",
       "minimum": 0.1,
       "maximum": 5.0,
       "default": 0.5,
-      "description": "Duration of the transition in seconds (ignored for 'cut')"
+      "description": "Transition length in seconds (ignored for 'cut')"
     },
     "auto_normalize": {
       "type": "boolean",
       "default": false,
-      "description": "Re-encode clips to a common format before concatenation if they have mismatched properties"
+      "description": "Accepted for compatibility. stitch and preview_stitch always normalize every clip to one size, frame rate and audio format."
     },
     "target_resolution": {
       "type": "string",
       "pattern": "^\\d+x\\d+$",
-      "description": "Target resolution for normalization (e.g. '1920x1080'). Defaults to first clip's resolution."
+      "description": "stitch only: output size such as 1920x1080. Defaults to the first clip's size."
     },
     "target_fps": {
       "type": "integer",
       "minimum": 1,
       "maximum": 120,
-      "description": "Target frame rate for normalization. Defaults to first clip's FPS."
+      "description": "stitch only: output frame rate. Defaults to the first clip's rate."
     },
     "codec": {
       "type": "string",
       "default": "libx264",
-      "description": "Video codec for encoding"
+      "description": "spatial only: video encoder."
     },
     "crf": {
       "type": "integer",
-      "minimum": 0,
+      "minimum": 1,
       "maximum": 51,
       "default": 23,
       "description": "Constant Rate Factor for quality (lower = better)"
@@ -68,57 +68,37 @@
       "default": "medium",
       "description": "FFmpeg encoding preset"
     },
-    "profile": {
-      "type": "string",
-      "description": "Media profile name from media_profiles.py (e.g. 'youtube_landscape', 'tiktok')"
-    },
     "layout": {
       "type": "string",
       "enum": ["side_by_side", "vertical_stack", "picture_in_picture"],
+      "default": "side_by_side",
       "description": "Spatial layout for the 'spatial' operation"
     },
     "pip_position": {
       "type": "string",
       "enum": ["top_left", "top_right", "bottom_left", "bottom_right"],
       "default": "bottom_right",
-      "description": "Corner position for picture-in-picture overlay"
+      "description": "Corner for the picture-in-picture overlay"
     },
     "pip_scale": {
       "type": "number",
       "minimum": 0.1,
       "maximum": 0.5,
       "default": 0.3,
-      "description": "Scale of PiP overlay relative to base video dimensions"
+      "description": "Scale of the picture-in-picture overlay relative to the base video"
     },
     "pip_margin": {
       "type": "integer",
-      "minimum": 0,
+      "minimum": 1,
       "default": 10,
-      "description": "Margin in pixels for PiP overlay from edges"
+      "description": "Margin in pixels between the picture-in-picture overlay and the frame edges"
     },
-    "dry_run": {
-      "type": "boolean",
-      "default": false,
-      "description": "If true, return what would be done without executing"
+    "timeout_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 300,
+      "description": "Time allowed for the whole operation"
     }
   },
-  "allOf": [
-    {
-      "if": { "properties": { "operation": { "const": "stitch" } } },
-      "then": { "required": ["clips"] }
-    },
-    {
-      "if": { "properties": { "operation": { "const": "validate" } } },
-      "then": { "required": ["clips"] }
-    },
-    {
-      "if": { "properties": { "operation": { "const": "preview_stitch" } } },
-      "then": { "required": ["clips"] }
-    },
-    {
-      "if": { "properties": { "operation": { "const": "spatial" } } },
-      "then": { "required": ["clips", "layout"] }
-    }
-  ],
   "additionalProperties": false
 }

@@ -1,14 +1,12 @@
-// Package provider implements agent.ToolProvider for Facet's native toolbox.
+// Package provider is the in-process adapter that registers Facet's tool
+// registry with a harness built on Compa's public agent.ToolProvider
+// extension point.
 //
-// This is the NATIVE binding path: it registers Facet's video-production
-// tools directly with the Compa kernel, paying no subprocess or protocol
-// cost to host itself.
-//
-// The three projection shapes:
-//
-//	F-SKILL  -- external-agent CLI uses toolbox tools via skill guidance
-//	F-APP    -- Compa kernel with this provider (native, in-process)
-//	F-MOD    -- Compa kernel with module-v2 projection (detached host)
+// It is a stand-in. Agent harnesses reach Facet through MCP (`facet mcp`);
+// this adapter exists only until Compa's MCP client carries long renders
+// (progress, cancellation, structured results, no replay of side-effecting
+// calls). It registers tools only: guidance comes from the harness's own
+// skill loading, never from this package.
 package provider
 
 import (
@@ -22,45 +20,25 @@ import (
 	"github.com/xibodev/facet/internal/toolbox"
 )
 
-// FacetToolProvider implements agent.ToolProvider by wrapping Facet's native
+// FacetToolProvider implements agent.ToolProvider by wrapping Facet's
 // toolbox operations as Compa-compatible tools.
-type FacetToolProvider struct {
-	bundleDir     string
-	bundleEntries map[string]struct{}
-}
+type FacetToolProvider struct{}
 
 // NewFacetToolProvider creates a new Facet tool provider.
 func NewFacetToolProvider() *FacetToolProvider {
 	return &FacetToolProvider{}
 }
 
-// NewBundleToolProvider creates a provider whose guidance tools read only from
-// a verified installed bundle.
-func NewBundleToolProvider(bundleDir string, entries ...string) *FacetToolProvider {
-	return &FacetToolProvider{bundleDir: bundleDir, bundleEntries: entrySet(entries)}
-}
-
-// RegisterTools contributes all enabled Facet tools to the Compa agent.
+// RegisterTools contributes all Facet tools to the Compa agent.
 func (p *FacetToolProvider) RegisterTools(
 	workspace string,
 	register func(agent.Tool),
 ) ([]string, func(string) (string, string, []string)) {
 	var summaries []string
-
 	for _, name := range toolbox.Names() {
-		t := &facetTool{name: name, workspace: workspace}
-		register(t)
+		register(&facetTool{name: name, workspace: workspace})
 		summaries = append(summaries, name)
 	}
-	for _, operation := range []string{"describe", "estimate", "guidance"} {
-		register(capabilityTool{
-			operation:     operation,
-			workspace:     workspace,
-			bundleDir:     p.bundleDir,
-			bundleEntries: p.bundleEntries,
-		})
-	}
-
 	return summaries, nil
 }
 

@@ -1,544 +1,454 @@
-// Package bundle builds Release C artifacts: installable, target-shaped Facet
-// packages for external agentic CLIs.
+// Package bundle projects Facet's canonical guidance into the native layouts
+// of agentic CLIs.
 //
-// RELEASE C is the projection where the TARGET CLI is the reasoning driver.
-// Facet ships the creative intelligence -- agents, skills, packs, instructions
-// and tool wiring -- shaped to whatever that harness natively expects.
+// The target-adapter rule:
 //
-// The target-adapter rule, same as Operations:
+//	canonical Facet asset  ->  target adapter  ->  target-native file
 //
-//	canonical Facet asset  ->  target adapter  ->  target-shaped release asset
+// Different packaging is allowed. Different product semantics are not: every
+// target receives the same core skill and the same seven pack skills, byte for
+// byte, and the creative persona wherever the target's agent format has been
+// validated. The canonical assets are the ones compiled into the binary
+// (facet.Assets), so a projection never depends on the working directory.
 //
-// Different packaging is allowed. Different product semantics are not. Four
-// hand-maintained copies of one skill is the failure this prevents, and it is
-// the duplicated-truth defect one layer up from a second effects table.
-//
-// A bundle is a DIRECTORY plus a manifest, not an opaque archive: an installer
-// must be able to see what it is about to write before it writes it, and a
-// human must be able to read what was installed afterwards.
+// This package is the only place that knows a target's folder conventions.
+// Registering the MCP server is wiring, not projection, and lives in
+// internal/wire.
 package bundle
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"io"
-	"os"
+	"io/fs"
+	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
 	facet "github.com/xibodev/facet"
 )
 
-// ManifestSchema identifies the bundle manifest format.
-//
-// Versioned separately from Facet itself: an installer reads the manifest
-// BEFORE it knows anything else about the bundle, so the manifest's own shape
-// has to be the one thing it can rely on.
-const ManifestSchema = "xibodev.facet.bundle/v1"
+const (
+	// CapabilityID identifies the product a bundle or wiring belongs to.
+	CapabilityID = "xibodev.facet"
+	// MCPServerName is the name every target registers Facet's MCP server under.
+	MCPServerName = "facet"
+	// CoreSkillName is the core production-contract skill.
+	CoreSkillName = "facet"
+	// PersonaName is the creative persona agent.
+	PersonaName = "facet-creative"
+	// AdapterVersion versions the projection logic separately from the Facet
+	// version: a layout fix changes it without changing product truth.
+	AdapterVersion = "2"
 
-// AdapterVersion is the version of the PROJECTION LOGIC, distinct from the
-// Facet version.
-//
-// These answer different questions. FacetVersion says which product truth was
-// projected; AdapterVersion says how it was shaped for this target. A fix to a
-// target's layout changes the second without changing the first, and an
-// installer needs to tell those apart to decide whether a reinstall is
-// warranted.
-const AdapterVersion = "1"
+	coreSkillSource = "skills/facet"
+	personaSource   = "agents/facet-creative.md"
+)
 
-const CapabilityID = "xibodev.facet"
+// MCPServerArgs returns the arguments that start Facet's MCP server when
+// appended to the facet executable.
+func MCPServerArgs() []string { return []string{"mcp"} }
 
-// Target is one agent runtime Facet can be installed into.
+// Target is an agentic CLI Facet can be projected into.
 type Target string
 
 const (
 	TargetClaude   Target = "claude"
-	TargetOpenCode Target = "opencode"
-	TargetCopilot  Target = "copilot"
 	TargetCodex    Target = "codex"
-	TargetApp      Target = "app"
+	TargetCopilot  Target = "copilot"
+	TargetOpenCode Target = "opencode"
 )
 
-// Targets returns every supported target, sorted so a build is reproducible.
+// Targets returns every supported target in a stable order.
 func Targets() []Target {
-	return []Target{TargetApp, TargetClaude, TargetCodex, TargetCopilot, TargetOpenCode}
+	return []Target{TargetClaude, TargetCodex, TargetCopilot, TargetOpenCode}
 }
 
-// Entry is one file the bundle will install, with the digest of its content.
-//
-// The digest is over the PROJECTED bytes rather than the canonical source: what
-// an installer verifies must be what it writes. A digest of the source would
-// confirm the bundle was built from something intact without confirming that
-// what lands on disk is what was measured.
-type Entry struct {
-	// Path is relative to the target's install root, forward-slashed so a
-	// manifest built on Windows installs identically elsewhere.
-	Path   string `json:"path"`
-	Bytes  int64  `json:"bytes"`
-	Digest string `json:"digest"`
-	// Kind records which canonical asset class this came from, so an installer
-	// can explain what it is writing rather than listing opaque paths.
-	Kind string `json:"kind"`
+func (t Target) valid() bool {
+	for _, known := range Targets() {
+		if t == known {
+			return true
+		}
+	}
+	return false
 }
 
-// Manifest is the bundle's identity, provenance and install plan.
-type Manifest struct {
-	Schema string `json:"schema"`
-
-	// --- identity ---
-	CapabilityID   string `json:"capability_id"`
-	FacetVersion   string `json:"facet_version"`
-	Target         Target `json:"target"`
-	AdapterVersion string `json:"adapter_version"`
-
-	// --- compatibility ---
-	// Compatibility states what the TARGET must provide, so an installer can
-	// refuse a bundle rather than write files that will not be discovered.
-	Compatibility Compatibility `json:"compatibility"`
-
-	// --- content ---
-	Entries []Entry `json:"entries"`
-
-	// BundleDigest covers every entry digest in sorted order. It answers "is
-	// this the bundle that was built", which is a different question from any
-	// single file being intact.
-	BundleDigest string `json:"bundle_digest"`
-
-	// Tools names the public vocabulary this bundle exposes. Recorded so an
-	// installed bundle can be compared against the running Facet: a bundle
-	// naming tools the binary does not have is a stale install, and that is
-	// otherwise invisible.
-	Tools []string `json:"tools"`
+// ParseTarget validates one target name.
+func ParseTarget(name string) (Target, error) {
+	t := Target(strings.ToLower(strings.TrimSpace(name)))
+	if !t.valid() {
+		return "", fmt.Errorf("unknown CLI %q; choose claude, codex, copilot, opencode, or all", name)
+	}
+	return t, nil
 }
 
-// Compatibility is what the target harness must supply for this bundle to work.
-type Compatibility struct {
-	// InstallRoot is where the target discovers assets, relative to a project
-	// or a user home depending on Scope.
-	InstallRoot string `json:"install_root"`
-	// Scope is "project" or "user".
-	Scope string `json:"scope"`
-	// ToolTransport is how this target actually invokes Facet.
-	//
-	// DELIBERATELY NOT ALWAYS MCP. Facet exposes no MCP server today -- tools
-	// are CLI-invoked -- so declaring MCP would describe a transport that does
-	// not exist. Every listed target can shell out, so "cli" is the honest
-	// answer now, and a target better served by MCP later gains a projection
-	// rather than forcing a rewrite.
-	ToolTransport string `json:"tool_transport"`
-	// FacetBinary is the executable an agent must invoke.
-	FacetBinary string `json:"facet_binary,omitempty"`
-	// NativeProvider identifies the in-process provider compiled into a host.
-	NativeProvider string `json:"native_provider,omitempty"`
-	// KernelModule and KernelVersion identify the compatible public kernel API.
-	KernelModule  string `json:"kernel_module,omitempty"`
-	KernelVersion string `json:"kernel_version,omitempty"`
+// ParseTargets parses a comma-separated target list. "all" selects every
+// target. Duplicates are removed and the result keeps the order of Targets().
+func ParseTargets(list ...string) ([]Target, error) {
+	want := map[Target]bool{}
+	for _, item := range list {
+		for _, name := range strings.Split(item, ",") {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			if strings.EqualFold(name, "all") {
+				for _, t := range Targets() {
+					want[t] = true
+				}
+				continue
+			}
+			t, err := ParseTarget(name)
+			if err != nil {
+				return nil, err
+			}
+			want[t] = true
+		}
+	}
+	if len(want) == 0 {
+		return nil, fmt.Errorf("no CLI named; choose claude, codex, copilot, opencode, or all")
+	}
+	var out []Target
+	for _, t := range Targets() {
+		if want[t] {
+			out = append(out, t)
+		}
+	}
+	return out, nil
 }
 
-// layoutFor returns the target-native install shape.
-//
-// This is the adapter. It is the ONLY place that knows a target's folder
-// conventions, so adding a target is one case rather than a search through the
-// codebase.
-func layoutFor(t Target) Compatibility {
-	base := Compatibility{
-		Scope:         "project",
-		ToolTransport: "cli",
-		FacetBinary:   "facet",
+// Scope selects where a target discovers assets: the user's own
+// configuration, or one project.
+type Scope string
+
+const (
+	ScopeUser    Scope = "user"
+	ScopeProject Scope = "project"
+)
+
+// ParseScope validates a scope name.
+func ParseScope(name string) (Scope, error) {
+	switch s := Scope(strings.ToLower(strings.TrimSpace(name))); s {
+	case ScopeUser, ScopeProject:
+		return s, nil
+	}
+	return "", fmt.Errorf("unknown scope %q; choose user or project", name)
+}
+
+// Asset kinds recorded in manifests and wiring records.
+const (
+	KindSkill = "skill"
+	KindPack  = "pack"
+	KindAgent = "agent"
+)
+
+// File is one target-native file. Path is slash-separated and relative to
+// the target's install root (see Root).
+type File struct {
+	Path    string
+	Kind    string
+	Name    string // skill or agent name
+	Content []byte
+}
+
+// Digest returns the file's content digest.
+func (f File) Digest() string { return Digest(f.Content) }
+
+// Digest returns "sha256:<hex>" for content.
+func Digest(content []byte) string {
+	sum := sha256.Sum256(content)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// PackSkillName is the skill name a pack is installed under. Packs are
+// namespaced so that installing them user-wide never collides with a user's
+// own generically named skills; a route's `pack` value maps to this name.
+func PackSkillName(pack string) string { return "facet-" + pack }
+
+// DefaultRoot returns a target's install root relative to the scope's base
+// directory (the home directory for user scope, the project directory for
+// project scope), ignoring environment overrides.
+func DefaultRoot(t Target, s Scope) string {
+	if s == ScopeProject {
+		switch t {
+		case TargetClaude:
+			return ".claude"
+		case TargetCodex:
+			// Codex discovers repository skills in .agents/skills.
+			return ".agents"
+		case TargetCopilot:
+			return ".github"
+		case TargetOpenCode:
+			return ".opencode"
+		}
+		return ""
 	}
 	switch t {
 	case TargetClaude:
-		base.InstallRoot = ".claude"
-	case TargetOpenCode:
-		base.InstallRoot = ".opencode"
-	case TargetCopilot:
-		base.InstallRoot = ".github"
+		return ".claude"
 	case TargetCodex:
-		base.InstallRoot = ".agents"
-	case TargetApp:
-		base.InstallRoot = "."
-		base.ToolTransport = "native"
-		base.FacetBinary = ""
-		base.NativeProvider = "facet-native"
-		base.KernelModule = "github.com/xibodev/compa"
-		base.KernelVersion = "v1"
+		// Codex's own skill installer and skill creator write user skills to
+		// $CODEX_HOME/skills (default ~/.codex/skills), where Codex also keeps
+		// its system skills.
+		return ".codex"
+	case TargetCopilot:
+		// `copilot skill --help`: personal skills live in ~/.copilot/skills.
+		return ".copilot"
+	case TargetOpenCode:
+		return ".config/opencode"
 	}
-	return base
+	return ""
 }
 
-// Source is the canonical asset tree a bundle is projected from.
-type Source struct {
-	// SkillsDir and PacksDir are canonical product truth. The builder reads
-	// them and projects the same semantics into every target.
-	SkillsDir  string
-	PacksDir   string
-	AgentsDir  string
-	SchemasDir string
-	// Tools is the public vocabulary, supplied by the caller so the builder
-	// never holds a second copy of it.
-	Tools []string
-	// FacetVersion is the product version being projected.
-	FacetVersion string
+// Root returns the absolute install root of target t at scope s. base is the
+// home directory for user scope and the project directory for project scope.
+// User scope honours each CLI's documented configuration-directory override.
+func Root(t Target, s Scope, base string, getenv func(string) string) string {
+	if getenv == nil {
+		getenv = func(string) string { return "" }
+	}
+	if s == ScopeUser {
+		switch t {
+		case TargetClaude:
+			if dir := strings.TrimSpace(getenv("CLAUDE_CONFIG_DIR")); dir != "" {
+				return filepath.Clean(dir)
+			}
+		case TargetCodex:
+			if dir := strings.TrimSpace(getenv("CODEX_HOME")); dir != "" {
+				return filepath.Clean(dir)
+			}
+		case TargetOpenCode:
+			if dir := strings.TrimSpace(getenv("XDG_CONFIG_HOME")); dir != "" {
+				return filepath.Join(dir, "opencode")
+			}
+		}
+	}
+	return filepath.Join(base, filepath.FromSlash(DefaultRoot(t, s)))
 }
 
-// Build projects the canonical source into a target-shaped bundle on disk and
-// returns its manifest.
-//
-// outDir is created if absent and must be empty or nonexistent: a builder that
-// merges into a populated directory can produce a bundle whose manifest does
-// not describe its contents.
-func Build(src Source, t Target, outDir string) (*Manifest, error) {
-	if len(src.Tools) == 0 {
-		// A bundle with no tools would install guidance for a product the
-		// agent cannot invoke. Refuse rather than ship a decorative bundle.
-		return nil, fmt.Errorf("no tools supplied; a bundle must name the vocabulary it exposes")
+// personaFile returns the persona's file name under <root>/agents and how its
+// canonical bytes are adapted, or false when the target's agent format has
+// not been validated and the persona is therefore not installed there.
+func personaFile(t Target) (string, func([]byte) ([]byte, error), bool) {
+	switch t {
+	case TargetClaude:
+		// Claude Code subagents: agents/<name>.md with name and description
+		// frontmatter.
+		return PersonaName + ".md", keepBytes, true
+	case TargetCopilot:
+		// Copilot CLI custom agents: agents/<name>.agent.md with description
+		// (and optional name) frontmatter.
+		return PersonaName + ".agent.md", keepBytes, true
+	case TargetOpenCode:
+		// OpenCode agents: agents/<name>.md. The file name is the agent name,
+		// and frontmatter keys outside OpenCode's agent schema are passed to
+		// the model provider as options, so `name` is dropped.
+		return PersonaName + ".md", dropFrontmatterKey("name"), true
 	}
-	if src.FacetVersion == "" {
-		return nil, fmt.Errorf("no facet version supplied; a bundle without identity cannot be upgraded or compared")
-	}
+	// Codex: no agent format validated for this release.
+	return "", nil, false
+}
 
-	compat := layoutFor(t)
-	if compat.InstallRoot == "" {
+// HasPersona reports whether target t receives the creative persona agent.
+func HasPersona(t Target) bool {
+	_, _, ok := personaFile(t)
+	return ok
+}
+
+// Files projects the canonical assets for target t: the core skill, one skill
+// per retained pack, and the persona where supported. Paths are relative to
+// the target's install root; the result is sorted by path.
+func Files(t Target) ([]File, error) {
+	if !t.valid() {
 		return nil, fmt.Errorf("unsupported target %q", t)
 	}
-
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return nil, fmt.Errorf("creating bundle dir: %w", err)
-	}
-
-	var entries []Entry
-
-	// Skills project into <root>/skills/facet/, matching what the existing
-	// per-engine projection already does for an initialized project.
-	skillDest := filepath.Join("skills", "facet")
-	got, err := copyTree(src.SkillsDir, filepath.Join(outDir, skillDest), skillDest, "skill")
-	if err != nil {
-		return nil, fmt.Errorf("projecting skills: %w", err)
-	}
-	entries = append(entries, got...)
-
-	// Packs project one directory per pack.
-	packNames := facet.PackNames()
-	for _, p := range packNames {
-		if p == "" || filepath.Base(p) != p {
-			return nil, fmt.Errorf("invalid retained pack id %q", p)
+	var files []File
+	err := fs.WalkDir(facet.Assets, coreSkillSource, func(name string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
 		}
-		dest := filepath.Join("skills", p)
-		got, err := copyTree(filepath.Join(src.PacksDir, p), filepath.Join(outDir, dest), dest, "pack")
-		if err != nil {
-			return nil, fmt.Errorf("projecting pack %s: %w", p, err)
-		}
-		entries = append(entries, got...)
-	}
-
-	if src.AgentsDir != "" {
-		got, err := copyTree(src.AgentsDir, filepath.Join(outDir, "agents"), "agents", "agent")
-		if err != nil {
-			return nil, fmt.Errorf("projecting agent definitions: %w", err)
-		}
-		entries = append(entries, got...)
-	}
-	if src.SchemasDir != "" {
-		got, err := copyTree(src.SchemasDir, filepath.Join(outDir, "schemas"), "schemas", "schema")
-		if err != nil {
-			return nil, fmt.Errorf("projecting schemas: %w", err)
-		}
-		entries = append(entries, got...)
-	}
-
-	// Tool wiring: the instruction file that tells the agent Facet exists and
-	// how to invoke it. This is the piece `facet init` never wrote, and without
-	// it a bundle is guidance the agent has no way to act on.
-	wiring := renderToolWiring(t, compat, src)
-	wiringPath := instructionFileFor(t)
-	if err := writeFile(filepath.Join(outDir, wiringPath), []byte(wiring)); err != nil {
-		return nil, fmt.Errorf("writing tool wiring: %w", err)
-	}
-	entries = append(entries, entryFor(wiringPath, []byte(wiring), "wiring"))
-
-	if len(entries) == 0 {
-		// An empty bundle installs nothing and would report success.
-		return nil, fmt.Errorf("bundle is empty; nothing was projected")
-	}
-
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
-
-	tools := append([]string(nil), src.Tools...)
-	sort.Strings(tools)
-
-	m := &Manifest{
-		Schema:         ManifestSchema,
-		CapabilityID:   CapabilityID,
-		FacetVersion:   src.FacetVersion,
-		Target:         t,
-		AdapterVersion: AdapterVersion,
-		Compatibility:  compat,
-		Entries:        entries,
-		Tools:          tools,
-	}
-	m.BundleDigest = bundleDigest(entries)
-
-	raw, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	if err := writeFile(filepath.Join(outDir, "facet-bundle.json"), raw); err != nil {
-		return nil, fmt.Errorf("writing manifest: %w", err)
-	}
-	return m, nil
-}
-
-// instructionFileFor returns the target-native agent instruction path.
-//
-// Each target reads a different file. Projecting the same guidance into the
-// right name is exactly the adapter's job.
-func instructionFileFor(t Target) string {
-	switch t {
-	case TargetClaude:
-		return "CLAUDE.md"
-	case TargetCodex:
-		return "AGENTS.md"
-	case TargetCopilot:
-		return filepath.ToSlash(filepath.Join("copilot-instructions.md"))
-	case TargetOpenCode:
-		return "AGENTS.md"
-	case TargetApp:
-		return "AGENT.md"
-	}
-	return "AGENTS.md"
-}
-
-func bundleDigest(entries []Entry) string {
-	h := sha256.New()
-	for _, e := range entries {
-		fmt.Fprintf(h, "%s\n%s\n", e.Path, e.Digest)
-	}
-	return "sha256:" + hex.EncodeToString(h.Sum(nil))
-}
-
-func entryFor(rel string, content []byte, kind string) Entry {
-	sum := sha256.Sum256(content)
-	return Entry{
-		Path:   filepath.ToSlash(rel),
-		Bytes:  int64(len(content)),
-		Digest: "sha256:" + hex.EncodeToString(sum[:]),
-		Kind:   kind,
-	}
-}
-
-func writeFile(path string, content []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, content, 0o644)
-}
-
-// copyTree projects a canonical directory into the bundle, returning an entry
-// per file. relBase is the bundle-relative destination prefix.
-func copyTree(srcDir, dstDir, relBase, kind string) ([]Entry, error) {
-	var entries []Entry
-	err := filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
+		data, err := facet.Assets.ReadFile(name)
 		if err != nil {
 			return err
 		}
-		if info.IsDir() {
-			return nil
-		}
-		rel, err := filepath.Rel(srcDir, path)
-		if err != nil {
-			return err
-		}
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if err := writeFile(filepath.Join(dstDir, rel), content); err != nil {
-			return err
-		}
-		entries = append(entries, entryFor(filepath.Join(relBase, rel), content, kind))
+		rel := strings.TrimPrefix(name, coreSkillSource+"/")
+		files = append(files, File{Path: "skills/" + CoreSkillName + "/" + rel, Kind: KindSkill, Name: CoreSkillName, Content: normalizeText(name, data)})
 		return nil
 	})
 	if err != nil {
+		return nil, fmt.Errorf("reading the core skill: %w", err)
+	}
+	for _, pack := range facet.RetainedPacks() {
+		if pack.ID == "" || path.Base(pack.ID) != pack.ID {
+			return nil, fmt.Errorf("invalid pack id %q", pack.ID)
+		}
+		name := PackSkillName(pack.ID)
+		prefix := "packs/" + pack.ID + "/"
+		for _, guidance := range pack.Guidance {
+			if !strings.HasPrefix(guidance.Path, prefix) {
+				return nil, fmt.Errorf("pack %s guidance %s is outside the pack", pack.ID, guidance.Path)
+			}
+			data, err := facet.Assets.ReadFile(guidance.Path)
+			if err != nil {
+				return nil, fmt.Errorf("reading pack %s: %w", pack.ID, err)
+			}
+			files = append(files, File{Path: "skills/" + name + "/" + strings.TrimPrefix(guidance.Path, prefix), Kind: KindPack, Name: name, Content: normalizeText(guidance.Path, data)})
+		}
+	}
+	if file, render, ok := personaFile(t); ok {
+		data, err := facet.Assets.ReadFile(personaSource)
+		if err != nil {
+			return nil, fmt.Errorf("reading the persona: %w", err)
+		}
+		content, err := render(normalizeText(personaSource, data))
+		if err != nil {
+			return nil, fmt.Errorf("adapting the persona for %s: %w", t, err)
+		}
+		files = append(files, File{Path: "agents/" + file, Kind: KindAgent, Name: PersonaName, Content: content})
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	if err := validateFiles(t, files); err != nil {
 		return nil, err
 	}
-	return entries, nil
+	return files, nil
 }
 
-// Verify checks an installed or built bundle against its own manifest.
-//
-// Answers "is this bundle intact and complete", which is different from "did
-// the build succeed". A build that succeeded and a bundle that is whole are
-// separate claims, and this repo has already shipped a bundle that reported
-// success while missing the files that made it renderable.
-func Verify(dir string) (*Manifest, error) {
-	raw, err := os.ReadFile(filepath.Join(dir, "facet-bundle.json"))
-	if err != nil {
-		return nil, fmt.Errorf("reading manifest: %w", err)
-	}
-	var m Manifest
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return nil, fmt.Errorf("manifest does not decode: %w", err)
-	}
-	if m.Schema != ManifestSchema {
-		return nil, fmt.Errorf("manifest schema %q, want %q", m.Schema, ManifestSchema)
-	}
-	if len(m.Entries) == 0 {
-		return nil, fmt.Errorf("manifest declares no entries")
-	}
+var skillNamePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
-	for _, e := range m.Entries {
-		p := filepath.Join(dir, filepath.FromSlash(e.Path))
-		f, err := os.Open(p)
-		if err != nil {
-			return nil, fmt.Errorf("declared entry %s is missing: %w", e.Path, err)
-		}
-		h := sha256.New()
-		n, err := io.Copy(h, f)
-		f.Close()
-		if err != nil {
-			return nil, fmt.Errorf("reading %s: %w", e.Path, err)
-		}
-		if n != e.Bytes {
-			return nil, fmt.Errorf("%s is %d bytes, manifest says %d", e.Path, n, e.Bytes)
-		}
-		got := "sha256:" + hex.EncodeToString(h.Sum(nil))
-		if got != e.Digest {
-			return nil, fmt.Errorf("%s digest %s, manifest says %s", e.Path, got, e.Digest)
+// validateFiles enforces what every target's skill loader requires, so a
+// canonical edit that would make a target silently drop a skill fails here.
+func validateFiles(t Target, files []File) error {
+	skills := map[string]bool{}
+	for _, f := range files {
+		if f.Kind == KindSkill || f.Kind == KindPack {
+			skills[f.Name] = false
 		}
 	}
-
-	if got := bundleDigest(m.Entries); got != m.BundleDigest {
-		return nil, fmt.Errorf("bundle digest %s, manifest says %s", got, m.BundleDigest)
+	for _, f := range files {
+		switch {
+		case (f.Kind == KindSkill || f.Kind == KindPack) && f.Path == "skills/"+f.Name+"/SKILL.md":
+			skills[f.Name] = true
+			fields, ok := Frontmatter(f.Content)
+			if !ok {
+				return fmt.Errorf("skill %s has no frontmatter", f.Name)
+			}
+			if fields["name"] != f.Name {
+				return fmt.Errorf("skill %s declares name %q; the name must match its directory", f.Name, fields["name"])
+			}
+			if len(f.Name) > 64 || !skillNamePattern.MatchString(f.Name) {
+				return fmt.Errorf("skill name %q is not a lowercase hyphenated name of at most 64 characters", f.Name)
+			}
+			if d := fields["description"]; d == "" || len(d) > 500 {
+				return fmt.Errorf("skill %s needs a one-line description of 1 to 500 characters", f.Name)
+			}
+		case f.Kind == KindAgent:
+			fields, ok := Frontmatter(f.Content)
+			if !ok || fields["description"] == "" {
+				return fmt.Errorf("%s persona needs a description", t)
+			}
+			if name, present := fields["name"]; present && name != PersonaName {
+				return fmt.Errorf("%s persona declares name %q, want %q", t, name, PersonaName)
+			}
+		}
 	}
-	return &m, nil
+	for name, found := range skills {
+		if !found {
+			return fmt.Errorf("skill %s has no SKILL.md", name)
+		}
+	}
+	return nil
 }
 
-// VerifyTarget checks both bundle integrity and the binding required by a host.
-func VerifyTarget(dir string, target Target) (*Manifest, error) {
-	m, err := Verify(dir)
-	if err != nil {
-		return nil, err
+// Frontmatter returns the `key: value` fields of a Markdown document's YAML
+// frontmatter. It supports the flat scalar form Facet's assets use.
+func Frontmatter(doc []byte) (map[string]string, bool) {
+	lines, _, ok := splitFrontmatter(bytes.ReplaceAll(doc, []byte("\r\n"), []byte("\n")))
+	if !ok {
+		return nil, false
 	}
-	if m.CapabilityID != CapabilityID {
-		return nil, fmt.Errorf("capability %q, want %q", m.CapabilityID, CapabilityID)
+	fields := map[string]string{}
+	for _, line := range lines {
+		key, value, found := strings.Cut(line, ":")
+		if !found || strings.TrimSpace(key) == "" || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "#") {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if len(value) >= 2 && (value[0] == '"' && value[len(value)-1] == '"' || value[0] == '\'' && value[len(value)-1] == '\'') {
+			value = value[1 : len(value)-1]
+		}
+		fields[strings.TrimSpace(key)] = value
 	}
-	if m.Target != target {
-		return nil, fmt.Errorf("bundle target %q, want %q", m.Target, target)
-	}
-	if len(m.Tools) == 0 {
-		return nil, fmt.Errorf("bundle declares no tool vocabulary")
-	}
-	if target != TargetApp {
-		return m, nil
-	}
-	if m.Compatibility.ToolTransport != "native" {
-		return nil, fmt.Errorf("app transport %q, want native", m.Compatibility.ToolTransport)
-	}
-	if m.Compatibility.NativeProvider != "facet-native" {
-		return nil, fmt.Errorf("app provider %q, want facet-native", m.Compatibility.NativeProvider)
-	}
-	if m.Compatibility.KernelModule != "github.com/xibodev/compa" {
-		return nil, fmt.Errorf("Compa kernel %q is not supported", m.Compatibility.KernelModule)
-	}
-	if m.Compatibility.KernelVersion != "v1" {
-		return nil, fmt.Errorf("Compa kernel API %q, want v1", m.Compatibility.KernelVersion)
-	}
-	return m, nil
+	return fields, true
 }
 
-// renderToolWiring produces the target-native instruction that makes Facet
-// discoverable and invocable.
-//
-// THE CANONICAL GUIDANCE IS THE SAME FOR EVERY TARGET. Only the surrounding
-// shape differs, which is the adapter rule holding: an agent reading any of
-// these learns the same product semantics.
-func renderToolWiring(t Target, c Compatibility, src Source) string {
-	if t == TargetApp {
-		return renderNativeToolWiring(c, src)
+// splitFrontmatter returns the frontmatter lines (without delimiters) and the
+// byte offset where the body starts. doc must use LF line endings.
+func splitFrontmatter(doc []byte) ([]string, int, bool) {
+	text := string(doc)
+	if !strings.HasPrefix(text, "---\n") {
+		return nil, 0, false
 	}
-
-	var b strings.Builder
-
-	b.WriteString("# Facet — creative production tools\n\n")
-	b.WriteString(fmt.Sprintf("Facet v%s is installed. It turns creative intent into verified media artifacts.\n\n",
-		src.FacetVersion))
-
-	b.WriteString("## How to invoke\n\n")
-	b.WriteString("Facet is a command-line tool. Discover, estimate, then run:\n\n")
-	b.WriteString("```sh\n")
-	b.WriteString(fmt.Sprintf("%s tools list\n", c.FacetBinary))
-	b.WriteString(fmt.Sprintf("%s tools describe <tool>\n", c.FacetBinary))
-	b.WriteString(fmt.Sprintf("%s tools estimate <tool> --input request.json\n", c.FacetBinary))
-	b.WriteString(fmt.Sprintf("%s tools run <tool> --input request.json\n", c.FacetBinary))
-	b.WriteString("```\n\n")
-
-	// VERSION CHECK FIRST. A stale binary earlier on PATH rejects the request
-	// shapes this bundle documents, and the failure looks like bad guidance
-	// rather than a wrong binary. One real session spent five round trips
-	// reverse-engineering schemas before noticing the version mismatch it had
-	// already printed in its second command.
-	b.WriteString("## Check the binary matches this bundle\n\n")
-	b.WriteString("```sh\n")
-	b.WriteString(fmt.Sprintf("%s version\n", c.FacetBinary))
-	b.WriteString("```\n\n")
-	b.WriteString(fmt.Sprintf(
-		"This bundle was built for **Facet v%s**. If the command above reports a\n"+
-			"different version, an older install is earlier on `PATH` — it will reject\n"+
-			"request shapes documented here, and the errors will look like bad guidance\n"+
-			"rather than a stale binary. Say so rather than working around it.\n\n",
-		src.FacetVersion))
-
-	b.WriteString("**Always `describe` before constructing a request**, and `estimate` before running\n")
-	b.WriteString("anything that may cost money. `estimate` never bills, never writes, never generates.\n\n")
-
-	b.WriteString("## Rules that are product guarantees, not style\n\n")
-	b.WriteString("- **Paid work needs explicit human consent.** Some tools may charge. Ask the\n")
-	b.WriteString("  person before running one. An unknown cost is never zero.\n")
-	b.WriteString("- **Verify the output, not the exit code.** A successful process exit is not a\n")
-	b.WriteString("  successful render. Check duration, resolution, frame count and visible content\n")
-	b.WriteString("  with `media_probe`, `visual_qa` or `output_review` before reporting success.\n")
-	b.WriteString("- **Never substitute mock output for a real asset.**\n\n")
-
-	b.WriteString(fmt.Sprintf("## Available tools (%d)\n\n", len(src.Tools)))
-	for _, name := range src.Tools {
-		b.WriteString(fmt.Sprintf("- `%s`\n", name))
+	rest := text[4:]
+	var block string
+	var bodyStart int
+	switch end := strings.Index(rest, "\n---\n"); {
+	case strings.HasPrefix(rest, "---\n"):
+		bodyStart = 8
+	case rest == "---":
+		bodyStart = len(text)
+	case end >= 0:
+		block, bodyStart = rest[:end], 4+end+5
+	case strings.HasSuffix(rest, "\n---"):
+		block, bodyStart = rest[:len(rest)-4], len(text)
+	default:
+		return nil, 0, false
 	}
-	b.WriteString("\n")
-
-	b.WriteString("## Guidance\n\n")
-	b.WriteString(fmt.Sprintf("Production guidance is installed under `%s/skills/`. Read `skills/facet/SKILL.md`\n", c.InstallRoot))
-	b.WriteString("first, then the pack matching the requested style.\n")
-
-	return b.String()
+	if block == "" {
+		return nil, bodyStart, true
+	}
+	return strings.Split(block, "\n"), bodyStart, true
 }
 
-func renderNativeToolWiring(c Compatibility, src Source) string {
-	var b strings.Builder
+func keepBytes(b []byte) ([]byte, error) { return b, nil }
 
-	b.WriteString("---\n")
-	b.WriteString("name: Facet Video Producer\n")
-	b.WriteString("description: Produce and verify media with the installed Facet capability.\n")
-	b.WriteString("skills:\n")
-	b.WriteString("  - facet\n")
-	b.WriteString("---\n\n")
-	b.WriteString("# Facet — creative production tools\n\n")
-	b.WriteString(fmt.Sprintf("Facet v%s is installed through the `%s` native provider. ", src.FacetVersion, c.NativeProvider))
-	b.WriteString("Use the registered Facet tools directly; do not invoke a Facet executable or an external agent CLI.\n\n")
-	b.WriteString("Always call `facet_describe` before constructing a request and `facet_estimate` before consequential work. ")
-	b.WriteString("The provider and bundle versions must match; report a version mismatch instead of working around it.\n\n")
-	b.WriteString("## Rules that are product guarantees, not style\n\n")
-	b.WriteString("- **Paid work needs explicit human consent.** Unknown cost is never zero.\n")
-	b.WriteString("- **Verify the output, not the exit code.** Check duration, resolution, frame count, and visible content before reporting success.\n")
-	b.WriteString("- **Never substitute mock output for a real asset.**\n\n")
-	b.WriteString(fmt.Sprintf("## Available tools (%d)\n\n", len(src.Tools)))
-	for _, name := range src.Tools {
-		b.WriteString(fmt.Sprintf("- `%s`\n", name))
+// dropFrontmatterKey removes one top-level frontmatter key, keeping every
+// other byte of the document.
+func dropFrontmatterKey(key string) func([]byte) ([]byte, error) {
+	return func(doc []byte) ([]byte, error) {
+		lines, bodyStart, ok := splitFrontmatter(doc)
+		if !ok {
+			return nil, fmt.Errorf("no frontmatter")
+		}
+		var kept []string
+		for _, line := range lines {
+			k, _, found := strings.Cut(line, ":")
+			if found && !strings.HasPrefix(line, " ") && strings.TrimSpace(k) == key {
+				continue
+			}
+			kept = append(kept, line)
+		}
+		var out bytes.Buffer
+		out.WriteString("---\n")
+		for _, line := range kept {
+			out.WriteString(line)
+			out.WriteByte('\n')
+		}
+		out.WriteString("---\n")
+		out.Write(doc[bodyStart:])
+		return out.Bytes(), nil
 	}
-	b.WriteString("\n## Guidance\n\n")
-	b.WriteString("The canonical core skill is `skills/facet/SKILL.md`. Follow it first, then only the installed pack needed for the request.\n")
+}
 
-	return b.String()
+// normalizeText converts CRLF to LF in text assets. A Windows checkout may
+// carry CRLF line endings, and a harness that splits frontmatter on "\n"
+// would read `name: facet\r` and reject the skill.
+func normalizeText(name string, data []byte) []byte {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".md", ".json", ".txt", ".yaml", ".yml":
+		return bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
+	}
+	return data
 }

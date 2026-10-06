@@ -222,9 +222,12 @@ func doFFmpegCaptionBurnContext(ctx context.Context, op string, data []byte) (an
 	}
 
 	return map[string]any{
-		"method":        "ffmpeg",
-		"output":        r.OutputPath,
-		"caption_count": len(words),
+		"method": "ffmpeg",
+		"output": r.OutputPath,
+		// Captions are pages of up to words_per_page words; both counts are
+		// reported because they answer different questions.
+		"caption_count": idx - 1,
+		"word_count":    len(words),
 	}, nil, nil
 }
 

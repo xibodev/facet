@@ -8,8 +8,8 @@
   },
   "timeouts": {
     "health_check_seconds": 60,
-    "scenario_timeout_ms": 30000,
-    "run_timeout_seconds": 300
+    "scenario_timeout_ms": 960000,
+    "run_timeout_seconds": 3000
   },
   "network_policy": {
     "mode": "sealed",

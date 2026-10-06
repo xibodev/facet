@@ -1,5 +1,5 @@
 ---
-name: localization
+name: facet-localization
 description: Produce translated subtitles, narration, and localized video variants with Facet.
 ---
 

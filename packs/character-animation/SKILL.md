@@ -1,5 +1,5 @@
 ---
-name: character-animation
+name: facet-character-animation
 description: Produce character-led 2D animation from supplied or licensed assets with Facet.
 ---
 

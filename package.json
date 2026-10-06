@@ -1,25 +1,24 @@
 {
   "name": "@xibodev/facet",
-  "version": "1.1.0",
-  "description": "Agent-first video production tools, guidance, and browser app",
-  "main": "bin/facet-cli.js",
+  "version": "2.0.0",
+  "description": "Agent-first video production tools and guidance for agentic CLIs",
   "bin": {
-    "facet": "bin/facet-cli.js",
-    "facet-ui": "bin/facet-ui-cli.js"
+    "facet": "bin/facet-cli.js"
   },
   "files": [
-    "bin",
+    "bin/facet-cli.js",
+    "bin/facet-linux-*",
+    "bin/facet-darwin-*",
+    "bin/facet-windows-*",
     "agents",
     "skills",
     "packs",
     "schemas",
     "remotion-composer/src",
-    "remotion-composer/legacy-composer-manifest.json",
+    "remotion-composer/composer-manifest.json",
     "remotion-composer/package.json",
     "remotion-composer/package-lock.json",
     "remotion-composer/tsconfig.json",
-    "web",
-    "README.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md"
   ],
@@ -29,8 +28,8 @@
   "scripts": {
     "test:launchers": "node --test bin/launchers.test.js",
     "test:installer": "node --test scripts/installer-selection.test.mjs",
+    "test:notices": "python -m unittest discover -s scripts -p test_generate_notices.py",
     "doctor": "node bin/facet-cli.js doctor",
-    "ui": "node bin/facet-ui-cli.js",
     "check-pr": "release-harness check-pr",
     "run-local": "release-harness run-local",
     "clean": "release-harness clean"
@@ -40,9 +39,11 @@
     "video-production",
     "agentic",
     "ai",
+    "mcp",
     "claude-code",
     "opencode",
     "copilot",
+    "codex",
     "ffmpeg",
     "remotion",
     "edge-tts"

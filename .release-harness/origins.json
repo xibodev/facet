@@ -1,15 +1,16 @@
 [
   {
-    "origin_id": "web-app",
-    "type": "browser_app",
+    "origin_id": "uat-console",
+    "type": "worker",
     "auth": "none",
     "url_source": "env:UAT_APP_URL (default http://127.0.0.1:31000)",
     "route_families": [
       "/"
     ],
-    "safe_for_live": true,
+    "safe_for_live": false,
     "evidence": [
-      "package.json"
+      "scripts/uat-entrypoint.mjs",
+      "docker-compose.test.yml"
     ]
   }
 ]

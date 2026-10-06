@@ -2,66 +2,77 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
+// Facet 2.0 installers: one runtime per user, wiring through `facet wire`,
+// nothing written into projects or CLI instruction files by the installer.
 const root = new URL('../', import.meta.url);
 const bash = readFileSync(new URL('install.sh', root), 'utf8');
 const powershell = readFileSync(new URL('install.ps1', root), 'utf8');
 const manifest = readFileSync(new URL('installer/manifest.tsv', root), 'utf8');
+const pkg = JSON.parse(readFileSync(new URL('package.json', root), 'utf8'));
 
-test('installer manifest covers every supported adapter and production method', () => {
-  const instructions = {
-    claude: 'CLAUDE.md',
-    copilot: '.github/copilot-instructions.md',
-    codex: 'AGENTS.md',
-    opencode: 'AGENTS.md',
-    app: 'AGENT.md',
-  };
-  for (const [adapter, instruction] of Object.entries(instructions)) {
-    assert.match(manifest, new RegExp(`^host\\t${adapter}\\t`, 'm'));
-    assert.match(manifest, new RegExp(`^instruction\\t${adapter}-instructions\\t-\\t${instruction.replaceAll('.', '\\.')}\\t`, 'm'));
+test('manifest describes the user-wide layout, the release and the components only', () => {
+  assert.match(manifest, /^contract\tlayout\t2\t/m);
+  assert.match(manifest, new RegExp(`^release\\tfacet\\t${pkg.version.replaceAll('.', '\\.')}\\t`, 'm'));
+  for (const component of ['remotion', 'piper', 'hyperframes']) {
+    assert.match(manifest, new RegExp(`^component\\t${component}\\t`, 'm'));
   }
-  assert.match(manifest, /^host\tcodex\t-\t\.agents\/skills\t/m);
-  assert.doesNotMatch(manifest, /\.codex\/skills/);
-  for (const method of ['explainer', 'cinematic', 'screen-demo', 'talking-head', 'social', 'character-animation', 'localization']) {
-    assert.match(manifest, new RegExp(`^pack\\t${method}\\t`, 'm'));
-  }
-});
-
-test('script installers expose the Facet app target without the retired studio target', () => {
-  assert.match(bash, /--target opencode\|codex\|claude\|copilot\|app/);
-  assert.match(bash, /Which agent should use Facet\? \(opencode, codex, claude, copilot, app\)/);
-  assert.doesNotMatch(bash, /--target opencode\|codex\|claude\|copilot\|studio/);
-  assert.match(powershell, /\[ValidateSet\('opencode','codex','claude','copilot','app'\)\]/);
-  assert.doesNotMatch(powershell, /\[ValidateSet\([^)]*'studio'/);
-});
-
-test('script installers migrate legacy standalone receipts to the app target', () => {
-  assert.match(bash, /previous_host.+studio.+previous_host=app/s);
-  assert.match(powershell, /if \(\$receipt\.host -eq 'studio'\) \{ \$receipt\.host = 'app' \}/);
-});
-
-test('script installers expose explicit repeatable production-method selection', () => {
-  assert.match(bash, /--pack\|--production-method/);
-  assert.match(bash, /FACET_PACKS/);
-  assert.match(bash, /packs\\t%s/);
-  assert.match(powershell, /\[Alias\('ProductionMethod'\)\]\[string\[\]\]\$Pack/);
-  assert.match(powershell, /FACET_PACKS/);
-  assert.match(powershell, /\$_\.Split\(','\)/);
-  assert.match(powershell, /packs=\$selectedPacks/);
-});
-
-test('script installers default to the complete local runtime profile', () => {
-  assert.match(bash, /COMPONENTS=\$\{COMPONENTS:-remotion,piper\}/);
-  assert.match(powershell, /\$defaultComponents = 'remotion'/);
-  assert.match(powershell, /\$defaultComponents \+= ',piper'/);
-  assert.match(powershell, /if \(-not \$Components\) \{ \$Components=\$defaultComponents \}/);
   assert.match(manifest, /^builtin\tedge-tts\t-\tmicrosoft_edge\tall\tall\tall\t0\t/m);
+  assert.doesNotMatch(manifest, /^(host|instruction|pack)\t/m, 'per-project targets and packs belong to facet wire');
 });
 
-test('script installer defaults remain core-only', () => {
-  assert.doesNotMatch(bash, /PACKS=.*explainer/);
-  assert.doesNotMatch(powershell, /\$Pack\s*=.*explainer/);
-  assert.match(bash, /No production-method pack is active; use the core guidance only/);
-  assert.match(powershell, /No production-method pack is active; use the core guidance only/);
+test('both installers expose the same actions and options', () => {
+  for (const option of ['--action', '--version', '--components', '--wire', '--scope', '--project', '--archive', '--checksums', '--yes', '--no-path', '--skip-verify', '--purge', '--plain', '--verbose']) {
+    assert.ok(bash.includes(option), `install.sh lacks ${option}`);
+  }
+  assert.match(bash, /install\|update\|rollback\|uninstall/);
+  assert.match(powershell, /\[ValidateSet\('install','update','rollback','uninstall'\)\]\[string\]\$Action/);
+  assert.match(powershell, /\[ValidateSet\('user','project'\)\]\[string\]\$Scope/);
+  for (const name of ['Wire', 'ProjectDir', 'ArchivePath', 'ChecksumPath', 'NonInteractive', 'NoPath', 'SkipVerify', 'Purge']) {
+    assert.match(powershell, new RegExp(`\\$${name}\\b`), `install.ps1 lacks -${name}`);
+  }
+});
+
+test('both installers use one runtime per user activated through ~/.facet/current', () => {
+  for (const source of [bash, powershell]) {
+    assert.match(source, /runtimes/);
+    assert.match(source, /current/);
+    assert.match(source, /installer\.json/);
+    assert.match(source, /components\.json/);
+    assert.match(source, /\.facet-files\.sha256/);
+  }
+  assert.match(bash, /COMPONENTS=\$\{COMPONENTS:-remotion,piper\}/);
+});
+
+test('wiring is delegated to facet wire, including removal on uninstall', () => {
+  for (const source of [bash, powershell]) {
+    assert.match(source, /wire/);
+    assert.match(source, /--remove/);
+  }
+});
+
+test('installers write nothing into projects or instruction files', () => {
+  for (const source of [bash, powershell]) {
+    assert.doesNotMatch(source, /run-facet/);
+    assert.doesNotMatch(source, /facet:managed:start/);
+    assert.doesNotMatch(source, /installation\.(json|tsv)/);
+    assert.doesNotMatch(source, /migrate-?legacy/i);
+    assert.doesNotMatch(source, /\bstudio\b/i);
+    assert.doesNotMatch(source, /--target\b/);
+  }
+});
+
+test('installers point v1 users at the v1.1.0 uninstaller instead of migrating', () => {
+  for (const source of [bash, powershell]) {
+    assert.match(source, /v1 project integrations are separate/);
+    assert.match(source, /--action uninstall/);
+  }
+});
+
+test('the bash PATH change is a removable, guarded profile block that --no-path skips', () => {
+  assert.match(bash, /# >>> facet path >>>/);
+  assert.match(bash, /# <<< facet path <<</);
+  assert.match(bash, /NO_PATH/);
+  assert.match(bash, /remove_profile_block/);
 });
 
 test('public installers do not advertise downloads from the private gflow repository', () => {
@@ -70,28 +81,10 @@ test('public installers do not advertise downloads from the private gflow reposi
   assert.doesNotMatch(powershell, /Download gflow|releases\/download\/v.*gflow/s);
 });
 
-test('bash installer accepts an empty production-method selection on Bash 3.2', () => {
-  assert.match(bash, /for id in "\$\{raw_packs\[@\]:-\}"; do/);
-  assert.match(bash, /packs\\t%s\\n'.+"\$\{SELECTED_PACKS\[\*\]:-\}"/);
-});
-
-test('script installers manage bounded instruction sections with ownership metadata', () => {
-  for (const source of [bash, powershell]) {
-    assert.match(source, /facet:managed:start/);
-    assert.match(source, /facet:managed:end/);
-    assert.match(source, /instruction-section/);
-    assert.match(source, /uninstall/i);
-    assert.match(source, /shared runtime/i);
-  }
-});
-
-test('script launchers expose the installed Piper voice to Facet', () => {
-  assert.match(bash, /FACET_PIPER_MODEL/);
-  assert.match(powershell, /FACET_PIPER_MODEL/);
-});
-
-test('linux installer accepts current browser dependency package names', () => {
+test('linux installer accepts current browser dependency package names and non-apt systems', () => {
   assert.match(bash, /apt-get update/);
   assert.match(bash, /apt-cache show fonts-liberation/);
   assert.match(bash, /package=\$\{package\/\/fonts-liberation\/fonts-liberation2\}/);
+  assert.match(bash, /has no apt-get/);
+  assert.match(bash, /browser_libraries_missing/);
 });

@@ -9,7 +9,7 @@ import "testing"
 // them pass if someone re-introduces a second hardcoded list with identical
 // values — the duplication a single source exists to prevent, and the state
 // that existed before it was collapsed. Verified: that mutant passed the whole
-// suite. Midden ran the same shape against their tree and found the same gap.
+// suite.
 //
 // A source scan cannot do this reliably. I tried: "gflow_video" appears nine
 // times in this package legitimately (the tool list, the provider switch, the

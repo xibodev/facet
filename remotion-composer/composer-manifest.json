@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "allowedSourcePaths": [
+    "src/Explainer.tsx",
+    "src/Root.tsx",
+    "src/assets.ts",
+    "src/contract.ts",
+    "src/index.tsx"
+  ]
+}

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Facet Docs | Install, Create, and Review</title>
-  <meta name="description" content="Install Facet for your agentic CLI, select optional production dependencies, and create and review videos with your agent.">
+  <title>Facet Docs | Install, Wire, Create, and Review</title>
+  <meta name="description" content="Install Facet once per user, wire it into your agentic CLI, and create and review videos with your agent.">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -64,69 +64,97 @@
 <body>
   <header><div class="wrap topbar"><a href="index.html" class="brand" aria-label="Facet documentation home"><img class="mark" src="logo-mark.svg" alt="" width="120" height="120"><span aria-hidden="true">facet<span class="brand-period">.</span></span></a><nav class="topnav" aria-label="Main navigation"><a href="index.html">Overview</a><a href="https://github.com/xibodev/facet">GitHub</a></nav></div></header>
   <div class="wrap layout">
-    <aside><nav aria-label="On this page"><a href="#start">Start Here</a><a href="#install">Installation</a><a href="#other-agents">Other Agents</a><a href="#doctor">Verification</a><a href="#studio">Standalone Status</a><a href="#terminal">Terminal Workflow</a><a href="#packs">Production Packs</a><a href="#gflow">Optional gflow</a><a href="#workspace">Project Files</a><a href="#limitations">Known Limitations</a><a href="#reference">Technical Reference</a></nav></aside>
+    <aside><nav aria-label="On this page"><a href="#start">Start Here</a><a href="#install">Installation</a><a href="#wire">Wire Your CLI</a><a href="#upgrade">Upgrading from 1.x</a><a href="#other-agents">Other Agents</a><a href="#doctor">Verification</a><a href="#app">Facet App</a><a href="#terminal">Terminal Workflow</a><a href="#packs">Production Packs</a><a href="#gflow">Optional gflow</a><a href="#workspace">Project Files</a><a href="#limitations">Known Limitations</a><a href="#reference">Technical Reference</a></nav></aside>
     <main>
       <section id="start">
         <h1>Make a Video With Your Agent</h1>
-        <p>Facet combines production instructions and media tools for your agentic CLI. Your coding agent plans the work and invokes tools. You supply the idea or footage, approve consequential choices, and review the result.</p>
+        <p>Facet is two parts packed together: the <code>facet</code> command-line tool, which runs stateless media operations, and the Facet bundle, which teaches your agent to use it. Your agentic CLI is the harness. It owns the model, tool calling, permissions, and memory; it plans the work and calls Facet's tools. You supply the idea or footage, approve consequential choices, and review the result.</p>
         <p>Start with a simple request such as <strong>"Make a short explainer about how rain forms"</strong> or <strong>"Turn my screen recording into a concise walkthrough."</strong> You do not need to specify JSON, tool names, or a rigid production sequence.</p>
-        <p>Use Facet with your agentic CLI. Tool configuration, completed media generation, and editorial acceptance are separate checks.</p>
+        <p>Tool configuration, completed media generation, and editorial acceptance are separate checks.</p>
       </section>
       <section id="install">
         <h2>Recommended Installation</h2>
-        <p>Use Facet with your agentic CLI. The interactive installer supports OpenCode, Codex, Claude Code, and GitHub Copilot CLI, and lets you choose the optional production tools you need.</p>
+        <p>Install Facet once for your user account, then wire it into the agentic CLIs you use: OpenCode, Codex, Claude Code, or GitHub Copilot CLI.</p>
+        <p class="notice">Facet 2.0.0 is unreleased. Until it is published, the commands below install the latest published release, v1.1.0, which still uses the 1.x per-project setup.</p>
         <p>Run the command for your platform in a terminal:</p>
         <pre><code># Windows (PowerShell)
 irm https://xibodev.github.io/facet/install.ps1 | iex
 
 # Linux / macOS
 curl -fsSL https://xibodev.github.io/facet/install.sh | sh</code></pre>
-        <p>The website bootstrap downloads and checksum-verifies the v1.1.0 installer package, then launches its interactive installer. The installer selects the matching prebuilt Windows, Linux, or macOS bundle for x64 or ARM64. The Unix one-liner requires an interactive terminal for its prompts.</p>
-        <h3>Manual Installation</h3>
-        <p><a href="https://github.com/xibodev/facet/releases/download/v1.1.0/facet-installer-1.1.0.zip">Download the installer ZIP</a>, extract it, and run <code>./install.ps1</code> in PowerShell or <code>bash ./install.sh</code> from the extracted folder. Keep its <code>installer/</code> directory beside the scripts. Only the website bootstrap supports piping. See <a href="https://github.com/xibodev/facet/releases/tag/v1.1.0">release assets and SHA-256 checksums</a> for manual/offline downloads.</p>
-        <p>Use arrow keys and Enter to choose your CLI or the Facet app; Space toggles production components. The recommended defaults install Remotion and the Piper offline fallback. Rerun setup to add components, repair, or update. A v1.0.4 standalone receipt is migrated from the former target name to <code>app</code> while owned and unmanaged project content remains protected. Set <code>FACET_PLAIN=1</code> for plain prompts.</p>
-        <ol>
-          <li>Select your CLI and the project folder that should use Facet.</li>
-          <li>Review the default production runtime and change its components if needed.</li>
-          <li>Review the installation summary and any dependency installation commands.</li>
-          <li>Start a new agent session in the configured project and ask it to use Facet.</li>
-        </ol>
-        <p>The installer uses prebuilt Facet binaries and preserves existing user instructions and project configuration. It assumes your CLI is already authenticated.</p>
-        <h3>Production Runtime</h3>
-        <p>Local editing and rendering do not require media-provider API keys. The default setup includes Remotion and Piper alongside required FFmpeg/FFprobe. Edge TTS is built into Facet and uses a keyless network service; setup does not test service reachability. Optional generation services may require separate credentials, account access, or credits.</p>
+        <p>The website bootstrap downloads and checksum-verifies the installer package, then launches the installer. The Unix one-liner requires an interactive terminal for its prompts.</p>
+        <p>The installer:</p>
         <ul>
-          <li><strong>FFmpeg and FFprobe:</strong> core media editing and inspection.</li>
-          <li><strong>Remotion:</strong> animated compositions and rendered captions, with its browser and Node.js/npm dependencies.</li>
-          <li><strong>Edge TTS:</strong> preferred natural narration when network processing is acceptable; its client is built into Facet.</li>
-          <li><strong>Piper:</strong> installed offline speech fallback with a pinned voice-model download.</li>
-          <li><strong>gflow:</strong> optional image/video generation through its supported providers.</li>
-          <li><strong>HyperFrames:</strong> HTML-based video rendering.</li>
+          <li>puts each runtime under <code>~/.facet/runtimes/&lt;version&gt;-&lt;os&gt;-&lt;arch&gt;</code> and activates it as <code>~/.facet/current</code>;</li>
+          <li>adds <code>~/.facet/current/bin</code> to your user PATH; opt out with <code>-NoPath</code> on Windows or <code>--no-path</code> on Linux and macOS;</li>
+          <li>installs optional components into the runtime: <code>remotion</code>, <code>piper</code>, and <code>hyperframes</code>, with <code>remotion,piper</code> as the default; and</li>
+          <li>can wire your CLIs.</li>
         </ul>
+        <p>Installer actions are <code>install</code>, <code>update</code>, <code>rollback</code>, and <code>uninstall</code>, selected with <code>-Action</code> on Windows or <code>--action</code> on Linux and macOS.</p>
+        <ol>
+          <li>Run the installer and review the optional components.</li>
+          <li>Wire the CLIs you use, during setup or later with <code>facet wire</code>.</li>
+          <li>Run <code>facet doctor</code> to check dependencies.</li>
+          <li>Start a new session in your CLI and ask it to use Facet.</li>
+        </ol>
+        <p>Your CLI keeps its own models and authentication; Facet does not configure them.</p>
+        <h3>Manual Installation</h3>
+        <p>Download the installer ZIP from the release on <a href="https://github.com/xibodev/facet">GitHub</a>, extract it, and run <code>./install.ps1</code> in PowerShell or <code>bash ./install.sh</code> from the extracted folder. Only the website bootstrap supports piping.</p>
+        <h3>Production Runtime</h3>
+        <p>Local editing and rendering do not require media-provider API keys. Edge TTS is built into Facet and uses a keyless network service; <code>facet doctor</code> does not test service reachability. Optional generation services may require separate credentials, account access, or credits.</p>
+        <ul>
+          <li><strong>FFmpeg and FFprobe:</strong> required for core media editing and inspection; <code>facet doctor</code> reports whether they are found.</li>
+          <li><strong>Remotion</strong> (default component): animated compositions and rendered captions, with its browser and Node.js/npm dependencies.</li>
+          <li><strong>Piper</strong> (default component): installed offline speech fallback with a pinned voice-model download.</li>
+          <li><strong>HyperFrames</strong> (optional component): HTML-based video rendering, declared as using the network.</li>
+          <li><strong>Edge TTS:</strong> preferred natural narration when network processing is acceptable; its client is built into Facet.</li>
+          <li><strong>gflow:</strong> optional image/video generation through a separately supplied CLI.</li>
+        </ul>
+      </section>
+      <section id="wire">
+        <h2>Wire Your CLI</h2>
+        <p>Wiring is your decision, like installing a skill or plugin. <code>facet wire</code> installs the Facet skills, and the creative persona agent where the CLI supports agents, into the CLI's native locations. It registers the <code>facet</code> MCP server through the CLI's own configuration. It never edits instruction files such as <code>AGENTS.md</code> or <code>CLAUDE.md</code>.</p>
+        <pre><code>facet wire &lt;cli&gt;[,&lt;cli&gt;...]|all [--scope user|project] [--project DIR] [--dry-run]
+facet wire --remove &lt;cli&gt;...
+facet wire --status</code></pre>
+        <p><code>&lt;cli&gt;</code> is <code>opencode</code>, <code>codex</code>, <code>claude</code>, or <code>copilot</code>. <code>--scope</code> chooses user-level or project-level locations, <code>--project</code> names the project directory, and <code>--dry-run</code> shows the changes without making them. <code>--status</code> reports what is wired, and <code>--remove</code> unwires a CLI.</p>
+      </section>
+      <section id="upgrade">
+        <h2>Upgrading from 1.x</h2>
+        <p>Facet 1.x installed into each project. Facet 2.0 installs once per user, and wiring is a separate step.</p>
+        <ol>
+          <li>In each project that used the 1.x installer, run the v1.1.0 installer with <code>--action uninstall</code> (<code>-Action uninstall</code> on Windows). <a href="https://github.com/xibodev/facet/releases/download/v1.1.0/facet-installer-1.1.0.zip">Download the v1.1.0 installer ZIP</a>, extract it, and keep its <code>installer/</code> directory beside the scripts; the <a href="https://github.com/xibodev/facet/releases/tag/v1.1.0">v1.1.0 release</a> lists its assets and SHA-256 checksums. The 1.x uninstall verifies ownership before it removes that project's managed Facet skill, state, and instruction section; modified and unmanaged content is kept.</li>
+          <li>Install 2.0.</li>
+          <li>Wire your CLIs with <code>facet wire</code>.</li>
+        </ol>
+        <p><code>facet doctor</code> reports leftover 1.x project files that would shadow the new skill.</p>
+        <p>Removed in 2.0: <code>facet ui</code>, <code>facet-ui</code>, and the browser preview; <code>facet init</code>; <code>facet module</code> and <code>facet-module</code>; per-project launchers (<code>run-facet</code>); per-project installer receipts and managed instruction sections; and the tool aliases <code>audio_mixer</code> and <code>frame_sampler</code> (use <code>audio_mix</code> and <code>frame_sample</code>).</p>
       </section>
       <section id="other-agents">
         <h2>Using Facet with Another Agent</h2>
-        <p>Using a different agentic CLI? Ask your agent to inspect this repository and adapt Facet's skills and command-line tools to its own integration conventions. The installer currently supports the four CLIs listed above; other integrations are community-adapted and may need additional setup.</p>
+        <p>Using a different agent? Facet's tools are served over MCP by <code>facet mcp</code>, and its skills are plain Markdown. Ask your agent to inspect this repository and adapt the skills and the MCP server registration to its own conventions. <code>facet wire</code> supports the four CLIs listed above; other integrations are community-adapted and may need additional setup.</p>
         <a href="https://github.com/xibodev/facet">Explore the repository</a>
       </section>
       <section id="doctor">
         <h2>Verify the Setup, Then Review the Work</h2>
-        <p>The CLI-only installer runs local media checks for the selected components unless verification is explicitly skipped. Those checks do not test external provider access or establish editorial quality.</p>
+        <p>Run <code>facet doctor</code> to inspect dependencies, runtimes, and tools; it also reports leftover 1.x project files that would shadow the new skill. Run <code>facet wire --status</code> to see what is wired. These checks do not test external provider access or establish editorial quality.</p>
         <p>Review the actual video, audio, captions, and source material from your production before sharing it.</p>
       </section>
-      <section id="studio">
-        <h2>Facet App Preview</h2>
-        <p class="notice">The Facet app embeds the released Compa kernel and activates Facet from a verified app-target capability bundle. It is available as a preview; review model choices, approvals, generated media, and the final render before delivery.</p>
+      <section id="app">
+        <h2>Facet App</h2>
+        <p class="notice">The Facet app is withdrawn in 2.0. The 1.x browser preview did not work from the release installer and has been removed, together with <code>facet ui</code> and <code>facet-ui</code>. The app will return as Facet's own UI on top of Compa, built through Compa's public API. Until then, use Facet through a supported agentic CLI.</p>
       </section>
       <section id="terminal">
         <h2>Use Your Agent in the Terminal</h2>
-        <p>Open your selected CLI in the project configured by the installer and ask it to use the Facet skill.</p>
+        <p>Open your wired CLI in a production folder and ask it to use Facet.</p>
         <pre><code>Use Facet to make a short explainer about how rain forms.</code></pre>
         <p>Use a separate directory for each production. In your agent conversation, try "Add captions to my recording" or "Make the narration slower and leave more time on the diagram." Give it the actual source file location when editing existing media.</p>
+        <p>Your CLI's permission settings decide which Facet tool calls need your approval. Facet declares each tool's effects (whether it may charge, uses the network, or makes external writes, and whether it is deterministic or read-only) but does not enforce consent. Configure your CLI so paid work and publication wait for your explicit consent. Unknown cost is not free.</p>
         <p>Ask the agent to explain provider choices and costs before paid work, and to report errors without substituting placeholders. Number of turns, render duration, and final quality depend on the request and environment.</p>
       </section>
       <section id="packs">
         <h2>Choose a Production Pack</h2>
-        <p>The bundle contains the following packs. The Facet skill directs your agent to the relevant pack for the task. A pack supplies guidance and content, not proof that every referenced tool or provider is installed.</p>
+        <p>The bundle installs the core Facet skill and each of the following packs as its own skill. The Facet skill directs your agent to the relevant pack for the task. A pack supplies guidance and content, not proof that every referenced tool or provider is installed.</p>
         <dl>
           <dt data-pack="explainer">Explainer / <code>@xibodev/facet-pack-explainer</code></dt><dd><a href="https://github.com/xibodev/facet/blob/main/packs/explainer/facet-pack.json">Manifest</a>: animated explainers, diagrams, charts, and text cards. Requires the Remotion runtime, browser, and usable narration route when speech is requested.</dd>
           <dt data-pack="cinematic">Cinematic / <code>@xibodev/facet-pack-cinematic</code></dt><dd><a href="https://github.com/xibodev/facet/blob/main/packs/cinematic/facet-pack.json">Manifest</a>: cinematic and documentary montages. Needs supplied or accessible source media with suitable rights; generated clips need configured providers.</dd>
@@ -145,16 +173,14 @@ curl -fsSL https://xibodev.github.io/facet/install.sh | sh</code></pre>
       </section>
       <section id="workspace">
         <h2>Project Files Are the Durable Record</h2>
-        <p>The CLI-only installer creates a project skill and <code>.facet-install/</code> for its launcher, installation record, and pack references. Existing configuration is preserved. Scripts, scene plans, narration, renders, and review outputs appear only when the corresponding work runs.</p>
+        <p>Facet stores no workflow state. Scripts, scene plans, narration, renders, and review outputs appear only when the corresponding work runs.</p>
         <pre><code>my-video/
   assets/             # supplied or acquired media
   artifacts/          # scripts/plans/reports when produced
   narration/          # generated or supplied voice tracks
-  renders/            # video and review outputs when produced
-  .facet-install/     # installed launcher, record, and pack references
-  .opencode/skills/facet/SKILL.md  # example host skill location</code></pre>
-        <p>Skill locations depend on your CLI. Media directories and paths such as <code>renders/final.mp4</code> are conventions, not a promise that installation creates a video.</p>
-        <p>Configuration can pin runtime paths in <code>.facet.yaml</code> or <code>~/.config/facet/config.yaml</code>. Unpinned discovery looks near the working directory and executable, then in the user bundle. Reopening a project preserves pinned configuration. Verify rendering from that production folder rather than relying on a successful run inside the source checkout.</p>
+  renders/            # video and review outputs when produced</code></pre>
+        <p>Media directories and paths such as <code>renders/final.mp4</code> are conventions, not a promise that installation creates a video. Tool results describe each artifact by path, media type, size, SHA-256, tool, and version. Over MCP, tool paths must stay inside the directory given by <code>facet mcp --root</code>; without it, they must stay inside the client's roots, or inside the working directory when the client supplies none.</p>
+        <p>Configuration can pin runtime paths in <code>.facet.yaml</code> or <code>~/.config/facet/config.yaml</code>. Reopening a project preserves pinned configuration. Verify rendering from that production folder rather than relying on a successful run inside the source checkout.</p>
       </section>
       <section id="limitations">
         <h2>Known Limitations</h2>
@@ -162,7 +188,8 @@ curl -fsSL https://xibodev.github.io/facet/install.sh | sh</code></pre>
           <li><strong>Installation is not acceptance.</strong> Local setup checks do not verify every workflow. Browser dependencies, fonts, pinned runtime paths, and provider access can still affect a production.</li>
           <li><strong>Pack guidance is broader than the executable registry.</strong> Some routes reference optional tools, models, transcription, or browser integrations not supplied by the native CLI. Check the installed tool and its actual implementation before relying on it.</li>
           <li><strong>Network services are conditional.</strong> Edge TTS is keyless but network-dependent. Other providers may need credentials and payment; model availability and account limits can change.</li>
-          <li><strong>Standalone is experimental.</strong> For now, we recommend using Facet through a supported agentic CLI.</li>
+          <li><strong>Consent is enforced by your CLI, not by Facet.</strong> Facet declares each tool's effects; your CLI's permission settings and the Facet guidance decide when you are asked.</li>
+          <li><strong>The Facet app is withdrawn.</strong> Use Facet through a supported agentic CLI.</li>
           <li><strong>Automated review is partial.</strong> Technical media checks and sampled frames do not establish factual accuracy, language quality, consent, asset rights, or creative quality. Watch and listen to the output.</li>
         </ul>
         <p>These pages do not certify a release or promise a finished video in a fixed number of turns or minutes.</p>
@@ -173,21 +200,27 @@ curl -fsSL https://xibodev.github.io/facet/install.sh | sh</code></pre>
         <details>
           <summary>Expand CLI Commands and Source Schemas</summary>
           <pre><code>facet help
-facet init --help
-facet ui --help
+facet version
+facet doctor
 facet tools list
 facet tools describe video_compose
 facet tools describe output_review
 facet tools estimate &lt;tool-name&gt; --input request.json
-facet tools run &lt;tool-name&gt; --input request.json</code></pre>
-          <p><code>request.json</code> must contain the fields accepted by the selected tool and operation. Discover the tool catalog from the installed build rather than trusting a fixed count. Registry descriptions and standalone schemas cover different surfaces and can lag implementations.</p>
+facet tools run &lt;tool-name&gt; --input request.json
+facet routes list
+facet routes describe &lt;method&gt;
+facet routes assess --input request.json
+facet mcp [--root DIR]
+facet wire --status
+facet bundle --target &lt;claude|codex|copilot|opencode|all&gt; [--scope user|project] --out DIR</code></pre>
+          <p><code>request.json</code> must contain the fields accepted by the selected tool and operation. Discover the tool catalog from the installed build rather than trusting a fixed count. Registry descriptions and shipped schema files cover different surfaces; the live registry is authoritative. <code>facet bundle</code> builds harness-native bundle layouts for packaging; use <code>facet wire</code> to install.</p>
           <ul>
             <li><a href="https://github.com/xibodev/facet/blob/main/cmd/facet/main.go">CLI commands and flags</a></li>
-            <li><a href="https://github.com/xibodev/facet/blob/main/internal/toolbox/toolbox.go">Tool registry, aliases, and request descriptions</a></li>
+            <li><a href="https://github.com/xibodev/facet/blob/main/internal/toolbox/toolbox.go">Tool registry and request descriptions</a></li>
             <li><a href="https://github.com/xibodev/facet/blob/main/internal/toolbox/compose.go">Composition request handling and renderer invocation</a></li>
             <li><a href="https://github.com/xibodev/facet/blob/main/remotion-composer/src/Root.tsx">Remotion composition registration, default props, and themes</a></li>
             <li><a href="https://github.com/xibodev/facet/blob/main/remotion-composer/src/Explainer.tsx">Explainer scene types and rendering</a></li>
-            <li><a href="https://github.com/xibodev/facet/tree/main/schemas/tools">Standalone tool JSON schemas</a></li>
+            <li><a href="https://github.com/xibodev/facet/tree/main/schemas/tools">Shipped tool JSON schemas</a></li>
             <li><a href="https://github.com/xibodev/facet/blob/main/internal/toolbox/visual_qa.go">Technical output review implementation</a></li>
             <li><a href="https://github.com/xibodev/facet/blob/main/internal/toolbox/gflow.go">Google Flow request validation and error handling</a></li>
             <li><a href="https://github.com/xibodev/facet/blob/main/skills/facet/SKILL.md">Core producer guidance</a> and <a href="https://github.com/xibodev/facet/tree/main/packs">production packs</a></li>

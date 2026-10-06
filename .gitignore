@@ -18,30 +18,19 @@ remotion-composer/node_modules/
 build/
 bin/facet-*
 bin/facet
-bin/facet-ui
 !bin/*.js
 
-# Media produced by tests or ad-hoc runs. Two paid-generation images were
-# committed accidentally because a test invoked a provider for real; the tests
-# no longer bill, and generated media never belongs in the tree.
-/internal/module/*.png
-/internal/module/*.jpg
-/internal/module/*.mp4
-/internal/module/*.mp3
-
-# Scratch probes from coordinating sessions. Three sessions work in this tree
-# at once, and `git add -A` cannot tell a peer's temporary file from my own: a
-# Midden probe named zz_jc_test.go was captured mid-commit and broke the build
-# for the whole package.
-#
-# The prefix is the convention peers are asked to use for throwaway files, so
-# a capture is impossible rather than merely unlikely.
+# Scratch probes from coordinating sessions. Several sessions can work in this
+# tree at once, and `git add -A` cannot tell a peer's temporary file from one's
+# own. The prefix is the convention peers are asked to use for throwaway files,
+# so a capture is impossible rather than merely unlikely.
 zz_*_test.go
 zz_*.go
 
-# Built module package. Reproduced by scripts/build-module.sh; the binary and
-# copied content are build output, not source.
+# Build output (bundle packaging, composer test builds) and Python caches.
 /dist/
+/remotion-composer/dist/
+__pycache__/
 
 # Session scaffolding prompts. Local working notes for whoever is driving a
 # session; not product source and not reproducible from it. Ignored rather

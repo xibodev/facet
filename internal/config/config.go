@@ -43,7 +43,9 @@ type Config struct {
 	LoadedFrom string         `yaml:"-" json:"-"`
 }
 
-// DefaultEnvProbes returns the standard list of environment variable names probed.
+// DefaultEnvProbes returns the standard list of environment variable names probed:
+// the credentials Facet's own provider-backed tools read. The harness's model
+// credentials are the harness's concern and are not probed.
 func DefaultEnvProbes() []string {
 	return []string{
 		"OPENAI_API_KEY",
@@ -51,7 +53,6 @@ func DefaultEnvProbes() []string {
 		"FAL_KEY",
 		"PEXELS_API_KEY",
 		"PIXABAY_API_KEY",
-		"ANTHROPIC_API_KEY",
 	}
 }
 

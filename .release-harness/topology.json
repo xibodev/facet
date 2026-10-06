@@ -6,10 +6,14 @@
   "network_policy": { "mode": "sealed", "allowed_egress": [] },
   "nodes": [
     {
-      "id": "web",
+      "id": "facet-cli",
       "path": ".",
-      "type": "browser_app",
-      "served_origin_id": "web-app",
+      "type": "worker",
+      "served_origin_id": "uat-console",
+      "build": {
+        "type": "compose_service",
+        "path": "docker-compose.test.yml"
+      },
       "health_probe": {
         "type": "http",
         "host": "127.0.0.1",

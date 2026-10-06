@@ -2,7 +2,9 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 
-export function decodedAgentMedia(file, { sampleSeconds = 1, minMeanDb = -45 } = {}) {
+// Decode one frame and measure audio energy: proves the delivered file carries
+// decodable pictures and an audible track, not merely valid container metadata.
+export function decodedMedia(file, { sampleSeconds = 1, minMeanDb = -45 } = {}) {
   const options = { timeout: 120000, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] };
   const frame = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-ss', String(sampleSeconds), '-map', '0:v:0', '-frames:v', '1', '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-'], options);
   if (!frame.length) throw new Error('No decoded video frame at sample time');

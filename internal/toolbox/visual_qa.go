@@ -453,12 +453,13 @@ func doVisualQAContext(ctx context.Context, op string, data []byte) (any, []stri
 			if err != nil {
 				levels = append(levels, map[string]any{"timestamp": tVal, "error": err.Error()})
 			} else {
-				vol := parseVolume(string(cmdOut))
-				levels = append(levels, map[string]any{
-					"timestamp":      tVal,
-					"mean_volume_db": vol["mean_volume_db"],
-					"max_volume_db":  vol["max_volume_db"],
-				})
+				// Only measured values are reported; a missing reading is
+				// absent, never null.
+				level := map[string]any{"timestamp": tVal}
+				for key, value := range parseVolume(string(cmdOut)) {
+					level[key] = value
+				}
+				levels = append(levels, level)
 			}
 		}
 		return map[string]any{

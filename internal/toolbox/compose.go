@@ -14,7 +14,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -318,6 +317,14 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 	if err != nil {
 		return nil, nil, err
 	}
+	// HyperFrames renders an HTML workspace of its own and reaches the
+	// network for the scripts that workspace loads. video_compose declares
+	// neither effect, and the edit decisions here would not reach that
+	// workspace anyway, so the runtime is offered only through
+	// hyperframes_compose, where both are declared.
+	if r.EditDecisions != nil && strings.EqualFold(strings.TrimSpace(r.EditDecisions.RenderRuntime), "hyperframes") {
+		return nil, nil, failure("invalid_request", "render_runtime hyperframes is served by the hyperframes_compose tool; call it directly", nil)
+	}
 
 	if op == "estimate" {
 		return estimateResult([]string{"video_compose_" + operation}), nil, nil
@@ -344,16 +351,6 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 		runtime := strings.ToLower(r.EditDecisions.RenderRuntime)
 		if runtime == "remotion" {
 			return doRemotionRenderContext(ctx, r, outPath, tmo)
-		} else if runtime == "hyperframes" {
-			// Delegate to hyperframes
-			hfReq := map[string]any{
-				"operation":      "render",
-				"output_path":    outPath,
-				"edit_decisions": r.EditDecisions,
-				"asset_manifest": r.AssetManifest,
-			}
-			hfData, _ := json.Marshal(hfReq)
-			return doHyperFramesComposeContext(ctx, op, hfData)
 		}
 
 		// FFmpeg compose implementation
@@ -579,37 +576,10 @@ func doFFmpegComposeContext(ctx context.Context, r composeRequest, outPath strin
 	}, nil, nil
 }
 
-// bundleRoot is a host-supplied read-only bundle location. When set it wins
-// over discovery: the host knows where it installed the module's content, and
-// the working directory does not. Under a module host cwd is not promised at
-// all, which made composer discovery depend on where the process was launched.
-var (
-	bundleMu   sync.RWMutex
-	bundleRoot string
-)
-
-// SetBundleRoot installs the host-supplied bundle location for one invocation.
-// An empty value restores ordinary discovery, which is what the CLI uses.
-func SetBundleRoot(path string) {
-	bundleMu.Lock()
-	bundleRoot = strings.TrimSpace(path)
-	bundleMu.Unlock()
-}
-
-func hostBundleRoot() string {
-	bundleMu.RLock()
-	defer bundleMu.RUnlock()
-	return bundleRoot
-}
-
+// findComposerDir locates the Remotion composer: explicit configuration
+// first, then a project-local checkout, then the installed bundle beside the
+// executable (<runtime>/bundle/remotion-composer).
 func findComposerDir() (string, error) {
-	// A host-supplied bundle is authoritative and checked before anything else.
-	if root := hostBundleRoot(); root != "" {
-		candidate := filepath.Join(root, "remotion-composer")
-		if fileExists(filepath.Join(candidate, "package.json")) {
-			return filepath.Abs(candidate)
-		}
-	}
 	home, _ := os.UserHomeDir()
 	configPaths := []string{".facet.yaml"}
 	if home != "" {
@@ -674,21 +644,12 @@ func findComposerDir() (string, error) {
 		}
 	}
 
-	if localApp := os.Getenv("LOCALAPPDATA"); localApp != "" {
-		candidates = []string{
-			filepath.Join(localApp, "Facet", "runtimes", "remotion", "current"),
-			filepath.Join(localApp, "Facet", "runtimes", "remotion"),
-		}
-	} else {
-		candidates = nil
-	}
-	if executable, err := os.Executable(); err == nil {
-		if resolved, err := filepath.EvalSymlinks(executable); err == nil {
-			executable = resolved
-		}
-		root := filepath.Dir(filepath.Dir(executable))
+	candidates = nil
+	if root := runtimeRoot(); root != "" {
 		candidates = append(candidates, filepath.Join(root, "bundle", "remotion-composer"), filepath.Join(root, "remotion-composer"))
 	}
+	// Kept because install, container and CI layouts still place the bundle
+	// at ~/.facet/bundle even when the executable lives elsewhere.
 	if home != "" {
 		candidates = append(candidates, filepath.Join(home, ".facet", "bundle", "remotion-composer"))
 	}

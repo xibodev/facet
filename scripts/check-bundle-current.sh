@@ -1,77 +1,79 @@
 #!/bin/sh
-# Report guidance in the installed bundle that no longer matches the repository.
+# Report guidance in an installed Facet runtime bundle that no longer matches
+# this repository.
 #
-# The bundle under ~/.facet/bundle is a COPY made at install time, and it is
-# what a real installation reads — the descriptor's skill digests describe the
-# bundle, not this checkout. Both were honest and the content was months apart:
-# the installed SKILL.md still taught the `out_seconds + 1 second` padding rule
-# that was corrected here, and knew nothing about the estimate or QA fields
-# added since.
+# A runtime's bundle is a COPY made when the release archive was packaged, and
+# it is what the installed `facet` and every agentic CLI wired to it read: the
+# skill digests describe the bundle, not this checkout. Installed guidance and
+# the Remotion composer have drifted months behind the repository before (a
+# stale padding rule, a composer that ignored duration_seconds) while every
+# digest check passed, so compare the bytes.
 #
-# Nothing detected that. The digests matched what was installed, so every check
-# passed while an agent read stale instructions.
+# Exits non-zero when anything is missing, stale or left over, so this can gate
+# a release rather than being something a person has to remember to look at.
 #
-# The Remotion composer is checked too, and it drifted worse than the guidance:
-# the installed copy hardcoded `(lastEnd + 1) * 30` and ignored duration_seconds
-# entirely, so a 2-second plan rendered 3.000s through the installed path while
-# the same request through a fresh build rendered 2.000s. Identical binaries,
-# identical request, different videos.
-#
-# Exits non-zero when they differ, so this can gate a release rather than being
-# something a person has to remember to look at.
-set -e
-# An explicit argument WINS. This script silently ignored $1 and always
-# checked $HOME/.facet/bundle, so `check-bundle-current.sh dist` reported on a
-# directory it was never asked about. Every "bundle current" claim made with an
-# argument was true only because the two happened to agree -- which is not a
-# property of the measurement.
-#
-# A nonexistent path passed explicitly is an ERROR, not "nothing to compare":
-# the caller named a bundle and it is not there. Only the DEFAULT location may
-# be legitimately absent, because then nothing is installed yet.
+# Usage: scripts/check-bundle-current.sh [BUNDLE_DIR]
+# An explicit argument wins, and naming a directory that does not exist is an
+# error. Otherwise $FACET_BUNDLE, else the active runtime's bundle under
+# ~/.facet/current; only that default may be absent (nothing installed yet).
+set -eu
+
 if [ -n "${1:-}" ]; then
-  bundle="$1"
-  if [ ! -d "$bundle" ]; then
-    echo "FATAL: no bundle at $bundle (named explicitly)" >&2
+  if [ ! -d "$1" ]; then
+    echo "FATAL: no bundle at $1 (named explicitly)" >&2
     exit 1
   fi
+  bundle=$(cd "$1" && pwd)
 else
-  bundle="${FACET_BUNDLE:-$HOME/.facet/bundle}"
+  bundle=${FACET_BUNDLE:-$HOME/.facet/current/bundle}
   if [ ! -d "$bundle" ]; then
     echo "no installed bundle at $bundle; nothing to compare"
     exit 0
   fi
 fi
+cd "$(dirname "$0")/.."
 echo "comparing against: $bundle"
 
+# Everything a bundle ships: guidance trees, and the composer's source and
+# manifests (never its installed node_modules).
+list() (
+  cd "$1"
+  for tree in skills packs agents schemas remotion-composer/src; do
+    [ ! -d "$tree" ] || find "$tree" -type f ! -path '*/node_modules/*'
+  done
+  for file in package.json package-lock.json tsconfig.json composer-manifest.json; do
+    [ ! -f "remotion-composer/$file" ] || echo "remotion-composer/$file"
+  done
+)
+
+repo_files=$(mktemp)
+bundle_files=$(mktemp)
+trap 'rm -f "$repo_files" "$bundle_files"' EXIT
+list . | LC_ALL=C sort > "$repo_files"
+list "$bundle" | LC_ALL=C sort > "$bundle_files"
+
 status=0
-for rel in \
-  agents/facet-creative.md \
-  skills/facet/SKILL.md \
-  packs/explainer/SCENE-TYPES.md \
-  packs/explainer/NARRATED-WALKTHROUGH.md \
-  remotion-composer/src/Root.tsx \
-  remotion-composer/src/Explainer.tsx \
-  remotion-composer/src/contract.ts \
-  remotion-composer/legacy-composer-manifest.json \
-  remotion-composer/package.json
-do
+while IFS= read -r rel; do
   if [ ! -f "$bundle/$rel" ]; then
     echo "MISSING in bundle: $rel"
     status=1
-    continue
-  fi
-  if ! cmp -s "$rel" "$bundle/$rel"; then
+  elif ! cmp -s "$rel" "$bundle/$rel"; then
     echo "STALE in bundle: $rel"
-    echo "    installed agents read the bundle copy, not this repository"
     status=1
   fi
-done
+done < "$repo_files"
+extra=$(LC_ALL=C comm -13 "$repo_files" "$bundle_files")
+if [ -n "$extra" ]; then
+  printf '%s\n' "$extra" | sed 's/^/EXTRA in bundle: /'
+  status=1
+fi
 
 if [ "$status" -eq 0 ]; then
   echo "installed bundle matches the repository"
 else
   echo
-  echo "refresh with: ./scripts/build-module.sh \"$bundle\""
+  echo "installed agents read the bundle copy, not this repository."
+  echo "refresh: package a release archive (scripts/package-release.py) and reinstall it with"
+  echo "  install.sh --archive <zip> --checksums <file>, or install the matching published release."
 fi
 exit "$status"

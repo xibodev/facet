@@ -28,6 +28,9 @@ func isolateComposeRuntime(t *testing.T) (string, string) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("LOCALAPPDATA", "")
+	// The executable-relative bundle must be a fixture too, not wherever the
+	// test binary happens to be built.
+	fakeRuntime(t)
 	t.Chdir(workspace)
 	return home, workspace
 }
@@ -39,6 +42,32 @@ func TestFindComposerDirHomeInstalled(t *testing.T) {
 	got, err := findComposerDir()
 	if err != nil || got != want {
 		t.Fatalf("findComposerDir() = %q, %v; want %q", got, err, want)
+	}
+}
+
+// An installed Facet finds the composer it shipped beside its executable,
+// whatever the working directory.
+func TestFindComposerDirBesideExecutable(t *testing.T) {
+	isolateComposeRuntime(t)
+	root := fakeRuntime(t)
+	want := filepath.Join(root, "bundle", "remotion-composer")
+	composeRuntimeFixture(t, filepath.Join(want, "package.json"), "{}")
+	got, err := findComposerDir()
+	if err != nil || !sameFile(got, want) {
+		t.Fatalf("findComposerDir() = %q, %v; want %q", got, err, want)
+	}
+}
+
+// %LOCALAPPDATA%\Facet\runtimes was a retired install location; a composer
+// left there must not be picked up in preference to reporting it missing.
+func TestFindComposerDirIgnoresRetiredRuntimeLocation(t *testing.T) {
+	home, _ := isolateComposeRuntime(t)
+	t.Setenv("LOCALAPPDATA", home)
+	for _, retired := range []string{filepath.Join(home, "Facet", "runtimes", "remotion"), filepath.Join(home, "Facet", "runtimes", "remotion", "current")} {
+		composeRuntimeFixture(t, filepath.Join(retired, "package.json"), "{}")
+	}
+	if got, err := findComposerDir(); err == nil {
+		t.Fatalf("a retired runtime location was used: %q", got)
 	}
 }
 
@@ -70,24 +99,17 @@ func TestFindComposerDirConfigured(t *testing.T) {
 }
 
 func TestFindComposerDirPreservesLocations(t *testing.T) {
-	for _, location := range []string{"remotion-composer", "packs/explainer/runtime", "ancestor", "windows-current", "windows-runtime"} {
+	for _, location := range []string{"remotion-composer", "packs/explainer/runtime", "ancestor"} {
 		t.Run(location, func(t *testing.T) {
-			home, workspace := isolateComposeRuntime(t)
+			_, workspace := isolateComposeRuntime(t)
 			want := filepath.Join(workspace, filepath.FromSlash(location))
-			switch location {
-			case "ancestor":
+			if location == "ancestor" {
 				want = filepath.Join(workspace, "remotion-composer")
 				nested := filepath.Join(workspace, "a", "b", "c", "d")
 				if err := os.MkdirAll(nested, 0755); err != nil {
 					t.Fatal(err)
 				}
 				t.Chdir(nested)
-			case "windows-current", "windows-runtime":
-				t.Setenv("LOCALAPPDATA", home)
-				want = filepath.Join(home, "Facet", "runtimes", "remotion")
-				if location == "windows-current" {
-					want = filepath.Join(want, "current")
-				}
 			}
 			composeRuntimeFixture(t, filepath.Join(want, "package.json"), "{}")
 			got, err := findComposerDir()

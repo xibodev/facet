@@ -10,6 +10,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/xibodev/facet/internal/proctree"
 )
 
 var expectedToolNames = []string{
@@ -255,10 +258,19 @@ func requireFFmpeg(t *testing.T) {
 
 func ffmpeg(t *testing.T, args ...string) {
 	t.Helper()
-	cmd := exec.Command("ffmpeg", args...)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := fixtureCommand(t, "ffmpeg", args...).CombinedOutput(); err != nil {
 		t.Fatalf("ffmpeg fixture: %v\n%s", err, out)
 	}
+}
+
+// fixtureCommand prepares a program that builds a test fixture. It has a hard
+// timeout, and its whole process tree is killed if it overruns or the test
+// ends first.
+func fixtureCommand(t *testing.T, name string, args ...string) *proctree.Cmd {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	t.Cleanup(cancel)
+	return proctree.CommandContext(ctx, name, args...)
 }
 
 func TestSubtitleGen(t *testing.T) {
@@ -564,7 +576,6 @@ func TestAllToolEstimates(t *testing.T) {
 
 	sampleInputs := map[string]any{
 		"audio_mix":           map[string]any{"video": dummyFile, "source": map[string]any{"gain_db": -1.0}, "duration": "video", "output": outPath},
-		"audio_mixer":         map[string]any{"video": dummyFile, "source": map[string]any{"gain_db": -1.0}, "duration": "video", "output": outPath},
 		"audio_probe":         map[string]any{"input_path": dummyFile},
 		"color_grade":         map[string]any{"input_path": dummyFile, "output_path": outPath, "profile": "cinematic_warm"},
 		"direct_clip_search":  map[string]any{"output_dir": dir, "queries": []map[string]any{{"query": "nature"}}},
@@ -572,7 +583,6 @@ func TestAllToolEstimates(t *testing.T) {
 		"elevenlabs_tts":      map[string]any{"text": "Hello world from ElevenLabs"},
 		"flux_image":          map[string]any{"prompt": "sunset over mountains", "aspect_ratio": "16:9"},
 		"frame_sample":        map[string]any{"input": dummyFile, "output_dir": filepath.Join(dir, "frames"), "strategy": map[string]any{"type": "uniform", "count": 2}},
-		"frame_sampler":       map[string]any{"input_path": dummyFile, "strategy": "count", "count": 2, "output_dir": filepath.Join(dir, "frames")},
 		"gflow_image":         map[string]any{"prompt": "origami eagle logo", "aspect_ratio": "square"},
 		"gflow_video":         map[string]any{"prompt": "futuristic dragon soaring through clouds", "duration": 6.0, "aspect_ratio": "landscape"},
 		"hyperframes_compose": map[string]any{"operation": "doctor"},
@@ -620,15 +630,13 @@ func TestAllToolEstimates(t *testing.T) {
 }
 
 func TestToolAliasesAndInlineJSON(t *testing.T) {
-	// 1. Test alias mapping in describe
+	// 1. Shorthand spellings resolve to the canonical tool in describe.
 	for alias, expected := range map[string]string{
-		"audio_mixer":   "audio_mix",
-		"edgetts":       "edge_tts",
-		"edit":          "source_edit",
-		"frame_sampler": "frame_sample",
-		"probe":         "media_probe",
-		"review":        "output_review",
-		"compose":       "video_compose",
+		"edgetts": "edge_tts",
+		"edit":    "source_edit",
+		"probe":   "media_probe",
+		"review":  "output_review",
+		"compose": "video_compose",
 	} {
 		env, ok := CLI([]string{"tools", "describe", alias})
 		if !ok || !env.OK {
@@ -639,25 +647,33 @@ func TestToolAliasesAndInlineJSON(t *testing.T) {
 		}
 	}
 
-	// Compatibility aliases remain invokable with their legacy request shape,
-	// but the envelope identifies the canonical operation.
+	// The retired compatibility tools are gone: no legacy request shape is
+	// accepted under their names any more.
 	dir := t.TempDir()
 	input := filepath.Join(dir, "input.mp4")
 	if err := os.WriteFile(input, []byte("not decoded during estimate"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	legacyFrameRequest := `{"input_path":` + strconv.Quote(input) + `,"strategy":"count","count":2,"output_dir":` + strconv.Quote(filepath.Join(dir, "frames")) + `}`
-	env, ok := CLI([]string{"tools", "estimate", "frame_sampler", "--input", legacyFrameRequest})
-	if !ok || !env.OK {
-		t.Fatalf("estimate through compatibility alias failed: %#v", env)
+	for _, retired := range []string{"frame_sampler", "audio_mixer"} {
+		if env, ok := CLI([]string{"tools", "estimate", retired, "--input", legacyFrameRequest}); ok || env.OK {
+			t.Fatalf("retired alias %s is still invokable: %#v", retired, env)
+		}
+		if env, ok := CLI([]string{"tools", "describe", retired}); ok || env.OK {
+			t.Fatalf("retired alias %s is still described: %#v", retired, env)
+		}
+		if env := RunContext(context.Background(), retired, []byte(legacyFrameRequest)); env.OK || env.Error.Code != "unknown_tool" {
+			t.Fatalf("retired alias %s still runs: %#v", retired, env)
+		}
 	}
-	if env.Tool != "frame_sample" {
-		t.Fatalf("compatibility alias reported %q, want canonical frame_sample", env.Tool)
+	// frame_sample no longer accepts the legacy fields it used to ignore.
+	if env, ok := CLI([]string{"tools", "estimate", "frame_sample", "--input", `{"input":` + strconv.Quote(input) + `,"output_dir":"frames","strategy":{"type":"uniform","count":2},"quality":2}`}); ok || env.Error.Code != "invalid_request" {
+		t.Fatalf("frame_sample accepted a legacy field: %#v", env)
 	}
 
 	// 2. Test inline JSON execution for estimate
 	inlineJSON := `{"text": "Hello world from inline json", "output": "narration/test.mp3"}`
-	env, ok = CLI([]string{"tools", "estimate", "edgetts", "--input", inlineJSON})
+	env, ok := CLI([]string{"tools", "estimate", "edgetts", "--input", inlineJSON})
 	if !ok || !env.OK {
 		t.Fatalf("estimate with inline JSON failed: %#v", env)
 	}

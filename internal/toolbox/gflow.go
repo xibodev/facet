@@ -303,7 +303,7 @@ func generateGFlowContext(caller context.Context, args []string, prompt, kind, o
 	defer cancel()
 	// -o is a directory in the public CLI. Never retry through a second transport.
 	args = append(args, "-o", stage, "--json", "--", prompt)
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := newCommand(ctx, bin, args...)
 	cmd.WaitDelay = time.Second
 	var stdout gflowStdout
 	cmd.Stdout = &stdout

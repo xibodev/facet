@@ -1,52 +1,55 @@
+# Local UAT image for the Facet 2.0 CLI journey.
+# The image build packages a release archive from this source and installs it
+# with the product installer; scripts/uat-journey.mjs then drives the installed
+# `facet` in a sealed network.
 FROM golang:1.26.6-bookworm AS go
 FROM node:24.14.0-bookworm
 ARG NPM_REGISTRY=https://registry.npmjs.org
+ARG FACET_VERSION=2.0.0
 COPY --from=go /usr/local/go /usr/local/go
 ENV npm_config_registry=${NPM_REGISTRY}
-ENV PATH="/home/facet/.facet/bin:/usr/local/go/bin:${PATH}" \
-    HOME=/home/facet \
-    REMOTION_BROWSER_EXECUTABLE=/usr/bin/chromium \
-    PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+# ~/.facet/current/bin is what the installer puts on PATH; --no-path below leaves
+# shell profiles untouched, so the image provides the same PATH directly.
+ENV PATH="/home/facet/.facet/current/bin:/usr/local/go/bin:${PATH}" \
+    GOPATH=/opt/go \
+    GOCACHE=/opt/go/cache \
+    FACET_UAT_VERSION=${FACET_VERSION} \
+    REMOTION_BROWSER_EXECUTABLE=/usr/bin/chromium
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg chromium fonts-dejavu-core ca-certificates git bash curl unzip zip \
+    ffmpeg chromium fonts-dejavu-core ca-certificates git bash curl unzip zip python3 \
     && rm -rf /var/lib/apt/lists/*
+# The agentic CLI the journey wires Facet into.
 RUN npm install --global opencode-ai@1.18.29 --registry="${NPM_REGISTRY}"
 RUN useradd --create-home --uid 10001 facet
-RUN chown -R facet:facet /home/facet
-COPY .release-harness/docker/tools/package.json /opt/uat/package.json
-RUN npm install --prefix /opt/uat --registry="${NPM_REGISTRY}" \
-    --omit=dev --ignore-scripts --no-audit --no-fund --cache /tmp/uat-npm-cache
-COPY scripts/uat*.mjs scripts/probe-artifact* /opt/uat/
-COPY --chown=facet:facet . /opt/facet-source
+COPY scripts/uat-*.mjs scripts/probe-artifact.* /opt/uat/
+COPY . /opt/facet-source
 WORKDIR /opt/facet-source
-# Exercise the product installer, not a second test-only installation path.
-RUN mkdir -p /tmp/facet-release/bin /tmp/facet-release/bundle \
-    && go build -trimpath -ldflags "-X main.version=1.1.0" -o /tmp/facet-release/bin/facet ./cmd/facet \
-    && go build -trimpath -ldflags "-X main.version=1.1.0" -o /tmp/facet-release/bin/facet-ui ./cmd/facet-ui \
-    && go build -trimpath -ldflags "-X main.version=1.1.0" -o /tmp/facet-release/bin/facet-module ./cmd/facet-module \
-    && /tmp/facet-release/bin/facet bundle --target app --out /tmp/facet-release/bundle \
-    && cp -R skills packs agents schemas remotion-composer /tmp/facet-release/bundle/ \
-    && cp LICENSE THIRD_PARTY_NOTICES.md /tmp/facet-release/ \
-    && cd /tmp/facet-release \
-    && zip -qr /tmp/facet-1.1.0-linux-amd64.zip . \
-    && cd /tmp \
-    && sha256sum facet-1.1.0-linux-amd64.zip > checksums-linux-amd64.txt
-RUN bash install.sh --yes --target opencode --project /home/facet/studio --install-dir /home/facet/.facet/runtime --components remotion \
-    --archive /tmp/facet-1.1.0-linux-amd64.zip --checksums /tmp/checksums-linux-amd64.txt \
-    > /home/facet/uat-install-build.log 2>&1 \
-    || (cat /home/facet/uat-install-build.log /home/facet/.facet/logs/install-*.log && exit 1)
-USER root
-# Test-only forwarding entry point and reference fingerprint remain root-owned.
-RUN mkdir -p /opt/uat/bin /home/facet/.facet/bin \
-    && chmod 755 /opt/uat/uat-facet-shim.mjs \
-    && ln -s ../runtime/bin/facet /home/facet/.facet/bin/facet \
-    && ln -s runtime/bundle /home/facet/.facet/bundle \
-    && ln -s ../uat-facet-shim.mjs /opt/uat/bin/facet \
-    && sha256sum /home/facet/.facet/bin/facet > /opt/uat/facet.sha256 \
-    && chown -R facet:facet /home/facet
-ENV PATH="/opt/uat/bin:${PATH}"
+# Release archive in the scripts/package-release.py layout: the single `facet`
+# binary, the guidance bundle, LICENSE and the generated third-party notices.
+RUN set -eu; \
+    arch="$(go env GOARCH)"; \
+    archive="facet-${FACET_VERSION}-linux-${arch}.zip"; \
+    stage="$(mktemp -d)"; \
+    mkdir -p "$stage/bin" "$stage/bundle/remotion-composer" /tmp/facet-release; \
+    CGO_ENABLED=0 go build -trimpath -ldflags "-X main.Version=${FACET_VERSION}" -o "$stage/bin/facet" ./cmd/facet; \
+    cp -R skills packs agents schemas "$stage/bundle/"; \
+    cp -R remotion-composer/src remotion-composer/package.json remotion-composer/package-lock.json \
+        remotion-composer/tsconfig.json remotion-composer/composer-manifest.json "$stage/bundle/remotion-composer/"; \
+    cp LICENSE "$stage/"; \
+    python3 scripts/generate-notices.py --goos linux --goarch "$arch" --out "$stage/THIRD_PARTY_NOTICES.md"; \
+    (cd "$stage" && zip -qrX "/tmp/facet-release/$archive" .); \
+    (cd /tmp/facet-release && sha256sum "$archive" > "checksums-linux-${arch}.txt"); \
+    rm -rf "$stage"; \
+    chmod -R a+rX /tmp/facet-release
 USER facet
-RUN /home/facet/.facet/bin/facet bundle --target app --out /home/facet/.facet/bundle
 WORKDIR /home/facet
-RUN mkdir -p /home/facet/studio /home/facet/uat-evidence
+# The product installer, noninteractive, with the Remotion component and no PATH
+# or profile edits. Its log is journey evidence.
+RUN arch="$(dpkg --print-architecture)"; \
+    bash /opt/facet-source/install.sh --yes --components remotion --no-path \
+      --archive "/tmp/facet-release/facet-${FACET_VERSION}-linux-${arch}.zip" \
+      --checksums "/tmp/facet-release/checksums-linux-${arch}.txt" \
+      > /home/facet/uat-install-build.log 2>&1 \
+    || { cat /home/facet/uat-install-build.log; cat /home/facet/.facet/logs/*.log 2>/dev/null; exit 1; }
+RUN mkdir -p /home/facet/uat-evidence/journey
 ENTRYPOINT ["node", "/opt/uat/uat-entrypoint.mjs"]

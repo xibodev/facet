@@ -9,10 +9,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/xibodev/facet/internal/toolbox"
+	"github.com/xibodev/facet/internal/wire"
 )
 
 // CheckStatus represents the health/discovery status of a component.
@@ -25,6 +28,35 @@ const (
 	StatusWarning  CheckStatus = "Warning"
 	StatusError    CheckStatus = "Error"
 )
+
+// FacetRuntimeCheck reports the running facet and the active runtime at
+// ~/.facet/current, whose executable is what facet wire registers.
+type FacetRuntimeCheck struct {
+	Running    string      `json:"running_version"`
+	Executable string      `json:"executable,omitempty"`
+	Current    string      `json:"current,omitempty"`
+	Target     string      `json:"current_target,omitempty"`
+	Version    string      `json:"current_version,omitempty"`
+	Status     CheckStatus `json:"status"`
+	Details    string      `json:"details,omitempty"`
+}
+
+// WiringCheck summarizes one wiring recorded by facet wire.
+type WiringCheck struct {
+	Label   string      `json:"label"`
+	Status  CheckStatus `json:"status"`
+	Details string      `json:"details"`
+	Fix     string      `json:"fix,omitempty"`
+}
+
+// LegacyCheck is a Facet 1.x per-project installation whose skill copy
+// shadows the user-wide skill.
+type LegacyCheck struct {
+	Project string   `json:"project"`
+	Host    string   `json:"host,omitempty"`
+	Files   []string `json:"files"`
+	Cleanup string   `json:"cleanup"`
+}
 
 // RuntimeCheck represents the status of an external or built-in runtime.
 type RuntimeCheck struct {
@@ -61,10 +93,14 @@ type ToolCheck struct {
 
 // DoctorReport contains the aggregated discovery and health report.
 type DoctorReport struct {
-	Runtimes []RuntimeCheck  `json:"runtimes"`
-	CLIs     []AgentCLICheck `json:"agent_clis"`
-	EnvVars  []EnvVarCheck   `json:"env_vars"`
-	Tools    []ToolCheck     `json:"tools"`
+	Facet       FacetRuntimeCheck `json:"facet"`
+	Wiring      []WiringCheck     `json:"wiring"`
+	WiringError string            `json:"wiring_error,omitempty"`
+	Legacy      []LegacyCheck     `json:"legacy_v1"`
+	Runtimes    []RuntimeCheck    `json:"runtimes"`
+	CLIs        []AgentCLICheck   `json:"agent_clis"`
+	EnvVars     []EnvVarCheck     `json:"env_vars"`
+	Tools       []ToolCheck       `json:"tools"`
 }
 
 // RunDoctor executes all system discovery checks and prints the formatted report to stdout.
@@ -91,13 +127,24 @@ func RunDoctorWithWriter(cfg *Config, w io.Writer) (*DoctorReport, error) {
 }
 
 // GenerateDoctorReport inspects the environment and produces a structured DoctorReport.
+// It only reads: nothing is installed, wired, or repaired.
 func GenerateDoctorReport(cfg *Config) *DoctorReport {
 	report := &DoctorReport{
+		Wiring:   make([]WiringCheck, 0),
+		Legacy:   make([]LegacyCheck, 0),
 		Runtimes: make([]RuntimeCheck, 0),
 		CLIs:     make([]AgentCLICheck, 0),
 		EnvVars:  make([]EnvVarCheck, 0),
 		Tools:    make([]ToolCheck, 0),
 	}
+
+	// 0. Facet itself: the active runtime, the wirings, and 1.x leftovers.
+	home, _ := os.UserHomeDir()
+	cwd, _ := os.Getwd()
+	running := toolbox.ProductVersion()
+	report.Facet = probeFacetRuntime(home, running)
+	report.Wiring, report.WiringError = wiringChecks(running)
+	report.Legacy = legacyChecks(runtime.GOOS, cwd, home)
 
 	// 1. System Runtimes
 	report.Runtimes = append(report.Runtimes, probeBinaryRuntime("FFmpeg", cfg.Paths.FFmpeg, "ffmpeg", "-version"))
@@ -170,6 +217,123 @@ func GenerateDoctorReport(cfg *Config) *DoctorReport {
 	}
 
 	return report
+}
+
+// facetVersionOf runs `<exe> version` with a hard timeout and returns the
+// reported version. Tests replace it.
+var facetVersionOf = func(exe string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, exe, "version")
+	cmd.WaitDelay = time.Second
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	if m := facetVersionPattern.FindSubmatch(out); m != nil {
+		return string(m[1])
+	}
+	return ""
+}
+
+var facetVersionPattern = regexp.MustCompile(`facet v(\S+)`)
+
+// versionFromRuntimeDir reads <version>-<os>-<arch>, the installer's
+// runtime directory name.
+func versionFromRuntimeDir(dir string) string {
+	parts := strings.Split(filepath.Base(dir), "-")
+	if len(parts) < 3 {
+		return ""
+	}
+	switch parts[len(parts)-2] {
+	case "windows", "linux", "darwin":
+	default:
+		return ""
+	}
+	switch parts[len(parts)-1] {
+	case "amd64", "arm64":
+	default:
+		return ""
+	}
+	return strings.Join(parts[:len(parts)-2], "-")
+}
+
+// probeFacetRuntime reports the running facet and the active runtime.
+func probeFacetRuntime(home, running string) FacetRuntimeCheck {
+	check := FacetRuntimeCheck{Running: running}
+	if exe, err := os.Executable(); err == nil {
+		check.Executable = exe
+	}
+	if home == "" {
+		check.Status = StatusWarning
+		check.Details = "the home directory is unknown, so ~/.facet/current cannot be checked"
+		return check
+	}
+	current := filepath.Join(home, ".facet", "current")
+	if _, err := os.Lstat(current); err != nil {
+		check.Status = StatusNotFound
+		check.Details = "no active runtime at " + current + "; facet wire registers the running executable instead"
+		return check
+	}
+	check.Current = current
+	check.Target = current
+	if target, err := filepath.EvalSymlinks(current); err == nil {
+		check.Target = target
+	}
+	exe := wire.CurrentExecutable(home)
+	if exe == "" {
+		check.Status = StatusWarning
+		check.Details = current + " has no bin/facet executable; reinstall Facet"
+		return check
+	}
+	check.Version = facetVersionOf(exe)
+	if check.Version == "" {
+		check.Version = versionFromRuntimeDir(check.Target)
+	}
+	switch {
+	case check.Version == "":
+		check.Status = StatusWarning
+		check.Details = "could not determine the version of " + exe
+	case check.Version != running:
+		check.Status = StatusWarning
+		check.Details = fmt.Sprintf("the active runtime is facet v%s, but this is facet v%s", check.Version, running)
+	default:
+		check.Status = StatusOK
+	}
+	return check
+}
+
+// wiringChecks summarizes the wirings recorded in ~/.facet/wiring.json.
+func wiringChecks(running string) ([]WiringCheck, string) {
+	checks := make([]WiringCheck, 0)
+	report, err := wire.Inspect(running)
+	if err != nil {
+		return checks, err.Error()
+	}
+	for _, s := range report.Wirings {
+		check := WiringCheck{Label: s.Label(), Status: StatusOK,
+			Details: fmt.Sprintf("facet v%s, %d files, MCP %s", s.FacetVersion, s.Files, s.MCPState)}
+		if s.MCPMethod != "" {
+			check.Details += " (" + s.MCPMethod + ")"
+		}
+		if s.Drifted() {
+			check.Status = StatusWarning
+			check.Details = strings.Join(s.Problems(running), "; ")
+			check.Fix = s.RewireCommand()
+		}
+		checks = append(checks, check)
+	}
+	return checks, ""
+}
+
+// legacyChecks finds Facet 1.x project installations in the current and
+// home directories. Their skill copies shadow the user-wide skill.
+func legacyChecks(goos string, dirs ...string) []LegacyCheck {
+	checks := make([]LegacyCheck, 0)
+	for _, v := range wire.FindV1Integrations(dirs...) {
+		checks = append(checks, LegacyCheck{Project: v.Project, Host: v.Host, Files: v.Files, Cleanup: v.CleanupCommand(goos)})
+	}
+	return checks
 }
 
 func probeBinaryRuntime(name, pinnedPath, defaultBinary string, versionArg string) RuntimeCheck {
@@ -296,6 +460,69 @@ func probeAgentCLI(displayName, pinnedPath string, binaryNames ...string) AgentC
 
 func formatDoctorReport(report *DoctorReport, w io.Writer) {
 	fmt.Fprintln(w, "=== Facet System Doctor ===")
+	fmt.Fprintln(w)
+
+	// 0. Facet runtime, wiring, and 1.x leftovers.
+	fmt.Fprintln(w, "[Facet]")
+	running := "facet v" + report.Facet.Running
+	if report.Facet.Executable != "" {
+		running += " (" + report.Facet.Executable + ")"
+	}
+	fmt.Fprintf(w, "  ✓ %-18s : %s\n", "Running", running)
+	symbol := "✓"
+	if report.Facet.Status != StatusOK {
+		symbol = "✗"
+		if report.Facet.Status == StatusNotFound {
+			symbol = "-"
+		}
+	}
+	active := string(report.Facet.Status)
+	if report.Facet.Current != "" {
+		active = report.Facet.Current
+		if report.Facet.Target != "" && report.Facet.Target != report.Facet.Current {
+			active += " -> " + report.Facet.Target
+		}
+		if report.Facet.Version != "" {
+			active += " (facet v" + report.Facet.Version + ")"
+		}
+	}
+	fmt.Fprintf(w, "  %s %-18s : %s\n", symbol, "Active runtime", active)
+	if report.Facet.Details != "" {
+		fmt.Fprintf(w, "    %s\n", report.Facet.Details)
+	}
+	fmt.Fprintln(w)
+
+	fmt.Fprintln(w, "[Wiring]")
+	switch {
+	case report.WiringError != "":
+		fmt.Fprintf(w, "  ✗ %s\n", report.WiringError)
+	case len(report.Wiring) == 0:
+		fmt.Fprintln(w, "  - No wirings recorded. Run `facet wire <cli>` to wire Facet into claude, codex, copilot, or opencode.")
+	}
+	for _, c := range report.Wiring {
+		symbol := "✓"
+		if c.Status != StatusOK {
+			symbol = "✗"
+		}
+		fmt.Fprintf(w, "  %s %s: %s\n", symbol, c.Label, c.Details)
+		if c.Fix != "" {
+			fmt.Fprintf(w, "    fix: %s\n", c.Fix)
+		}
+	}
+	fmt.Fprintln(w)
+
+	fmt.Fprintln(w, "[Facet 1.x Integrations]")
+	if len(report.Legacy) == 0 {
+		fmt.Fprintln(w, "  ✓ none found in the current or home directory")
+	}
+	for _, l := range report.Legacy {
+		fmt.Fprintf(w, "  ✗ A Facet 1.x installation for %s shadows the user-wide Facet skill:\n", l.Project)
+		for _, f := range l.Files {
+			fmt.Fprintf(w, "      %s\n", f)
+		}
+		fmt.Fprintln(w, "    Remove it with the 1.1.0 installer, run from its extracted folder:")
+		fmt.Fprintf(w, "      %s\n", l.Cleanup)
+	}
 	fmt.Fprintln(w)
 
 	// 1. Runtimes
