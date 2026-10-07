@@ -10,7 +10,7 @@
         "source": "git-subdir",
         "url": "https://github.com/xibodev/facet.git",
         "path": "plugins/codex",
-        "ref": "v2.1.2"
+        "ref": "v2.2.0"
       },
       "policy": {
         "installation": "AVAILABLE",
