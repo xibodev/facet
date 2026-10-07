@@ -4,7 +4,8 @@ Facet 2.0 ships one native executable, `facet`. Its guidance (skills, packs,
 agents and tool schemas) is compiled into it, so the platform archive holds:
 
   bin/facet[.exe]             built from ./cmd/facet with -X main.Version,
-                              stripped (-s -w)
+                              stripped (-s -w); on Windows with version
+                              information and a manifest
   dependencies/remotion-composer/
                               the allowlisted composer sources named in
                               remotion-composer/composer-manifest.json, with
@@ -47,6 +48,10 @@ VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$")
 TEXT_SUFFIXES = {"", ".json", ".ts", ".tsx", ".md", ".txt", ".html", ".tsv", ".ps1", ".sh"}
 FIXED_TIME = (1980, 1, 1, 0, 0, 0)
 BUILD_TIMEOUT = 900
+# Compiles the Windows version information and manifest into a resource
+# object at build time; pinned, and verified against the Go checksum database.
+# Nothing from it is linked into facet.
+GO_WINRES = "github.com/tc-hib/go-winres@v0.3.3"
 
 
 class PackageError(Exception):
@@ -149,11 +154,29 @@ def build_platform(out, version, goos, goarch, work):
     binary = work / ("facet" + suffix)
     env = dict(os.environ, GOOS=goos, GOARCH=goarch, CGO_ENABLED="0")
     # Stripped of the symbol table and DWARF data, which a release does not
-    # need (Go keeps what panics and stack traces use). Microsoft Defender
-    # flagged the unstripped 2.1.0 windows/amd64 binary with a
-    # machine-learning verdict (Trojan:Win32/Bearfoos.A!ml); release.yml now
-    # scans every Windows archive before it can be published.
-    run(["go", "build", "-trimpath", "-ldflags", f"-s -w -X main.Version={version}", "-o", str(binary), "./cmd/facet"], env=env)
+    # need (Go keeps what panics and stack traces use).
+    build = ["go", "build", "-trimpath", "-ldflags", f"-s -w -X main.Version={version}", "-o", str(binary), "./cmd/facet"]
+    if goos != "windows":
+        run(build, env=env)
+    else:
+        # Windows builds say what they are: version information (product
+        # Facet, the release version, its publisher) and an application
+        # manifest, compiled from a resource object that `go build` links
+        # because it sits in the package directory, and removed again.
+        # Microsoft Defender flagged the published 2.1.0 and 2.1.1
+        # windows/amd64 binaries, which carried neither, with a
+        # machine-learning verdict (Trojan:Win32/Bearfoos.A!ml).
+        resource = REPO / "cmd" / "facet" / f"rsrc_windows_{goarch}.syso"
+        run(["go", "run", GO_WINRES, "simply", "--arch", goarch, "--out", str(REPO / "cmd" / "facet" / "rsrc"),
+             "--manifest", "cli", "--product-name", "Facet", "--file-description", "Facet Toolkit",
+             "--product-version", version, "--file-version", version, "--original-filename", "facet.exe",
+             "--copyright", "Facet Contributors. AGPL-3.0-or-later."], env=dict(os.environ, CGO_ENABLED="0"))
+        try:
+            if not resource.is_file():
+                raise PackageError(f"go-winres did not write {resource.name}")
+            run(build, env=env)
+        finally:
+            resource.unlink(missing_ok=True)
     notices = work / "THIRD_PARTY_NOTICES.md"
     run([sys.executable, str(REPO / "scripts" / "generate-notices.py"), "--goos", goos, "--goarch", goarch, "--out", str(notices)])
     path = out / f"facet-{version}-{goos}-{goarch}.zip"
