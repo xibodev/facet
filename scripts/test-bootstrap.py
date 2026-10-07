@@ -9,7 +9,7 @@ import time
 import zipfile
 
 REPO = Path(__file__).resolve().parent.parent
-DIGEST = "13388e9abf6cc8f9636964fec2dcfaf10b046119fc0e029415a728085492d0c2"
+DIGEST = "ab6ef413cfec0becd192f5ac183fb2316471e7286dedec3a4562c47c2107aefe"
 
 
 def main():
