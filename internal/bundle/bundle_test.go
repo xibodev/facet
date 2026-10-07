@@ -166,7 +166,7 @@ func TestSiblingReferencesResolveInsideEachSkill(t *testing.T) {
 
 func TestRootsFollowEachCLIsConventions(t *testing.T) {
 	want := map[Scope]map[Target]string{
-		ScopeUser:    {TargetClaude: ".claude", TargetCodex: ".codex", TargetCopilot: ".copilot", TargetOpenCode: ".config/opencode"},
+		ScopeUser:    {TargetClaude: ".claude", TargetCodex: ".codex", TargetCopilot: ".copilot", TargetOpenCode: ".config/opencode", TargetCompa: ".compa/workspace"},
 		ScopeProject: {TargetClaude: ".claude", TargetCodex: ".agents", TargetCopilot: ".github", TargetOpenCode: ".opencode"},
 	}
 	for scope, roots := range want {
@@ -177,16 +177,21 @@ func TestRootsFollowEachCLIsConventions(t *testing.T) {
 		}
 	}
 	base := filepath.Join(t.TempDir(), "home")
-	env := map[string]string{"CLAUDE_CONFIG_DIR": filepath.Join(base, "claude-config"), "CODEX_HOME": filepath.Join(base, "codex-home"), "XDG_CONFIG_HOME": filepath.Join(base, "xdg")}
+	env := map[string]string{"CLAUDE_CONFIG_DIR": filepath.Join(base, "claude-config"), "CODEX_HOME": filepath.Join(base, "codex-home"), "XDG_CONFIG_HOME": filepath.Join(base, "xdg"),
+		"COMPA_HOME": filepath.Join(base, "compa-home")}
 	getenv := func(k string) string { return env[k] }
 	for target, want := range map[Target]string{
 		TargetClaude:   env["CLAUDE_CONFIG_DIR"],
 		TargetCodex:    env["CODEX_HOME"],
 		TargetCopilot:  filepath.Join(base, ".copilot"),
 		TargetOpenCode: filepath.Join(env["XDG_CONFIG_HOME"], "opencode"),
+		TargetCompa:    filepath.Join(env["COMPA_HOME"], "workspace"),
 	} {
 		if got := Root(target, ScopeUser, base, getenv); got != want {
 			t.Errorf("Root(%s, user) = %q, want %q", target, got, want)
+		}
+		if !SupportsScope(target, ScopeProject) {
+			continue
 		}
 		// Project scope never follows user configuration overrides.
 		if got, want := Root(target, ScopeProject, base, getenv), filepath.Join(base, filepath.FromSlash(DefaultRoot(target, ScopeProject))); got != want {
@@ -200,7 +205,7 @@ func TestParseTargetsAndScopes(t *testing.T) {
 	if err != nil || len(got) != 2 || got[0] != TargetClaude || got[1] != TargetOpenCode {
 		t.Fatalf("ParseTargets = %v, %v", got, err)
 	}
-	if all, err := ParseTargets("all"); err != nil || len(all) != 4 {
+	if all, err := ParseTargets("all"); err != nil || len(all) != 5 || all[4] != TargetCompa {
 		t.Fatalf("all = %v, %v", all, err)
 	}
 	for _, bad := range []string{"app", "studio", ""} {
@@ -226,6 +231,12 @@ func TestBuildWritesNativeLayoutWithVerifiableManifest(t *testing.T) {
 	for _, scope := range []Scope{ScopeUser, ScopeProject} {
 		for _, target := range Targets() {
 			dir := filepath.Join(t.TempDir(), string(target))
+			if !SupportsScope(target, scope) {
+				if _, err := Build(Options{Target: target, Scope: scope, Version: testVersion, Tools: testTools}, dir); err == nil {
+					t.Errorf("%s was built at %s scope, which it does not support", target, scope)
+				}
+				continue
+			}
 			m := build(t, target, scope, dir)
 			root := DefaultRoot(target, scope)
 			if m.FacetVersion != testVersion || m.Target != target || m.Scope != scope || m.InstallRoot != root {
@@ -469,6 +480,13 @@ func TestCLIBuildsEveryTargetAndRejectsWithdrawnOnes(t *testing.T) {
 	}
 	for _, target := range Targets() {
 		m, err := Verify(filepath.Join(out, string(target)), Expect{Target: target, Scope: ScopeProject, Version: testVersion})
+		if !SupportsScope(target, ScopeProject) {
+			// "all" leaves out a target the scope does not support.
+			if err == nil {
+				t.Errorf("%s was built at project scope", target)
+			}
+			continue
+		}
 		if err != nil {
 			t.Errorf("%s: %v", target, err)
 			continue
@@ -486,12 +504,13 @@ func TestCLIBuildsEveryTargetAndRejectsWithdrawnOnes(t *testing.T) {
 	}
 
 	for name, args := range map[string][]string{
-		"withdrawn app target": {"--target", "app", "--out", out},
-		"missing out":          {"--target", "claude"},
-		"missing target":       {"--out", out},
-		"bad scope":            {"--target", "claude", "--scope", "global", "--out", out},
-		"positional":           {"--target", "claude", "--out", out, "extra"},
-		"unknown flag":         {"--bogus"},
+		"withdrawn app target":   {"--target", "app", "--out", out},
+		"missing out":            {"--target", "claude"},
+		"missing target":         {"--out", out},
+		"bad scope":              {"--target", "claude", "--scope", "global", "--out", out},
+		"positional":             {"--target", "claude", "--out", out, "extra"},
+		"unknown flag":           {"--bogus"},
+		"compa at project scope": {"--target", "compa", "--scope", "project", "--out", out},
 	} {
 		stderr.Reset()
 		if code := CLI(args, io.Discard, &stderr, testVersion); code != 2 {

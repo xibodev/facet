@@ -92,8 +92,9 @@ func opencodeRules() []string {
 
 // rulesSupported reports whether facet wire records separate rules for t.
 // Codex's rules live in the MCP block; Copilot CLI has no such setting.
+// Compa's rules are written with its MCP entry, and recorded separately.
 func rulesSupported(t bundle.Target) bool {
-	return t == bundle.TargetClaude || t == bundle.TargetOpenCode
+	return t == bundle.TargetClaude || t == bundle.TargetOpenCode || t == bundle.TargetCompa
 }
 
 func (e *env) claudeSettings(scope bundle.Scope, project string) string {
@@ -108,7 +109,8 @@ func (e *env) claudeSettings(scope bundle.Scope, project string) string {
 
 // rulesStep is the consent part of a plan. Its edit is computed when it is
 // applied, on the file as it is then: for OpenCode the MCP registration has
-// just changed the same file.
+// just changed the same file. Compa's edit is computed with its MCP entry,
+// and record is what it leaves.
 type rulesStep struct {
 	method   string
 	file     string
@@ -117,6 +119,7 @@ type rulesStep struct {
 	op       string   // add | unchanged | skip | remove | none
 	prev     *RulesRecord
 	warnings []string
+	record   *RulesRecord
 }
 
 func (e *env) planRules(t bundle.Target, scope bundle.Scope, project string, mcp *mcpStep, prev *RulesRecord) rulesStep {
@@ -180,6 +183,8 @@ func readRules(method, file string) (map[string]bool, map[string]string, string,
 		return nil, nil, fmt.Sprintf("%s does not hold a JSON object; no ask rules were added for paid tools", file), nil
 	}
 	switch method {
+	case RulesCompa:
+		return readCompaRules(data, file)
 	case RulesClaude:
 		perms, _ := root.member("permissions")
 		if perms == nil {

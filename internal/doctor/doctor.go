@@ -169,6 +169,7 @@ func Generate() *DoctorReport {
 	report.CLIs = append(report.CLIs, probeAgentCLI("OpenCode", "opencode"))
 	report.CLIs = append(report.CLIs, probeAgentCLI("GitHub Copilot", "copilot"))
 	report.CLIs = append(report.CLIs, probeAgentCLI("OpenAI Codex", "codex"))
+	report.CLIs = append(report.CLIs, probeAgentCLI("Compa", "compa-kernel"))
 
 	// 3. Environment Variables
 	for _, envVar := range EnvProbes() {
@@ -462,7 +463,7 @@ func formatDoctorReport(report *DoctorReport, w io.Writer) {
 	case report.WiringError != "":
 		fmt.Fprintf(w, "  ✗ %s\n", report.WiringError)
 	case len(report.Wiring) == 0:
-		fmt.Fprintln(w, "  - No wirings recorded. Run `facet wire <cli>` to wire Facet into claude, codex, copilot, or opencode.")
+		fmt.Fprintln(w, "  - No wirings recorded. Run `facet wire <cli>` to wire Facet into claude, codex, copilot, opencode, or compa.")
 	}
 	for _, c := range report.Wiring {
 		symbol := "✓"

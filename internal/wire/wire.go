@@ -37,7 +37,9 @@ supports agents, then registers the MCP server "facet" (the facet executable
 started with "mcp") through the CLI's own configuration. Instruction files such
 as AGENTS.md or CLAUDE.md are never edited.
 
-CLIs: claude, codex, copilot, opencode, or all.
+CLIs: claude, codex, copilot, opencode, compa, or all. compa is Compa's agent
+engine, wired at user scope in its config.json (COMPA_HOME moves it); all
+includes it when Compa is set up.
 
 Options:
   --scope user|project  where the CLI should find Facet (default: user)
@@ -178,6 +180,8 @@ type request struct {
 	project  string
 	exe      string
 	dryRun   bool
+	// named are the targets named explicitly rather than through "all".
+	named map[bundle.Target]bool
 }
 
 type usageError struct{ msg string }
@@ -285,19 +289,39 @@ func parseArgs(args []string) (*request, bool, error) {
 		req.mode = modeRemove
 	}
 	if len(names) == 0 {
-		return nil, false, usageError{"name the CLI to wire: claude, codex, copilot, opencode, or all"}
+		return nil, false, usageError{"name the CLI to wire: claude, codex, copilot, opencode, compa, or all"}
 	}
 	targets, err := bundle.ParseTargets(names...)
 	if err != nil {
 		return nil, false, usageError{err.Error()}
 	}
 	req.targets = targets
+	req.named = map[bundle.Target]bool{}
+	for _, list := range names {
+		for _, name := range strings.Split(list, ",") {
+			if t, err := bundle.ParseTarget(name); err == nil {
+				req.named[t] = true
+			}
+		}
+	}
 	if projectSet {
 		if req.scopeSet && req.scope != bundle.ScopeProject {
 			return nil, false, usageError{"--project applies only to --scope project"}
 		}
 		req.scope = bundle.ScopeProject
 	}
+	// A target that has no project scope is an error when named, and left
+	// out of "all".
+	var kept []bundle.Target
+	for _, t := range req.targets {
+		switch {
+		case bundle.SupportsScope(t, req.scope):
+			kept = append(kept, t)
+		case req.named[t]:
+			return nil, false, usageError{fmt.Sprintf("%s is wired at user scope only", t)}
+		}
+	}
+	req.targets = kept
 	return req, false, nil
 }
 
@@ -371,6 +395,10 @@ func (e *env) install(req *request) int {
 	var plans []*plan
 	failed := false
 	for _, t := range req.targets {
+		if t == bundle.TargetCompa && !req.named[t] && !e.compaSetUp() {
+			// "all" includes Compa only where it is set up.
+			continue
+		}
 		p := e.planInstall(reg, t, req.scope, project)
 		plans = append(plans, p)
 		if len(p.problems) > 0 {

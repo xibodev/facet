@@ -60,11 +60,15 @@ const (
 	TargetCodex    Target = "codex"
 	TargetCopilot  Target = "copilot"
 	TargetOpenCode Target = "opencode"
+	// TargetCompa is Compa's agent engine (compa-kernel). It is wired at
+	// user scope only: its MCP servers and approval rules live in its own
+	// configuration, not in a project.
+	TargetCompa Target = "compa"
 )
 
 // Targets returns every supported target in a stable order.
 func Targets() []Target {
-	return []Target{TargetClaude, TargetCodex, TargetCopilot, TargetOpenCode}
+	return []Target{TargetClaude, TargetCodex, TargetCopilot, TargetOpenCode, TargetCompa}
 }
 
 func (t Target) valid() bool {
@@ -76,11 +80,16 @@ func (t Target) valid() bool {
 	return false
 }
 
+// SupportsScope reports whether target t can be installed at scope s.
+func SupportsScope(t Target, s Scope) bool {
+	return t != TargetCompa || s == ScopeUser
+}
+
 // ParseTarget validates one target name.
 func ParseTarget(name string) (Target, error) {
 	t := Target(strings.ToLower(strings.TrimSpace(name)))
 	if !t.valid() {
-		return "", fmt.Errorf("unknown CLI %q; choose claude, codex, copilot, opencode, or all", name)
+		return "", fmt.Errorf("unknown CLI %q; choose claude, codex, copilot, opencode, compa, or all", name)
 	}
 	return t, nil
 }
@@ -109,7 +118,7 @@ func ParseTargets(list ...string) ([]Target, error) {
 		}
 	}
 	if len(want) == 0 {
-		return nil, fmt.Errorf("no CLI named; choose claude, codex, copilot, opencode, or all")
+		return nil, fmt.Errorf("no CLI named; choose claude, codex, copilot, opencode, compa, or all")
 	}
 	var out []Target
 	for _, t := range Targets() {
@@ -199,6 +208,13 @@ func DefaultRoot(t Target, s Scope) string {
 		return ".copilot"
 	case TargetOpenCode:
 		return ".config/opencode"
+	case TargetCompa:
+		// Compa reads skills from its workspace's skills/ folder; the agent
+		// may only read files inside the workspace, so the global
+		// $COMPA_HOME/skills folder would list skills it cannot open. The
+		// default workspace is ~/.compa/workspace; facet wire reads the
+		// configured one from Compa's config.json.
+		return ".compa/workspace"
 	}
 	return ""
 }
@@ -224,6 +240,13 @@ func Root(t Target, s Scope, base string, getenv func(string) string) string {
 			if dir := strings.TrimSpace(getenv("XDG_CONFIG_HOME")); dir != "" {
 				return filepath.Join(dir, "opencode")
 			}
+		case TargetCompa:
+			if dir := strings.TrimSpace(getenv("COMPA_AGENTS_DEFAULTS_WORKSPACE")); dir != "" {
+				return filepath.Clean(dir)
+			}
+			if dir := strings.TrimSpace(getenv("COMPA_HOME")); dir != "" {
+				return filepath.Join(dir, "workspace")
+			}
 		}
 	}
 	return filepath.Join(base, filepath.FromSlash(DefaultRoot(t, s)))
@@ -248,7 +271,8 @@ func personaFile(t Target) (string, func([]byte) ([]byte, error), bool) {
 		// the model provider as options, so `name` is dropped.
 		return PersonaName + ".md", dropFrontmatterKey("name"), true
 	}
-	// Codex: no agent format validated for this release.
+	// Codex: no agent format validated for this release. Compa: an agent is
+	// a whole workspace (AGENT.md), not a file beside the user's own agent.
 	return "", nil, false
 }
 

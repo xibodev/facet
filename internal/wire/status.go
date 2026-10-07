@@ -214,6 +214,8 @@ func mcpState(rec *MCPRecord) string {
 			return "modified"
 		}
 		return "missing"
+	case MethodCompa:
+		return compaMCPState(rec)
 	}
 	return "unknown"
 }
@@ -240,7 +242,7 @@ func (e *env) status() int {
 	fmt.Fprintf(e.out, "Wiring registry: %s\n", report.RegistryPath)
 	fmt.Fprintf(e.out, "Running facet v%s; MCP executable: %s\n", report.Running, report.Executable)
 	if len(report.Wirings) == 0 {
-		fmt.Fprintln(e.out, "\nNo wirings recorded. Run `facet wire <cli>` to wire Facet into claude, codex, copilot, or opencode.")
+		fmt.Fprintln(e.out, "\nNo wirings recorded. Run `facet wire <cli>` to wire Facet into claude, codex, copilot, opencode, or compa.")
 		return 0
 	}
 	for _, s := range report.Wirings {

@@ -25,7 +25,7 @@ Usage: bash install.sh [options]
   --action install|update|rollback|uninstall   Default: install
   --version VERSION                            Release to install or roll back to
   --components remotion,piper,hyperframes|all|none   Default: remotion,piper
-  --wire claude,codex,copilot,opencode|all|none      Wire CLIs after installing
+  --wire claude,codex,copilot,opencode,compa|all|none  Wire CLIs after installing
   --scope user|project                         Wiring scope (default: user)
   --project DIR                                Project to wire (implies --scope project)
   --archive ZIP --checksums FILE               Install from local release files
@@ -94,7 +94,7 @@ STATE_FILE="$FACET_HOME_DIR/installer.json"
 WIRING_FILE="$FACET_HOME_DIR/wiring.json"
 PROFILE_START='# >>> facet path >>>'
 PROFILE_END='# <<< facet path <<<'
-SUPPORTED_CLIS='claude codex copilot opencode'
+SUPPORTED_CLIS='claude codex copilot opencode compa'
 
 ask() {
     local answer
@@ -635,7 +635,7 @@ do_install() {
         while IFS= read -r a; do args+=("$a"); done < <(wire_scope_args "$SCOPE" "$PROJECT")
         run_wire "$exe" "$WIRE" "${args[@]}" || die 'facet wire failed; Facet is installed. Rerun facet wire after fixing the reported problem.'
     else
-        printf '%s\n' '  Not wired. Later: facet wire <claude|codex|copilot|opencode|all> [--scope user|project]'
+        printf '%s\n' '  Not wired. Later: facet wire <claude|codex|copilot|opencode|compa|all> [--scope user|project]'
     fi
     v1_notice
     [[ $refresh_failed == 0 ]] || die 'Facet is installed and active, but refreshing the recorded wirings failed; see the output above.'

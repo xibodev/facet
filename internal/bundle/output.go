@@ -88,6 +88,9 @@ func Plan(opts Options) (*Manifest, []File, error) {
 	if opts.Scope != ScopeUser && opts.Scope != ScopeProject {
 		return nil, nil, fmt.Errorf("unsupported scope %q", opts.Scope)
 	}
+	if !SupportsScope(opts.Target, opts.Scope) {
+		return nil, nil, fmt.Errorf("%s is installed at user scope only; its MCP servers and approval rules live in its own configuration, not in a project", opts.Target)
+	}
 	if strings.TrimSpace(opts.Version) == "" {
 		return nil, nil, fmt.Errorf("no Facet version supplied; a bundle without identity cannot be compared or upgraded")
 	}

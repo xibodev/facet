@@ -50,7 +50,7 @@ Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
 
 $utf8NoBom = New-Object Text.UTF8Encoding($false)
-$supportedClis = @('claude','codex','copilot','opencode')
+$supportedClis = @('claude','codex','copilot','opencode','compa')
 
 # ----------------------------------------------------------------- helpers
 
@@ -253,7 +253,7 @@ $wireTargets = @()
 if ($wireText) {
     $items = @(Split-List $wireText)
     if ('none' -in $items) { if ($items.Count -ne 1) { throw 'none cannot be combined with CLI names.' }; $items = @() }
-    foreach ($item in $items) { if ($item -notin ($supportedClis + 'all')) { throw "Unknown CLI '$item'; choose claude, codex, copilot, opencode, or all." } }
+    foreach ($item in $items) { if ($item -notin ($supportedClis + 'all')) { throw "Unknown CLI '$item'; choose claude, codex, copilot, opencode, compa, or all." } }
     if ('all' -in $items) { $items = @('all') }
     $wireTargets = @($items | Select-Object -Unique)
 }
@@ -886,7 +886,7 @@ function Complete-Activation([string]$Name, [string[]]$Verified, [bool]$Unverifi
                 }
             }
         } else {
-            Write-Host "`nNo supported CLI was detected on PATH (claude, codex, copilot, opencode). Wire one later with: facet wire <cli>"
+            Write-Host "`nNo supported CLI was detected on PATH (claude, codex, copilot, opencode, compa). Wire one later with: facet wire <cli>"
         }
     }
     if ($requested.Count) {
@@ -906,7 +906,7 @@ function Complete-Activation([string]$Name, [string[]]$Verified, [bool]$Unverifi
     if ($stale.Count) {
         Write-Host "  Note:     $($stale.Count) wiring(s) still carry skills from another Facet version; see facet wire --status, then rerun facet wire --refresh."
     }
-    if (-not $recorded.Count) { Write-Host '  Next:     facet wire <claude|codex|copilot|opencode> to use Facet from your CLI; facet doctor to check dependencies' }
+    if (-not $recorded.Count) { Write-Host '  Next:     facet wire <claude|codex|copilot|opencode|compa> to use Facet from your CLI; facet doctor to check dependencies' }
     Write-V1Note
     if ($script:logFile) { Write-Host "Log: $($script:logFile)" }
     if ($wireFailed) { throw 'Facet is installed and active, but facet wire failed; see the output above.' }

@@ -83,6 +83,9 @@ const (
 	MethodJSON = "json-merge"
 	// MethodTOML appends one table to the CLI's TOML config file.
 	MethodTOML = "toml-append"
+	// MethodCompa edits Compa's config.json: the server entry, MCP turned
+	// on, the MCP call limit, and the ask rules, in one locked write.
+	MethodCompa = "compa-config"
 )
 
 // MCPRecord is how the MCP server was registered, with enough detail to
@@ -111,6 +114,26 @@ type MCPRecord struct {
 
 	CreatedFile   bool `json:"created_file,omitempty"`
 	CreatedParent bool `json:"created_parent,omitempty"`
+
+	// Compa: what facet wire changed besides the server entry, so --remove
+	// restores each value only while it is still the one facet wire set.
+	Compa *CompaChanges `json:"compa,omitempty"`
+}
+
+// CompaChanges are the settings facet wire changed in Compa's config.json
+// next to the facet server entry.
+type CompaChanges struct {
+	// EnabledSet: tools.mcp.enabled was false (or absent, EnabledInserted)
+	// and facet wire set it to true.
+	EnabledSet      bool `json:"enabled_set,omitempty"`
+	EnabledInserted bool `json:"enabled_inserted,omitempty"`
+	// TimeoutSet: tools.mcp.call_timeout_seconds was 0 or absent
+	// (TimeoutInserted) and facet wire set it to Timeout.
+	TimeoutSet      bool `json:"timeout_set,omitempty"`
+	TimeoutInserted bool `json:"timeout_inserted,omitempty"`
+	Timeout         int  `json:"timeout,omitempty"`
+	// CreatedServers: tools.mcp.servers did not exist.
+	CreatedServers bool `json:"created_servers,omitempty"`
 }
 
 // RegistryPath returns wiring.json in Facet's home folder for the user whose

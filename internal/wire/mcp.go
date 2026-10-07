@@ -35,6 +35,9 @@ import (
 //	                        each one that is not read-only.
 //	opencode user, project  `opencode mcp add` is interactive, so one member is merged into
 //	                        opencode.json(c) in the global config directory or the project root
+//	compa    user           the facet entry, MCP turned on, the MCP call limit and the ask
+//	                        rules are written to Compa's config.json in one locked edit
+//	                        (see compa.go)
 
 // mcpStep is the MCP part of a plan.
 type mcpStep struct {
@@ -54,6 +57,8 @@ type mcpStep struct {
 	keyPath    []string
 	record     *MCPRecord
 	warnings   []string
+	// compaWhat names Compa settings an edit changes besides the server.
+	compaWhat []string
 }
 
 // observed is what a CLI's configuration says about the facet server.
@@ -587,6 +592,11 @@ func (e *env) planJSONRemove(step *mcpStep, rec *MCPRecord) {
 
 // applyMCP carries out an MCP step.
 func (e *env) applyMCP(step *mcpStep) error {
+	if step.method == MethodCompa {
+		// One edit holds the server, the settings and the ask rules; it is
+		// written whenever it changes anything.
+		return e.applyCompa(step)
+	}
 	switch step.op {
 	case "register", "update", "unregister":
 	default:
@@ -688,6 +698,19 @@ func (e *env) printMCP(step mcpStep, line func(verb, target string)) {
 				line("edit", fmt.Sprintf("%s (update %s)", step.file, block))
 			default:
 				line("edit", fmt.Sprintf("%s (append %s)", step.file, block))
+			}
+		case MethodCompa:
+			what := ""
+			if len(step.compaWhat) > 0 {
+				what = "; " + strings.Join(step.compaWhat, ", ")
+			}
+			switch step.op {
+			case "unregister":
+				line("edit", fmt.Sprintf("%s (remove tools.mcp.servers.%s and what facet wire set)", step.file, name))
+			case "update":
+				line("edit", fmt.Sprintf("%s (update tools.mcp.servers.%s%s)", step.file, name, what))
+			default:
+				line("edit", fmt.Sprintf("%s (add tools.mcp.servers.%s%s)", step.file, name, what))
 			}
 		}
 	case "unchanged":
