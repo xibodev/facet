@@ -21,6 +21,16 @@ FACET_INSTALL_SKIP_MEDIA=1, which passes --skip-verify.
 
 On Windows, FACET_TEST_POWERSHELL selects the host (default pwsh; CI also runs
 powershell.exe, Windows PowerShell 5.1).
+
+With --source, the same checks and lifecycle run against the source archive,
+which the installers build facet from (always on Windows, with --from-source
+on Linux and macOS). The archive must hold the Go module, its vendored modules,
+the Windows resource objects, the composer and every platform's notices, and
+nothing else. The installers build with the pinned Go download, taken from
+FACET_TEST_TOOLCHAIN or fetched once from go.dev and checked against
+installer/manifest.tsv. When the release directory has source-builds.json
+(written by package-release.py --source), the installed facet must be byte for
+byte the binary the packager built: Go builds are reproducible.
 """
 import argparse
 import hashlib
@@ -33,16 +43,18 @@ import stat
 import subprocess
 import sys
 import tempfile
+import urllib.request
 import zipfile
 
 REPO = Path(__file__).resolve().parent.parent
-RUN_TIMEOUT = 600
+RUN_TIMEOUT = 900
 INSTALLER_FILES = {"install.ps1", "install.sh", "installer/manifest.tsv", "installer/verify.html"}
 COMPOSER_METADATA = ("package.json", "package-lock.json", "tsconfig.json", "composer-manifest.json")
+PLATFORMS = [(goos, goarch) for goos in ("windows", "linux", "darwin") for goarch in ("amd64", "arm64")]
 ISOLATED_VARIABLES = (
     "FACET_ACTION", "FACET_VERSION", "FACET_COMPONENTS", "FACET_WIRE", "FACET_SCOPE", "FACET_PROJECT",
     "FACET_YES", "FACET_NO_PATH", "FACET_SKIP_VERIFY", "FACET_PURGE", "FACET_PLAIN", "FACET_LOG_DIR",
-    "FACET_HOME", "FACET_REMOTION_COMPOSER",
+    "FACET_HOME", "FACET_REMOTION_COMPOSER", "FACET_FROM_SOURCE",
     "CLAUDE_CONFIG_DIR", "CODEX_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME",
 )
 VALUE_FLAGS = {
@@ -51,6 +63,7 @@ VALUE_FLAGS = {
     "components": ("-Components", "--components"),
     "archive": ("-ArchivePath", "--archive"),
     "checksums": ("-ChecksumPath", "--checksums"),
+    "toolchain": ("-ToolchainPath", "--toolchain"),
     "wire": ("-Wire", "--wire"),
     "scope": ("-Scope", "--scope"),
     "project": ("-ProjectDir", "--project"),
@@ -77,19 +90,16 @@ def host_platform():
     return {"win32": "windows", "darwin": "darwin"}.get(sys.platform, "linux"), arch
 
 
-def check_archives(release, version, os_name, arch, updated_installer):
-    suffix = ".exe" if os_name == "windows" else ""
-    archive = release / f"facet-{version}-{os_name}-{arch}.zip"
-    installer = release / f"facet-installer-{version}.zip"
+def composer_names():
     manifest = json.loads((REPO / "remotion-composer" / "composer-manifest.json").read_text(encoding="utf-8"))
-    composer = {f"dependencies/remotion-composer/{name}" for name in (*COMPOSER_METADATA, *manifest["allowedSourcePaths"])}
-    expected = {"bin/facet" + suffix, "LICENSE", "THIRD_PARTY_NOTICES.md"} | composer
-    with zipfile.ZipFile(archive) as z:
-        names = {name for name in z.namelist() if not name.endswith("/")}
-        assert names == expected, f"{archive.name}: unexpected {sorted(names - expected)}, missing {sorted(expected - names)}"
-        heading = f"## Go modules linked into the `facet` binary ({os_name}/{arch})"
-        assert heading in z.read("THIRD_PARTY_NOTICES.md").decode("utf-8"), "notices were not generated for this platform"
-        assert z.getinfo("bin/facet" + suffix).external_attr >> 16 & 0o111, "binary is not executable"
+    return {f"dependencies/remotion-composer/{name}" for name in (*COMPOSER_METADATA, *manifest["allowedSourcePaths"])}
+
+
+def notices_heading(os_name, arch):
+    return f"## Go modules linked into the `facet` binary ({os_name}/{arch})"
+
+
+def check_installer(installer, version):
     with zipfile.ZipFile(installer) as z:
         names = {name for name in z.namelist() if not name.endswith("/")}
         assert names == INSTALLER_FILES, f"{installer.name} ships {sorted(names)}"
@@ -97,20 +107,87 @@ def check_archives(release, version, os_name, arch, updated_installer):
         assert [row[2] for row in rows if row[:2] == ["release", "facet"]] == [version], "installer manifest is not stamped with the release version"
         assert z.read("install.ps1").isascii(), "install.ps1 must stay ASCII for Windows PowerShell 5.1"
         assert b"\r\n" not in z.read("install.sh"), "install.sh must use LF line endings"
-    for line in (release / f"checksums-{os_name}-{arch}.txt").read_text(encoding="utf-8").splitlines():
+
+
+def check_checksums(release, sums, installer, updated_installer):
+    for line in (release / sums).read_text(encoding="utf-8").splitlines():
         digest, name = line.split()
         if updated_installer and name == installer.name:
             digest, name = (release / "installer-checksums.txt").read_text(encoding="utf-8").split()
         assert sha256(release / name) == digest, f"checksum mismatch: {name}"
+
+
+def check_archives(release, version, os_name, arch, updated_installer):
+    suffix = ".exe" if os_name == "windows" else ""
+    archive = release / f"facet-{version}-{os_name}-{arch}.zip"
+    installer = release / f"facet-installer-{version}.zip"
+    expected = {"bin/facet" + suffix, "LICENSE", "THIRD_PARTY_NOTICES.md"} | composer_names()
+    with zipfile.ZipFile(archive) as z:
+        names = {name for name in z.namelist() if not name.endswith("/")}
+        assert names == expected, f"{archive.name}: unexpected {sorted(names - expected)}, missing {sorted(expected - names)}"
+        assert notices_heading(os_name, arch) in z.read("THIRD_PARTY_NOTICES.md").decode("utf-8"), "notices were not generated for this platform"
+        assert z.getinfo("bin/facet" + suffix).external_attr >> 16 & 0o111, "binary is not executable"
+    check_installer(installer, version)
+    check_checksums(release, f"checksums-{os_name}-{arch}.txt", installer, updated_installer)
     return archive, installer
 
 
+def check_source_archive(release, version, updated_installer):
+    """The source archive holds what a build needs and what a runtime ships
+    beside the binary, and nothing else: no binary, no tests, no test data."""
+    archive = release / f"facet-{version}-source.zip"
+    installer = release / f"facet-installer-{version}.zip"
+    notices = {f"notices/{goos}-{goarch}.md" for goos, goarch in PLATFORMS}
+    with zipfile.ZipFile(archive) as z:
+        names = {name for name in z.namelist() if not name.endswith("/")}
+        outside = {name for name in names if not name.startswith("source/")}
+        expected = {"LICENSE"} | composer_names() | notices
+        assert outside == expected, f"{archive.name}: unexpected {sorted(outside - expected)}, missing {sorted(expected - outside)}"
+        for required in ("source/go.mod", "source/go.sum", "source/capability.go", "source/cmd/facet/main.go", "source/vendor/modules.txt",
+                         "source/cmd/facet/rsrc_windows_amd64.syso", "source/cmd/facet/rsrc_windows_arm64.syso"):
+            assert required in names, f"{archive.name} lacks {required}"
+        tests = sorted(name for name in names if name.endswith("_test.go") or "testdata" in PurePosixPath(name).parts)
+        assert not tests, f"{archive.name} ships tests: {tests[:5]}"
+        executable = sorted(info.filename for info in z.infolist() if info.external_attr >> 16 & 0o111)
+        assert not executable, f"{archive.name} ships executables: {executable[:5]}"
+        for goos, goarch in PLATFORMS:
+            assert notices_heading(goos, goarch) in z.read(f"notices/{goos}-{goarch}.md").decode("utf-8"), f"notices for {goos}/{goarch}"
+    check_installer(installer, version)
+    check_checksums(release, "checksums-source.txt", installer, updated_installer)
+    builds = release / "source-builds.json"
+    expected_builds = None
+    if builds.exists():
+        data = json.loads(builds.read_text(encoding="utf-8"))
+        assert data["version"] == version and set(data["builds"]) == {f"{goos}/{goarch}" for goos, goarch in PLATFORMS}, data
+        expected_builds = data["builds"]
+    return archive, installer, expected_builds
+
+
+def pinned_toolchain(os_name, arch, temp):
+    """The Go download the installers build with, from FACET_TEST_TOOLCHAIN or
+    fetched once from go.dev, checked against installer/manifest.tsv."""
+    rows = [line.split("\t") for line in (REPO / "installer" / "manifest.tsv").read_text(encoding="utf-8").splitlines()]
+    row = next(row for row in rows if row[:2] == ["toolchain", "go"])
+    expected = dict(pair.split(":") for pair in row[{"windows": 4, "linux": 5, "darwin": 6}[os_name]].split())[arch]
+    name = f"go{row[2]}.{os_name}-{arch}." + ("zip" if os_name == "windows" else "tar.gz")
+    path = Path(os.environ["FACET_TEST_TOOLCHAIN"]) if os.environ.get("FACET_TEST_TOOLCHAIN") else temp / name
+    if not path.exists():
+        with urllib.request.urlopen(row[3] + name, timeout=600) as response, open(path, "wb") as stream:
+            shutil.copyfileobj(response, stream)
+    assert sha256(path) == expected, f"{path} is not the pinned {name}"
+    return path
+
+
 class Lifecycle:
-    def __init__(self, os_name, arch, version, archive, checksums, scripts, root):
+    def __init__(self, os_name, arch, version, archive, checksums, scripts, root, toolchain=None, builds=None):
         self.os_name, self.arch, self.version = os_name, arch, version
         self.windows = os_name == "windows"
         self.suffix = ".exe" if self.windows else ""
         self.archive, self.checksums, self.scripts, self.root = archive, checksums, scripts, root
+        # A source archive is built by the installer, with this Go download;
+        # builds holds the packager's SHA-256 of each platform's facet.
+        self.source = archive.name.endswith("-source.zip")
+        self.toolchain, self.builds = toolchain, builds
         self.skip_media = os.environ.get("FACET_INSTALL_SKIP_MEDIA") == "1"
         self.shell = os.environ.get("FACET_TEST_POWERSHELL", "pwsh")
         self.home = None
@@ -154,6 +231,8 @@ class Lifecycle:
         else:
             options.setdefault("components", "none")
             options.setdefault("skip_verify", self.skip_media)
+            if self.toolchain:
+                options.setdefault("toolchain", self.toolchain)
         options.setdefault("no_path", True)
         options.setdefault("yes", interactive is None)
         index = 0 if self.windows else 1
@@ -224,16 +303,23 @@ def user_path():
 
 
 def build_variant(life, version, out):
-    """A second release build of this platform, differing in its version."""
-    if not shutil.which("go"):
-        return None
-    binary = out / ("facet" + life.suffix)
-    subprocess.run(["go", "build", "-trimpath", "-ldflags", f"-X main.Version={version}", "-o", str(binary), "./cmd/facet"],
-                   cwd=REPO, env=dict(os.environ, GOOS=life.os_name, GOARCH=life.arch, CGO_ENABLED="0"), check=True, timeout=RUN_TIMEOUT)
-    variant = out / f"facet-{version}-{life.os_name}-{life.arch}.zip"
-    with zipfile.ZipFile(life.archive) as source, zipfile.ZipFile(variant, "w") as target:
-        for info in source.infolist():
-            target.writestr(info, binary.read_bytes() if info.filename == "bin/facet" + life.suffix else source.read(info))
+    """A second release of this platform, differing in its version. The
+    installer stamps the version when it builds from source, so the same
+    source archive serves under the other version's name; a prebuilt variant
+    is rebuilt here with Go."""
+    if life.source:
+        variant = out / f"facet-{version}-source.zip"
+        shutil.copyfile(life.archive, variant)
+    else:
+        if not shutil.which("go"):
+            return None
+        binary = out / ("facet" + life.suffix)
+        subprocess.run(["go", "build", "-trimpath", "-ldflags", f"-X main.Version={version}", "-o", str(binary), "./cmd/facet"],
+                       cwd=REPO, env=dict(os.environ, GOOS=life.os_name, GOARCH=life.arch, CGO_ENABLED="0"), check=True, timeout=RUN_TIMEOUT)
+        variant = out / f"facet-{version}-{life.os_name}-{life.arch}.zip"
+        with zipfile.ZipFile(life.archive) as source, zipfile.ZipFile(variant, "w") as target:
+            for info in source.infolist():
+                target.writestr(info, binary.read_bytes() if info.filename == "bin/facet" + life.suffix else source.read(info))
     sums = out / f"checksums-{version}.txt"
     sums.write_text(f"{sha256(variant)}  {variant.name}\n", encoding="utf-8")
     return variant, sums
@@ -248,6 +334,13 @@ def lifecycle(life, temp):
 
     output = life.install()
     life.assert_active(life.version)
+    if life.source:
+        assert "Build Facet" in output and "Remove Go and the build cache" in output, output
+        if life.builds:
+            built = sha256(life.runtime() / "bin" / ("facet" + life.suffix))
+            expected = life.builds[f"{life.os_name}/{life.arch}"]
+            assert built == expected, f"the installer built facet {built}; the packager built {expected} from the same source"
+            print(f"Reproducible: the installed facet is the packager's build ({expected}).")
     assert "v1 project integrations are separate" in output and "--action uninstall" in output, output
     life.assert_no_profile_edits()
     doctor = subprocess.run([str(life.facet_home / "current" / "bin" / ("facet" + life.suffix)), "doctor"], cwd=temp,
@@ -385,16 +478,23 @@ def main():
     parser.add_argument("--os", required=True)
     parser.add_argument("--arch", required=True)
     parser.add_argument("--release-dir", required=True)
+    parser.add_argument("--source", action="store_true", help="test the source archive and installs that build facet from it")
     parser.add_argument("--updated-installer", action="store_true", help="use the installer-only build checksum while keeping the product archive checksum")
     args = parser.parse_args()
     version = json.loads((REPO / "package.json").read_text(encoding="utf-8"))["version"]
     release = Path(args.release_dir).resolve()
-    archive, installer = check_archives(release, version, args.os, args.arch, args.updated_installer)
+    builds = None
+    if args.source:
+        archive, installer, builds = check_source_archive(release, version, args.updated_installer)
+        checksums = release / "checksums-source.txt"
+    else:
+        archive, installer = check_archives(release, version, args.os, args.arch, args.updated_installer)
+        checksums = release / f"checksums-{args.os}-{args.arch}.txt"
     native = host_platform() == (args.os, args.arch)
     with tempfile.TemporaryDirectory(prefix="facet package test ") as temp:
         temp = Path(temp)
         suffix = ".exe" if args.os == "windows" else ""
-        if native:
+        if native and not args.source:
             with zipfile.ZipFile(archive) as z:
                 z.extract("bin/facet" + suffix, temp / "extracted")
             binary = temp / "extracted" / "bin" / ("facet" + suffix)
@@ -408,13 +508,17 @@ def main():
                 raise SystemExit("FFmpeg and FFprobe must be on PATH for the lifecycle test (or set FACET_INSTALL_SKIP_MEDIA=1)")
             with zipfile.ZipFile(installer) as z:
                 z.extractall(temp / "installer")
-            life = Lifecycle(args.os, args.arch, version, archive, release / f"checksums-{args.os}-{args.arch}.txt", temp / "installer", temp)
+            toolchain = pinned_toolchain(args.os, args.arch, temp) if args.source else None
+            life = Lifecycle(args.os, args.arch, version, archive, checksums, temp / "installer", temp, toolchain, builds)
             lifecycle(life, temp)
             moved_home(life, temp)
             rejections(life, temp)
             print("Installer lifecycle passed: install, reuse, repair, update/rollback, wiring refresh, pruning, "
-                  "FACET_HOME, uninstall, purge and rejections.")
-    print("Native binary, script installer package, composer contents and checksums passed.")
+                  f"FACET_HOME, uninstall, purge and rejections{' (built from source)' if args.source else ''}.")
+    if args.source:
+        print("Source archive, script installer package, composer contents and checksums passed.")
+    else:
+        print("Native binary, script installer package, composer contents and checksums passed.")
 
 
 if __name__ == "__main__":

@@ -8,6 +8,11 @@
 # offered at the end; wirings already recorded are refreshed to the active
 # runtime after every install, update and rollback. Nothing here edits project
 # files or CLI instruction files.
+#
+# A release ships a prebuilt facet for each platform. With --from-source (Facet
+# 2.2.0 and later), facet is built here instead, from the release's source
+# archive, by the official Go toolchain pinned with its SHA-256 in
+# installer/manifest.tsv; Go and its build cache are removed afterwards.
 set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 MANIFEST="$SCRIPT_DIR/installer/manifest.tsv"
@@ -29,6 +34,8 @@ Usage: bash install.sh [options]
   --scope user|project                         Wiring scope (default: user)
   --project DIR                                Project to wire (implies --scope project)
   --archive ZIP --checksums FILE               Install from local release files
+  --from-source                                Build facet here with the pinned Go toolchain
+  --toolchain FILE                             The Go download to build with (implies --from-source)
   --yes                                        Noninteractive
   --no-path                                    Do not add ~/.facet/current/bin to PATH
   --skip-verify                                Skip media verification (reported as unverified)
@@ -40,18 +47,19 @@ EOF
 
 VERSION=${FACET_VERSION:-}; ACTION=${FACET_ACTION:-}; COMPONENTS=${FACET_COMPONENTS:-}
 WIRE=${FACET_WIRE:-}; SCOPE=${FACET_SCOPE:-}; PROJECT=${FACET_PROJECT:-}
-ARCHIVE=''; SUMS=''
+ARCHIVE=''; SUMS=''; TOOLCHAIN=''; FROM_SOURCE=${FACET_FROM_SOURCE:-0}
 YES=${FACET_YES:-0}; NO_PATH=${FACET_NO_PATH:-0}; SKIP_VERIFY=${FACET_SKIP_VERIFY:-0}
 PURGE=${FACET_PURGE:-0}; PLAIN=${FACET_PLAIN:-0}; DETAIL=${FACET_VERBOSE:-0}
 while (($#)); do
     case "$1" in
-        --action|--version|--components|--wire|--scope|--project|--archive|--checksums)
+        --action|--version|--components|--wire|--scope|--project|--archive|--checksums|--toolchain)
             (($# >= 2)) || die "Missing value for $1"
             case "$1" in
                 --action) ACTION=$2;; --version) VERSION=$2;; --components) COMPONENTS=$2;;
                 --wire) WIRE=$2;; --scope) SCOPE=$2;; --project) PROJECT=$2;;
-                --archive) ARCHIVE=$2;; --checksums) SUMS=$2;;
+                --archive) ARCHIVE=$2;; --checksums) SUMS=$2;; --toolchain) TOOLCHAIN=$2;;
             esac; shift 2;;
+        --from-source) FROM_SOURCE=1; shift;;
         --yes) YES=1; shift;;
         --no-path) NO_PATH=1; shift;;
         --skip-verify) SKIP_VERIFY=1; shift;;
@@ -77,6 +85,8 @@ case $(uname -s) in Linux) OS=linux;; Darwin) OS=darwin;; *) die 'Use install.ps
 case $(uname -m) in x86_64|amd64) ARCH=amd64;; arm64|aarch64) ARCH=arm64;; *) die 'Unsupported architecture.';; esac
 absolute() { case "$1" in /*) printf '%s' "$1";; *) printf '%s/%s' "$PWD" "$1";; esac; }
 if [[ -n "$ARCHIVE" ]]; then ARCHIVE=$(absolute "$ARCHIVE"); SUMS=$(absolute "$SUMS"); fi
+if [[ -n "$TOOLCHAIN" ]]; then TOOLCHAIN=$(absolute "$TOOLCHAIN"); FROM_SOURCE=1; fi
+[[ "$FROM_SOURCE" == 0 || "$FROM_SOURCE" == 1 ]] || die 'FACET_FROM_SOURCE must be 0 or 1.'
 if [[ -n "$PROJECT" ]]; then PROJECT=$(absolute "$PROJECT"); fi
 
 # FACET_HOME moves Facet's home folder (runtimes, current, wiring record). It is
@@ -414,6 +424,117 @@ browser_libraries_missing() {
     ldd "$shell" 2>/dev/null | grep -q 'not found'
 }
 
+# ------------------------------------------------------- facet from source
+# facet is compiled here from the release's source archive by the official Go
+# toolchain that the manifest pins. The build reads only the archive (its
+# modules are vendored), never the network, and sees no Go settings but its
+# own. Go, its caches and the source are removed afterwards. Go builds are
+# reproducible: every machine builds the same facet.
+GO_VERSION=$(definition go 3 2>/dev/null || true)
+GO_NAME="go$GO_VERSION.$OS-$ARCH.tar.gz"
+go_checksum() {
+    local pair
+    for pair in $(definition go "$([[ "$OS" == linux ]] && printf 6 || printf 7)"); do
+        if [[ "$pair" == "$ARCH:"* ]]; then printf '%s' "${pair#*:}"; return 0; fi
+    done
+    return 1
+}
+version_at_most() {
+    local IFS=. a b i
+    read -r -a a <<< "$1"; read -r -a b <<< "$2"
+    for i in 0 1 2; do
+        if ((10#${a[i]:-0} < 10#${b[i]:-0})); then return 0; fi
+        if ((10#${a[i]:-0} > 10#${b[i]:-0})); then return 1; fi
+    done
+    return 0
+}
+fetch_toolchain() {
+    fetch "$(definition go 4)$GO_NAME" "$1"
+    [[ $(hash_file "$1") == "$(go_checksum)" ]] || die "Checksum mismatch: $GO_NAME"
+}
+unpack_toolchain() {
+    mkdir -p "$2"
+    # Go's own tests are not needed to build.
+    tar -xzf "$1" -C "$2" --exclude=testdata --exclude=go/test
+    [[ -x "$2/go/bin/go" ]] || die "$GO_NAME holds no go/bin/go."
+}
+unpack_source() {
+    local archive=$1 tree=$2 needed required
+    mkdir -p "$tree"
+    expand_zip "$archive" "$tree"
+    for required in LICENSE "notices/$OS-$ARCH.md" source/go.mod source/cmd/facet/main.go source/vendor/modules.txt; do
+        [[ -f "$tree/$required" ]] || die "Release missing $required"
+    done
+    needed=$(awk '$1=="go" && $2 ~ /^[0-9]+\.[0-9]+(\.[0-9]+)?$/ {print $2; exit}' "$tree/source/go.mod")
+    if [[ -n "$needed" ]] && ! version_at_most "$needed" "$GO_VERSION"; then
+        die "Facet $VERSION needs Go $needed to build, and this installer brings Go $GO_VERSION; use the installer from the Facet $VERSION release."
+    fi
+}
+build_facet() {
+    local tree=$1 stage=$2 build=$3 var unset=()
+    for var in $(compgen -e); do case "$var" in GO*|CGO_*) unset+=(-u "$var");; esac; done
+    mkdir -p "$build/cache" "$build/path" "$build/tmp" "$build/home" "$stage/bin"
+    # Go keeps telemetry counters in the user's configuration folder; with HOME
+    # and XDG_CONFIG_HOME pointed here, they are removed with the build.
+    (cd "$tree/source" && env ${unset[@]+"${unset[@]}"} GOTOOLCHAIN=local GOFLAGS=-mod=vendor GOPROXY=off GOWORK=off GOENV=off \
+        GO111MODULE=on CGO_ENABLED=0 GOOS="$OS" GOARCH="$ARCH" GOCACHE="$build/cache" GOPATH="$build/path" GOTMPDIR="$build/tmp" \
+        HOME="$build/home" XDG_CONFIG_HOME="$build/home/.config" XDG_CACHE_HOME="$build/home/.cache" \
+        "$build/go/bin/go" build -trimpath -buildvcs=false -ldflags "-s -w -X main.Version=$VERSION" -o "$stage/bin/facet" ./cmd/facet)
+    cp "$tree/LICENSE" "$stage/LICENSE"
+    cp "$tree/notices/$OS-$ARCH.md" "$stage/THIRD_PARTY_NOTICES.md"
+    cp -R "$tree/dependencies" "$stage/dependencies"
+}
+remove_build() {
+    chmod -R u+w "$1" 2>/dev/null || true
+    rm -rf -- "$1"
+    [[ -z "${2:-}" ]] || rm -f -- "$2"
+}
+source_build() {
+    local stage=$1 build="$TEMP/build" tarball available
+    go_checksum >/dev/null || die "The installer manifest pins no Go toolchain for $OS/$ARCH."
+    command -v tar >/dev/null || die 'Install required utility: tar'
+    available=$(df -Pk "$TEMP" | awk 'NR==2 {print $4}')
+    if [[ "$available" =~ ^[0-9]+$ ]] && ((available < 512000)); then
+        die "Building Facet needs about 500 MB of free disk space for Go and its build cache; $((available / 1024)) MB are free in $TEMP."
+    fi
+    # The source is checked before Go is fetched: a bad archive costs no download.
+    step "Unpack Facet $VERSION source" unpack_source "$ARCHIVE" "$build/facet"
+    if [[ -n "$TOOLCHAIN" ]]; then
+        [[ -f "$TOOLCHAIN" ]] || die "Go toolchain not found: $TOOLCHAIN"
+        [[ $(hash_file "$TOOLCHAIN") == "$(go_checksum)" ]] || die "$TOOLCHAIN is not the official $GO_NAME (SHA-256 mismatch)."
+        printf '  OK Check Go %s\n' "$GO_VERSION"
+        tarball=$TOOLCHAIN
+    else
+        tarball="$TEMP/$GO_NAME"
+        step "Download Go $GO_VERSION" fetch_toolchain "$tarball"
+    fi
+    step "Unpack Go $GO_VERSION" unpack_toolchain "$tarball" "$build"
+    step "Build Facet $VERSION (a minute or two)" build_facet "$build/facet" "$stage" "$build"
+    if [[ -n "$TOOLCHAIN" ]]; then step 'Remove Go and the build cache' remove_build "$build"
+    else step 'Remove Go and the build cache' remove_build "$build" "$tarball"; fi
+}
+# The release's checksum file says what it ships: a prebuilt archive for this
+# platform and, from 2.2.0, Facet's source, which --from-source builds. With
+# --archive, the archive's hash picks the entry.
+select_archive() {
+    local sums=$1 hash=$2 candidate expected listed='' candidates
+    candidates=("facet-$VERSION-$OS-$ARCH.zip" "facet-$VERSION-source.zip")
+    [[ $FROM_SOURCE != 1 ]] || candidates=("facet-$VERSION-source.zip")
+    for candidate in "${candidates[@]}"; do
+        expected=$(awk -v name="$candidate" '{sub(/\r$/, "")} $2==name || $2=="*"name {print tolower($1); n++} END {exit n>1}' "$sums") \
+            || die "Checksum entry missing or duplicated: $candidate"
+        [[ -n "$expected" ]] || continue
+        [[ -n "$listed" ]] || listed=$candidate
+        if [[ -z "$hash" || "$expected" == "$hash" ]]; then printf '%s' "$candidate"; return 0; fi
+    done
+    if [[ -z "$hash" ]]; then
+        [[ $FROM_SOURCE != 1 ]] || die "Facet $VERSION has no source archive; --from-source needs Facet 2.2.0 or later."
+        die "Facet $VERSION has no download for $OS/$ARCH."
+    fi
+    [[ -z "$listed" ]] || die "Checksum mismatch: $listed"
+    die "Checksum entry missing or duplicated: ${candidates[0]}"
+}
+
 # ---------------------------------------------------------------- actions
 do_uninstall() {
     section 'Uninstall'
@@ -478,6 +599,9 @@ do_install() {
     has() { local s; for s in "${SELECTED[@]}"; do [[ "$s" != "$1" ]] || return 0; done; return 1; }
     if has none && ((${#SELECTED[@]} != 1)); then die 'none cannot be combined with components.'; fi
     printf '\n  Action:      %s\n  Version:     %s\n  Components:  %s\n  Runtime:     %s\n' "$ACTION" "$VERSION" "${SELECTED[*]}" "$runtime"
+    if [[ $FROM_SOURCE == 1 ]]; then
+        printf '  Build:       on this computer by Go %s (%s)\n' "$GO_VERSION" "$(if [[ -n "$TOOLCHAIN" ]]; then printf 'from %s' "$TOOLCHAIN"; else definition go 8; fi)"
+    fi
     [[ $YES == 1 ]] || [[ $(ask 'Continue?' y) =~ ^(y|yes)$ ]] || die 'Installation cancelled.'
 
     section 'Install and verify'
@@ -485,18 +609,21 @@ do_install() {
     for program in awk grep curl unzip zipinfo; do command -v "$program" >/dev/null || die "Install required utility: $program"; done
     start_log
     mkdir -p "$RUNTIMES"
-    name="facet-$VERSION-$OS-$ARCH.zip"
     if [[ -z "$ARCHIVE" ]]; then
         base="https://github.com/$(definition facet 4)/releases/download/v$VERSION"
         cache="$FACET_HOME_DIR/cache"; mkdir -p "$cache"
-        ARCHIVE="$cache/$name"; SUMS="$TEMP/SHA256SUMS.txt"
+        SUMS="$TEMP/SHA256SUMS.txt"
         step 'Check release download' fetch "$base/SHA256SUMS.txt" "$SUMS"
+        name=$(select_archive "$SUMS" '') || exit 1
+        ARCHIVE="$cache/$name"
         local expected
         expected=$(awk -v name="$name" '{sub(/\r$/,"")} $2==name{print $1}' "$SUMS")
         if [[ -f "$ARCHIVE" && $(hash_file "$ARCHIVE") == "$expected" ]]; then printf '  OK Reusing verified download\n'; else
             step 'Download Facet' fetch "$base/$name" "$ARCHIVE.partial"
             verify_checksum "$ARCHIVE.partial" "$SUMS" "$name"; mv "$ARCHIVE.partial" "$ARCHIVE"
         fi
+    else
+        name=$(select_archive "$SUMS" "$(hash_file "$ARCHIVE")") || exit 1
     fi
     verify_checksum "$ARCHIVE" "$SUMS" "$name"; archive_hash=$(hash_file "$ARCHIVE")
 
@@ -505,18 +632,22 @@ do_install() {
             reuse=1; printf '  OK Reusing installed runtime %s\n' "$runtime_name"
         else
             printf '  Installed runtime %s is incomplete or modified; replacing it with a verified copy.\n' "$runtime_name"
-            ASIDE="$RUNTIMES/.facet-old-$runtime_name-$$"; ASIDE_TARGET=$runtime
-            mv -- "$runtime" "$ASIDE"
         fi
     fi
     if [[ $reuse == 0 ]]; then
+        # The new runtime is complete before the old one is touched, so a
+        # failed build or unpack leaves the installed Facet as it was.
         STAGE=$(mktemp -d "$RUNTIMES/.facet-stage-XXXXXX")
-        expand_zip "$ARCHIVE" "$STAGE"
+        if [[ "$name" == "facet-$VERSION-source.zip" ]]; then source_build "$STAGE"; else expand_zip "$ARCHIVE" "$STAGE"; fi
         local required
         for required in bin/facet dependencies/remotion-composer/package-lock.json; do [[ -f "$STAGE/$required" ]] || die "Release missing $required"; done
         chmod +x "$STAGE/bin/facet"
         [[ $("$STAGE/bin/facet" version) == "facet v$VERSION" ]] || die 'Binary version mismatch.'
         (cd "$STAGE" && find bin dependencies -type f | LC_ALL=C sort | while IFS= read -r f; do "${SHA_CMD[@]}" "$f"; done) > "$STAGE/.facet-files.sha256"
+        if [[ -d "$runtime" ]]; then
+            ASIDE="$RUNTIMES/.facet-old-$runtime_name-$$"; ASIDE_TARGET=$runtime
+            mv -- "$runtime" "$ASIDE"
+        fi
         # Components are installed at the final path: Python virtual
         # environments and npm launchers record absolute paths.
         mv -- "$STAGE" "$runtime"; STAGE=''; NEW_RUNTIME=$runtime

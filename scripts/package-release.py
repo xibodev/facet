@@ -1,4 +1,4 @@
-"""Package a Facet release for one platform, plus the script installer.
+"""Package a Facet release: one platform's archive, or the source archive, plus the script installer.
 
 Facet 2.0 ships one native executable, `facet`. Its guidance (skills, packs,
 agents and tool schemas) is compiled into it, so the platform archive holds:
@@ -23,8 +23,27 @@ installer/{manifest.tsv,verify.html}, with the manifest's release row
 stamped from package.json. Every archive is deterministic: sorted entries,
 fixed timestamps and LF line endings for text.
 
+The source archive (--source) is what the installers build facet from: on
+Windows always, on Linux and macOS with --from-source. It holds the runtime's
+files except the binary, plus everything a build needs without a network:
+
+  LICENSE, dependencies/remotion-composer/   as in a platform archive
+  notices/<os>-<arch>.md      the platform's THIRD_PARTY_NOTICES.md
+  source/                     the Go module (go.mod, go.sum, the packages
+                              ./cmd/facet is built from, the embedded guidance),
+                              its vendored modules (source/vendor), and the
+                              Windows resource objects (version information
+                              and manifest) in source/cmd/facet
+
+Go builds are reproducible: the same toolchain, flags and source give the
+same binary on every machine. The packager builds facet from the finished
+archive for all six platforms and writes each binary's SHA-256 to
+source-builds.json; the release workflow checks the installers build exactly
+those bytes.
+
 Usage:
   python scripts/package-release.py --os windows --arch amd64 --out build/release
+  python scripts/package-release.py --source --out build/release
 """
 import argparse
 import hashlib
@@ -46,6 +65,14 @@ COMPOSER_METADATA = ("package.json", "package-lock.json", "tsconfig.json", "comp
 INSTALLER_FILES = ("install.ps1", "install.sh", "installer/manifest.tsv", "installer/verify.html")
 VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$")
 TEXT_SUFFIXES = {"", ".json", ".ts", ".tsx", ".md", ".txt", ".html", ".tsv", ".ps1", ".sh"}
+# Text in the source archive, normalized to LF so an archive packaged on a
+# Windows checkout embeds the same guidance bytes as one packaged in CI.
+SOURCE_TEXT_SUFFIXES = TEXT_SUFFIXES | {".go", ".mod", ".sum", ".s", ".yaml", ".yml", ".css", ".js", ".mjs", ".svg"}
+# The Go packages and embedded guidance a build of ./cmd/facet reads: the root
+# package (top-level *.go only), the command, the internal packages, and what
+# capability.go embeds.
+SOURCE_PATHS = ("go.mod", "go.sum", ":(glob)*.go", "cmd/facet", "internal", "skills", "packs", "agents", "schemas/tools")
+PLATFORMS = [(goos, goarch) for goos in ("windows", "linux", "darwin") for goarch in ("amd64", "arm64")]
 FIXED_TIME = (1980, 1, 1, 0, 0, 0)
 BUILD_TIMEOUT = 900
 # Compiles the Windows version information and manifest into a resource
@@ -58,6 +85,15 @@ class PackageError(Exception):
     """The release cannot be packaged faithfully."""
 
 
+def build_command(version, output):
+    """How every facet binary is built, here and by the installers: stripped
+    of the symbol table and DWARF data, which a release does not need (Go
+    keeps what panics and stack traces use), and without version-control
+    stamping, which a source tree inside a dotfiles repository would otherwise
+    pick up."""
+    return ["go", "build", "-trimpath", "-buildvcs=false", "-ldflags", f"-s -w -X main.Version={version}", "-o", str(output), "./cmd/facet"]
+
+
 def read_version():
     version = json.loads((REPO / "package.json").read_text(encoding="utf-8"))["version"]
     if not VERSION_PATTERN.match(version):
@@ -65,9 +101,9 @@ def read_version():
     return version
 
 
-def normalized(name, data):
+def normalized(name, data, suffixes=TEXT_SUFFIXES):
     """Text files ship with LF line endings, whatever the checkout uses."""
-    if PurePosixPath(name).suffix.lower() in TEXT_SUFFIXES:
+    if PurePosixPath(name).suffix.lower() in suffixes:
         try:
             text = data.decode("utf-8")
         except UnicodeDecodeError:
@@ -149,31 +185,49 @@ def run(command, env=None):
         raise PackageError(f"{' '.join(command[:3])} ... timed out") from error
 
 
+def windows_resources(out_dir, version, arches):
+    """Write the Windows resource objects (version information and an
+    application manifest) for arches into out_dir and return their paths.
+
+    Windows builds say what they are: product Facet, the release version, its
+    publisher. Microsoft Defender flagged the published 2.1.0 and 2.1.1
+    windows/amd64 binaries, which carried neither, with a machine-learning
+    verdict (Trojan:Win32/Bearfoos.A!ml).
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    run(["go", "run", GO_WINRES, "simply", "--arch", ",".join(arches), "--out", str(out_dir / "rsrc"),
+         "--manifest", "cli", "--product-name", "Facet", "--file-description", "Facet Toolkit",
+         "--product-version", version, "--file-version", version, "--original-filename", "facet.exe",
+         "--copyright", "Facet Contributors. AGPL-3.0-or-later."], env=dict(os.environ, CGO_ENABLED="0"))
+    paths = [out_dir / f"rsrc_windows_{arch}.syso" for arch in arches]
+    for path in paths:
+        if not path.is_file():
+            raise PackageError(f"go-winres did not write {path.name}")
+    return paths
+
+
+def composer_entries():
+    entries = {}
+    for name in composer_files():
+        source = REPO / COMPOSER / Path(*PurePosixPath(name).parts)
+        entries[f"{COMPOSER_RUNTIME_DIR}/{name}"] = (normalized(name, source.read_bytes()), False)
+    return entries
+
+
 def build_platform(out, version, goos, goarch, work):
     suffix = ".exe" if goos == "windows" else ""
     binary = work / ("facet" + suffix)
     env = dict(os.environ, GOOS=goos, GOARCH=goarch, CGO_ENABLED="0")
-    # Stripped of the symbol table and DWARF data, which a release does not
-    # need (Go keeps what panics and stack traces use).
-    build = ["go", "build", "-trimpath", "-ldflags", f"-s -w -X main.Version={version}", "-o", str(binary), "./cmd/facet"]
+    build = build_command(version, binary)
     if goos != "windows":
         run(build, env=env)
     else:
-        # Windows builds say what they are: version information (product
-        # Facet, the release version, its publisher) and an application
-        # manifest, compiled from a resource object that `go build` links
-        # because it sits in the package directory, and removed again.
-        # Microsoft Defender flagged the published 2.1.0 and 2.1.1
-        # windows/amd64 binaries, which carried neither, with a
-        # machine-learning verdict (Trojan:Win32/Bearfoos.A!ml).
+        # The resource object is linked because it sits in the package
+        # directory, and removed again.
         resource = REPO / "cmd" / "facet" / f"rsrc_windows_{goarch}.syso"
-        run(["go", "run", GO_WINRES, "simply", "--arch", goarch, "--out", str(REPO / "cmd" / "facet" / "rsrc"),
-             "--manifest", "cli", "--product-name", "Facet", "--file-description", "Facet Toolkit",
-             "--product-version", version, "--file-version", version, "--original-filename", "facet.exe",
-             "--copyright", "Facet Contributors. AGPL-3.0-or-later."], env=dict(os.environ, CGO_ENABLED="0"))
+        generated = windows_resources(work / "rsrc", version, [goarch])[0]
+        resource.write_bytes(generated.read_bytes())
         try:
-            if not resource.is_file():
-                raise PackageError(f"go-winres did not write {resource.name}")
             run(build, env=env)
         finally:
             resource.unlink(missing_ok=True)
@@ -185,14 +239,118 @@ def build_platform(out, version, goos, goarch, work):
         "LICENSE": (normalized("LICENSE", (REPO / "LICENSE").read_bytes()), False),
         "THIRD_PARTY_NOTICES.md": (normalized("THIRD_PARTY_NOTICES.md", notices.read_bytes()), False),
     }
-    for name in composer_files():
-        source = REPO / COMPOSER / Path(*PurePosixPath(name).parts)
-        entries[f"{COMPOSER_RUNTIME_DIR}/{name}"] = (normalized(name, source.read_bytes()), False)
+    entries.update(composer_entries())
     with zipfile.ZipFile(path, "w") as archive:
         for name in sorted(entries):
             data, executable = entries[name]
             add_entry(archive, name, data, executable)
     return path
+
+
+def tracked_source_files():
+    """The module files ./cmd/facet is built from, as tracked by git, without
+    tests or test data. A file only on this disk never reaches a release."""
+    try:
+        listed = subprocess.run(["git", "ls-files", "-z", "--", *SOURCE_PATHS], cwd=REPO, check=True,
+                                capture_output=True, timeout=120).stdout.decode("utf-8").split("\0")
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise PackageError(f"git ls-files failed; the source archive is packaged from a git checkout: {error}") from error
+    files = []
+    for name in listed:
+        if not name:
+            continue
+        path = PurePosixPath(name)
+        if name.endswith("_test.go") or "testdata" in path.parts:
+            continue
+        if not (REPO / Path(*path.parts)).is_file():
+            raise PackageError(f"tracked file is missing from the checkout: {name}")
+        files.append(name)
+    if "go.mod" not in files or "cmd/facet/main.go" not in files:
+        raise PackageError("the source listing lacks go.mod or cmd/facet/main.go")
+    return sorted(files)
+
+
+def vendored_files(work):
+    """The vendored modules, as `go mod vendor` writes them from the module
+    cache: byte for byte, since go.sum pins those bytes on every machine."""
+    vendor = work / "vendor"
+    run(["go", "mod", "vendor", "-o", str(vendor)])
+    files = {}
+    for path in sorted(vendor.rglob("*")):
+        if path.is_file():
+            files["source/vendor/" + path.relative_to(vendor).as_posix()] = path.read_bytes()
+    if "source/vendor/modules.txt" not in files:
+        raise PackageError("go mod vendor wrote no modules.txt")
+    return files
+
+
+def toolchain_version():
+    """The Go version the installers build with: installer/manifest.tsv's
+    toolchain row, which a test ties to go.mod."""
+    rows = [line.split("\t") for line in (REPO / "installer" / "manifest.tsv").read_text(encoding="utf-8").splitlines()]
+    versions = [row[2] for row in rows if row[:2] == ["toolchain", "go"] and len(row) > 2]
+    if len(versions) != 1 or not re.fullmatch(r"\d+\.\d+\.\d+", versions[0]):
+        raise PackageError("installer/manifest.tsv must pin exactly one Go toolchain (toolchain/go)")
+    return versions[0]
+
+
+def source_env(goos, goarch):
+    """The build settings the installers use: the vendored modules only, no
+    workspace, the pinned toolchain, no cgo, and none of the caller's other Go
+    settings. Kept: where Go and its caches live, and how to reach a module
+    proxy, which only a switch to the pinned toolchain uses."""
+    keep = {"GOROOT", "GOPATH", "GOCACHE", "GOMODCACHE", "GOTMPDIR",
+            "GOPROXY", "GOSUMDB", "GONOSUMDB", "GONOPROXY", "GOPRIVATE", "GOINSECURE"}
+    env = {key: value for key, value in os.environ.items()
+           if key.upper() in keep or not key.upper().startswith(("GO", "CGO_"))}
+    env.update(GOFLAGS="-mod=vendor", GOWORK="off", GOENV="off", GO111MODULE="on", GOTOOLCHAIN=f"go{toolchain_version()}",
+               CGO_ENABLED="0", GOOS=goos, GOARCH=goarch)
+    return env
+
+
+def verify_source_build(archive, version, work):
+    """Build facet from the archive alone for all six platforms, as the
+    installers do, and return each binary's SHA-256. Go builds are
+    reproducible across hosts, so an installer using the same toolchain builds
+    exactly these bytes on any machine; the release workflow checks that."""
+    tree = work / "verify"
+    with zipfile.ZipFile(archive) as z:
+        z.extractall(tree)
+    source = tree / "source"
+    digests = {}
+    for goos, goarch in PLATFORMS:
+        binary = work / f"verify-facet-{goos}-{goarch}"
+        try:
+            subprocess.run(build_command(version, binary), cwd=source, env=source_env(goos, goarch), check=True, timeout=BUILD_TIMEOUT)
+        except FileNotFoundError as error:
+            raise PackageError("go is required but was not found") from error
+        except subprocess.CalledProcessError as error:
+            raise PackageError(f"the source archive does not build facet for {goos}/{goarch} on its own (exit {error.returncode})") from error
+        digests[f"{goos}/{goarch}"] = sha256(binary)
+    return digests
+
+
+def build_source(out, version, work):
+    path = out / f"facet-{version}-source.zip"
+    entries = {"LICENSE": (normalized("LICENSE", (REPO / "LICENSE").read_bytes()), False)}
+    entries.update(composer_entries())
+    for name in tracked_source_files():
+        data = (REPO / Path(*PurePosixPath(name).parts)).read_bytes()
+        entries["source/" + name] = (normalized(name, data, SOURCE_TEXT_SUFFIXES), False)
+    for name, data in vendored_files(work).items():
+        entries[name] = (data, False)
+    for resource in windows_resources(work / "rsrc", version, ["amd64", "arm64"]):
+        entries["source/cmd/facet/" + resource.name] = (resource.read_bytes(), False)
+    for goos, goarch in PLATFORMS:
+        notices = work / f"notices-{goos}-{goarch}.md"
+        run([sys.executable, str(REPO / "scripts" / "generate-notices.py"), "--goos", goos, "--goarch", goarch, "--out", str(notices)])
+        name = f"notices/{goos}-{goarch}.md"
+        entries[name] = (normalized(name, notices.read_bytes()), False)
+    with zipfile.ZipFile(path, "w") as archive:
+        for name in sorted(entries):
+            data, executable = entries[name]
+            add_entry(archive, name, data, executable)
+    return path, verify_source_build(path, version, work)
 
 
 def sha256(path):
@@ -205,11 +363,16 @@ def sha256(path):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--os", required=True, choices=["windows", "linux", "darwin"])
-    parser.add_argument("--arch", required=True, choices=["amd64", "arm64"])
+    parser.add_argument("--os", choices=["windows", "linux", "darwin"], help="the platform archive's operating system")
+    parser.add_argument("--arch", choices=["amd64", "arm64"], help="the platform archive's architecture")
+    parser.add_argument("--source", action="store_true", help="assemble the source archive the installers build facet from, instead of a platform archive")
     parser.add_argument("--out", required=True)
     parser.add_argument("--installer-only", action="store_true", help="assemble only the installer archive, for script-level tests")
     args = parser.parse_args(argv)
+    if args.source and (args.os or args.arch):
+        parser.error("--source covers every platform; omit --os and --arch")
+    if not (args.source or args.installer_only) and not (args.os and args.arch):
+        parser.error("--os and --arch are required for a platform archive")
     try:
         version = read_version()
         out = Path(args.out).resolve()
@@ -219,14 +382,26 @@ def main(argv=None):
             (out / "installer-checksums.txt").write_text(f"{sha256(installer)}  {installer.name}\n", encoding="utf-8", newline="\n")
             print(json.dumps({"installer": str(installer)}))
             return 0
+        builds = {}
         with tempfile.TemporaryDirectory(prefix="facet-package-") as work:
-            archive = build_platform(out, version, args.os, args.arch, Path(work))
-        checksums = out / f"checksums-{args.os}-{args.arch}.txt"
+            if args.source:
+                archive, builds = build_source(out, version, Path(work))
+            else:
+                archive = build_platform(out, version, args.os, args.arch, Path(work))
+        checksums = out / ("checksums-source.txt" if args.source else f"checksums-{args.os}-{args.arch}.txt")
         checksums.write_text("".join(f"{sha256(path)}  {path.name}\n" for path in (archive, installer)), encoding="utf-8", newline="\n")
+        if builds:
+            # The SHA-256 of facet as built from the archive, per platform, for
+            # the release workflow's reproducibility check. Not published.
+            (out / "source-builds.json").write_text(json.dumps({"version": version, "builds": builds}, indent=2) + "\n",
+                                                    encoding="utf-8", newline="\n")
     except PackageError as error:
         print(f"package-release: error: {error}", file=sys.stderr)
         return 1
-    print(json.dumps({"archive": str(archive), "installer": str(installer), "checksums": str(checksums)}))
+    result = {"archive": str(archive), "installer": str(installer), "checksums": str(checksums)}
+    if builds:
+        result["builds"] = builds
+    print(json.dumps(result))
     return 0
 
 

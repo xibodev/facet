@@ -1,7 +1,7 @@
 {
   "schema": "xibodev.facet.bundle/v2",
   "capability_id": "xibodev.facet",
-  "facet_version": "2.1.2",
+  "facet_version": "2.2.0",
   "adapter_version": "2",
   "target": "copilot",
   "scope": "plugin",
@@ -64,7 +64,7 @@
     {
       "path": "plugin.json",
       "bytes": 798,
-      "digest": "sha256:127ca7458c88868289aa6b58140cdafbfd188e564cd891648c9e6a97fd489609",
+      "digest": "sha256:81cc0b45bff21d8c5487161ef09ed848b5bf7138eeae3e9924464219084b018c",
       "kind": "plugin"
     },
     {
@@ -128,5 +128,5 @@
       "kind": "skill"
     }
   ],
-  "bundle_digest": "sha256:3aef214a9dca2d36899e008955e986ed375bb8fa4323a434a673864f9c78e485"
+  "bundle_digest": "sha256:992178791aa7ed4c09568abffd7013edd13da7b8d49132455d31666c40b1b582"
 }
