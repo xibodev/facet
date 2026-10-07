@@ -1,0 +1,75 @@
+# Narrated explainer walkthrough
+
+Narration is optional. When requested, write and synthesize it first, then use
+`media_probe` to measure its actual duration. Unknown provider cost is not free;
+estimate and obtain consent before paid generation.
+
+For normal connected production, propose `edge_tts` first because its neural
+voices are more natural. Disclose that the script is sent to Microsoft's
+network service. Use `piper_tts` when the user requests offline or private
+processing, or when Edge is unavailable and the user approves that fallback.
+Name the selected voice and output path in the production proposal before
+synthesis. Lack of a response is not approval, and fallback use requires renewed
+approval.
+
+Unless the user specifies another tolerance, narration should be within 5% of
+the requested duration. Revise the script or obtain explicit approval for the
+difference before rendering; do not hide off-target narration by retiming visuals.
+
+Create a frame-aligned request whose timeline covers the narration:
+
+```json
+{
+  "composition_id": "Explainer",
+  "width": 1280,
+  "height": 720,
+  "fps": 30,
+  "duration_seconds": 9,
+  "audio": {
+    "narration": {"src": "narration/voice.mp3", "volume": 1},
+    "music": {"src": "audio/bed.mp3", "volume": 0.15, "loop": true}
+  },
+  "cuts": [
+    {
+      "id": "opening",
+      "type": "hero_title",
+      "text": "How Rain Forms",
+      "subtitle": "A short explainer",
+      "in_seconds": 0,
+      "out_seconds": 3
+    },
+    {
+      "id": "process",
+      "type": "text_card",
+      "text": "Water evaporates, cools, and condenses",
+      "in_seconds": 3,
+      "out_seconds": 6
+    },
+    {
+      "id": "result",
+      "type": "stat_card",
+      "stat": "3 steps",
+      "label": "evaporation, condensation, precipitation",
+      "in_seconds": 6,
+      "out_seconds": 9
+    }
+  ],
+  "output": "renders/final.mp4"
+}
+```
+
+Call `estimate` for `video_compose` with that request, then render by running
+`video_compose` with it. From a shell, the same steps are:
+
+```sh
+facet tools estimate video_compose --input request.json
+facet tools run video_compose --input request.json
+```
+
+Audio longer than the video is truncated rather than extending the timeline,
+so raise `duration_seconds` and the last cut end when needed.
+
+Verify the delivered MP4 with `media_probe`, `frame_sample`, and
+`output_review`. Check the video stream duration, visible frame variation,
+requested dimensions and frame rate, expected audio presence, and the actual
+spoken pacing. Technical success is not creative acceptance.

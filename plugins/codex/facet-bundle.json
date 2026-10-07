@@ -1,0 +1,126 @@
+{
+  "schema": "xibodev.facet.bundle/v2",
+  "capability_id": "xibodev.facet",
+  "facet_version": "2.0.0",
+  "adapter_version": "2",
+  "target": "codex",
+  "scope": "plugin",
+  "install_base": "plugin",
+  "install_root": "",
+  "mcp_server": {
+    "name": "facet",
+    "args": [
+      "mcp"
+    ]
+  },
+  "tools": [
+    "audio_mix",
+    "audio_probe",
+    "color_grade",
+    "direct_clip_search",
+    "edge_tts",
+    "elevenlabs_tts",
+    "ffmpeg_caption_burn",
+    "flux_image",
+    "frame_sample",
+    "gflow_image",
+    "gflow_video",
+    "hyperframes_compose",
+    "image_selector",
+    "kling_video",
+    "media_probe",
+    "music_library",
+    "openai_image",
+    "openai_tts",
+    "output_review",
+    "pexels_video",
+    "piper_tts",
+    "pixabay_video",
+    "scene_detect",
+    "silence_cutter",
+    "sora_video",
+    "source_edit",
+    "subtitle_gen",
+    "video_compose",
+    "video_selector",
+    "video_stitch",
+    "video_trimmer",
+    "visual_qa",
+    "wikimedia"
+  ],
+  "files": [
+    {
+      "path": ".codex-plugin/plugin.json",
+      "bytes": 1443,
+      "digest": "sha256:c4aa9ac4e5b6c96dd015f10d9b0cc58eb8cadef1f2bfc7cfed8e906d5145c02c",
+      "kind": "plugin"
+    },
+    {
+      "path": ".mcp.json",
+      "bytes": 1483,
+      "digest": "sha256:05faccb5df5a2f3b43d9752550c7ffcdc3a601f5bfa97779687e7821cf6fdf6e",
+      "kind": "mcp"
+    },
+    {
+      "path": "skills/facet-character-animation/SKILL.md",
+      "bytes": 787,
+      "digest": "sha256:826552f190dbb2a3e8aae260eb00893f305b18497ba6587b518b48f82d5f8cac",
+      "kind": "pack"
+    },
+    {
+      "path": "skills/facet-cinematic/SKILL.md",
+      "bytes": 930,
+      "digest": "sha256:7aa149c21a5a0026a0ebc30c372d7021dd0b43607e1f1dcb830ae7890645203d",
+      "kind": "pack"
+    },
+    {
+      "path": "skills/facet-explainer/NARRATED-WALKTHROUGH.md",
+      "bytes": 2554,
+      "digest": "sha256:1ef847542fa1ec4d24e3d20aee42408bce65b93ca22dc6e039344eb892a6d077",
+      "kind": "pack"
+    },
+    {
+      "path": "skills/facet-explainer/SCENE-TYPES.md",
+      "bytes": 2126,
+      "digest": "sha256:97d69a920ec3eaf7b52faef4d0bcd2ee8f51e5839e2cd409db5b4eb6697c77f2",
+      "kind": "pack"
+    },
+    {
+      "path": "skills/facet-explainer/SKILL.md",
+      "bytes": 1688,
+      "digest": "sha256:fd4f697ef285c6185f07efe15ea1d07a2f17e4c4154cc3868f913d95e7550d1a",
+      "kind": "pack"
+    },
+    {
+      "path": "skills/facet-localization/SKILL.md",
+      "bytes": 1172,
+      "digest": "sha256:11fa887504d2950f607fcc73709dccecca545b8ec9260f2f21408cb25bcacfe8",
+      "kind": "pack"
+    },
+    {
+      "path": "skills/facet-screen-demo/SKILL.md",
+      "bytes": 735,
+      "digest": "sha256:e93ce87bc14f487e3e173b3b2735d86436a7335d3108e60867cf4c17edf4df9c",
+      "kind": "pack"
+    },
+    {
+      "path": "skills/facet-social/SKILL.md",
+      "bytes": 783,
+      "digest": "sha256:ab219c870ef7b428e3a0d9bb017a4b4e1e5f6ae56711123ffc80e8aebf67904c",
+      "kind": "pack"
+    },
+    {
+      "path": "skills/facet-talking-head/SKILL.md",
+      "bytes": 755,
+      "digest": "sha256:d2a64b092a58e98499fe39d64e9836428efa0a01aa75b72eb09b65feb10c843c",
+      "kind": "pack"
+    },
+    {
+      "path": "skills/facet/SKILL.md",
+      "bytes": 4601,
+      "digest": "sha256:397ac068e53262bde023904e1240b1b05d8303b74b8ea8ce654bce81738ebaaa",
+      "kind": "skill"
+    }
+  ],
+  "bundle_digest": "sha256:c3e2e2015806896611f5140d62b908dedab8edffc370ccb4b11344dd4ebef8bf"
+}

@@ -10,23 +10,31 @@ import (
 	"github.com/xibodev/facet/internal/toolbox"
 )
 
-const bundleUsage = `Usage: facet bundle --target <claude|codex|copilot|opencode|compa|all> [--scope user|project] --out DIR
+const bundleUsage = `Usage: facet bundle --target <claude|codex|copilot|opencode|compa|all> [--scope user|project|plugin] --out DIR
 
 Writes Facet's guidance in each CLI's native layout for packaging: the facet
 skill, one facet-<pack> skill per production-method pack, the facet-creative
 agent where the CLI's agent format is supported, and a facet-bundle.json
 manifest with the Facet version and every file's digest.
 
-Each target is written to DIR/<target>, laid out relative to the scope's base
-directory (the home directory for user scope, the project for project scope).
+Each target is written to DIR/<target>. At user and project scope it is laid
+out relative to the scope's base directory (the home directory for user scope,
+the project for project scope), and the MCP server is registered by facet
+wire, not by a bundle. Compa is laid out at user scope only.
+
+--scope plugin writes a plugin for a marketplace to serve, for claude, codex,
+and copilot: the guidance plus the CLI's plugin manifest and an MCP server
+registration that runs facet mcp, with facet from PATH; the person installs
+the Facet Toolkit for it. The Codex plugin also forwards the environment
+variables Facet reads and asks before every paid tool.
+
 An existing DIR/<target> is replaced only if every file in it was written,
-unmodified, by facet bundle. The MCP server is registered by facet wire, not
-by a bundle. Compa is laid out at user scope only; with --scope project, all
-leaves it out.
+unmodified, by facet bundle. all leaves out the targets a scope does not
+support.
 
 Options:
   --target LIST   claude, codex, copilot, opencode, compa, or all (comma-separated)
-  --scope SCOPE   user (default) or project
+  --scope SCOPE   user (default), project, or plugin
   --out DIR       output directory
 `
 
@@ -42,7 +50,7 @@ func CLI(args []string, stdout, stderr io.Writer, version string) int {
 	fs.SetOutput(stderr)
 	fs.Usage = func() { fmt.Fprint(stderr, bundleUsage) }
 	targetList := fs.String("target", "", "claude | codex | copilot | opencode | compa | all")
-	scopeName := fs.String("scope", string(ScopeUser), "user | project")
+	scopeName := fs.String("scope", string(ScopeUser), "user | project | plugin")
 	out := fs.String("out", "", "output directory")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -61,7 +69,7 @@ func CLI(args []string, stdout, stderr io.Writer, version string) int {
 		fmt.Fprintf(stderr, "bundle: %v\n", err)
 		return 2
 	}
-	scope, err := ParseScope(*scopeName)
+	scope, err := ParseBundleScope(*scopeName)
 	if err != nil {
 		fmt.Fprintf(stderr, "bundle: %v\n", err)
 		return 2
@@ -79,6 +87,9 @@ func CLI(args []string, stdout, stderr io.Writer, version string) int {
 		switch {
 		case SupportsScope(t, scope):
 			supported = append(supported, t)
+		case explicit[t] && scope == ScopePlugin:
+			fmt.Fprintf(stderr, "bundle: %s has no plugin layout; plugins exist for claude, codex, and copilot\n", t)
+			return 2
 		case explicit[t]:
 			fmt.Fprintf(stderr, "bundle: %s is laid out at user scope only\n", t)
 			return 2
