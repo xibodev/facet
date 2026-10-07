@@ -8,10 +8,10 @@ $tokens=$null; $errors=$null
 if ($errors.Count) { throw ($errors | Out-String) }
 if ($source -notmatch "(?m)^\s*try \{ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force") { throw 'The bootstrap does not allow the verified installer for this process.' }
 if ($env:OS -ne 'Windows_NT') { 'PowerShell bootstrap parses; execution is Windows-only.'; return }
-$pinned = 'b1fdb5990a56d564a8f5ca5a2e7b694746e684f638c2768db6d0a130e5de33e9'
+$pinned = '8a5eda1a6f3b9aeae29e2e2cb5a87914871ab6d9e09bf42950fd9f7c3de60ef5'
 if (-not $source.Contains($pinned)) { throw 'The pinned installer digest changed; update this test with the release.' }
 $root = Join-Path ([IO.Path]::GetTempPath()) ('facet-bootstrap-test-' + [guid]::NewGuid().ToString('N'))
-$environment = @('FACET_BOOTSTRAP_TEST','FACET_BOOTSTRAP_FAIL','FACET_COMPONENTS','FACET_WIRE','FACET_SCOPE','FACET_NO_PATH','FACET_YES','FACET_ACTION','FACET_VERSION','FACET_PROJECT','FACET_TARGET','FACET_INSTALL_DIR','FACET_SKIP_VERIFY','FACET_PURGE','FACET_PLAIN')
+$environment = @('FACET_BOOTSTRAP_TEST','FACET_BOOTSTRAP_FAIL','FACET_COMPONENTS','FACET_WIRE','FACET_SCOPE','FACET_NO_PATH','FACET_YES','FACET_ACTION','FACET_VERSION','FACET_PROJECT','FACET_SKIP_VERIFY','FACET_PURGE','FACET_PLAIN')
 $saved = @{}
 foreach ($name in $environment) { $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
 $savedPolicy = Get-ExecutionPolicy -Scope Process
@@ -22,7 +22,7 @@ try {
     Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
     $zip = [IO.Compression.ZipFile]::Open($archive,[IO.Compression.ZipArchiveMode]::Create)
     try {
-        foreach ($name in @('install.ps1','install.sh','installer/README.md','installer/manifest.tsv','installer/verify.html')) {
+        foreach ($name in @('install.ps1','install.sh','installer/manifest.tsv','installer/verify.html')) {
             $entry = $zip.CreateEntry($name)
             $writer = [IO.StreamWriter]::new($entry.Open())
             if ($name -eq 'install.ps1') {
@@ -43,7 +43,7 @@ if ($env:FACET_BOOTSTRAP_FAIL -eq "1") { throw "Child failure" }
     $script:archive = $archive
     $script:lastDownload = ''
     function Invoke-RestMethod { param($Uri); if ($Uri -ne 'https://xibodev.github.io/facet/install.ps1') { throw 'Unexpected bootstrap URL' }; $script:bootstrapSource }
-    function Invoke-WebRequest { param($Uri,$OutFile,$TimeoutSec,[switch]$UseBasicParsing); if ($Uri -ne 'https://github.com/xibodev/facet/releases/download/v1.1.0/facet-installer-1.1.0.zip') { throw 'Unexpected release URL' }; $script:lastDownload=$OutFile; Copy-Item -LiteralPath $script:archive -Destination $OutFile }
+    function Invoke-WebRequest { param($Uri,$OutFile,$TimeoutSec,[switch]$UseBasicParsing); if ($Uri -ne 'https://github.com/xibodev/facet/releases/download/v2.0.0/facet-installer-2.0.0.zip') { throw 'Unexpected release URL' }; $script:lastDownload=$OutFile; Copy-Item -LiteralPath $script:archive -Destination $OutFile }
     function Read-Host { param($Prompt); 'answer' }
     $env:FACET_BOOTSTRAP_TEST = Join-Path $root 'called'
     $env:FACET_COMPONENTS = 'none'

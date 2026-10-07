@@ -165,7 +165,6 @@
           <div class="card"><h3>Linux / macOS</h3><pre><code id="install-unix">curl -fsSL https://xibodev.github.io/facet/install.sh | sh</code></pre><button type="button" class="button" data-copy="install-unix">Copy Linux/macOS command</button></div>
         </div>
         <p id="copy-status" role="status" aria-live="polite"></p>
-        <p class="notice">Facet 2.0.0 is unreleased. Until it is published, these commands install the latest published release, v1.1.0, which still uses the 1.x per-project setup.</p>
         <p>The installer puts the runtime under <code>~/.facet/runtimes/</code>, verifies it with short test renders, activates it as <code>~/.facet/current</code>, and adds <code>~/.facet/current/bin</code> to your user PATH. Opt out of the PATH change with <code>-NoPath</code> on Windows or <code>--no-path</code> on Linux and macOS. Set <code>FACET_HOME</code> to use another folder instead of <code>~/.facet</code>. <a href="docs.html#install">Installation details</a></p>
         <h3>Wire Your CLI</h3>
         <p>Wiring is your decision, like installing a skill or plugin. The installer offers it at the end of setup, or you can run <code>facet wire</code> later. It installs the Facet skills into your CLI's own folders, registers the <code>facet</code> MCP server through the CLI's own configuration, and, where the CLI has a per-tool setting, adds a rule to ask you before each tool that may charge. It never edits instruction files such as <code>AGENTS.md</code> or <code>CLAUDE.md</code>.</p>

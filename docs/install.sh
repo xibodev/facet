@@ -4,12 +4,11 @@
 # mistaken for prompt input. Interactive input is explicitly taken from the TTY.
 facet_bootstrap() (
     set -eu
-    # Pinned to the last published installer; the pin moves only when the next
-    # release (2.0.0) is published with its installer checksum. The expected
-    # file list below is the pinned package's layout and moves with the pin:
-    # 2.0 installer packages have no installer/README.md.
-    version=1.1.0
-    expected=b1fdb5990a56d564a8f5ca5a2e7b694746e684f638c2768db6d0a130e5de33e9
+    # Pinned to the last published installer; the pin moves only when a
+    # release is published, with that installer's checksum. The expected file
+    # list below is the pinned package's layout.
+    version=2.0.0
+    expected=8a5eda1a6f3b9aeae29e2e2cb5a87914871ab6d9e09bf42950fd9f7c3de60ef5
     url="https://github.com/xibodev/facet/releases/download/v$version/facet-installer-$version.zip"
     case "$(uname -s)" in Linux|Darwin) ;; *) printf '%s\n' 'Use the PowerShell command on Windows.' >&2; exit 1;; esac
     noninteractive=0
@@ -46,7 +45,7 @@ facet_bootstrap() (
     if command -v shasum >/dev/null; then actual=$(shasum -a 256 "$temp/installer.zip"); else actual=$(sha256sum "$temp/installer.zip"); fi
     [ "${actual%% *}" = "$expected" ] || { printf '%s\n' 'Installer checksum mismatch; nothing executed.' >&2; exit 1; }
     # Accept only the small, known installer package, never arbitrary ZIP paths.
-    printf '%s\n' install.ps1 install.sh installer/README.md installer/manifest.tsv installer/verify.html | LC_ALL=C sort > "$temp/expected"
+    printf '%s\n' install.ps1 install.sh installer/manifest.tsv installer/verify.html | LC_ALL=C sort > "$temp/expected"
     zipinfo -1 "$temp/installer.zip" | LC_ALL=C sort > "$temp/actual"
     cmp -s "$temp/expected" "$temp/actual" || { printf '%s\n' 'Unexpected installer package layout.' >&2; exit 1; }
     mkdir "$temp/package"

@@ -9,7 +9,7 @@ import time
 import zipfile
 
 REPO = Path(__file__).resolve().parent.parent
-DIGEST = "b1fdb5990a56d564a8f5ca5a2e7b694746e684f638c2768db6d0a130e5de33e9"
+DIGEST = "8a5eda1a6f3b9aeae29e2e2cb5a87914871ab6d9e09bf42950fd9f7c3de60ef5"
 
 
 def main():
@@ -21,7 +21,7 @@ def main():
         archive = root / "fixture.zip"
         with zipfile.ZipFile(archive, "w") as z:
             z.writestr("install.sh", '#!/bin/bash\nprintf "Fixture prompt: "\nread -r answer\n[[ "$answer" == answer ]] || exit 7\nprintf "%s" "$PWD" > "$MARKER"\nexit "${CHILD_EXIT:-0}"\n')
-            for name in ["install.ps1", "installer/README.md", "installer/manifest.tsv", "installer/verify.html"]:
+            for name in ["install.ps1", "installer/manifest.tsv", "installer/verify.html"]:
                 z.writestr(name, "fixture")
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
         original = (REPO / "docs/install.sh").read_text()
