@@ -1,0 +1,27 @@
+{
+  "name": "facet",
+  "owner": {
+    "name": "xibodev",
+    "url": "https://github.com/xibodev"
+  },
+  "metadata": {
+    "description": "Facet's video production skills and MCP tools for Claude Code.",
+    "version": "2.1.0"
+  },
+  "plugins": [
+    {
+      "name": "facet",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/xibodev/facet.git",
+        "path": "plugins/claude",
+        "ref": "v2.1.0"
+      },
+      "description": "Create, edit, render, and review video with Facet's production skills and MCP tools. Needs the Facet Toolkit: https://xibodev.github.io/facet/",
+      "version": "2.1.0",
+      "homepage": "https://xibodev.github.io/facet/",
+      "repository": "https://github.com/xibodev/facet",
+      "license": "AGPL-3.0-or-later"
+    }
+  ]
+}

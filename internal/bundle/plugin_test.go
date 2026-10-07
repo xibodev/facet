@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -223,6 +224,77 @@ func TestCommittedPluginsMatchThisFacet(t *testing.T) {
 	for _, e := range entries {
 		if !SupportsScope(Target(e.Name()), ScopePlugin) {
 			t.Errorf("plugins/%s is not a Facet plugin", e.Name())
+		}
+	}
+}
+
+// The marketplaces in the repository serve the plugins of the release the
+// website one-liners install: each entry pins the release tag the installer
+// pin names, so the plugins and the Toolkit move together and a marketplace
+// never points at an unpublished release.
+func TestMarketplacesServeThePinnedRelease(t *testing.T) {
+	repo := filepath.Join("..", "..")
+	read := func(rel string) string {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(repo, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	ps := regexp.MustCompile(`(?m)^\s*\$version = '([^']+)'`).FindStringSubmatch(read("docs/install.ps1"))
+	sh := regexp.MustCompile(`(?m)^\s*version=(\S+)$`).FindStringSubmatch(read("docs/install.sh"))
+	if ps == nil || sh == nil || ps[1] != sh[1] {
+		t.Fatalf("the website one-liners pin different releases: %v %v", ps, sh)
+	}
+	pinned, tag := ps[1], "v"+ps[1]
+	gitURL := PluginRepository + ".git"
+	repoName := strings.TrimPrefix(PluginRepository, "https://github.com/")
+
+	type entry struct {
+		target Target
+		file   string
+		source map[string]string
+	}
+	for _, want := range []entry{
+		{TargetClaude, ".claude-plugin/marketplace.json", map[string]string{"source": "git-subdir", "url": gitURL, "path": "plugins/claude", "ref": tag}},
+		{TargetCopilot, ".github/plugin/marketplace.json", map[string]string{"source": "github", "repo": repoName, "path": "plugins/copilot", "ref": tag}},
+		{TargetCodex, ".agents/plugins/marketplace.json", map[string]string{"source": "git-subdir", "url": gitURL, "path": "plugins/codex", "ref": tag}},
+	} {
+		doc := readJSONFile(t, filepath.Join(repo, filepath.FromSlash(want.file)))
+		plugins, _ := doc["plugins"].([]any)
+		if doc["name"] != PluginName || len(plugins) != 1 {
+			t.Errorf("%s: marketplace %v lists %d plugins", want.file, doc["name"], len(plugins))
+			continue
+		}
+		plugin, _ := plugins[0].(map[string]any)
+		source, _ := plugin["source"].(map[string]any)
+		got := map[string]string{}
+		for k, v := range source {
+			got[k], _ = v.(string)
+		}
+		if plugin["name"] != PluginName || !reflect.DeepEqual(got, want.source) {
+			t.Errorf("%s: plugin %v source %v, want %v", want.file, plugin["name"], source, want.source)
+		}
+		if v, ok := plugin["version"]; ok && v != pinned {
+			t.Errorf("%s: plugin version %v, want the pinned %s", want.file, v, pinned)
+		}
+		if meta, ok := doc["metadata"].(map[string]any); ok {
+			if desc, _ := meta["description"].(string); desc == "" || meta["version"] != pinned {
+				t.Errorf("%s: metadata %v", want.file, meta)
+			}
+		} else if want.target != TargetCodex {
+			// claude plugin validate --strict wants a marketplace description.
+			t.Errorf("%s has no metadata", want.file)
+		}
+		if want.target == TargetCodex {
+			policy, _ := plugin["policy"].(map[string]any)
+			if category, _ := plugin["category"].(string); policy["installation"] != "AVAILABLE" || policy["authentication"] != "ON_INSTALL" || category == "" {
+				t.Errorf("%s: Codex needs policy and category: %v", want.file, plugin)
+			}
+		}
+		if _, err := os.Stat(filepath.Join(repo, filepath.FromSlash(want.source["path"]), filepath.FromSlash(PluginManifestPath(want.target)))); err != nil {
+			t.Errorf("%s: %s holds no %s plugin: %v", want.file, want.source["path"], want.target, err)
 		}
 	}
 }

@@ -8,7 +8,7 @@ $tokens=$null; $errors=$null
 if ($errors.Count) { throw ($errors | Out-String) }
 if ($source -notmatch "(?m)^\s*try \{ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force") { throw 'The bootstrap does not allow the verified installer for this process.' }
 if ($env:OS -ne 'Windows_NT') { 'PowerShell bootstrap parses; execution is Windows-only.'; return }
-$pinned = '8a5eda1a6f3b9aeae29e2e2cb5a87914871ab6d9e09bf42950fd9f7c3de60ef5'
+$pinned = '13388e9abf6cc8f9636964fec2dcfaf10b046119fc0e029415a728085492d0c2'
 if (-not $source.Contains($pinned)) { throw 'The pinned installer digest changed; update this test with the release.' }
 $root = Join-Path ([IO.Path]::GetTempPath()) ('facet-bootstrap-test-' + [guid]::NewGuid().ToString('N'))
 $environment = @('FACET_BOOTSTRAP_TEST','FACET_BOOTSTRAP_FAIL','FACET_COMPONENTS','FACET_WIRE','FACET_SCOPE','FACET_NO_PATH','FACET_YES','FACET_ACTION','FACET_VERSION','FACET_PROJECT','FACET_SKIP_VERIFY','FACET_PURGE','FACET_PLAIN')
@@ -43,7 +43,7 @@ if ($env:FACET_BOOTSTRAP_FAIL -eq "1") { throw "Child failure" }
     $script:archive = $archive
     $script:lastDownload = ''
     function Invoke-RestMethod { param($Uri); if ($Uri -ne 'https://xibodev.github.io/facet/install.ps1') { throw 'Unexpected bootstrap URL' }; $script:bootstrapSource }
-    function Invoke-WebRequest { param($Uri,$OutFile,$TimeoutSec,[switch]$UseBasicParsing); if ($Uri -ne 'https://github.com/xibodev/facet/releases/download/v2.0.0/facet-installer-2.0.0.zip') { throw 'Unexpected release URL' }; $script:lastDownload=$OutFile; Copy-Item -LiteralPath $script:archive -Destination $OutFile }
+    function Invoke-WebRequest { param($Uri,$OutFile,$TimeoutSec,[switch]$UseBasicParsing); if ($Uri -ne 'https://github.com/xibodev/facet/releases/download/v2.1.0/facet-installer-2.1.0.zip') { throw 'Unexpected release URL' }; $script:lastDownload=$OutFile; Copy-Item -LiteralPath $script:archive -Destination $OutFile }
     function Read-Host { param($Prompt); 'answer' }
     $env:FACET_BOOTSTRAP_TEST = Join-Path $root 'called'
     $env:FACET_COMPONENTS = 'none'

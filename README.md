@@ -1,10 +1,10 @@
 # Facet
 
 Video-production tools and guidance for agentic CLIs. Facet gives the agent in
-Claude Code, Codex, GitHub Copilot CLI, or OpenCode a set of media tools and the
-guidance to use them for editing, narration, animation, captions, rendering, and
-review. Your CLI stays in charge of the model, tool calls, and approvals; Facet
-never calls a reasoning model and keeps no workflow state.
+Claude Code, Codex, GitHub Copilot CLI, OpenCode, or Compa a set of media tools
+and the guidance to use them for editing, narration, animation, captions,
+rendering, and review. Your CLI stays in charge of the model, tool calls, and
+approvals; Facet never calls a reasoning model and keeps no workflow state.
 
 - **Facet Toolkit:** the `facet` command. 33 media tools that probe, edit,
   stitch, compose, narrate, caption, generate, and review video; an advisory
@@ -36,7 +36,7 @@ Coming from Facet 1.x, which installed into each project? See
 ## Use
 
 ```sh
-facet wire claude    # or codex, copilot, opencode, a comma-separated list, or all
+facet wire claude    # or codex, copilot, opencode, compa, a comma-separated list, or all
 facet doctor
 ```
 
@@ -46,8 +46,20 @@ Start a new session in your CLI from a production folder and ask:
 
 `facet wire` installs the skills, registers the `facet` MCP server, and adds a
 rule to ask before each of the eight tools that may charge (Claude Code, Codex,
-and OpenCode; Copilot CLI already asks before every tool that is not
+OpenCode, and Compa; Copilot CLI already asks before every tool that is not
 read-only). Facet declares each tool's effects; your CLI enforces consent.
+
+Claude Code, Codex, and Copilot CLI can instead add Facet as a plugin from this
+repository's marketplace, once the Toolkit is installed:
+
+```sh
+claude plugin marketplace add xibodev/facet && claude plugin install facet@facet
+codex plugin marketplace add xibodev/facet && codex plugin add facet@facet
+copilot plugin marketplace add xibodev/facet && copilot plugin install facet@facet
+```
+
+Use the plugin or `facet wire` for a CLI, not both. See
+[Install as a Plugin](https://xibodev.github.io/facet/docs.html#plugins).
 
 People and scripts can run the same tools directly:
 
