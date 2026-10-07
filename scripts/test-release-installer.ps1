@@ -52,6 +52,32 @@ try {
     Assert-Equal (Resolve-UserPath 'archive.zip') (Join-Path $location 'archive.zip') 'relative user path'
 } finally { Pop-Location; Remove-Item -LiteralPath $location -Recurse -Force }
 
+# Extraction and the runtime file list under a short-name (8.3) path, as a
+# hosted runner's TEMP is: GetFullPath and Get-ChildItem report the long form,
+# and the containment check and the relative names must agree with it.
+foreach ($name in @('Get-LongPath','Expand-SafeZip','Get-RelativeFiles')) {
+    $definition = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $true)
+    if (-not $definition) { throw "install.ps1 no longer defines $name" }
+    . ([scriptblock]::Create($definition.Extent.Text))
+}
+Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+$longRoot = Join-Path ([IO.Path]::GetTempPath()) ('facet-short-name-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $longRoot | Out-Null
+try {
+    $shortRoot = (New-Object -ComObject Scripting.FileSystemObject).GetFolder($longRoot).ShortPath
+    $fixture = Join-Path $longRoot 'fixture.zip'
+    $zip = [IO.Compression.ZipFile]::Open($fixture, [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($member in @('bin/facet.exe','dependencies/remotion-composer/package.json')) {
+            $writer = [IO.StreamWriter]::new($zip.CreateEntry($member).Open()); $writer.Write('fixture'); $writer.Dispose()
+        }
+    } finally { $zip.Dispose() }
+    $destination = Join-Path $shortRoot 'stage'
+    New-Item -ItemType Directory -Path $destination | Out-Null
+    Expand-SafeZip $fixture $destination
+    Assert-Equal (Get-RelativeFiles $destination) @('bin/facet.exe','dependencies/remotion-composer/package.json') "files extracted under $destination"
+} finally { Remove-Item -LiteralPath $longRoot -Recurse -Force }
+
 # The user PATH edit, driven through a stand-in for HKCU\Environment: the real
 # registry is never opened by this test.
 $definition = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Update-PathValue' }, $true)

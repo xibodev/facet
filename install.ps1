@@ -59,6 +59,12 @@ function Resolve-UserPath([string]$Path) {
     # against the process directory, which `cd` in PowerShell does not change.
     return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
 }
+function Get-LongPath([string]$Path) {
+    # An absolute path with its 8.3 short names expanded (RUNNER~1 becomes
+    # runneradmin), as Get-ChildItem and GetFullPath report the existing part
+    # of a path. Paths compared by prefix must agree on this form.
+    return [IO.Path]::GetFullPath($Path)
+}
 function Split-List([string]$Text) {
     return @("$Text".Split([char[]]@(',',';',' ',"`t"), [StringSplitOptions]::RemoveEmptyEntries) | ForEach-Object { $_.Trim().ToLowerInvariant() } | Where-Object { $_ })
 }
@@ -279,11 +285,12 @@ $runtimePattern = '^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-windows-(?:amd64|arm64)$'
 
 $userHome = if ($HOME) { $HOME } else { $env:USERPROFILE }
 if (-not $userHome -or -not [IO.Path]::IsPathRooted($userHome)) { throw 'The home directory is unknown; set USERPROFILE.' }
+$userHome = Get-LongPath $userHome
 # FACET_HOME moves Facet's home folder (runtimes, current, wiring record). It is
 # resolved once and handed to every facet this script runs, so they agree.
 $facetHome = Join-Path $userHome '.facet'
 if ("$env:FACET_HOME".Trim()) {
-    $facetHome = Resolve-UserPath "$env:FACET_HOME".Trim()
+    $facetHome = Get-LongPath (Resolve-UserPath "$env:FACET_HOME".Trim())
     $env:FACET_HOME = $facetHome
 }
 # Facet 1.x kept its releases in ~/.facet whatever FACET_HOME says.
@@ -516,6 +523,10 @@ function Assert-Checksum([string]$Archive, [string]$Sums, [string]$Name) {
     if ((Get-Sha256 $Archive) -ne $expected[0]) { throw "Checksum mismatch: $Name" }
 }
 function Expand-SafeZip([string]$Archive, [string]$Destination) {
+    # Every entry's full path is compared with the destination's, both in
+    # their long form: a destination under a short-name TEMP (RUNNER~1, as on
+    # hosted CI runners) would otherwise never contain its own entries.
+    $root = (Get-LongPath $Destination).TrimEnd('\') + '\'
     $zip = [IO.Compression.ZipFile]::OpenRead($Archive)
     try {
         $seen = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
@@ -534,7 +545,7 @@ function Expand-SafeZip([string]$Archive, [string]$Destination) {
             $total += $entry.Length
             if ($total -gt 1GB) { throw 'Archive exceeds the extraction limit.' }
             $destinationPath = [IO.Path]::GetFullPath((Join-Path $Destination $name))
-            if (-not $destinationPath.StartsWith($Destination.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Archive leaves its destination.' }
+            if (-not $destinationPath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { throw 'Archive leaves its destination.' }
         }
         foreach ($entry in $zip.Entries) {
             $name = $entry.FullName.Replace('\','/')
@@ -550,7 +561,8 @@ function Expand-SafeZip([string]$Archive, [string]$Destination) {
     } finally { $zip.Dispose() }
 }
 function Get-RelativeFiles([string]$Root) {
-    $prefix = $Root.TrimEnd('\') + '\'
+    # Get-ChildItem reports long paths, so the prefix is taken in that form.
+    $prefix = (Get-LongPath $Root).TrimEnd('\') + '\'
     return @(Get-ChildItem -LiteralPath $Root -Recurse -File -Force | ForEach-Object { $_.FullName.Substring($prefix.Length).Replace('\','/') } | Sort-Object)
 }
 function Test-RuntimeFiles([string]$Directory) {
@@ -1229,7 +1241,7 @@ try {
     }
     [IO.File]::WriteAllText((Join-Path $lockDir 'pid'), "$PID", $utf8NoBom)
     Open-Log
-    $script:temp = Join-Path ([IO.Path]::GetTempPath()) ('facet-install-' + [guid]::NewGuid().ToString('N'))
+    $script:temp = Join-Path (Get-LongPath ([IO.Path]::GetTempPath())) ('facet-install-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $script:temp | Out-Null
     foreach ($leftover in @(Get-ChildItem -LiteralPath $facetHome -Force -Filter '.current-*' -ErrorAction SilentlyContinue)) { try { Remove-Link $leftover.FullName } catch { } }
     if (Test-Path -LiteralPath $runtimesDir) {
