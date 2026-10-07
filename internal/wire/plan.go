@@ -155,7 +155,15 @@ func (e *env) planInstall(reg *Registry, t bundle.Target, scope bundle.Scope, pr
 		base = project
 	}
 	p.root = bundle.Root(t, scope, base, e.getenv)
+	if t == bundle.TargetCompa {
+		// The skills go into the workspace Compa's configuration names.
+		p.root = e.compaWorkspace()
+	}
 	p.prev = reg.find(string(t), string(scope), project)
+	if !bundle.SupportsScope(t, scope) {
+		p.problems = append(p.problems, fmt.Sprintf("%s is wired at user scope only; its MCP servers and approval rules live in its own configuration, not in a project", t))
+		return p
+	}
 	files, err := bundle.Files(t)
 	if err != nil {
 		p.problems = append(p.problems, err.Error())
@@ -246,6 +254,17 @@ func (e *env) planInstall(reg *Registry, t bundle.Target, scope bundle.Scope, pr
 	if p.prev != nil {
 		prevMCP, prevRules = p.prev.MCP, p.prev.Rules
 	}
+	if t == bundle.TargetCompa {
+		// The server, the settings and the ask rules are one edit of
+		// Compa's config.json.
+		step, rules, problems := e.planCompaInstall(prevMCP, prevRules)
+		p.mcp, p.rules = step, rules
+		p.problems = append(p.problems, problems...)
+		p.warnings = append(p.warnings, rules.warnings...)
+		p.mkdirs = dirs.list
+		p.notes = append(p.notes, e.wiringNotes(t, scope, project)...)
+		return p
+	}
 	step, problems := e.planMCPInstall(t, scope, project, p.root, prevMCP)
 	p.mcp = step
 	p.problems = append(p.problems, problems...)
@@ -273,6 +292,14 @@ func (e *env) wiringNotes(t bundle.Target, scope bundle.Scope, project string) [
 		notes = append(notes, fmt.Sprintf("Codex reads %s only for projects you have marked as trusted.", filepath.Join(project, ".codex", "config.toml")))
 	case t == bundle.TargetCopilot:
 		notes = append(notes, "Copilot CLI asks before every Facet tool that is not read-only, which includes every paid tool; it has no per-tool rule facet wire could add.")
+	case t == bundle.TargetCompa:
+		notes = append(notes,
+			"Compa loads the MCP server, the call limit and the ask rules when its gateway restarts or reloads: choose Restart Service in Compa's tray menu, or send /reload in a chat. The skills need no restart.",
+			"Compa asks before a paid tool in its chat (reply /approve or /deny); `compa-kernel agent -m` has no chat to ask in, so it refuses paid tools.")
+		if e.compaKernel() == "" {
+			notes = append(notes, "compa-kernel was not found, so Compa did not check the edited configuration; run `compa-kernel mcp list` to check it.")
+		}
+		return notes
 	}
 	notes = append(notes, fmt.Sprintf("Start a new %s session to load the skills and the MCP server.", t))
 	return notes
@@ -380,12 +407,25 @@ func (e *env) applyInstall(reg *Registry, p *plan) error {
 	} else if mcpErr != nil {
 		mcp = nil
 	}
-	// The MCP registration may have created the file that also takes the
-	// rules (OpenCode); the rules are then removed with it.
-	createdFile := p.rules.method == RulesOpenCode && mcpErr == nil && p.mcp.op == "register" && !p.mcp.existed
-	rules, rulesErr := e.applyRules(&p.rules, createdFile)
-	if rulesErr != nil && p.prev != nil {
-		rules = p.prev.Rules
+	var rules *RulesRecord
+	var rulesErr error
+	if p.rules.method == RulesCompa {
+		// Written with the MCP entry, in the same edit.
+		rules = p.rules.record
+		if mcpErr != nil {
+			rules = nil
+			if p.prev != nil {
+				rules = p.prev.Rules
+			}
+		}
+	} else {
+		// The MCP registration may have created the file that also takes the
+		// rules (OpenCode); the rules are then removed with it.
+		createdFile := p.rules.method == RulesOpenCode && mcpErr == nil && p.mcp.op == "register" && !p.mcp.existed
+		rules, rulesErr = e.applyRules(&p.rules, createdFile)
+		if rulesErr != nil && p.prev != nil {
+			rules = p.prev.Rules
+		}
 	}
 	reg.put(p.finalRecord(e, mcp, rules))
 	if err := reg.Save(regPath); err != nil {
@@ -418,7 +458,12 @@ func (e *env) planRemove(w *Wiring) *plan {
 	}
 	p.rmdirs = append([]string(nil), w.Dirs...)
 	sort.Slice(p.rmdirs, func(i, j int) bool { return len(p.rmdirs[i]) > len(p.rmdirs[j]) })
-	if w.MCP != nil {
+	switch {
+	case w.MCP != nil && w.MCP.Method == MethodCompa,
+		w.MCP == nil && w.Rules != nil && w.Rules.Method == RulesCompa:
+		// The server, the settings and the ask rules come out in one edit.
+		p.mcp = e.planCompaRemove(w.MCP, w.Rules)
+	case w.MCP != nil:
 		p.mcp = e.planMCPRemove(w.MCP)
 	}
 	p.rules = rulesStep{op: "none", prev: w.Rules}
@@ -444,7 +489,14 @@ func (e *env) applyRemove(reg *Registry, p *plan) error {
 	if mcpErr == nil && p.mcp.op == "keep" && p.mcp.cliMissing {
 		mcpErr = errors.New(strings.Join(p.mcp.warnings, "; "))
 	}
-	rulesWarnings, rulesErr := removeRules(p.prev.Rules)
+	var rulesWarnings []string
+	var rulesErr error
+	if p.prev.Rules != nil && p.prev.Rules.Method == RulesCompa {
+		// Taken back in the same edit as the MCP entry.
+		rulesErr = mcpErr
+	} else {
+		rulesWarnings, rulesErr = removeRules(p.prev.Rules)
+	}
 	for _, warning := range rulesWarnings {
 		fmt.Fprintf(e.out, "  warning: %s\n", warning)
 	}

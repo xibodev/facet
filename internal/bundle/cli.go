@@ -10,7 +10,7 @@ import (
 	"github.com/xibodev/facet/internal/toolbox"
 )
 
-const bundleUsage = `Usage: facet bundle --target <claude|codex|copilot|opencode|all> [--scope user|project] --out DIR
+const bundleUsage = `Usage: facet bundle --target <claude|codex|copilot|opencode|compa|all> [--scope user|project] --out DIR
 
 Writes Facet's guidance in each CLI's native layout for packaging: the facet
 skill, one facet-<pack> skill per production-method pack, the facet-creative
@@ -21,10 +21,11 @@ Each target is written to DIR/<target>, laid out relative to the scope's base
 directory (the home directory for user scope, the project for project scope).
 An existing DIR/<target> is replaced only if every file in it was written,
 unmodified, by facet bundle. The MCP server is registered by facet wire, not
-by a bundle.
+by a bundle. Compa is laid out at user scope only; with --scope project, all
+leaves it out.
 
 Options:
-  --target LIST   claude, codex, copilot, opencode, or all (comma-separated)
+  --target LIST   claude, codex, copilot, opencode, compa, or all (comma-separated)
   --scope SCOPE   user (default) or project
   --out DIR       output directory
 `
@@ -40,7 +41,7 @@ func CLI(args []string, stdout, stderr io.Writer, version string) int {
 	fs := flag.NewFlagSet("bundle", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() { fmt.Fprint(stderr, bundleUsage) }
-	targetList := fs.String("target", "", "claude | codex | copilot | opencode | all")
+	targetList := fs.String("target", "", "claude | codex | copilot | opencode | compa | all")
 	scopeName := fs.String("scope", string(ScopeUser), "user | project")
 	out := fs.String("out", "", "output directory")
 	if err := fs.Parse(args); err != nil {
@@ -65,6 +66,25 @@ func CLI(args []string, stdout, stderr io.Writer, version string) int {
 		fmt.Fprintf(stderr, "bundle: %v\n", err)
 		return 2
 	}
+	// "all" means every target the scope supports; a target named
+	// explicitly at a scope it does not support is an error.
+	explicit := map[Target]bool{}
+	for _, name := range strings.Split(*targetList, ",") {
+		if t, err := ParseTarget(name); err == nil {
+			explicit[t] = true
+		}
+	}
+	var supported []Target
+	for _, t := range targets {
+		switch {
+		case SupportsScope(t, scope):
+			supported = append(supported, t)
+		case explicit[t]:
+			fmt.Fprintf(stderr, "bundle: %s is laid out at user scope only\n", t)
+			return 2
+		}
+	}
+	targets = supported
 	if strings.TrimSpace(version) == "" {
 		fmt.Fprintln(stderr, "bundle: this facet has no version; a bundle without identity cannot be compared or upgraded")
 		return 1

@@ -64,7 +64,7 @@ func TestRunDoctor(t *testing.T) {
 	for _, c := range report.CLIs {
 		cliNames[c.Name] = true
 	}
-	for _, expected := range []string{"Claude Code", "OpenCode", "GitHub Copilot", "OpenAI Codex"} {
+	for _, expected := range []string{"Claude Code", "OpenCode", "GitHub Copilot", "OpenAI Codex", "Compa"} {
 		if !cliNames[expected] {
 			t.Errorf("missing CLI check for %s", expected)
 		}
