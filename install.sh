@@ -554,8 +554,14 @@ do_install() {
     fi
     local python="$deps/piper/bin/python" voices="$deps/voices"
     if needs piper; then
-        if ! command -v python3 >/dev/null || ! python3 -c 'import sys, venv' >/dev/null 2>&1; then step 'Install Python for Piper' system_package python; fi
-        [[ -x "$python" ]] || step 'Create Piper environment' python3 -m venv "$deps/piper"
+        # Debian and Ubuntu ship venv without ensurepip until python3-venv is
+        # installed, so a Python that imports venv can still fail to create
+        # one, and leave a half-made environment without pip behind.
+        if ! command -v python3 >/dev/null || ! python3 -c 'import sys, venv, ensurepip' >/dev/null 2>&1; then step 'Install Python for Piper' system_package python; fi
+        if ! "$python" -m pip --version >/dev/null 2>&1; then
+            rm -rf -- "$deps/piper"
+            step 'Create Piper environment' python3 -m venv "$deps/piper"
+        fi
         mkdir -p "$voices"
         step "Install Piper $(definition piper 3)" "$python" -m pip install --only-binary=:all: "piper-tts==$(definition piper 3)"
         step 'Download speech model' "$python" -m piper.download_voices --download-dir "$voices" "$(definition piper 4)"
