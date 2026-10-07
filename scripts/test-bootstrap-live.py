@@ -1,5 +1,8 @@
 """Download the published installer through the bootstrap, then cancel at its
 confirmation. No product/dependency install or host configuration takes place.
+
+The installer runs against a throwaway home folder, which must still be
+without a Facet home folder after the cancellation.
 """
 import argparse
 import os
@@ -17,15 +20,20 @@ def main():
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="facet bootstrap live ") as root:
         root = Path(root)
-        project = root / "project"
+        home = root / "home"
+        for directory in (home, home / "AppData" / "Roaming", home / "AppData" / "Local"):
+            directory.mkdir(parents=True, exist_ok=True)
+        env = dict(os.environ, HOME=str(home), FACET_PLAIN="1")
+        env.pop("FACET_HOME", None)
         if os.name == "nt":
-            # A local Read-Host replacement supplies only cancellation answers;
-            # the bootstrap's Invoke-WebRequest uses the real published URL.
+            # A local Read-Host replacement supplies only the answers: no
+            # optional components, then no at the confirmation. The bootstrap's
+            # Invoke-WebRequest uses the real published URL.
             script = root / "verify.ps1"
             script.write_text("""$ErrorActionPreference = 'Stop'
 $answers = [Collections.Generic.Queue[string]]::new()
-foreach ($answer in @('codex', $env:FACET_TEST_PROJECT, 'none', 'n')) { $answers.Enqueue($answer) }
-function Read-Host { param($Prompt); if (-not $answers.Count) { throw 'Unexpected prompt' }; $answers.Dequeue() }
+foreach ($answer in @('none', 'n')) { $answers.Enqueue($answer) }
+function Read-Host { param($Prompt); if (-not $answers.Count) { throw "Unexpected prompt: $Prompt" }; $answers.Dequeue() }
 try {
     if ($env:FACET_TEST_WEBSITE -eq '1') {
         irm https://xibodev.github.io/facet/install.ps1 | iex
@@ -36,9 +44,11 @@ try {
 } catch {
     if ($_.Exception.Message -notmatch 'Installation cancelled') { throw }
 }
-if ($answers.Count -or (Test-Path -LiteralPath $env:FACET_TEST_PROJECT)) { throw 'Cancellation contract failed' }
+if ($answers.Count -or (Test-Path -LiteralPath (Join-Path $HOME '.facet'))) { throw 'Cancellation contract failed' }
 """, encoding="utf-8")
-            subprocess.run(["pwsh", "-NoProfile", "-File", str(script)], env=dict(os.environ, FACET_TEST_PROJECT=str(project), FACET_TEST_BOOTSTRAP=str(REPO / "docs/install.ps1"), FACET_TEST_WEBSITE="1" if args.website else "0"), check=True, timeout=240)
+            env.update(USERPROFILE=str(home), APPDATA=str(home / "AppData" / "Roaming"), LOCALAPPDATA=str(home / "AppData" / "Local"),
+                       FACET_TEST_BOOTSTRAP=str(REPO / "docs/install.ps1"), FACET_TEST_WEBSITE="1" if args.website else "0")
+            subprocess.run(["pwsh", "-NoProfile", "-File", str(script)], env=env, check=True, timeout=240)
         else:
             import pty
             import select
@@ -47,8 +57,8 @@ if ($answers.Count -or (Test-Path -LiteralPath $env:FACET_TEST_PROJECT)) { throw
             if pid == 0:
                 os.chdir(root)
                 command = "set -o pipefail; " + ("curl -fsSL https://xibodev.github.io/facet/install.sh" if args.website else "cat " + shlex.quote(str(REPO / "docs/install.sh"))) + (" | bash" if args.website else " | sh")
-                os.execve("/bin/bash", ["bash", "-c", command], dict(os.environ, FACET_PLAIN="1"))
-            prompts = [(b"Which agent should use Facet?", b"codex\n"), (b"Project directory", (str(project)+"\n").encode()), (b"Optional production tools", b"none\n"), (b"Continue?", b"n\n")]
+                os.execve("/bin/bash", ["bash", "-c", command], env)
+            prompts = [(b"Optional production tools", b"none\n"), (b"Continue?", b"n\n")]
             output = b""
             index = 0
             deadline = time.monotonic() + 240
@@ -66,9 +76,9 @@ if ($answers.Count -or (Test-Path -LiteralPath $env:FACET_TEST_PROJECT)) { throw
                     raise AssertionError(f"live bootstrap timed out: {output!r}")
             finally:
                 os.close(fd)
-            assert os.waitstatus_to_exitcode(status) != 0 and b"Installation cancelled" in output and index == 4, output
-            assert not project.exists()
-        print("PASS: published installer checksum, extraction, interactive handoff, and cancellation without project writes.")
+            assert os.waitstatus_to_exitcode(status) != 0 and b"Installation cancelled" in output and index == len(prompts), output
+            assert not (home / ".facet").exists(), "the cancelled installer created a Facet home folder"
+        print("PASS: published installer checksum, extraction, interactive handoff, and cancellation without writes.")
 
 
 if __name__ == "__main__":

@@ -2,10 +2,8 @@
 # The release's install.ps1 owns every installation decision; this only
 # downloads the pinned installer package, verifies it, and starts it.
 # The pinned version and SHA-256 below are the latest published installer.
-# They change only when a release is published (they move to 2.0.0 with the
-# 2.0 release), never for local changes. The allowed file list below is the
-# pinned package's layout and moves with the pin: 2.0 installer packages have
-# no installer/README.md.
+# They change only when a release is published, never for local changes, and
+# the allowed file list below is that package's layout.
 & {
     $ErrorActionPreference = 'Stop'
     Set-StrictMode -Off
@@ -18,8 +16,8 @@
     if ($env:OS -ne 'Windows_NT') { throw 'Use the curl command on Linux/macOS.' }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
-    $version = '1.1.0'
-    $expected = 'b1fdb5990a56d564a8f5ca5a2e7b694746e684f638c2768db6d0a130e5de33e9'
+    $version = '2.0.0'
+    $expected = '8a5eda1a6f3b9aeae29e2e2cb5a87914871ab6d9e09bf42950fd9f7c3de60ef5'
     $url = "https://github.com/xibodev/facet/releases/download/v$version/facet-installer-$version.zip"
     $temp = Join-Path ([IO.Path]::GetTempPath()) ('facet-bootstrap-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $temp | Out-Null
@@ -36,7 +34,7 @@
         $zip = [IO.Compression.ZipFile]::OpenRead($archive)
         try {
             $names = @($zip.Entries | ForEach-Object FullName | Sort-Object)
-            $allowed = @('install.ps1','install.sh','installer/README.md','installer/manifest.tsv','installer/verify.html') | Sort-Object
+            $allowed = @('install.ps1','install.sh','installer/manifest.tsv','installer/verify.html') | Sort-Object
             if ($names.Count -ne $allowed.Count -or (Compare-Object $names $allowed -CaseSensitive)) { throw 'Unexpected installer package layout.' }
         } finally { $zip.Dispose() }
         $package = Join-Path $temp 'package'
@@ -48,13 +46,14 @@
         catch { Write-Warning "The execution policy for this session could not be relaxed: $($_.Exception.Message)" }
         # Environment settings become parameters, offered only when the
         # downloaded installer declares them (a pinned older package keeps
-        # working while the bootstrap knows newer options).
+        # working while the bootstrap knows newer options). FACET_HOME needs
+        # no mapping: the installer reads it from the environment itself.
         $tokens = $null; $errors = $null
         $ast = [Management.Automation.Language.Parser]::ParseFile($installer, [ref]$tokens, [ref]$errors)
         $declared = @()
         if ($ast.ParamBlock) { $declared = @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath }) }
         $options = @{}
-        foreach ($pair in @(@('FACET_ACTION','Action'),@('FACET_VERSION','Version'),@('FACET_COMPONENTS','Components'),@('FACET_WIRE','Wire'),@('FACET_SCOPE','Scope'),@('FACET_PROJECT','ProjectDir'),@('FACET_TARGET','Target'),@('FACET_INSTALL_DIR','InstallDir'))) {
+        foreach ($pair in @(@('FACET_ACTION','Action'),@('FACET_VERSION','Version'),@('FACET_COMPONENTS','Components'),@('FACET_WIRE','Wire'),@('FACET_SCOPE','Scope'),@('FACET_PROJECT','ProjectDir'))) {
             $value = [Environment]::GetEnvironmentVariable($pair[0])
             if ($value -and $pair[1] -in $declared) { $options[$pair[1]] = $value }
         }

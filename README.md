@@ -13,9 +13,6 @@ never calls a reasoning model and keeps no workflow state.
   production packs, and the `facet-creative` agent, installed into your CLI by
   `facet wire`.
 
-> Facet 2.0.0 is not published yet. Until it is, the install commands below
-> install v1.1.0, which still uses the 1.x per-project setup.
-
 ## Install
 
 ```sh
@@ -32,6 +29,9 @@ The installer keeps one runtime per user under `~/.facet` (`FACET_HOME` moves
 it), verifies it with short test renders, adds `~/.facet/current/bin` to your
 PATH, and offers to wire your CLIs. FFmpeg is required and is installed when
 missing. Remotion and Piper are default components; HyperFrames is optional.
+
+Coming from Facet 1.x, which installed into each project? See
+[Upgrading from 1.x](https://xibodev.github.io/facet/docs.html#upgrade).
 
 ## Use
 
