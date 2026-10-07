@@ -8,7 +8,7 @@ $ast = [Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [
 if ($errors.Count) { throw ($errors | Out-String) }
 if (@([IO.File]::ReadAllBytes($path) | Where-Object { $_ -gt 127 }).Count) { throw 'install.ps1 must stay ASCII: Windows PowerShell 5.1 reads a script without a BOM as ANSI.' }
 $parameters = @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
-$expected = @('Action','Version','Components','Wire','Scope','ProjectDir','ArchivePath','ChecksumPath','NonInteractive','NoPath','SkipVerify','Purge','Plain')
+$expected = @('Action','Version','Components','Wire','Scope','ProjectDir','ArchivePath','ChecksumPath','ToolchainPath','NonInteractive','NoPath','SkipVerify','Purge','Plain')
 if (Compare-Object $parameters $expected) { throw "install.ps1 parameters changed: $($parameters -join ', ')" }
 
 if ($env:OS -ne 'Windows_NT') {
@@ -51,6 +51,38 @@ try {
     # PowerShell's location, not the process directory, anchors user paths.
     Assert-Equal (Resolve-UserPath 'archive.zip') (Join-Path $location 'archive.zip') 'relative user path'
 } finally { Pop-Location; Remove-Item -LiteralPath $location -Recurse -Force }
+
+# The Go build's command line and the choice between a release's source and
+# its prebuilt archive.
+foreach ($name in @('ConvertTo-ProcessArgument','Get-Sha256','Find-Checksum','Select-ReleaseArchive')) {
+    $definition = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $true)
+    if (-not $definition) { throw "install.ps1 no longer defines $name" }
+    . ([scriptblock]::Create($definition.Extent.Text))
+}
+Assert-Equal (ConvertTo-ProcessArgument './cmd/facet') './cmd/facet' 'plain argument'
+Assert-Equal (ConvertTo-ProcessArgument '-s -w -X main.Version=2.2.0') '"-s -w -X main.Version=2.2.0"' 'argument with spaces'
+Assert-Equal (ConvertTo-ProcessArgument 'C:\Users\test user\facet.exe') '"C:\Users\test user\facet.exe"' 'path with a space'
+Assert-Equal (ConvertTo-ProcessArgument 'C:\a b\') '"C:\a b\\"' 'trailing backslash'
+Assert-Equal (ConvertTo-ProcessArgument 'say "hi"') '"say \"hi\""' 'embedded quotes'
+Assert-Equal (ConvertTo-ProcessArgument '') '""' 'empty argument'
+$targetVersion = '2.2.0'; $sourceArchiveName = 'facet-2.2.0-source.zip'; $platformArchiveName = 'facet-2.2.0-windows-amd64.zip'
+$sums = Join-Path ([IO.Path]::GetTempPath()) ('facet-sums-' + [guid]::NewGuid().ToString('N') + '.txt')
+$sourceHash = 'a' * 64; $platformHash = 'b' * 64
+try {
+    [IO.File]::WriteAllText($sums, "$sourceHash  $sourceArchiveName`n$platformHash  $platformArchiveName`n$('c' * 64)  facet-installer-2.2.0.zip`n")
+    Assert-Equal (Find-Checksum $sums $sourceArchiveName) $sourceHash 'listed checksum'
+    Assert-Equal (Find-Checksum $sums 'facet-2.2.0-linux-amd64.zip') '' 'unlisted checksum'
+    Assert-Equal (Select-ReleaseArchive $sums '') $sourceArchiveName 'a release with source is built'
+    Assert-Equal (Select-ReleaseArchive $sums $platformHash) $platformArchiveName 'a supplied prebuilt archive is unpacked'
+    try { Select-ReleaseArchive $sums ('d' * 64); throw 'unreachable' } catch { if ($_.Exception.Message -notmatch 'Checksum mismatch: facet-2\.2\.0-source\.zip') { throw } }
+    [IO.File]::WriteAllText($sums, "$platformHash  $platformArchiveName`n")
+    Assert-Equal (Select-ReleaseArchive $sums '') $platformArchiveName 'a release before 2.2.0 ships a prebuilt archive'
+    [IO.File]::WriteAllText($sums, "$sourceHash  facet-2.1.2-source.zip`n")
+    try { Select-ReleaseArchive $sums ''; throw 'unreachable' } catch { if ($_.Exception.Message -notmatch 'has no Windows download') { throw } }
+    try { Select-ReleaseArchive $sums $sourceHash; throw 'unreachable' } catch { if ($_.Exception.Message -notmatch 'Checksum entry missing or duplicated') { throw } }
+    [IO.File]::WriteAllText($sums, "$sourceHash  $sourceArchiveName`n$sourceHash  $sourceArchiveName`n")
+    try { Select-ReleaseArchive $sums ''; throw 'unreachable' } catch { if ($_.Exception.Message -notmatch 'Checksum entry missing or duplicated') { throw } }
+} finally { Remove-Item -LiteralPath $sums -Force -ErrorAction SilentlyContinue }
 
 # Extraction and the runtime file list under a short-name (8.3) path, as a
 # hosted runner's TEMP is: GetFullPath and Get-ChildItem report the long form,
@@ -147,7 +179,8 @@ try {
         @{ Arguments = $missing + @('-Purge'); Message = '-Purge applies only to uninstall' },
         @{ Arguments = $missing + @('-Wire','claude','-Scope','user','-ProjectDir',$root); Message = '-ProjectDir applies only to -Scope project' },
         @{ Arguments = $missing + @('-Wire','opencode','-ProjectDir',(Join-Path $root 'absent')); Message = 'Project directory not found' },
-        @{ Arguments = @('-NonInteractive','-Action','uninstall','-Components','none'); Message = '-Components applies to install and update' }
+        @{ Arguments = @('-NonInteractive','-Action','uninstall','-Components','none'); Message = '-Components applies to install and update' },
+        @{ Arguments = @('-NonInteractive','-Action','rollback','-ToolchainPath',(Join-Path $root 'go.zip')); Message = '-ToolchainPath applies to install and update' }
     )
     $hosts = @('pwsh.exe', 'powershell.exe' | Where-Object { Get-Command $_ -ErrorAction SilentlyContinue })
     foreach ($shell in $hosts) {

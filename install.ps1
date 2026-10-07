@@ -11,6 +11,12 @@ hyperframes) are installed into the runtime and verified before it is
 activated. The previous runtime is kept for rollback, and recorded CLI wirings
 are refreshed to the active runtime after every install, update and rollback.
 
+From Facet 2.2.0, facet.exe is built on this computer from the release's
+source archive, by the official Go toolchain pinned (with its SHA-256) in
+installer/manifest.tsv. Go is downloaded, used and removed again, with its
+build cache; -ToolchainPath supplies the Go zip for offline installs. Earlier
+releases ship a prebuilt facet.exe, which is installed as before.
+
 Wiring Facet into an agentic CLI is a separate decision made with
 `facet wire`. This script runs it only when asked: interactively, or with
 -Wire in noninteractive mode.
@@ -27,6 +33,7 @@ param(
     [string]$ProjectDir,
     [string]$ArchivePath,
     [string]$ChecksumPath,
+    [string]$ToolchainPath,
     [switch]$NonInteractive,
     [switch]$NoPath,
     [switch]$SkipVerify,
@@ -242,6 +249,7 @@ try { $script:rich = $script:rich -and -not [Console]::IsInputRedirected -and -n
 
 if ([bool]$ArchivePath -ne [bool]$ChecksumPath) { throw 'Supply both -ArchivePath and -ChecksumPath.' }
 if ($ArchivePath) { $ArchivePath = Resolve-UserPath $ArchivePath; $ChecksumPath = Resolve-UserPath $ChecksumPath }
+if ($ToolchainPath) { $ToolchainPath = Resolve-UserPath $ToolchainPath }
 if ($wireScope -and $wireScope -notin @('user','project')) { throw 'Scope must be user or project.' }
 if ($wireProject) {
     if (-not $wireScope) { $wireScope = 'project' }
@@ -264,7 +272,7 @@ if ($wireTargets.Count -and $wireScope -eq 'project') {
     if (-not (Test-Path -LiteralPath $wireProject -PathType Container)) { throw "Project directory not found: $wireProject" }
 }
 if ($selectedAction -in @('rollback','uninstall')) {
-    foreach ($name in @('Components','ArchivePath','ChecksumPath','SkipVerify')) {
+    foreach ($name in @('Components','ArchivePath','ChecksumPath','ToolchainPath','SkipVerify')) {
         if ($PSBoundParameters.ContainsKey($name)) { throw "-$name applies to install and update, not $selectedAction." }
     }
 }
@@ -282,6 +290,10 @@ switch -Regex ($osArchitecture) {
 $releaseVersion = (Definition facet).version
 $targetVersion = if ($requestedVersion) { $requestedVersion } else { $releaseVersion }
 $runtimePattern = '^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?-windows-(?:amd64|arm64)$'
+# A release from 2.2.0 on ships Facet's source, which this script builds;
+# earlier releases ship a prebuilt Windows archive.
+$sourceArchiveName = "facet-$targetVersion-source.zip"
+$platformArchiveName = "facet-$targetVersion-windows-$arch.zip"
 
 $userHome = if ($HOME) { $HOME } else { $env:USERPROFILE }
 if (-not $userHome -or -not [IO.Path]::IsPathRooted($userHome)) { throw 'The home directory is unknown; set USERPROFILE.' }
@@ -300,7 +312,7 @@ $currentLink = Join-Path $facetHome 'current'
 $statePath = Join-Path $facetHome 'installer.json'
 $pathEntry = Join-Path $currentLink 'bin'
 $currentExe = Join-Path $pathEntry 'facet.exe'
-if (($facetHome + $ArchivePath + $ChecksumPath + $wireProject) -match '[\x00-\x1f]') { throw 'Control characters are unsupported in paths.' }
+if (($facetHome + $ArchivePath + $ChecksumPath + $ToolchainPath + $wireProject) -match '[\x00-\x1f]') { throw 'Control characters are unsupported in paths.' }
 
 # -------------------------------------------------------------- state model
 
@@ -505,9 +517,9 @@ function Invoke-Probe([string]$Program, [string[]]$Arguments) {
     $text = if ($output.Count) { "$($output[-1])".Trim() } else { '' }
     return @{ Code = $LASTEXITCODE; Text = $text }
 }
-function Download([string]$Url, [string]$Destination) {
+function Download([string]$Url, [string]$Destination, [int]$TimeoutSec = 300) {
     for ($attempt = 1; $attempt -le 3; $attempt++) {
-        try { Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Destination -TimeoutSec 300; return }
+        try { Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Destination -TimeoutSec $TimeoutSec; return }
         catch {
             if ($attempt -eq 3) { throw }
             Write-Host "     Download interrupted; retrying ($attempt/3)..."
@@ -515,12 +527,32 @@ function Download([string]$Url, [string]$Destination) {
         }
     }
 }
-function Assert-Checksum([string]$Archive, [string]$Sums, [string]$Name) {
-    $expected = @([IO.File]::ReadAllLines($Sums) | ForEach-Object {
+function Find-Checksum([string]$Sums, [string]$Name) {
+    # The SHA-256 a checksum file records for Name, or '' when it lists none.
+    $found = @([IO.File]::ReadAllLines($Sums) | ForEach-Object {
         if ($_ -match '^([a-fA-F0-9]{64})\s+\*?(.+?)\s*$' -and $Matches[2] -ceq $Name) { $Matches[1].ToLowerInvariant() }
     })
-    if ($expected.Count -ne 1) { throw "Checksum entry missing or duplicated: $Name" }
-    if ((Get-Sha256 $Archive) -ne $expected[0]) { throw "Checksum mismatch: $Name" }
+    if ($found.Count -gt 1) { throw "Checksum entry missing or duplicated: $Name" }
+    if ($found.Count) { return $found[0] }
+    return ''
+}
+function Assert-Checksum([string]$Archive, [string]$Sums, [string]$Name) {
+    $expected = Find-Checksum $Sums $Name
+    if (-not $expected) { throw "Checksum entry missing or duplicated: $Name" }
+    if ((Get-Sha256 $Archive) -ne $expected) { throw "Checksum mismatch: $Name" }
+}
+function Select-ReleaseArchive([string]$Sums, [string]$Hash) {
+    # The checksum file says what a release ships: its source, built here, or
+    # (before 2.2.0) a prebuilt Windows archive. With -ArchivePath, Hash names
+    # the archive supplied.
+    $names = @($sourceArchiveName, $platformArchiveName)
+    foreach ($name in $names) {
+        $expected = Find-Checksum $Sums $name
+        if ($expected -and (-not $Hash -or $expected -eq $Hash)) { return $name }
+    }
+    if (-not $Hash) { throw "Facet $targetVersion has no Windows download: the release lists neither $sourceArchiveName nor $platformArchiveName." }
+    foreach ($name in $names) { if (Find-Checksum $Sums $name) { throw "Checksum mismatch: $name" } }
+    throw "Checksum entry missing or duplicated: $platformArchiveName"
 }
 function Expand-SafeZip([string]$Archive, [string]$Destination) {
     # Every entry's full path is compared with the destination's, both in
@@ -581,6 +613,120 @@ function Test-RuntimeFiles([string]$Directory) {
         if ((Get-Sha256 $path) -ne $hash) { return $false }
     }
     return $true
+}
+
+# ------------------------------------------------------- facet from source
+
+function ConvertTo-ProcessArgument([string]$Text) {
+    # One argument of a Windows command line, quoted as the C runtime parses it.
+    if ($Text -and $Text -notmatch '[\s"]') { return $Text }
+    return '"' + (($Text -replace '(\\*)"', '$1$1\"') -replace '(\\+)$', '$1$1') + '"'
+}
+function Invoke-Go([string]$GoExe, [string]$Directory, [hashtable]$Settings, [string[]]$Arguments) {
+    # Runs the pinned Go in a child process that sees these Go settings and
+    # no others: none of the user's GO* or CGO_* variables reach it.
+    $info = New-Object Diagnostics.ProcessStartInfo
+    $info.FileName = $GoExe
+    $info.WorkingDirectory = $Directory
+    $info.Arguments = @($Arguments | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' '
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    foreach ($name in @($info.EnvironmentVariables.Keys)) { if ($name -match '^(?i:GO|CGO_)') { $info.EnvironmentVariables.Remove($name) } }
+    foreach ($name in $Settings.Keys) { $info.EnvironmentVariables[$name] = $Settings[$name] }
+    $process = [Diagnostics.Process]::Start($info)
+    $standardOutput = $process.StandardOutput.ReadToEndAsync()
+    $standardError = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+    $text = @(($standardOutput.Result + "`n" + $standardError) -split "`r?`n" | Where-Object { $_.Trim() })
+    $text
+    if ($process.ExitCode -ne 0) { throw "go $($Arguments[0]) exited $($process.ExitCode): $(@($text | Select-Object -Last 3) -join ' | ')" }
+}
+function Complete-Stage([string]$Stage) {
+    # A runtime holds what a release archive does, its facet reports the
+    # version being installed, and every file is recorded for repair checks.
+    foreach ($required in @('bin/facet.exe','dependencies/remotion-composer/package.json','dependencies/remotion-composer/package-lock.json','dependencies/remotion-composer/composer-manifest.json')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $Stage $required) -PathType Leaf)) { throw "Release archive is missing $required." }
+    }
+    $reported = Invoke-Probe (Join-Path $Stage 'bin/facet.exe') @('version')
+    if ($reported.Code -ne 0 -or $reported.Text -ne "facet v$targetVersion") { throw "Binary version mismatch: expected facet v$targetVersion, got '$($reported.Text)'." }
+    $hashes = @(Get-RelativeFiles $Stage | ForEach-Object { "$(Get-Sha256 (Join-Path $Stage $_))  $_" })
+    [IO.File]::WriteAllText((Join-Path $Stage '.facet-files.sha256'), (($hashes -join "`n") + "`n"), $utf8NoBom)
+}
+function Build-Facet([string]$Archive, [string]$Stage) {
+    # facet.exe is compiled here from the release's source by the official Go
+    # toolchain that the manifest pins, so no prebuilt executable is
+    # downloaded. The build reads only the archive (its modules are vendored)
+    # and never the network. Go, its caches and the source are removed
+    # afterwards. Go builds are reproducible: every computer builds the same
+    # facet.exe.
+    $go = Definition go
+    $goVersion = "$($go.version)"
+    $goName = "go$goVersion.windows-$arch.zip"
+    $goSha = ''
+    foreach ($pair in "$($go.windows)".Split(' ')) { if ($pair -match "^$($arch):([0-9a-f]{64})$") { $goSha = $Matches[1] } }
+    if ($goVersion -notmatch '^\d+\.\d+\.\d+$' -or -not $goSha) { throw "The installer manifest pins no Go toolchain for windows/$arch." }
+    $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
+    if (-not (Test-Path -LiteralPath $tar -PathType Leaf)) { throw 'Building Facet needs tar.exe, which Windows includes from Windows 10 version 1803.' }
+    $buildRoot = Join-Path $script:temp 'build'
+    $tree = Join-Path $buildRoot 'facet'
+    $notice = "notices/windows-$arch.md"
+    $goZip = if ($ToolchainPath) { $ToolchainPath } else { Join-Path $script:temp $goName }
+    $free = $null
+    try { $free = (New-Object IO.DriveInfo ([IO.Path]::GetPathRoot($script:temp))).AvailableFreeSpace } catch { }
+    if ($null -ne $free -and $free -lt 500MB) { throw "Building Facet needs about 500 MB of free disk space for Go and its build cache; $([int]($free / 1MB)) MB are free on $([IO.Path]::GetPathRoot($script:temp))." }
+    # The source is checked before Go is fetched: a bad archive costs no download.
+    Step "Unpack Facet $targetVersion source" {
+        New-Item -ItemType Directory -Path $tree | Out-Null
+        Expand-SafeZip $Archive $tree
+        foreach ($required in @('LICENSE', $notice, 'source/go.mod', 'source/cmd/facet/main.go', 'source/vendor/modules.txt')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $tree $required) -PathType Leaf)) { throw "Release archive is missing $required." }
+        }
+        $needed = @([IO.File]::ReadAllLines((Join-Path $tree 'source/go.mod')) | ForEach-Object { if ($_ -match '^go\s+(\d+\.\d+(?:\.\d+)?)\s*$') { $Matches[1] } })
+        if ($needed.Count -and [version]($needed[0]) -gt [version]$goVersion) {
+            throw "Facet $targetVersion needs Go $($needed[0]) to build, and this installer brings Go $goVersion; use the installer from the Facet $targetVersion release."
+        }
+    }
+    if ($ToolchainPath) {
+        Step "Check Go $goVersion" {
+            if (-not (Test-Path -LiteralPath $goZip -PathType Leaf)) { throw "Go toolchain not found: $goZip" }
+            if ((Get-Sha256 $goZip) -ne $goSha) { throw "$goZip is not the official $goName (SHA-256 mismatch)." }
+        }
+    } else {
+        Step "Download Go $goVersion" {
+            Download "$($go.value)$goName" $goZip 1800
+            if ((Get-Sha256 $goZip) -ne $goSha) { throw "Checksum mismatch: $goName" }
+        }
+    }
+    Step "Unpack Go $goVersion" {
+        # Go's own tests are not needed to build, and their deep paths can
+        # exceed the Windows path limit.
+        Run $tar @('-xf', $goZip, '-C', $buildRoot, '--exclude', 'testdata', '--exclude', 'go/test')
+        if (-not (Test-Path -LiteralPath (Join-Path $buildRoot 'go/bin/go.exe') -PathType Leaf)) { throw "$goName holds no go/bin/go.exe." }
+    }
+    Step "Build Facet $targetVersion (a minute or two)" {
+        $settings = @{
+            GOTOOLCHAIN = 'local'; GOFLAGS = '-mod=vendor'; GOPROXY = 'off'; GOWORK = 'off'; GOENV = 'off'; GO111MODULE = 'on'
+            CGO_ENABLED = '0'; GOOS = 'windows'; GOARCH = $arch
+            GOCACHE = (Join-Path $buildRoot 'cache'); GOPATH = (Join-Path $buildRoot 'path'); GOTMPDIR = (Join-Path $buildRoot 'tmp')
+            # Go keeps telemetry counters in the user's configuration folder;
+            # pointed here, they are removed with the build.
+            APPDATA = (Join-Path $buildRoot 'config'); LOCALAPPDATA = (Join-Path $buildRoot 'local')
+        }
+        foreach ($folder in @('cache','path','tmp','config','local')) { New-Item -ItemType Directory -Path (Join-Path $buildRoot $folder) | Out-Null }
+        New-Item -ItemType Directory -Path (Join-Path $Stage 'bin') -Force | Out-Null
+        Invoke-Go (Join-Path $buildRoot 'go/bin/go.exe') (Join-Path $tree 'source') $settings @(
+            'build', '-trimpath', '-buildvcs=false', '-ldflags', "-s -w -X main.Version=$targetVersion", '-o', (Join-Path $Stage 'bin/facet.exe'), './cmd/facet')
+        Copy-Item -LiteralPath (Join-Path $tree 'LICENSE') -Destination (Join-Path $Stage 'LICENSE')
+        Copy-Item -LiteralPath (Join-Path $tree $notice) -Destination (Join-Path $Stage 'THIRD_PARTY_NOTICES.md')
+        Copy-Item -LiteralPath (Join-Path $tree 'dependencies') -Destination $Stage -Recurse
+        Complete-Stage $Stage
+    }
+    Step 'Remove Go and the build cache' {
+        Remove-Tree $buildRoot
+        if (-not $ToolchainPath) { Remove-Item -LiteralPath $goZip -Force }
+    }
 }
 
 # ------------------------------------------------------- system dependencies
@@ -815,7 +961,7 @@ function Invoke-Uninstall {
         if (Test-Path -LiteralPath $runtimesDir) { Remove-Tree $runtimesDir; Write-Host "  OK Deleted $runtimesDir" }
         $cache = Join-Path $facetHome 'cache'
         if (Test-Path -LiteralPath $cache) {
-            foreach ($file in @(Get-ChildItem -LiteralPath $cache -File -Force | Where-Object { $_.Name -match '^facet-\d+\..*-windows-(amd64|arm64)\.zip(\.partial)?$' -and $_.Name -notmatch '^facet-1\.' })) { Remove-Item -LiteralPath $file.FullName -Force }
+            foreach ($file in @(Get-ChildItem -LiteralPath $cache -File -Force | Where-Object { $_.Name -match '^facet-\d+\..*-(windows-(amd64|arm64)|source)\.zip(\.partial)?$' -and $_.Name -notmatch '^facet-1\.' })) { Remove-Item -LiteralPath $file.FullName -Force }
             if (-not @(Get-ChildItem -LiteralPath $cache -Force).Count) { Remove-Item -LiteralPath $cache -Force }
         }
     } else {
@@ -916,13 +1062,13 @@ function Invoke-Install([string[]]$Selected) {
     $runtimeName = "$targetVersion-windows-$arch"
     $runtimeDir = Join-Path $runtimesDir $runtimeName
     $activeName = Get-ActiveRuntimeName
-    $archiveName = "facet-$targetVersion-windows-$arch.zip"
+    $archiveName = ''
     $record = Read-RuntimeRecord $runtimeName
     $intact = [bool]($record -and (Test-RuntimeFiles $runtimeDir))
     $archiveHash = ''
     if ($ArchivePath) {
-        Assert-Checksum $ArchivePath $ChecksumPath $archiveName
         $archiveHash = Get-Sha256 $ArchivePath
+        $archiveName = Select-ReleaseArchive $ChecksumPath $archiveHash
     }
     $reuse = $intact -and (-not $archiveHash -or "$(Get-JsonValue $record 'archive_sha256')" -eq $archiveHash)
     $installed = if ($reuse) { @(Get-RecordComponents $record) } else { @() }
@@ -947,8 +1093,9 @@ function Invoke-Install([string[]]$Selected) {
                 $cache = Join-Path $facetHome 'cache'
                 New-Item -ItemType Directory -Path $cache -Force | Out-Null
                 $script:downloadSums = Join-Path $script:temp 'SHA256SUMS.txt'
-                $cached = Join-Path $cache $archiveName
                 Step 'Check release download' { Download "$base/SHA256SUMS.txt" $script:downloadSums }
+                $archiveName = Select-ReleaseArchive $script:downloadSums ''
+                $cached = Join-Path $cache $archiveName
                 $valid = $false
                 if (Test-Path -LiteralPath $cached) { try { Assert-Checksum $cached $script:downloadSums $archiveName; $valid = $true } catch { } }
                 if ($valid) { Write-Host '  OK Reusing verified download' }
@@ -962,6 +1109,19 @@ function Invoke-Install([string[]]$Selected) {
                 $script:sourceArchive = $cached
                 $archiveHash = Get-Sha256 $cached
             } else { $script:sourceArchive = $ArchivePath }
+            # The new runtime is complete before the old one is touched, so a
+            # failed build or unpack leaves the installed Facet as it was.
+            $stage = Join-Path $runtimesDir ('.stage-' + [guid]::NewGuid().ToString('N'))
+            $script:stage = $stage
+            if ($archiveName -eq $sourceArchiveName) { Build-Facet $script:sourceArchive $stage }
+            else {
+                if ($ToolchainPath) { Write-Host "  Note: Facet $targetVersion ships a prebuilt facet.exe; -ToolchainPath is not needed." }
+                Step 'Unpack Facet' {
+                    New-Item -ItemType Directory -Path $stage | Out-Null
+                    Expand-SafeZip $script:sourceArchive $stage
+                    Complete-Stage $stage
+                }
+            }
             if (Get-ItemOrNull $runtimeDir) {
                 if (Test-Link $runtimeDir) { Remove-Link $runtimeDir }
                 elseif ($activeName -eq $runtimeName) {
@@ -971,19 +1131,6 @@ function Invoke-Install([string[]]$Selected) {
                     try { Move-Directory $runtimeDir $movedAside }
                     catch { throw "Runtime $runtimeName is in use; close agent CLIs that run Facet and rerun. ($($_.Exception.Message))" }
                 } else { Remove-Tree $runtimeDir }
-            }
-            $stage = Join-Path $runtimesDir ('.stage-' + [guid]::NewGuid().ToString('N'))
-            $script:stage = $stage
-            Step 'Unpack Facet' {
-                New-Item -ItemType Directory -Path $stage | Out-Null
-                Expand-SafeZip $script:sourceArchive $stage
-                foreach ($required in @('bin/facet.exe','dependencies/remotion-composer/package.json','dependencies/remotion-composer/package-lock.json','dependencies/remotion-composer/composer-manifest.json')) {
-                    if (-not (Test-Path -LiteralPath (Join-Path $stage $required) -PathType Leaf)) { throw "Release archive is missing $required." }
-                }
-                $reported = Invoke-Probe (Join-Path $stage 'bin/facet.exe') @('version')
-                if ($reported.Code -ne 0 -or $reported.Text -ne "facet v$targetVersion") { throw "Binary version mismatch: expected facet v$targetVersion, got '$($reported.Text)'." }
-                $lines = @(Get-RelativeFiles $stage | ForEach-Object { "$(Get-Sha256 (Join-Path $stage $_))  $_" })
-                [IO.File]::WriteAllText((Join-Path $stage '.facet-files.sha256'), (($lines -join "`n") + "`n"), $utf8NoBom)
             }
             Move-Directory $stage $runtimeDir
             $script:stage = ''
@@ -1200,6 +1347,10 @@ if ($selectedAction -in @('install','update')) {
     Write-Host ''
     Write-Host "  Action:      $selectedAction facet v$targetVersion (windows/$arch)"
     Write-Host "  Runtime:     $(Join-Path $runtimesDir "$targetVersion-windows-$arch")"
+    # This installer's own release, like every release from 2.2.0, is built here.
+    $buildsHere = $targetVersion -eq $releaseVersion
+    if ($ArchivePath) { try { $buildsHere = [bool](Find-Checksum $ChecksumPath $sourceArchiveName) } catch { $buildsHere = $false } }
+    if ($buildsHere) { Write-Host "  Build:       on this computer by Go $((Definition go).version) ($(if ($ToolchainPath) { "from $ToolchainPath" } else { (Definition go).size }))" }
     Write-Host "  Components:  $(if ($selected.Count) { $selected -join ', ' } else { 'none (core only)' })"
     if ($kept.Count) { Write-Host "  Kept:        $($kept -join ', ') (already installed)" }
     Write-Host "  PATH:        $(if ($skipPath) { 'unchanged' } else { "$pathEntry on your user PATH" })"

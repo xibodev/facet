@@ -10,7 +10,7 @@ const powershell = readFileSync(new URL('install.ps1', root), 'utf8');
 const manifest = readFileSync(new URL('installer/manifest.tsv', root), 'utf8');
 const pkg = JSON.parse(readFileSync(new URL('package.json', root), 'utf8'));
 
-test('manifest describes the user-wide layout, the release and the components only', () => {
+test('manifest describes the user-wide layout, the release, the toolchain and the components only', () => {
   assert.match(manifest, /^contract\tlayout\t2\t/m);
   assert.match(manifest, new RegExp(`^release\\tfacet\\t${pkg.version.replaceAll('.', '\\.')}\\t`, 'm'));
   for (const component of ['remotion', 'piper', 'hyperframes']) {
@@ -20,15 +20,52 @@ test('manifest describes the user-wide layout, the release and the components on
   assert.doesNotMatch(manifest, /^(host|instruction|pack)\t/m, 'per-project targets and packs belong to facet wire');
 });
 
+// The installers build facet with the Go toolchain go.mod names: a newer Go in
+// go.mod needs the toolchain row moved with it, with its checksums.
+test('the pinned Go toolchain is the one go.mod names, with a checksum per platform', () => {
+  const goVersion = readFileSync(new URL('go.mod', root), 'utf8').match(/^go (\d+\.\d+\.\d+)$/m)[1];
+  const row = manifest.split('\n').map((line) => line.split('\t')).find((cols) => cols[0] === 'toolchain' && cols[1] === 'go');
+  assert.ok(row, 'installer/manifest.tsv has no toolchain/go row');
+  assert.equal(row[2], goVersion, 'the toolchain row must name the Go version in go.mod');
+  assert.equal(row[3], 'https://go.dev/dl/');
+  for (const [column, os] of [[4, 'windows'], [5, 'linux'], [6, 'darwin']]) {
+    const pairs = Object.fromEntries(row[column].split(' ').map((pair) => pair.split(':')));
+    assert.deepEqual(Object.keys(pairs).sort(), ['amd64', 'arm64'], `${os} lists amd64 and arm64`);
+    for (const [arch, digest] of Object.entries(pairs)) {
+      assert.match(digest, /^[0-9a-f]{64}$/, `${os}/${arch} SHA-256`);
+    }
+  }
+});
+
 test('both installers expose the same actions and options', () => {
-  for (const option of ['--action', '--version', '--components', '--wire', '--scope', '--project', '--archive', '--checksums', '--yes', '--no-path', '--skip-verify', '--purge', '--plain', '--verbose']) {
+  for (const option of ['--action', '--version', '--components', '--wire', '--scope', '--project', '--archive', '--checksums', '--from-source', '--toolchain', '--yes', '--no-path', '--skip-verify', '--purge', '--plain', '--verbose']) {
     assert.ok(bash.includes(option), `install.sh lacks ${option}`);
   }
   assert.match(bash, /install\|update\|rollback\|uninstall/);
   assert.match(powershell, /\[ValidateSet\('install','update','rollback','uninstall'\)\]\[string\]\$Action/);
   assert.match(powershell, /\[ValidateSet\('user','project'\)\]\[string\]\$Scope/);
-  for (const name of ['Wire', 'ProjectDir', 'ArchivePath', 'ChecksumPath', 'NonInteractive', 'NoPath', 'SkipVerify', 'Purge']) {
+  for (const name of ['Wire', 'ProjectDir', 'ArchivePath', 'ChecksumPath', 'ToolchainPath', 'NonInteractive', 'NoPath', 'SkipVerify', 'Purge']) {
     assert.match(powershell, new RegExp(`\\$${name}\\b`), `install.ps1 lacks -${name}`);
+  }
+});
+
+// The installers build facet exactly as scripts/package-release.py does, so a
+// source install reproduces the release workflow's reference build byte for
+// byte: same flags, vendored modules only, the pinned toolchain, no cgo, and
+// none of the user's Go settings.
+test('both installers build facet from source with the packager\'s command and settings', () => {
+  const packager = readFileSync(new URL('scripts/package-release.py', root), 'utf8');
+  const flags = '-trimpath -buildvcs=false -ldflags "-s -w -X main.Version=';
+  assert.ok(packager.includes(`"go", "build", "-trimpath", "-buildvcs=false", "-ldflags", f"-s -w -X main.Version=`), 'package-release.py build command');
+  assert.ok(bash.includes(`build ${flags}$VERSION"`), 'install.sh build command');
+  assert.ok(powershell.includes(`'build', '-trimpath', '-buildvcs=false', '-ldflags', "-s -w -X main.Version=$targetVersion"`), 'install.ps1 build command');
+  for (const [name, source] of [['install.sh', bash], ['install.ps1', powershell]]) {
+    for (const setting of [/GOTOOLCHAIN\W+local/, /GOFLAGS\W+-mod=vendor/, /GOPROXY\W+off/, /GOWORK\W+off/, /GOENV\W+off/, /CGO_ENABLED\W+0/]) {
+      assert.match(source, setting, `${name} lacks ${setting}`);
+    }
+    assert.match(source, /GO\*\|CGO_\*|\(\?i:GO\|CGO_\)/, `${name} must clear the user's Go settings`);
+    assert.match(source, /--exclude\W+testdata/, `${name} must skip Go's test data`);
+    assert.match(source, /definition go|Definition go/, `${name} must take the toolchain from the manifest`);
   }
 });
 
