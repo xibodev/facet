@@ -3,7 +3,8 @@
 Facet 2.0 ships one native executable, `facet`. Its guidance (skills, packs,
 agents and tool schemas) is compiled into it, so the platform archive holds:
 
-  bin/facet[.exe]             built from ./cmd/facet with -X main.Version
+  bin/facet[.exe]             built from ./cmd/facet with -X main.Version,
+                              stripped (-s -w)
   dependencies/remotion-composer/
                               the allowlisted composer sources named in
                               remotion-composer/composer-manifest.json, with
@@ -147,7 +148,12 @@ def build_platform(out, version, goos, goarch, work):
     suffix = ".exe" if goos == "windows" else ""
     binary = work / ("facet" + suffix)
     env = dict(os.environ, GOOS=goos, GOARCH=goarch, CGO_ENABLED="0")
-    run(["go", "build", "-trimpath", "-ldflags", f"-X main.Version={version}", "-o", str(binary), "./cmd/facet"], env=env)
+    # Stripped of the symbol table and DWARF data, which a release does not
+    # need (Go keeps what panics and stack traces use). Microsoft Defender
+    # flagged the unstripped 2.1.0 windows/amd64 binary with a
+    # machine-learning verdict (Trojan:Win32/Bearfoos.A!ml); release.yml now
+    # scans every Windows archive before it can be published.
+    run(["go", "build", "-trimpath", "-ldflags", f"-s -w -X main.Version={version}", "-o", str(binary), "./cmd/facet"], env=env)
     notices = work / "THIRD_PARTY_NOTICES.md"
     run([sys.executable, str(REPO / "scripts" / "generate-notices.py"), "--goos", goos, "--goarch", goarch, "--out", str(notices)])
     path = out / f"facet-{version}-{goos}-{goarch}.zip"

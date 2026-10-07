@@ -78,6 +78,29 @@ jobs:
               assert notices, f"{archive.name} has no generated third-party notices for {goos}/{goarch}"
           print(f"PASS {archive.name}: {binaries[0]}, notices {notices[0]}")
           EOF
+      - name: Microsoft Defender finds nothing in the Windows archive
+        # 2.1.0's windows/amd64 binary was published and then flagged by
+        # Defender (Trojan:Win32/Bearfoos.A!ml, a machine-learning verdict).
+        # A detection fails the release; a runner that cannot scan warns.
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $version = (Get-Content -Raw package.json | ConvertFrom-Json).version
+          $archive = Join-Path $env:GITHUB_WORKSPACE "build/release/facet-$version-windows-${{ matrix.arch }}.zip"
+          $platform = Get-ChildItem (Join-Path $env:ProgramData 'Microsoft\Windows Defender\Platform') -Directory -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending | Select-Object -First 1
+          $mp = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
+          if ($platform -and (Test-Path (Join-Path $platform.FullName 'MpCmdRun.exe'))) { $mp = Join-Path $platform.FullName 'MpCmdRun.exe' }
+          if (-not (Test-Path $mp)) { Write-Host "::warning::Microsoft Defender is not available on this runner; $archive was not scanned."; exit 0 }
+          & $mp -SignatureUpdate | Out-Host
+          & $mp -Scan -ScanType 3 -File $archive -DisableRemediation | Out-Host
+          switch ($LASTEXITCODE) {
+            0 { Write-Host "Microsoft Defender found no threats in $archive." }
+            2 { throw "Microsoft Defender flags $archive. Do not publish it: rebuild, or submit the file to Microsoft as a false positive." }
+            default { Write-Host "::warning::Microsoft Defender could not scan $archive (exit $LASTEXITCODE); it is not verified." }
+          }
       - name: Validate native package and project integration
         run: python scripts/test-prebuilt-install.py --os ${{ matrix.os }} --arch ${{ matrix.arch }} --release-dir build/release
       - name: Install FFmpeg for package integration test (Linux)
