@@ -28,6 +28,9 @@ type Artifact struct {
 	Tool string `json:"tool"`
 	// FacetVersion is the release that produced the file.
 	FacetVersion string `json:"facet_version"`
+	// ProviderJobID is the provider job that generated the file, when a
+	// provider ran one.
+	ProviderJobID string `json:"provider_job_id,omitempty"`
 }
 
 // Result fields that name produced files. Extraction is central so no tool
@@ -59,6 +62,7 @@ func collectArtifacts(tool string, result any, warnings []string) ([]Artifact, [
 	}
 	var artifacts []Artifact
 	seen := map[string]bool{}
+	job := resultProviderJobID(result)
 	for _, candidate := range artifactPaths(result) {
 		path, err := filepath.Abs(candidate)
 		if err != nil {
@@ -80,9 +84,21 @@ func collectArtifacts(tool string, result any, warnings []string) ([]Artifact, [
 			warnings = append(warnings, "artifact "+path+" could not be described: "+bounded(err.Error()))
 			continue
 		}
+		artifact.ProviderJobID = job
 		artifacts = append(artifacts, artifact)
 	}
 	return artifacts, warnings
+}
+
+// resultProviderJobID is the provider job a result reports generating its
+// files, or "".
+func resultProviderJobID(result any) string {
+	if fields, ok := result.(map[string]any); ok {
+		if id, ok := fields["provider_job_id"].(string); ok {
+			return id
+		}
+	}
+	return ""
 }
 
 // artifactPaths lists the produced-file paths a result names, in a stable

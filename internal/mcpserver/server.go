@@ -198,7 +198,9 @@ func (s *server) handler(name string, op operation) mcp.ToolHandler {
 		stopAfter := context.AfterFunc(s.base, cancel)
 		defer stopAfter()
 
-		defer s.reportProgress(ctx, req, name)()
+		milestone, stop := s.reportProgress(ctx, req, name)
+		defer stop()
+		ctx = toolbox.WithProgress(ctx, milestone)
 		defer func() {
 			if p := recover(); p != nil {
 				tool, op := name, "run"
@@ -213,20 +215,22 @@ func (s *server) handler(name string, op operation) mcp.ToolHandler {
 	}
 }
 
-// reportProgress sends a progress notification every interval while a call
-// runs, when the client asked for progress. The returned stop waits until no
-// further notification can be sent, so none follows the result.
-func (s *server) reportProgress(ctx context.Context, req *mcp.CallToolRequest, name string) (stop func()) {
+// reportProgress sends progress notifications while a call runs, when the
+// client asked for progress: one every interval, and one at once for each
+// milestone the tool reports, such as a provider job it submitted, whose id
+// later notifications repeat. The returned stop waits until no further
+// notification can be sent, so none follows the result.
+func (s *server) reportProgress(ctx context.Context, req *mcp.CallToolRequest, name string) (milestone func(toolbox.Progress), stop func()) {
 	if req == nil || req.Params == nil || req.Session == nil || s.interval <= 0 {
-		return func() {}
+		return nil, func() {}
 	}
 	token := req.Params.GetProgressToken()
 	if token == nil {
-		return func() {}
+		return nil, func() {}
 	}
 	ctx, cancel := context.WithCancel(ctx)
+	p := &progressReporter{ctx: ctx, session: req.Session, token: token, start: time.Now()}
 	done := make(chan struct{})
-	start := time.Now()
 	go func() {
 		defer close(done)
 		ticker := time.NewTicker(s.interval)
@@ -236,21 +240,66 @@ func (s *server) reportProgress(ctx context.Context, req *mcp.CallToolRequest, n
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				elapsed := time.Since(start)
-				_ = req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{
-					ProgressToken: token,
-					// Elapsed seconds: increases with every notification
-					// while the total stays unknown.
-					Progress: math.Round(elapsed.Seconds()*1000) / 1000,
-					Message:  fmt.Sprintf("%s running for %s", name, elapsed.Round(time.Second)),
-				})
+				message := fmt.Sprintf("%s running for %s", name, time.Since(p.start).Round(time.Second))
+				if job := p.providerJob(); job != "" {
+					message += "; provider job " + job
+				}
+				p.send(message)
 			}
 		}
 	}()
-	return func() {
+	return p.milestone, func() {
 		cancel()
 		<-done
 	}
+}
+
+// progressReporter sends one call's progress notifications. Progress is the
+// elapsed time in seconds, kept strictly increasing across both senders.
+type progressReporter struct {
+	ctx     context.Context
+	session *mcp.ServerSession
+	token   any
+	start   time.Time
+
+	mu   sync.Mutex
+	last float64
+	job  string
+}
+
+func (p *progressReporter) milestone(m toolbox.Progress) {
+	if m.ProviderJobID != "" {
+		p.mu.Lock()
+		p.job = m.ProviderJobID
+		p.mu.Unlock()
+	}
+	p.send(m.Message)
+}
+
+func (p *progressReporter) providerJob() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.job
+}
+
+func (p *progressReporter) send(message string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.ctx.Err() != nil {
+		return
+	}
+	progress := math.Round(time.Since(p.start).Seconds()*1000) / 1000
+	if progress <= p.last {
+		progress = p.last + 0.001
+	}
+	p.last = progress
+	_ = p.session.NotifyProgress(p.ctx, &mcp.ProgressNotificationParams{
+		ProgressToken: p.token,
+		// Elapsed seconds: increases with every notification while the
+		// total stays unknown.
+		Progress: progress,
+		Message:  message,
+	})
 }
 
 // toolResult renders an envelope as a tool result: the JSON as text, for
