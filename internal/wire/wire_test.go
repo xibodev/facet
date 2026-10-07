@@ -9,12 +9,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/xibodev/facet/internal/bundle"
+	"github.com/xibodev/facet/internal/toolbox"
 )
 
 const testVersion = "2.0.0-test"
@@ -405,6 +407,13 @@ func expectAskRules(t *testing.T, s *sandbox, scope bundle.Scope, project string
 	}
 	if !strings.Contains(string(codex), "tool_timeout_sec = 600") {
 		t.Errorf("%s sets no MCP call limit for facet:\n%s", codexFile, codex)
+	}
+	// Codex passes MCP servers only a short allowlist of variables; without
+	// env_vars a provider key the person exported never reaches facet.
+	for _, name := range toolbox.EnvVars() {
+		if !strings.Contains(string(codex), `"`+name+`"`) || !strings.Contains(string(codex), "\nenv_vars = [") {
+			t.Errorf("%s does not forward %s to facet:\n%s", codexFile, name, codex)
+		}
 	}
 	data, err := os.ReadFile(opencodeFile)
 	if err != nil {
@@ -1437,5 +1446,46 @@ func TestEarlierCodexCommandRegistrationIsKept(t *testing.T) {
 	}
 	if calls := s.calls(t); len(calls) != 0 {
 		t.Errorf("rewiring an unchanged registration ran codex: %+v", calls)
+	}
+}
+
+// Facet 2.0.0 wrote its Codex block without env_vars. Rewiring (as the
+// installers' facet wire --refresh does after an update) replaces that block
+// in place, and --remove still restores the file exactly.
+func TestCodexBlockWithoutEnvVarsIsUpdatedInPlace(t *testing.T) {
+	s := newSandbox(t)
+	config := filepath.Join(s.home, ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(config), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := []byte("model = \"o3\"\n")
+	if err := os.WriteFile(config, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustRun(t, "codex")
+	reg := loadRegistry(t, s.home)
+	rec := reg.Wirings[0].MCP
+	current, _ := os.ReadFile(config)
+	envLine := regexp.MustCompile(`\nenv_vars = \[[^\n]*\]`)
+	if !envLine.MatchString(rec.Block) {
+		t.Fatalf("the recorded block has no env_vars line:\n%s", rec.Block)
+	}
+	old := envLine.ReplaceAllString(rec.Block, "")
+	if err := os.WriteFile(config, []byte(strings.Replace(string(current), rec.Block, old, 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rec.Block = old
+	if err := reg.Save(RegistryPath(s.home)); err != nil {
+		t.Fatal(err)
+	}
+
+	mustRun(t, "codex")
+	updated, _ := os.ReadFile(config)
+	if !bytes.HasPrefix(updated, original) || strings.Count(string(updated), "[mcp_servers.facet]") != 1 || !envLine.Match(updated) {
+		t.Fatalf("the earlier block was not replaced in place:\n%s", updated)
+	}
+	mustRun(t, "--remove", "codex")
+	if restored, _ := os.ReadFile(config); !bytes.Equal(restored, original) {
+		t.Fatalf("removal did not restore the file:\n%q\nwant:\n%q", restored, original)
 	}
 }

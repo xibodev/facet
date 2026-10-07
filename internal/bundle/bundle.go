@@ -12,8 +12,10 @@
 // (facet.Assets), so a projection never depends on the working directory.
 //
 // This package is the only place that knows a target's folder conventions.
-// Registering the MCP server is wiring, not projection, and lives in
-// internal/wire.
+// Registering the MCP server in a person's own configuration is wiring, not
+// projection, and lives in internal/wire. A plugin is the exception: its
+// format carries the MCP registration, so the plugin layout (plugin.go)
+// writes one, as a static file that runs the facet command from PATH.
 package bundle
 
 import (
@@ -36,6 +38,12 @@ const (
 	CapabilityID = "xibodev.facet"
 	// MCPServerName is the name every target registers Facet's MCP server under.
 	MCPServerName = "facet"
+	// CodexToolTimeoutSec is the MCP call limit Facet sets in Codex, through
+	// facet wire and the Codex plugin. Codex stops an MCP call after the
+	// server's tool_timeout_sec, 60 seconds unless configured, which a render
+	// often needs more than. Longer work belongs on the shell route (facet
+	// tools run), where no MCP limit applies.
+	CodexToolTimeoutSec = 600
 	// CoreSkillName is the core production-contract skill.
 	CoreSkillName = "facet"
 	// PersonaName is the creative persona agent.
@@ -81,8 +89,16 @@ func (t Target) valid() bool {
 }
 
 // SupportsScope reports whether target t can be installed at scope s.
+// Compa is wired at user scope only. Plugins exist for the CLIs whose plugin
+// format carries skills and an MCP server: Claude Code, Codex and Copilot CLI.
 func SupportsScope(t Target, s Scope) bool {
-	return t != TargetCompa || s == ScopeUser
+	switch s {
+	case ScopePlugin:
+		return t == TargetClaude || t == TargetCodex || t == TargetCopilot
+	case ScopeProject:
+		return t != TargetCompa
+	}
+	return true
 }
 
 // ParseTarget validates one target name.
@@ -130,15 +146,20 @@ func ParseTargets(list ...string) ([]Target, error) {
 }
 
 // Scope selects where a target discovers assets: the user's own
-// configuration, or one project.
+// configuration, one project, or a plugin that a CLI installs from a
+// marketplace.
 type Scope string
 
 const (
 	ScopeUser    Scope = "user"
 	ScopeProject Scope = "project"
+	// ScopePlugin lays a target out as a plugin directory: the guidance
+	// plus the plugin manifest and MCP registration (see plugin.go). It is a
+	// bundle layout only; facet wire installs at user or project scope.
+	ScopePlugin Scope = "plugin"
 )
 
-// ParseScope validates a scope name.
+// ParseScope validates an install scope: user or project.
 func ParseScope(name string) (Scope, error) {
 	switch s := Scope(strings.ToLower(strings.TrimSpace(name))); s {
 	case ScopeUser, ScopeProject:
@@ -147,11 +168,28 @@ func ParseScope(name string) (Scope, error) {
 	return "", fmt.Errorf("unknown scope %q; choose user or project", name)
 }
 
+// ParseBundleScope validates a bundle layout: user, project, or plugin.
+func ParseBundleScope(name string) (Scope, error) {
+	if s := Scope(strings.ToLower(strings.TrimSpace(name))); s == ScopePlugin {
+		return s, nil
+	}
+	if s, err := ParseScope(name); err == nil {
+		return s, nil
+	}
+	return "", fmt.Errorf("unknown scope %q; choose user, project, or plugin", name)
+}
+
+func (s Scope) valid() bool { return s == ScopeUser || s == ScopeProject || s == ScopePlugin }
+
 // Asset kinds recorded in manifests and wiring records.
 const (
 	KindSkill = "skill"
 	KindPack  = "pack"
 	KindAgent = "agent"
+	// KindPlugin is a plugin manifest and KindMCP a plugin's MCP server
+	// registration; only the plugin layout has them.
+	KindPlugin = "plugin"
+	KindMCP    = "mcp"
 )
 
 // File is one target-native file. Path is slash-separated and relative to
@@ -179,8 +217,12 @@ func PackSkillName(pack string) string { return "facet-" + pack }
 
 // DefaultRoot returns a target's install root relative to the scope's base
 // directory (the home directory for user scope, the project directory for
-// project scope), ignoring environment overrides.
+// project scope), ignoring environment overrides. A plugin's files sit at the
+// plugin's own root, so plugin scope returns "".
 func DefaultRoot(t Target, s Scope) string {
+	if s == ScopePlugin {
+		return ""
+	}
 	if s == ScopeProject {
 		switch t {
 		case TargetClaude:

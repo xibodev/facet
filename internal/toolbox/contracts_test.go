@@ -164,8 +164,10 @@ func TestGuidanceExamplesThroughCLI(t *testing.T) {
 		}
 		// A ratchet, not a target: raise it only for guidance the contract
 		// needs. It went from 60 to 64 for the route rules (render long work
-		// from the shell, paid tools only through MCP, a cut-off paid call).
-		if lines := len(strings.Split(strings.TrimSpace(string(data)), "\n")); lines > 64 {
+		// from the shell, paid tools only through MCP, a cut-off paid call),
+		// and to 66 for the missing-Toolkit rule: a marketplace plugin can be
+		// installed without the Toolkit it calls.
+		if lines := len(strings.Split(strings.TrimSpace(string(data)), "\n")); lines > 66 {
 			t.Errorf("%s has %d lines; keep guidance concise", file, lines)
 		}
 		examples := inline.FindAllStringSubmatch(string(data), -1)

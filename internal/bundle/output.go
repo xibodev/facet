@@ -36,7 +36,8 @@ type Entry struct {
 }
 
 // MCPServer is the server registration the guidance expects: the facet
-// executable started with Args, registered under Name.
+// executable started with Args, registered under Name. A plugin bundle also
+// carries that registration in the CLI's own format.
 type MCPServer struct {
 	Name string   `json:"name"`
 	Args []string `json:"args"`
@@ -50,9 +51,10 @@ type Manifest struct {
 	AdapterVersion string `json:"adapter_version"`
 	Target         Target `json:"target"`
 	Scope          Scope  `json:"scope"`
-	// InstallBase is "home" for user scope and "project" for project scope.
-	// Files are laid out relative to that base, so copying the bundle
-	// directory's contents onto it installs the bundle.
+	// InstallBase is "home" for user scope, "project" for project scope and
+	// "plugin" for plugin scope. Files are laid out relative to that base, so
+	// copying the bundle directory's contents onto it installs the bundle; a
+	// plugin bundle is the plugin directory itself.
 	InstallBase string `json:"install_base"`
 	// InstallRoot is the target's root relative to InstallBase, before any
 	// environment override the CLI honours.
@@ -85,10 +87,13 @@ func Plan(opts Options) (*Manifest, []File, error) {
 	if !opts.Target.valid() {
 		return nil, nil, fmt.Errorf("unsupported target %q", opts.Target)
 	}
-	if opts.Scope != ScopeUser && opts.Scope != ScopeProject {
+	if !opts.Scope.valid() {
 		return nil, nil, fmt.Errorf("unsupported scope %q", opts.Scope)
 	}
 	if !SupportsScope(opts.Target, opts.Scope) {
+		if opts.Scope == ScopePlugin {
+			return nil, nil, fmt.Errorf("%s has no plugin layout; plugins exist for claude, codex, and copilot", opts.Target)
+		}
 		return nil, nil, fmt.Errorf("%s is installed at user scope only; its MCP servers and approval rules live in its own configuration, not in a project", opts.Target)
 	}
 	if strings.TrimSpace(opts.Version) == "" {
@@ -98,17 +103,30 @@ func Plan(opts Options) (*Manifest, []File, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	if opts.Scope == ScopePlugin {
+		extra, err := pluginFiles(opts.Target, opts.Version)
+		if err != nil {
+			return nil, nil, err
+		}
+		files = append(files, extra...)
+		sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	}
 	root := DefaultRoot(opts.Target, opts.Scope)
 	out := make([]File, len(files))
 	entries := make([]Entry, len(files))
 	for i, f := range files {
-		f.Path = root + "/" + f.Path
+		if root != "" {
+			f.Path = root + "/" + f.Path
+		}
 		out[i] = f
 		entries[i] = Entry{Path: f.Path, Bytes: int64(len(f.Content)), Digest: f.Digest(), Kind: f.Kind}
 	}
 	base := "home"
-	if opts.Scope == ScopeProject {
+	switch opts.Scope {
+	case ScopeProject:
 		base = "project"
+	case ScopePlugin:
+		base = "plugin"
 	}
 	tools := append([]string(nil), opts.Tools...)
 	sort.Strings(tools)
@@ -462,7 +480,7 @@ func Verify(dir string, want Expect) (*Manifest, error) {
 		return nil, fmt.Errorf("capability %q, want %q", m.CapabilityID, CapabilityID)
 	case !m.Target.valid():
 		return nil, fmt.Errorf("unsupported bundle target %q", m.Target)
-	case m.Scope != ScopeUser && m.Scope != ScopeProject:
+	case !m.Scope.valid():
 		return nil, fmt.Errorf("unsupported bundle scope %q", m.Scope)
 	case want.Target != "" && m.Target != want.Target:
 		return nil, fmt.Errorf("bundle target %q, want %q", m.Target, want.Target)

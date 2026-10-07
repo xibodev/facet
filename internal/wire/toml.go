@@ -5,6 +5,9 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/xibodev/facet/internal/bundle"
+	"github.com/xibodev/facet/internal/toolbox"
 )
 
 // Minimal TOML support for one job: find, add, and remove a single
@@ -42,23 +45,24 @@ func tomlString(s string) string {
 	return b.String()
 }
 
-// codexToolTimeoutSec is the MCP call limit facet wire sets for Facet in
-// Codex. Codex stops an MCP call after mcp_servers.<id>.tool_timeout_sec, 60
-// seconds unless configured, which a render often needs more than. Longer
-// work belongs on the shell route (facet tools run), where no MCP limit applies.
-const codexToolTimeoutSec = 600
-
 // tomlServerBlock renders the table that registers the MCP server: its
-// command, the call limit, and an approval_mode = "prompt" table for each
-// tool that may charge, so Codex asks before every paid call.
+// command; the environment variables Codex must forward, because it starts
+// MCP servers with only a short allowlist (PATH, the home and temporary
+// folders) and a provider key the person exported would otherwise never reach
+// the tool; the call limit (bundle.CodexToolTimeoutSec); and an approval_mode
+// = "prompt" table for each tool that may charge, so Codex asks before every
+// paid call.
 func tomlServerBlock(name, command string, args []string) string {
-	quoted := make([]string, len(args))
-	for i, a := range args {
-		quoted[i] = tomlString(a)
+	quote := func(list []string) string {
+		quoted := make([]string, len(list))
+		for i, a := range list {
+			quoted[i] = tomlString(a)
+		}
+		return strings.Join(quoted, ", ")
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "# Facet MCP server, managed by facet wire\n[mcp_servers.%s]\ncommand = %s\nargs = [%s]\ntool_timeout_sec = %d\n",
-		name, tomlString(command), strings.Join(quoted, ", "), codexToolTimeoutSec)
+	fmt.Fprintf(&b, "# Facet MCP server, managed by facet wire\n[mcp_servers.%s]\ncommand = %s\nargs = [%s]\nenv_vars = [%s]\ntool_timeout_sec = %d\n",
+		name, tomlString(command), quote(args), quote(toolbox.EnvVars()), bundle.CodexToolTimeoutSec)
 	for _, tool := range paidTools() {
 		fmt.Fprintf(&b, "\n[mcp_servers.%s.tools.%s]\napproval_mode = \"prompt\"\n", name, tool)
 	}

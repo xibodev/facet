@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/xibodev/facet/internal/bundle"
@@ -60,16 +59,7 @@ type RulesRecord struct {
 
 // paidTools lists the tools whose effects may charge, derived from the
 // toolbox's own declaration rather than a list kept here.
-func paidTools() []string {
-	var out []string
-	for _, name := range toolbox.Names() {
-		if toolbox.EffectsFor(name).MayCharge {
-			out = append(out, name)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
+func paidTools() []string { return toolbox.PaidTools() }
 
 // claudeRules are the Claude Code permission entries for the paid tools.
 func claudeRules() []string {

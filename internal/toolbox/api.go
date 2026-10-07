@@ -54,6 +54,19 @@ func EffectsFor(tool string) Effects {
 	}
 }
 
+// PaidTools returns the tools whose effects may charge, sorted. Consent
+// settings written for a CLI (facet wire's ask rules, a plugin's approval
+// modes) are derived from it rather than from a list kept elsewhere.
+func PaidTools() []string {
+	var out []string
+	for _, name := range Names() {
+		if EffectsFor(name).MayCharge {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 // Describe returns exactly what `facet tools describe <tool>` reports, as
 // decoded JSON: capability, dependencies with their resolution, configured,
 // provider, cost, effects, request_schema and result_schema. The value is a
