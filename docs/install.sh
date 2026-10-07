@@ -7,8 +7,8 @@ facet_bootstrap() (
     # Pinned to the last published installer; the pin moves only when a
     # release is published, with that installer's checksum. The expected file
     # list below is the pinned package's layout.
-    version=2.1.2
-    expected=1c74d9a676b593fbdbb497e23d837fc8ccbdd0db9131a00754427c86b8f7d906
+    version=2.2.0
+    expected=622cdd8b295805aeb122c4f50d85e53a8967ce243a1a810552b925b5620a039e
     url="https://github.com/xibodev/facet/releases/download/v$version/facet-installer-$version.zip"
     case "$(uname -s)" in Linux|Darwin) ;; *) printf '%s\n' 'Use the PowerShell command on Windows.' >&2; exit 1;; esac
     noninteractive=0

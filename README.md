@@ -30,11 +30,14 @@ it), verifies it with short test renders, adds `~/.facet/current/bin` to your
 PATH, and offers to wire your CLIs. FFmpeg is required and is installed when
 missing. Remotion and Piper are default components; HyperFrames is optional.
 
-> **Windows x64:** Microsoft Defender flagged `facet.exe` from Facet 2.1.0 and
-> 2.1.1 as `Trojan:Win32/Bearfoos.A!ml`. This is a false positive, reported to
-> Microsoft. The commands above install 2.1.2, a fresh build. If Defender
-> still blocks it, please open an issue with the detection name. Do not turn
-> off your antivirus.
+> **Windows:** the installer builds `facet.exe` on your computer from the
+> release's source with the official Go toolchain, checked against pinned
+> SHA-256 checksums, then deletes Go again. This adds a minute or two and a
+> 60-75 MB download. Facet ships no prebuilt Windows binary since 2.2.0,
+> because Microsoft Defender wrongly flagged the prebuilt `facet.exe` of 2.1.0
+> and 2.1.1 as `Trojan:Win32/Bearfoos.A!ml`. If Defender blocks `facet.exe`,
+> please open an issue with the detection name. Do not turn off your
+> antivirus. On Linux and macOS, `--from-source` builds Facet the same way.
 
 Coming from Facet 1.x, which installed into each project? See
 [Upgrading from 1.x](https://xibodev.github.io/facet/docs.html#upgrade).
