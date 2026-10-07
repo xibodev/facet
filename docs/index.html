@@ -4,12 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Facet | Video Production With Your AI Agent</title>
-  <meta name="description" content="Use Facet with OpenCode, Codex, Claude Code, or GitHub Copilot CLI for video editing, narration, animation, and rendering.">
+  <meta name="description" content="Use Facet with OpenCode, Codex, Claude Code, GitHub Copilot CLI, or Compa for video editing, narration, animation, and rendering.">
   <link rel="canonical" href="https://xibodev.github.io/facet/">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://xibodev.github.io/facet/">
   <meta property="og:title" content="Facet | Video Production With Your AI Agent">
-  <meta property="og:description" content="Use Facet with OpenCode, Codex, Claude Code, or GitHub Copilot CLI for video editing, narration, animation, and rendering.">
+  <meta property="og:description" content="Use Facet with OpenCode, Codex, Claude Code, GitHub Copilot CLI, or Compa for video editing, narration, animation, and rendering.">
   <meta property="og:image" content="https://xibodev.github.io/facet/og-default.png">
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="1200">
@@ -17,7 +17,7 @@
   <meta property="og:image:alt" content="Facet logo and video production tools for your AI coding agent.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Facet | Video Production With Your AI Agent">
-  <meta name="twitter:description" content="Use Facet with OpenCode, Codex, Claude Code, or GitHub Copilot CLI for video editing, narration, animation, and rendering.">
+  <meta name="twitter:description" content="Use Facet with OpenCode, Codex, Claude Code, GitHub Copilot CLI, or Compa for video editing, narration, animation, and rendering.">
   <meta name="twitter:image" content="https://xibodev.github.io/facet/og-default.png">
   <meta name="twitter:image:alt" content="Facet logo and video production tools for your AI coding agent.">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -106,7 +106,7 @@
         <h1>Describe the video.<br><span class="accent">Build it with Facet.</span></h1>
         <p class="lead">Facet gives your AI coding agent video tools and the guidance to use them for editing, narration, animation, captions, rendering, and review. Your agentic CLI stays in charge.</p>
         <div class="actions"><a class="button primary" href="#quickstart">Install for Your CLI</a><a class="button" href="docs.html">Read the Guide</a></div>
-        <p>OpenCode, Codex, Claude Code, and GitHub Copilot CLI.</p>
+        <p>OpenCode, Codex, Claude Code, GitHub Copilot CLI, and Compa.</p>
         <div class="prompt">
           <p class="label">Example prompt, not a recorded production result</p>
           <blockquote>"Make a short explainer about how rain forms, with simple animated diagrams and narration."</blockquote>
@@ -127,7 +127,7 @@
           </article>
           <article class="card">
             <h3>Facet Bundle</h3>
-            <p>Guidance that teaches your agent to produce video with the Toolkit: the core <code>facet</code> skill, one skill for each of seven production packs, and the <code>facet-creative</code> agent where your CLI supports agents. <code>facet wire</code> installs it into your CLI and connects the CLI to the Toolkit. Then open the CLI in a production folder and ask:</p>
+            <p>Guidance that teaches your agent to produce video with the Toolkit: the core <code>facet</code> skill, one skill for each of seven production packs, and the <code>facet-creative</code> agent where your CLI supports agents. <code>facet wire</code> installs it into your CLI and connects the CLI to the Toolkit; Claude Code, Codex, and Copilot CLI can also add it as a plugin. Then open the CLI in a production folder and ask:</p>
             <pre><code>Use Facet to make a short explainer about how rain forms.</code></pre>
             <p>Give the actual file locations when editing existing footage, and review the rendered result.</p>
           </article>
@@ -158,7 +158,7 @@
     <section id="quickstart">
       <div class="wrap">
         <h2>Recommended Installation</h2>
-        <p class="intro">Install Facet once for your user account, then wire it into the agentic CLIs you use: OpenCode, Codex, Claude Code, or GitHub Copilot CLI.</p>
+        <p class="intro">Install Facet once for your user account, then wire it into the agentic CLIs you use: OpenCode, Codex, Claude Code, GitHub Copilot CLI, or Compa.</p>
         <p>Paste the command for your platform into a terminal. It downloads and checksum-verifies the installer package, then starts setup.</p>
         <div class="grid">
           <div class="card"><h3>Windows (PowerShell)</h3><pre><code id="install-windows">irm https://xibodev.github.io/facet/install.ps1 | iex</code></pre><button type="button" class="button" data-copy="install-windows">Copy Windows command</button></div>
@@ -170,7 +170,9 @@
         <p>Wiring is your decision, like installing a skill or plugin. The installer offers it at the end of setup, or you can run <code>facet wire</code> later. It installs the Facet skills into your CLI's own folders, registers the <code>facet</code> MCP server through the CLI's own configuration, and, where the CLI has a per-tool setting, adds a rule to ask you before each tool that may charge. It never edits instruction files such as <code>AGENTS.md</code> or <code>CLAUDE.md</code>.</p>
         <pre><code>facet wire &lt;cli&gt;
 facet wire --status</code></pre>
-        <p>Use <code>opencode</code>, <code>codex</code>, <code>claude</code>, <code>copilot</code>, a comma-separated list, or <code>all</code>, then start a new session in that CLI. <a href="docs.html#wire">Wiring options</a></p>
+        <p>Use <code>opencode</code>, <code>codex</code>, <code>claude</code>, <code>copilot</code>, <code>compa</code>, a comma-separated list, or <code>all</code>, then start a new session in that CLI. <a href="docs.html#wire">Wiring options</a></p>
+        <h3>Or Add the Plugin</h3>
+        <p>Claude Code, Codex, and Copilot CLI can add Facet from its plugin marketplace once the Toolkit is installed. In Claude Code, run <code>claude plugin marketplace add xibodev/facet</code>, then <code>claude plugin install facet@facet</code>. Use the plugin or <code>facet wire</code> for a CLI, not both. <a href="docs.html#plugins">Plugin commands for each CLI</a></p>
         <h3>Upgrading from 1.x</h3>
         <p>In each project that used the 1.x installer, run the <a href="https://github.com/xibodev/facet/releases/download/v1.1.0/facet-installer-1.1.0.zip">v1.1.0 installer</a> with <code>--action uninstall</code> (<code>-Action uninstall</code> on Windows). Then install 2.0 and run <code>facet wire</code>. <code>facet doctor</code> lists 1.x files left in the current or home folder. <a href="docs.html#upgrade">Upgrade details</a></p>
         <h3>Production Runtime</h3>
@@ -181,7 +183,7 @@ facet wire --status</code></pre>
     <section id="other-agents" class="white">
       <div class="wrap">
         <h2>Using Facet with Another Agent</h2>
-        <p class="intro">Using a different agent? Facet's tools are served over MCP by <code>facet mcp</code>, and its skills are plain Markdown. Ask your agent to inspect this repository and adapt the skills and the MCP server registration to its own conventions. <code>facet wire</code> supports the four CLIs listed above; other integrations are community-adapted and may need additional setup.</p>
+        <p class="intro">Using a different agent? Facet's tools are served over MCP by <code>facet mcp</code>, and its skills are plain Markdown. Ask your agent to inspect this repository and adapt the skills and the MCP server registration to its own conventions. <code>facet wire</code> supports the five CLIs listed above; other integrations are community-adapted and may need additional setup.</p>
         <a href="https://github.com/xibodev/facet">Explore the repository</a>
       </div>
     </section>
@@ -190,7 +192,7 @@ facet wire --status</code></pre>
         <h2>What to Know Before Producing</h2>
         <ul>
           <li><strong>Generation is conditional.</strong> Provider credentials, browser sessions, quotas, and supported models can prevent a request from completing. Errors are not replaced with mock media; explicit mock mode is for testing, not delivery.</li>
-          <li><strong>Paid tools ask first, through your CLI.</strong> Eight tools may charge. <code>facet wire</code> adds a rule to ask before each of them in Claude Code, Codex, and OpenCode; Copilot CLI asks before every Facet tool that is not read-only. Facet declares effects but does not enforce consent, and unknown cost is not free. A paid call cut off midway may already be charged, so check before running it again. <a href="docs.html#paid-tools">Read about paid tools.</a></li>
+          <li><strong>Paid tools ask first, through your CLI.</strong> Eight tools may charge. <code>facet wire</code> adds a rule to ask before each of them in Claude Code, Codex, OpenCode, and Compa; Copilot CLI asks before every Facet tool that is not read-only. Facet declares effects but does not enforce consent, and unknown cost is not free. A paid call cut off midway may already be charged; Kling and Sora calls report a job id that collects the result without a second submission. <a href="docs.html#paid-tools">Read about paid tools.</a></li>
           <li><strong>gflow is optional and separately supplied.</strong> The public Facet installer does not distribute its private provider dependency. Its help and errors explain the requirements of the provider you configure. <a href="docs.html#gflow">Read about gflow.</a></li>
           <li><strong>Review is still your responsibility.</strong> Check the actual video, audio, captions, and asset rights. There is no fixed-turn, completion-time, or broadcast-quality guarantee.</li>
         </ul>
