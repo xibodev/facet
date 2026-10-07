@@ -1,6 +1,7 @@
 package toolbox
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -34,6 +35,19 @@ func TestCloudProvidersRequireCredentialsOrExplicitMock(t *testing.T) {
 			}
 			delete(r, "timeout_seconds")
 			value, _, err = fn("run", providerRequest(t, r))
+			if name == "kling" || name == "sora" {
+				// A mock video is made with FFmpeg, which this PATH lacks:
+				// the run fails rather than writing bytes that only claim
+				// to be video.
+				var failed *toolFailure
+				if err == nil || !errors.As(err, &failed) || failed.err.Code != "dependency_missing" {
+					t.Fatalf("mock video without ffmpeg: %v %v", value, err)
+				}
+				if _, err := os.Stat(out); !os.IsNotExist(err) {
+					t.Fatal("a failed mock wrote an artifact")
+				}
+				return
+			}
 			if err != nil || value.(map[string]any)["mock"] != true {
 				t.Fatalf("explicit mock failed: %v %v", value, err)
 			}

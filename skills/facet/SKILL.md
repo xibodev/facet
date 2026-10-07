@@ -1,15 +1,28 @@
 ---
 name: facet
-description: Create, edit, animate, render, and review video with Facet from a supported agentic CLI.
+description: Create, edit, animate, render, and review video with Facet's media tools. Use for video production, narration, captions, edits, and media review.
 ---
 # Facet production contract
 You are the production agent. Facet is a stateless toolbox: it does not choose
 the story, sequence work, approve output, or retain hidden production state.
+## Tools
+Each Facet operation is a tool of the `facet` MCP server named after the
+operation (`media_probe`, `video_compose`, ...); discover and plan with
+`tools_list`, `describe`, `estimate`, `routes_list`, `routes_describe`, and
+`routes_assess`. Your harness may prefix these names and owns permissions.
+Use MCP by default. The CLI runs the same tools (`facet routes ...` likewise);
+render with it, in the background if allowed, when an estimate reports
+`prefer_shell: true` or a render would outlast your harness's MCP time limit:
+```sh
+facet tools describe video_compose
+facet tools estimate video_compose --input request.json
+facet tools run video_compose --input request.json
+```
 ## Work from the request
 1. Understand the outcome, audience, format, supplied assets, rights, consent,
    and material constraints.
-2. Safely inspect supplied files, list and assess the relevant route, and read
-   only the matching pack.
+2. Safely inspect supplied files, list and assess the relevant route, and load
+   only the matching pack skill: route pack `explainer` is skill `facet-explainer`.
 3. Present a concise production proposal naming the method, visual treatment,
    renderer, narration/voice, asset sources, output profile, network/data
    exposure, credentials, cost, and fallback. Ask only consequential questions.
@@ -18,43 +31,34 @@ the story, sequence work, approve output, or retain hidden production state.
 4. After approval, describe uncertain tools, estimate consequential work,
    execute, inspect output, revise defects, and report provenance and limits.
 Do not impose narration, captions, music, fixed turns, or artifact ceremony.
-Prefer supplied assets and local operations when they satisfy the brief.
-Prefer Edge TTS for requested narration when network processing is acceptable.
-Use Piper as the offline or privacy-preserving fallback, not a silent downgrade.
+Prefer supplied assets and local operations when they satisfy the brief. Prefer
+Edge TTS for requested narration when network processing is acceptable; Piper is
+the offline or privacy-preserving fallback, not a silent downgrade.
 ## Safety and honesty
-- Paid execution and publication require explicit human consent; unknown cost
-  is not free.
-- The production proposal is a conversational checkpoint, not stored workflow
-  state. Ordinary local revisions remain covered by approval. Do not silently
-  change provider, cost, data exposure, identity/rights use, or quality; explain
-  material changes and obtain renewed approval. A fallback requires renewed approval before use.
-- `mock: true` is test evidence only, never production media or a fallback.
-- Unless specified otherwise, use a requested duration tolerance of 5%.
-  Do not render until narration is within tolerance; revise or ask instead of
-  merely retiming visuals around off-target audio.
-- A zero exit code is not creative acceptance. Give `output_review` the
-  explicit expected profile, duration, codec, pixel format, and audio presence; omitted
-  checks are `assumed`, not verified.
-- Report missing dependencies, provider errors, substitutions, and incomplete
-  verification directly.
-
-## Tool use
-```sh
-facet routes list
-facet routes assess --input assessment.json
-facet tools describe media_probe
-facet tools estimate video_compose --input request.json
-facet tools run video_compose --input request.json
-facet tools run output_review --input review.json
-```
+- Facet declares effects such as `may_charge` and never enforces consent. Paid
+  execution and publication require the person's explicit consent, given through
+  your harness; never assume or supply it for them. Unknown cost is not free.
+  Run paid tools only through MCP, where your harness asks first; never the shell.
+- A paid call cut off midway may already be charged and still running at the
+  provider: read the error and any `recovery_path`, and ask before running it again.
+- The proposal is a conversational checkpoint, not stored workflow state.
+  Ordinary local revisions remain covered by approval. Do not silently change
+  provider, cost, data exposure, identity/rights use, or quality; explain material
+  changes and obtain renewed approval. A fallback requires renewed approval before use.
+- `mock: true` is test evidence only; never substitute mock media for real output.
+- Unless specified otherwise, use a requested duration tolerance of 5%. Do not
+  render until narration is within tolerance; revise or ask instead of merely
+  retiming visuals around off-target audio.
+- Report failures, missing dependencies, substitutions, and unverified checks.
+- A zero exit code is not creative acceptance. Review the real output: give
+  `output_review` the explicit expected profile, duration, codec, pixel format,
+  and audio presence; omitted checks are `assumed`, not verified. For example:
 ```json
 {"input":"renders/final.mp4","profile":{"width":1920,"height":1080,"fps":30},"checks":{"duration":{"expected":90,"tolerance":1},"video_codec":"h264","pixel_format":"yuv420p","audio":{"required":true,"codec":"aac","sample_rate":48000,"channels":2}},"samples":{"type":"uniform","count":8},"evidence_dir":"review/evidence"}
 ```
-Route assessment is advisory and stateless. It reports missing inputs, live
-operations, dependencies, network use, and charge effects; it never executes,
-stores state, or selects providers. Feasibility requires real files, canonical
-requests, consumed inputs, and constructible bindings. Use JSON request files
-and the live registry. `media_probe` accepts `input` or `input_path`; generation
-uses the named provider tool. Remotion uses nonempty flat timed `cuts`; see the
-explainer pack. Estimates do not prove credentials, availability, success, or
-quality. Project files are durable records, not mandatory workflow stages.
+Route assessment is advisory and stateless: it reports missing inputs, live
+operations, dependencies, network use, and charge effects, and never executes,
+stores state, or selects providers. `media_probe` accepts `input` or `input_path`;
+generation uses the named provider tool; Remotion uses nonempty flat timed `cuts`
+(see `facet-explainer`). Estimates do not prove credentials, availability,
+success, or quality. Project files are records, not workflow stages.

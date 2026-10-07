@@ -123,7 +123,7 @@ func doOpenAIImageContext(parent context.Context, op string, data []byte) (any, 
 	}
 	outPath := r.OutputPath
 	if outPath == "" {
-		outPath = "openai_image.png"
+		outPath = defaultOutput(parent, "openai_image.png")
 	}
 	if err := outputPath(outPath, true, false); err != nil {
 		return nil, nil, err
@@ -287,7 +287,7 @@ func doFluxImageContext(parent context.Context, op string, data []byte) (any, []
 	}
 	outPath := r.OutputPath
 	if outPath == "" {
-		outPath = "flux_image.png"
+		outPath = defaultOutput(parent, "flux_image.png")
 	}
 	if err := outputPath(outPath, true, false); err != nil {
 		return nil, nil, err

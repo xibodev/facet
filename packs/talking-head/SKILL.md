@@ -1,5 +1,5 @@
 ---
-name: talking-head
+name: facet-talking-head
 description: Produce presenter-led edits and consented avatar videos with Facet.
 ---
 

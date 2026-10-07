@@ -1,5 +1,11 @@
 # Website bootstrap for: irm https://xibodev.github.io/facet/install.ps1 | iex
-# The release's install.ps1 owns host selection and all installation policy.
+# The release's install.ps1 owns every installation decision; this only
+# downloads the pinned installer package, verifies it, and starts it.
+# The pinned version and SHA-256 below are the latest published installer.
+# They change only when a release is published (they move to 2.0.0 with the
+# 2.0 release), never for local changes. The allowed file list below is the
+# pinned package's layout and moves with the pin: 2.0 installer packages have
+# no installer/README.md.
 & {
     $ErrorActionPreference = 'Stop'
     Set-StrictMode -Off
@@ -11,6 +17,7 @@
     $ProgressPreference = 'SilentlyContinue'
     if ($env:OS -ne 'Windows_NT') { throw 'Use the curl command on Linux/macOS.' }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
+    try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
     $version = '1.1.0'
     $expected = 'b1fdb5990a56d564a8f5ca5a2e7b694746e684f638c2768db6d0a130e5de33e9'
     $url = "https://github.com/xibodev/facet/releases/download/v$version/facet-installer-$version.zip"
@@ -34,25 +41,37 @@
         } finally { $zip.Dispose() }
         $package = Join-Path $temp 'package'
         Expand-Archive -LiteralPath $archive -DestinationPath $package
-        # Invoke in this host so Read-Host remains interactive under irm | iex.
+        $installer = Join-Path $package 'install.ps1'
+        # irm | iex runs this text without a script-file policy check, but the
+        # verified install.ps1 is a file: allow it for this process only.
+        try { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force -ErrorAction Stop }
+        catch { Write-Warning "The execution policy for this session could not be relaxed: $($_.Exception.Message)" }
+        # Environment settings become parameters, offered only when the
+        # downloaded installer declares them (a pinned older package keeps
+        # working while the bootstrap knows newer options).
+        $tokens = $null; $errors = $null
+        $ast = [Management.Automation.Language.Parser]::ParseFile($installer, [ref]$tokens, [ref]$errors)
+        $declared = @()
+        if ($ast.ParamBlock) { $declared = @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath }) }
         $options = @{}
-        foreach ($pair in @(@('FACET_TARGET','Target'),@('FACET_PROJECT','ProjectDir'),@('FACET_INSTALL_DIR','InstallDir'),@('FACET_COMPONENTS','Components'))) {
+        foreach ($pair in @(@('FACET_ACTION','Action'),@('FACET_VERSION','Version'),@('FACET_COMPONENTS','Components'),@('FACET_WIRE','Wire'),@('FACET_SCOPE','Scope'),@('FACET_PROJECT','ProjectDir'),@('FACET_TARGET','Target'),@('FACET_INSTALL_DIR','InstallDir'))) {
             $value = [Environment]::GetEnvironmentVariable($pair[0])
-            if ($value) { $options[$pair[1]]=$value }
+            if ($value -and $pair[1] -in $declared) { $options[$pair[1]] = $value }
         }
-        if ($env:FACET_YES -eq '1') { $options.NonInteractive=$true }
-        if ($env:FACET_ACTION -and ([IO.File]::ReadAllText((Join-Path $package 'install.ps1')) -match '\[string\]\$Action')) { $options.Action=$env:FACET_ACTION }
-        if ($PSVersionTable.PSVersion.Major -lt 7) {
+        foreach ($pair in @(@('FACET_YES','NonInteractive'),@('FACET_NO_PATH','NoPath'),@('FACET_SKIP_VERIFY','SkipVerify'),@('FACET_PURGE','Purge'),@('FACET_PLAIN','Plain'))) {
+            if ([Environment]::GetEnvironmentVariable($pair[0]) -eq '1' -and $pair[1] -in $declared) { $options[$pair[1]] = $true }
+        }
+        if ($PSVersionTable.PSVersion.Major -lt 7 -and [IO.File]::ReadAllText($installer) -match '(?m)^#requires -Version 7') {
             # Older published packages can require pwsh. Prefer an existing
             # compatible host; do not silently install another shell.
-            $requires = [IO.File]::ReadAllText((Join-Path $package 'install.ps1')) -match '(?m)^#requires -Version 7'
-            if ($requires) {
-                $pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
-                if (-not $pwsh) { throw 'This published package requires PowerShell 7. The next installer release supports Windows PowerShell directly; meanwhile run in pwsh or use the manual package.' }
-                & $pwsh.Source -NoProfile -File (Join-Path $package 'install.ps1') @options
-                if ($LASTEXITCODE -ne 0) { throw "Installer exited with $LASTEXITCODE" }
-            } else { & (Join-Path $package 'install.ps1') @options }
-        } else { & (Join-Path $package 'install.ps1') @options }
+            $pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
+            if (-not $pwsh) { throw 'This published package requires PowerShell 7. Run this command in pwsh, or use the manual package.' }
+            & $pwsh.Source -NoProfile -ExecutionPolicy Bypass -File $installer @options
+            if ($LASTEXITCODE -ne 0) { throw "Installer exited with $LASTEXITCODE" }
+        } else {
+            # Invoke in this host so prompts stay interactive under irm | iex.
+            & $installer @options
+        }
     } finally {
         Remove-Item -LiteralPath $temp -Recurse -Force
     }

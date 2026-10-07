@@ -9,6 +9,12 @@ import (
 	"strings"
 )
 
+// stitchRequest is exactly what video_stitch's request schema advertises, in
+// the registry and in schemas/tools/video_stitch.schema.json alike.
+//
+// There is no dry_run: it was accepted and never read, so a request asking
+// for "what would be done without executing" executed and wrote files.
+// `facet tools estimate` is the side-effect-free path.
 type stitchRequest struct {
 	Operation          string   `json:"operation"`
 	Clips              []string `json:"clips,omitempty"`
@@ -25,7 +31,6 @@ type stitchRequest struct {
 	PipPosition        string   `json:"pip_position,omitempty"`
 	PipScale           float64  `json:"pip_scale,omitempty"`
 	PipMargin          int      `json:"pip_margin,omitempty"`
-	DryRun             bool     `json:"dry_run,omitempty"`
 	TimeoutSeconds     int      `json:"timeout_seconds,omitempty"`
 }
 
@@ -118,7 +123,7 @@ func doVideoStitchContext(ctx context.Context, op string, data []byte) (any, []s
 	case "stitch", "preview_stitch":
 		outPath := r.OutputPath
 		if outPath == "" {
-			outPath = "stitched_output.mp4"
+			outPath = defaultOutput(ctx, "stitched_output.mp4")
 		}
 		if err := outputPath(outPath, true, false); err != nil {
 			return nil, nil, err
@@ -267,7 +272,7 @@ func doVideoStitchContext(ctx context.Context, op string, data []byte) (any, []s
 		}
 		outPath := r.OutputPath
 		if outPath == "" {
-			outPath = "spatial_output.mp4"
+			outPath = defaultOutput(ctx, "spatial_output.mp4")
 		}
 		if err := outputPath(outPath, true, false); err != nil {
 			return nil, nil, err

@@ -4,6 +4,10 @@
 # mistaken for prompt input. Interactive input is explicitly taken from the TTY.
 facet_bootstrap() (
     set -eu
+    # Pinned to the last published installer; the pin moves only when the next
+    # release (2.0.0) is published with its installer checksum. The expected
+    # file list below is the pinned package's layout and moves with the pin:
+    # 2.0 installer packages have no installer/README.md.
     version=1.1.0
     expected=b1fdb5990a56d564a8f5ca5a2e7b694746e684f638c2768db6d0a130e5de33e9
     url="https://github.com/xibodev/facet/releases/download/v$version/facet-installer-$version.zip"
@@ -13,7 +17,7 @@ facet_bootstrap() (
     [ "${FACET_YES:-0}" != 1 ] || noninteractive=1
     if [ "$noninteractive" = 0 ]; then
         if ! ( : </dev/tty ) 2>/dev/null; then
-            printf '%s\n' 'Interactive setup needs a terminal. For automation, download the script and pass --yes --target <cli> --project <dir>.' >&2
+            printf '%s\n' 'Interactive setup needs a terminal. For automation, pass --yes (with --components and --wire as needed), or set FACET_YES=1.' >&2
             exit 1
         fi
         exec 3</dev/tty
@@ -47,13 +51,8 @@ facet_bootstrap() (
     cmp -s "$temp/expected" "$temp/actual" || { printf '%s\n' 'Unexpected installer package layout.' >&2; exit 1; }
     mkdir "$temp/package"
     unzip -q "$temp/installer.zip" -d "$temp/package"
-    # Environment options work even when the entry script arrives through a pipe.
-    [ -z "${FACET_TARGET:-}" ] || set -- "$@" --target "$FACET_TARGET"
-    [ -z "${FACET_PROJECT:-}" ] || set -- "$@" --project "$FACET_PROJECT"
-    [ -z "${FACET_INSTALL_DIR:-}" ] || set -- "$@" --install-dir "$FACET_INSTALL_DIR"
-    [ -z "${FACET_COMPONENTS:-}" ] || set -- "$@" --components "$FACET_COMPONENTS"
-    if [ -n "${FACET_ACTION:-}" ] && grep -q -- '--action)' "$temp/package/install.sh"; then set -- "$@" --action "$FACET_ACTION"; fi
-    [ "${FACET_YES:-0}" != 1 ] || set -- "$@" --yes
+    # install.sh reads FACET_* variables itself, so options set in the
+    # environment reach it even when this bootstrap arrives through a pipe.
     if [ "$noninteractive" = 1 ]; then
         bash "$temp/package/install.sh" "$@" </dev/null
     else

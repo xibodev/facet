@@ -8,12 +8,12 @@ import (
 // Chargeability is ONE fact, declared at the Operation layer.
 //
 // It lived in two places: executionFor's nil-cost set here, and paidTools in
-// internal/module. Both enumerated the same eight tools by hand, in two
-// layers, and the module layer is a Projection — it must not hold a second
-// opinion about a property of the Operation.
+// a retired module layer. Both enumerated the same eight tools by hand, in two
+// layers, and any projection of the Operation must not hold a second opinion
+// about a property of the Operation.
 //
-// Operator ruling 4 and compa's R1 both require chargeability as a
-// per-Operation semantic effect independent of cost knowledge.
+// Chargeability is a per-Operation semantic effect, independent of cost
+// knowledge: harness approval rules (facet wire) are derived from it.
 func TestChargeabilityHasOneSource(t *testing.T) {
 	// Anchored to NAMED providers, not to the set itself. A test that iterates
 	// the same list it validates cannot notice the list shrinking — verified:

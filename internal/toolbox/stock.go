@@ -194,7 +194,7 @@ func doPexelsVideoContext(ctx context.Context, op string, data []byte) (any, []s
 
 	outPath := r.OutputPath
 	if outPath == "" {
-		outPath = fmt.Sprintf("pexels_video_%d.mp4", chosenVideo.ID)
+		outPath = defaultOutput(ctx, fmt.Sprintf("pexels_video_%d.mp4", chosenVideo.ID))
 	}
 	if err := downloadFileContext(ctx, chosenFile.Link, outPath, 120*time.Second); err != nil {
 		return nil, nil, failure("command_failed", "unable to download video from Pexels: "+err.Error(), nil)
@@ -328,7 +328,7 @@ func doPixabayVideoContext(ctx context.Context, op string, data []byte) (any, []
 
 	outPath := r.OutputPath
 	if outPath == "" {
-		outPath = fmt.Sprintf("pixabay_video_%d.mp4", chosenHit.ID)
+		outPath = defaultOutput(ctx, fmt.Sprintf("pixabay_video_%d.mp4", chosenHit.ID))
 	}
 	if err := downloadFileContext(ctx, vInfo.URL, outPath, 120*time.Second); err != nil {
 		return nil, nil, failure("command_failed", "unable to download video from Pixabay: "+err.Error(), nil)
@@ -476,7 +476,7 @@ func doWikimediaContext(ctx context.Context, op string, data []byte) (any, []str
 		if ext == "" {
 			ext = ".mp4"
 		}
-		outPath = fmt.Sprintf("wikimedia_%s%s", chosen.SourceID, ext)
+		outPath = defaultOutput(ctx, fmt.Sprintf("wikimedia_%s%s", chosen.SourceID, ext))
 	}
 	if err := downloadFileContext(ctx, chosen.DownloadURL, outPath, 120*time.Second); err != nil {
 		return nil, nil, failure("command_failed", "unable to download from Wikimedia: "+err.Error(), nil)

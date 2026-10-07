@@ -1,5 +1,5 @@
 services:
-  studio:
+  facet:
     build:
       context: .
       dockerfile: .release-harness/docker/Dockerfile
@@ -8,16 +8,8 @@ services:
     init: true
     shm_size: 1gb
     environment:
-      UAT_REAL_AGENT: "${UAT_REAL_AGENT:-0}"
-      UAT_TURN_TIMEOUT_MS: "${UAT_TURN_TIMEOUT_MS:-240000}"
-      OPENCODE_CONFIG: /run/uat/opencode.json
       OPENCODE_DISABLE_AUTOUPDATE: "true"
       OPENCODE_DISABLE_MODELS_FETCH: "true"
-    volumes:
-      - type: bind
-        source: ${UAT_OPENCODE_CONFIG_FILE:-./.release-harness/docker/unconfigured.json}
-        target: /run/uat/opencode.json
-        read_only: true
     labels:
       com.xibodev.release-harness: "true"
       com.xibodev.release-harness.run-id: "${RUN_ID:?Set RUN_ID explicitly}"
@@ -33,19 +25,21 @@ services:
     user: node
     read_only: true
     depends_on:
-      studio:
+      facet:
         condition: service_healthy
     ports:
       - "127.0.0.1:${UAT_PORT:-31000}:8788"
     command:
       - node
       - -e
-      - "const net=require('node:net');net.createServer(c=>{const u=net.connect(8788,'studio');c.pipe(u).pipe(c);c.on('error',()=>u.destroy());u.on('error',()=>c.destroy());c.on('close',()=>u.destroy())}).listen(8788,'0.0.0.0')"
+      - "const net=require('node:net');net.createServer(c=>{const u=net.connect(8788,'facet');c.pipe(u).pipe(c);c.on('error',()=>u.destroy());u.on('error',()=>c.destroy());c.on('close',()=>u.destroy())}).listen(8788,'0.0.0.0')"
     labels:
       com.xibodev.release-harness: "true"
       com.xibodev.release-harness.run-id: "${RUN_ID:?Set RUN_ID explicitly}"
     networks: [uat, ingress]
+# The journey needs no egress: the image build installed everything. Only the
+# gateway joins the ingress network that publishes the test console to the host.
 networks:
   uat:
-    internal: ${UAT_NETWORK_INTERNAL:-true}
+    internal: true
   ingress: {}

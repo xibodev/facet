@@ -40,6 +40,9 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             remotion-composer/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Install FFmpeg (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -58,7 +61,7 @@ jobs:
         run: ffmpeg -version
       - name: Verify FFprobe
         run: ffprobe -version
-      - name: Install root dependencies
+      - name: Install root dependencies (lockfile must match package.json)
         run: npm ci --no-audit --no-fund
       - name: Install composer dependencies
         working-directory: remotion-composer
@@ -67,54 +70,29 @@ jobs:
         run: go test -short ./... -count=1 -timeout=6m
       - name: Go vet
         run: go vet ./...
-      - name: Launcher and UAT fixture tests (no model calls)
+      - name: Launcher and UAT unit tests (no Docker, no model calls)
         run: node --test "bin/*.test.js" "scripts/*.test.mjs"
-      - name: Composer metadata and layout tests
+      - name: Composer typecheck and build
         working-directory: remotion-composer
-        run: node --test "src/*.test.mjs"
-      - name: Composer typecheck
+        run: node node_modules/typescript/bin/tsc
+      - name: Composer tests (source allowlist, contract, render)
         working-directory: remotion-composer
-        run: node node_modules/typescript/bin/tsc --noEmit
-      - name: Windows installer parser and preflight
-        shell: pwsh
-        run: |
-          ./scripts/test-install.ps1
-          ./scripts/test-release-installer.ps1
-      - name: npm content and native source version checks (not binary distribution)
-        run: node scripts/release-package-smoke.mjs
-      - name: Windows isolated source installation
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: ./scripts/test-install-windows.ps1
-      - name: Linux isolated source installation
+        run: node --test "tests/*.test.mjs"
+      - name: Third-party notices generator tests (current platform)
+        run: python -m unittest discover -s scripts -p test_generate_notices.py -v
+      - name: Third-party notices for every release target
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          export GOCACHE="$(go env GOCACHE)"
-          export GOMODCACHE="$(go env GOMODCACHE)"
-          export HOME="$(mktemp -d "$RUNNER_TEMP/facet-install-XXXXXX")"
-          mkdir -p "$HOME/.config/facet" "$HOME/work"
-          printf 'defaults:\n  voice: keep-custom-voice\n' > "$HOME/.config/facet/config.yaml"
-          cp "$HOME/.config/facet/config.yaml" "$HOME/config-before.yaml"
-          cd "$HOME/work"
-          bash "$GITHUB_WORKSPACE/scripts/install-source.sh"
-          cmp "$HOME/config-before.yaml" "$HOME/.config/facet/config.yaml"
-          "$HOME/.facet/bin/facet" init --help
-          test -z "$(ls -A)"
-          "$HOME/.facet/bin/facet" init project --engine opencode --pack explainer --no-launch
-          test -f project/.opencode/skills/facet/SKILL.md
-          test -f project/.opencode/skills/explainer/SKILL.md
-          grep -q keep-custom-voice project/.facet.yaml
-          grep -q bundle/remotion-composer project/.facet.yaml
-          "$HOME/.facet/bin/facet" doctor
-          "$HOME/.facet/bin/facet-ui" --version
-          node -e 'const p=process.argv[1]; for (const m of ["remotion","@remotion/cli","@remotion/renderer"]) console.log(require.resolve(m,{paths:[p]})); require(require.resolve("esbuild",{paths:[p]})).transformSync("const n: number = 1",{loader:"ts"});' "$HOME/.facet/bundle/remotion-composer"
-      - name: Install fixture browser (Linux)
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            python scripts/generate-notices.py --goos "${target%/*}" --goarch "${target#*/}" \
+              --out "$RUNNER_TEMP/notices/facet-${target%/*}-${target#*/}.md"
+          done
+      - name: Installer syntax (bash)
         if: runner.os == 'Linux'
-        run: npx --no-install playwright install --with-deps chromium
-      - name: Native standalone browser regression (fixture model, real tools)
-        if: runner.os == 'Linux'
-        run: |
-          mkdir -p "$RUNNER_TEMP/opencode"
-          go build -o "$RUNNER_TEMP/facet" ./cmd/facet
-          node scripts/native-browser-check.cjs "$RUNNER_TEMP/facet"
+        run: bash -n install.sh
+      - name: Windows installer parser and preflight
+        shell: pwsh
+        run: ./scripts/test-release-installer.ps1
+      - name: npm content and version checks (not binary distribution)
+        run: node scripts/release-package-smoke.mjs

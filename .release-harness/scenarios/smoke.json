@@ -1,7 +1,8 @@
 {
   "id": "SMOKE-001",
-  "name": "Facet availability",
-  "origin_id": "web-app",
+  "name": "Installed facet runtime reports its release identity",
+  "description": "The test-only UAT console runs the installed ~/.facet/current/bin/facet and shows the version it reports. Facet itself serves no HTTP surface.",
+  "origin_id": "uat-console",
   "tier": "smoke",
   "policy": "required",
   "steps": [
@@ -11,7 +12,7 @@
     },
     {
       "action": "assert",
-      "target": "nav[aria-label='Projects']"
+      "target": "[data-uat='installed-version']"
     },
     {
       "action": "screenshot"

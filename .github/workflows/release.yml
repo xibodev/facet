@@ -10,6 +10,7 @@ on:
       - 'install.sh'
       - 'installer/**'
       - 'scripts/package-release.py'
+      - 'scripts/generate-notices.py'
       - 'scripts/test-prebuilt-install.py'
   workflow_dispatch:
 
@@ -20,6 +21,7 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+# Facet 2.0 ships one native executable, `facet`, plus its guidance bundle.
 jobs:
   bootstrap:
     uses: ./.github/workflows/bootstrap.yml
@@ -53,8 +55,29 @@ jobs:
       - name: Terminal menu interaction
         if: runner.os != 'Windows'
         run: python3 scripts/test-installer-menu.py
-      - name: Package native binaries and content
+      - name: Package the facet binary, guidance bundle and notices
         run: python scripts/package-release.py --os ${{ matrix.os }} --arch ${{ matrix.arch }} --out build/release
+      - name: Archive ships only the facet binary and generated notices
+        shell: bash
+        env:
+          TARGET_OS: ${{ matrix.os }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          python - <<'EOF'
+          import json, os, pathlib, zipfile
+          version = json.load(open("package.json"))["version"]
+          goos, goarch = os.environ["TARGET_OS"], os.environ["TARGET_ARCH"]
+          archive = pathlib.Path("build/release") / f"facet-{version}-{goos}-{goarch}.zip"
+          with zipfile.ZipFile(archive) as z:
+              names = [n for n in z.namelist() if not n.endswith("/")]
+              binaries = sorted(n for n in names if n.startswith("bin/"))
+              expected = ["bin/facet.exe" if goos == "windows" else "bin/facet"]
+              assert binaries == expected, f"{archive.name} ships {binaries}, want {expected}"
+              heading = f"## Go modules linked into the `facet` binary ({goos}/{goarch})"
+              notices = [n for n in names if "/" not in n and n.lower().endswith(".md") and heading in z.read(n).decode("utf-8")]
+              assert notices, f"{archive.name} has no generated third-party notices for {goos}/{goarch}"
+          print(f"PASS {archive.name}: {binaries[0]}, notices {notices[0]}")
+          EOF
       - name: Validate native package and project integration
         run: python scripts/test-prebuilt-install.py --os ${{ matrix.os }} --arch ${{ matrix.arch }} --release-dir build/release
       - name: Install FFmpeg for package integration test (Linux)
@@ -66,10 +89,51 @@ jobs:
       - name: Install FFmpeg (Windows x64)
         if: matrix.os == 'windows' && matrix.arch == 'amd64'
         run: choco install ffmpeg --yes --no-progress
-      - name: Exercise four project integrations and media check
-        if: matrix.os != 'windows' || matrix.arch == 'amd64'
+      - name: Smoke install from the archive (no optional components, PATH untouched)
+        if: matrix.os != 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(python3 -c 'import json; print(json.load(open("package.json"))["version"])')
+          release="$GITHUB_WORKSPACE/build/release"
+          export HOME="$(mktemp -d "$RUNNER_TEMP/facet-home-XXXXXX")"
+          bash install.sh --yes --components none --no-path \
+            --archive "$release/facet-$version-${{ matrix.os }}-${{ matrix.arch }}.zip" \
+            --checksums "$release/checksums-${{ matrix.os }}-${{ matrix.arch }}.txt"
+          facet="$HOME/.facet/current/bin/facet"
+          test "$("$facet" version)" = "facet v$version"
+          "$facet" doctor
+          for profile in .profile .bashrc .bash_profile .zshrc .zprofile .config/fish/config.fish; do
+            if [ -e "$HOME/$profile" ]; then echo "--no-path wrote $profile" >&2; exit 1; fi
+          done
+      - name: Smoke install from the archive (Windows, no optional components, PATH untouched)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        env:
+          # The Windows arm64 runner has no FFmpeg package to install, so its
+          # install skips media verification; everything else is the same.
+          SKIP_VERIFY: ${{ matrix.arch == 'arm64' && '1' || '' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content -Raw package.json | ConvertFrom-Json).version
+          $release = Join-Path $env:GITHUB_WORKSPACE 'build/release'
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          $arch = '${{ matrix.arch }}'
+          $skip = @{}
+          if ($env:SKIP_VERIFY -eq '1') { $skip['SkipVerify'] = $true }
+          ./install.ps1 -NonInteractive -Components none -NoPath @skip `
+            -ArchivePath (Join-Path $release "facet-$version-windows-$arch.zip") `
+            -ChecksumPath (Join-Path $release "checksums-windows-$arch.txt")
+          $facet = Join-Path $HOME '.facet/current/bin/facet.exe'
+          $reported = & $facet version
+          if ($LASTEXITCODE -ne 0 -or $reported -ne "facet v$version") { throw "Unexpected version: $reported" }
+          & $facet doctor
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ([Environment]::GetEnvironmentVariable('Path', 'User') -ne $userPath) { throw '-NoPath changed the user PATH' }
+      - name: Exercise CLI integrations and media check
         env:
           FACET_INSTALL_SMOKE: '1'
+          FACET_INSTALL_SKIP_MEDIA: ${{ matrix.os == 'windows' && matrix.arch == 'arm64' && '1' || '' }}
         run: python scripts/test-prebuilt-install.py --os ${{ matrix.os }} --arch ${{ matrix.arch }} --release-dir build/release
       - name: Windows PowerShell 5.1 lifecycle acceptance
         if: matrix.os == 'windows' && matrix.arch == 'amd64'

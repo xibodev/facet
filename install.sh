@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
-# Installer policy lives here, never in the Facet application.
+# Facet installer for Linux and macOS.
+#
+# Installs one Facet runtime per user under ~/.facet/runtimes/<version>-<os>-<arch>,
+# verifies it, activates it through the ~/.facet/current symbolic link and adds
+# ~/.facet/current/bin to the user PATH. FACET_HOME, when set, replaces ~/.facet.
+# Wiring Facet into agentic CLIs is a separate, explicit step (`facet wire`),
+# offered at the end; wirings already recorded are refreshed to the active
+# runtime after every install, update and rollback. Nothing here edits project
+# files or CLI instruction files.
 set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 MANIFEST="$SCRIPT_DIR/installer/manifest.tsv"
@@ -8,50 +16,116 @@ definition() {
     awk -F '\t' -v id="$1" -v col="$2" '$2==id {sub(/\r$/, "", $NF); print $col; n++} END {if(n!=1)exit 1}' "$MANIFEST"
 }
 [[ -f "$MANIFEST" ]] || die 'Run install.sh from the complete installer package.'
-[[ $(definition layout 3) == 1 ]] || die 'Unsupported installer manifest schema.'
-VERSION=${FACET_VERSION:-$(definition facet 3)}; TARGET=${FACET_TARGET:-}; PROJECT=${FACET_PROJECT:-}; INSTALL=${FACET_INSTALL_DIR:-}; COMPONENTS=${FACET_COMPONENTS:-}
-PACKS=${FACET_PACKS:-}; PACKS_EXPLICIT=0; [[ -z "$PACKS" ]] || PACKS_EXPLICIT=1
-ACTION=${FACET_ACTION:-add}; ACTION_EXPLICIT=${FACET_ACTION:-}; DETAIL=0; MIGRATE_LEGACY=0; PLAIN=${FACET_PLAIN:-0}
-ARCHIVE=''; SUMS=''; YES=${FACET_YES:-0}; SKIP_VERIFY=0
+[[ $(definition layout 3) == 2 ]] || die 'Unsupported installer manifest schema.'
+
+usage() {
+    cat <<'EOF'
+Usage: bash install.sh [options]
+
+  --action install|update|rollback|uninstall   Default: install
+  --version VERSION                            Release to install or roll back to
+  --components remotion,piper,hyperframes|all|none   Default: remotion,piper
+  --wire claude,codex,copilot,opencode|all|none      Wire CLIs after installing
+  --scope user|project                         Wiring scope (default: user)
+  --project DIR                                Project to wire (implies --scope project)
+  --archive ZIP --checksums FILE               Install from local release files
+  --yes                                        Noninteractive
+  --no-path                                    Do not add ~/.facet/current/bin to PATH
+  --skip-verify                                Skip media verification (reported as unverified)
+  --purge                                      With uninstall: also delete installed runtimes
+  --plain                                      Plain prompts
+  --verbose                                    Show subprocess output
+EOF
+}
+
+VERSION=${FACET_VERSION:-}; ACTION=${FACET_ACTION:-}; COMPONENTS=${FACET_COMPONENTS:-}
+WIRE=${FACET_WIRE:-}; SCOPE=${FACET_SCOPE:-}; PROJECT=${FACET_PROJECT:-}
+ARCHIVE=''; SUMS=''
+YES=${FACET_YES:-0}; NO_PATH=${FACET_NO_PATH:-0}; SKIP_VERIFY=${FACET_SKIP_VERIFY:-0}
+PURGE=${FACET_PURGE:-0}; PLAIN=${FACET_PLAIN:-0}; DETAIL=${FACET_VERBOSE:-0}
 while (($#)); do
     case "$1" in
-        --version|--target|--project|--install-dir|--components|--archive|--checksums|--action|--pack|--production-method)
+        --action|--version|--components|--wire|--scope|--project|--archive|--checksums)
             (($# >= 2)) || die "Missing value for $1"
             case "$1" in
-                --version) VERSION=$2;; --target) TARGET=$2;; --project) PROJECT=$2;;
-                --install-dir) INSTALL=$2;; --components) COMPONENTS=$2;; --archive) ARCHIVE=$2;; --checksums) SUMS=$2;;
-                --action) ACTION=$2; ACTION_EXPLICIT=1;;
-                --pack|--production-method) PACKS="${PACKS:+$PACKS,}$2"; PACKS_EXPLICIT=1;;
+                --action) ACTION=$2;; --version) VERSION=$2;; --components) COMPONENTS=$2;;
+                --wire) WIRE=$2;; --scope) SCOPE=$2;; --project) PROJECT=$2;;
+                --archive) ARCHIVE=$2;; --checksums) SUMS=$2;;
             esac; shift 2;;
-        --yes) YES=1; shift;; --skip-verify) SKIP_VERIFY=1; shift;;
-        --verbose) DETAIL=1; shift;;
+        --yes) YES=1; shift;;
+        --no-path) NO_PATH=1; shift;;
+        --skip-verify) SKIP_VERIFY=1; shift;;
+        --purge) PURGE=1; shift;;
         --plain) PLAIN=1; shift;;
-        --migrate-legacy) MIGRATE_LEGACY=1; shift;;
-        --help|-h) printf '%s\n' 'Usage: bash install.sh [--target opencode|codex|claude|copilot|app] [--project DIR] [--pack NAME ...] [--production-method NAME ...] [--install-dir DIR] [--version VERSION] [--components remotion,piper,hyperframes|none] [--action add|repair|update|uninstall] [--archive ZIP --checksums FILE] [--yes] [--skip-verify] [--verbose]'; exit 0;;
-        *) die "Unknown option: $1";;
+        --verbose) DETAIL=1; shift;;
+        --help|-h) usage; exit 0;;
+        *) die "Unknown option: $1 (see --help)";;
     esac
 done
+VERSION_EXPLICIT=0; [[ -z "$VERSION" ]] || VERSION_EXPLICIT=1
+VERSION=${VERSION:-$(definition facet 3)}
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]] || die 'Invalid release version.'
+ACTION_EXPLICIT=0; [[ -z "$ACTION" ]] || ACTION_EXPLICIT=1
+ACTION=${ACTION:-install}
+case "$ACTION" in install|update|rollback|uninstall) ;; *) die 'Choose --action install, update, rollback or uninstall.';; esac
 [[ -z "$ARCHIVE" && -z "$SUMS" || -n "$ARCHIVE" && -n "$SUMS" ]] || die 'Supply both --archive and --checksums.'
+[[ -z "$PROJECT" ]] || SCOPE=project
+SCOPE=${SCOPE:-user}
+case "$SCOPE" in user|project) ;; *) die 'Choose --scope user or project.';; esac
+[[ "$SCOPE" != project || -n "$PROJECT" || $YES != 1 ]] || die '--scope project requires --project DIR.'
 case $(uname -s) in Linux) OS=linux;; Darwin) OS=darwin;; *) die 'Use install.ps1 on Windows.';; esac
 case $(uname -m) in x86_64|amd64) ARCH=amd64;; arm64|aarch64) ARCH=arm64;; *) die 'Unsupported architecture.';; esac
+absolute() { case "$1" in /*) printf '%s' "$1";; *) printf '%s/%s' "$PWD" "$1";; esac; }
+if [[ -n "$ARCHIVE" ]]; then ARCHIVE=$(absolute "$ARCHIVE"); SUMS=$(absolute "$SUMS"); fi
+if [[ -n "$PROJECT" ]]; then PROJECT=$(absolute "$PROJECT"); fi
+
+# FACET_HOME moves Facet's home folder (runtimes, current, wiring record). It is
+# made absolute once and handed to every facet this script runs, so they agree.
+if [[ -n "${FACET_HOME:-}" ]]; then
+    FACET_HOME_DIR=$(absolute "$FACET_HOME"); export FACET_HOME="$FACET_HOME_DIR"
+else
+    FACET_HOME_DIR="$HOME/.facet"
+fi
+# Facet 1.x kept its releases in ~/.facet whatever FACET_HOME says.
+LEGACY_HOME="$HOME/.facet"
+RUNTIMES="$FACET_HOME_DIR/runtimes"
+CURRENT="$FACET_HOME_DIR/current"
+STATE_FILE="$FACET_HOME_DIR/installer.json"
+WIRING_FILE="$FACET_HOME_DIR/wiring.json"
+PROFILE_START='# >>> facet path >>>'
+PROFILE_END='# <<< facet path <<<'
+SUPPORTED_CLIS='claude codex copilot opencode'
+
 ask() {
     local answer
     printf '%s [%s]: ' "$1" "$2" >&2
     IFS= read -r answer || die 'Interactive input ended; use --yes with explicit options.'
     printf '%s' "${answer:-$2}"
 }
-confirm() { printf '  -> %s\n' "$*"; }
 RICH=0
 if [[ $YES != 1 && $PLAIN != 1 && -z ${NO_COLOR:-} && -t 0 && -t 2 && ${TERM:-dumb} != dumb ]]; then RICH=1; fi
 section() { if [[ $RICH == 1 ]]; then printf '\n\033[36;1m%s\033[0m\n' "$1"; else printf '\n%s\n' "$1"; fi; }
-# UI only: values come from the same manifest as the plain/noninteractive path.
-# Use stderr for drawing, stdout solely for the selected value.
+# Menu drawing goes to stderr; stdout carries only the selected value.
+# Plain mode prints numbered labels and maps numeric answers to values.
 choose() (
     title=$1; multiple=$2; defaults=$3; shift 3
     values=(); labels=(); checked=(); index=0
     while (($#)); do values+=("$1"); labels+=("$2"); shift 2; done
-    if [[ $RICH != 1 ]]; then ask "$title" "$defaults"; exit; fi
+    if [[ $RICH != 1 ]]; then
+        for ((i=0;i<${#values[@]};i++)); do printf '  %d. %s\n' "$((i+1))" "${labels[i]}" >&2; done
+        answer=$(ask "$title" "$defaults")
+        result=''
+        IFS=',' read -r -a picks <<< "$answer"
+        for pick in "${picks[@]:-}"; do
+            pick=${pick// /}; [[ -n "$pick" ]] || continue
+            if [[ "$pick" =~ ^[0-9]+$ ]]; then
+                ((pick >= 1 && pick <= ${#values[@]})) || { printf 'No choice %s.\n' "$pick" >&2; exit 1; }
+                pick=${values[pick-1]}
+            fi
+            result="${result:+$result,}$pick"
+        done
+        printf '%s' "${result:-none}"; exit 0
+    fi
     for ((i=0;i<${#values[@]};i++)); do
         checked+=(0)
         if [[ ",$defaults," == *",${values[i]},"* ]]; then checked[i]=1; [[ $multiple == 1 ]] || index=$i; fi
@@ -95,210 +169,34 @@ choose() (
         esac
     done
 )
-[[ $YES != 1 || -n "$TARGET" && -n "$PROJECT" ]] || die '--yes requires --target and --project.'
-default_host=opencode
-section 'FACET'
-printf 'Video production for your agent.\nInstaller %s | %s/%s\n' "$VERSION" "$OS" "$ARCH"
-section '[1/3] Choose your setup'
-detected=''
-host_options=()
-while IFS=$'\t' read -r kind id rest; do
-    if [[ "$kind" == host ]]; then
-        status='not detected'
-        if command -v "$id" >/dev/null; then [[ -n "$detected" ]] || default_host=$id; detected="$detected $id"; status=detected; fi
-        host_options+=("$id" "$id - $status")
-    fi
-done < "$MANIFEST"
-printf '  Detected CLIs:%s\n' "${detected:- none (choose one to configure)}"
-[[ -n "$TARGET" ]] || TARGET=$(choose 'Which agent should use Facet? (opencode, codex, claude, copilot, app)' 0 "$default_host" "${host_options[@]}")
-[[ $(definition "$TARGET" 1) == host ]] || die 'Unsupported CLI.'
-HOST_PATH=$(definition "$TARGET" 4)
-INSTRUCTION_REL=$(definition "$TARGET-instructions" 4)
-[[ -n "$INSTRUCTION_REL" && "$INSTRUCTION_REL" != /* && "$INSTRUCTION_REL" != *..* && "$INSTRUCTION_REL" != *\\* ]] || die 'Invalid governing instruction path.'
-[[ -n "$PROJECT" ]] || PROJECT=$(ask 'Project directory' .)
-absolute() { case "$1" in /*) printf '%s' "$1";; *) printf '%s/%s' "$PWD" "$1";; esac; }
-PROJECT=$(absolute "$PROJECT"); INSTALL=$(absolute "${INSTALL:-$HOME/.facet/releases/$VERSION-$OS-$ARCH}")
-if [[ -z "$COMPONENTS" && -f "$PROJECT/.facet-install/installation.tsv" ]]; then COMPONENTS=$(awk -F '\t' '$1=="components" {gsub(/ /,",",$2); print $2}' "$PROJECT/.facet-install/installation.tsv"); fi
-COMPONENTS=${COMPONENTS:-remotion,piper}
-if [[ $PACKS_EXPLICIT == 0 && -f "$PROJECT/.facet-install/installation.tsv" ]]; then PACKS=$(awk -F '\t' '$1=="packs" {gsub(/ /,",",$2); print $2}' "$PROJECT/.facet-install/installation.tsv"); fi
-[[ "$PROJECT$INSTALL" != *$'\n'* && "$PROJECT$INSTALL" != *$'\r'* && "$PROJECT$INSTALL" != *$'\t'* ]] || die 'Control characters are unsupported in installation paths.'
-if [[ -n "$ARCHIVE" ]]; then ARCHIVE=$(absolute "$ARCHIVE"); SUMS=$(absolute "$SUMS"); fi
-printf '%s\n' 'Core: FFmpeg and FFprobe. Optional downloads (approximate; platform/cache dependent):'
-printf '%s\n' 'Built in: Edge TTS client (keyless network service; reachability is checked only when used).'
-awk -F '\t' -v selected=",$COMPONENTS," '$1=="component" {printf "%s %d. %s: %s — %s\n",index(selected,","$2",")?"[x]":"[ ]",++n,$2,$8,$9}' "$MANIFEST"
-printf '%s\n' 'Media providers are optional and may require credentials/account access. CLI authentication is assumed.'
-if [[ $YES != 1 ]]; then
-    component_options=()
-    while IFS=$'\t' read -r kind id version value windows linux darwin size capability; do
-        [[ "$kind" != component ]] || component_options+=("$id" "$id | $size | $capability")
-    done < "$MANIFEST"
-    COMPONENTS=$(choose 'Optional production tools (uncheck all for core editing; plain input: 1,2 or none)' 1 "$COMPONENTS" "${component_options[@]}")
-fi
-SELECTED=()
-IFS=',' read -r -a raw <<< "$COMPONENTS"
-for id in "${raw[@]}"; do
-    id=${id// /}
-    if [[ "$id" =~ ^[1-4]$ ]]; then id=$(awk -F '\t' -v i="$id" '$1=="component" && ++n==i {print $2}' "$MANIFEST"); fi
-    if [[ "$id" != none ]]; then [[ $(definition "$id" 1) == component ]] || die "Unknown component: $id"; fi
-    for existing in "${SELECTED[@]:-}"; do [[ "$existing" != "$id" ]] || die 'Duplicate component.'; done
-    SELECTED+=("$id")
-done
-has() { local item; for item in "${SELECTED[@]}"; do [[ "$item" != "$1" ]] || return 0; done; return 1; }
-if has none && ((${#SELECTED[@]} != 1)); then die 'none cannot be combined with components.'; fi
-SELECTED_PACKS=()
-IFS=',' read -r -a raw_packs <<< "$PACKS"
-for id in "${raw_packs[@]:-}"; do
-    id=${id// /}; [[ -n "$id" ]] || continue
-    [[ $(definition "$id" 1) == pack ]] || die "Unknown production method: $id"
-    for existing in "${SELECTED_PACKS[@]:-}"; do [[ "$existing" != "$id" ]] || die 'Duplicate production method.'; done
-    SELECTED_PACKS+=("$id")
-done
-real_ancestors() {
-    local path=$1
-    while [[ "$path" != / && -n "$path" ]]; do
-        [[ ! -L "$path" ]] || die "Unsafe directory link: $path"
-        [[ ! -e "$path" || -d "$path" ]] || die "Not a directory: $path"
-        path=$(dirname -- "$path")
-    done
-}
-# macOS /var and /tmp are OS-owned aliases; resolve the existing project parent
-# before checking paths, without following a user-owned host-config link.
-canonical_parent() {
-    local path=$1 suffix='' part
-    while [[ ! -d "$path" ]]; do part=$(basename -- "$path"); suffix="/$part$suffix"; path=$(dirname -- "$path"); done
-    printf '%s%s' "$(cd -- "$path" && pwd -P)" "$suffix"
-}
-PROJECT=$(canonical_parent "$PROJECT"); INSTALL=$(canonical_parent "$INSTALL")
-SKILL="$PROJECT/$HOST_PATH/facet"; STATE="$PROJECT/.facet-install"; INSTRUCTION="$PROJECT/$INSTRUCTION_REL"
-new_path() { [[ ! -e "$1" && ! -L "$1" ]] || die "Preserving existing entry: $1"; real_ancestors "$(dirname -- "$1")"; }
-valid_project_receipt() {
-    local receipt=$1
-    [[ -f "$receipt" && ! -L "$receipt" ]] || return 1
-    awk -F '\t' '
-        $1=="version" {version=$2; versions++}
-        $1=="installation" {installation=$2; installations++}
-        $1=="host" {host=$2; hosts++}
-        $1=="components" {components++}
-        $1=="packs" {packs++}
-        END {
-            exit !(versions==1 && installations==1 && hosts==1 && components==1 && packs==1 &&
-                version!="" && installation ~ /^\// && host ~ /^(opencode|codex|claude|copilot|app|studio)$/)
-        }
-    ' "$receipt"
-}
-PREVIOUS=0
-LEGACY_MIGRATION=0
-INSTRUCTION_OWNED=0
-STATE_RESIDUE=0
-if valid_project_receipt "$STATE/installation.tsv"; then
-    real_ancestors "$STATE"
-    previous_host=$(awk -F '\t' '$1=="host" {print $2}' "$STATE/installation.tsv")
-    [[ "$previous_host" != studio ]] || previous_host=app
-    [[ "$previous_host" == "$TARGET" ]] || die 'Project is configured for another CLI.'
-    if [[ ! -f "$STATE/managed-files.sha256" ]]; then
-        if [[ $YES != 1 ]]; then [[ $(ask 'Migrate older integration? Complete original files will be kept in a project backup' n) =~ ^(y|yes)$ ]] && MIGRATE_LEGACY=1; fi
-        [[ $MIGRATE_LEGACY == 1 ]] || die 'Older integration has no ownership hashes; use --migrate-legacy to preserve a full backup before replacing it.'
-        LEGACY_MIGRATION=1
-        real_ancestors "$SKILL"
-        [[ -z $(find "$STATE" "$SKILL" -type l -print) ]] || die 'Refusing legacy migration containing links.'
-    else
-    while IFS= read -r line; do
-        file=${line#*  }; [[ "$file" != /* && "$file" != *../* && "$file" != *\\* ]] || die 'Invalid ownership record.'
-        [[ ! -L "$PROJECT/$file" ]] || die 'Preserving replaced project file.'
-        real_ancestors "$(dirname "$PROJECT/$file")"
-    done < "$STATE/managed-files.sha256"
-    (cd "$PROJECT" && shasum -a 256 -c "$STATE/managed-files.sha256") >/dev/null || die 'Preserving modified project files.'
-    if [[ "$ACTION" != uninstall ]]; then
-        expected_skill_count=0
-        while IFS= read -r line; do
-            file=${line#*  }
-            [[ "$file" != "$HOST_PATH/facet/"* ]] || expected_skill_count=$((expected_skill_count+1))
-        done < "$STATE/managed-files.sha256"
-        actual_skill_count=0
-        [[ ! -d "$SKILL" ]] || actual_skill_count=$(find "$SKILL" -type f | wc -l | tr -d ' ')
-        [[ "$actual_skill_count" == "$expected_skill_count" ]] || die 'Preserving extra files in the managed skill directory.'
-    fi
-    fi
-    if [[ -f "$STATE/instruction-section.tsv" ]]; then
-        owned_instruction=$(awk -F '\t' '$1=="path" {print $2}' "$STATE/instruction-section.tsv")
-        owned_hash=$(awk -F '\t' '$1=="sha256" {print $2}' "$STATE/instruction-section.tsv")
-        [[ "$owned_instruction" == "$INSTRUCTION_REL" && "$owned_hash" =~ ^[a-f0-9]{64}$ ]] || die 'Invalid governing instruction ownership record.'
-        [[ -f "$INSTRUCTION" && ! -L "$INSTRUCTION" ]] || die 'Managed governing instruction is missing or replaced.'
-        INSTRUCTION_OWNED=1
-    fi
-    PREVIOUS=1
-    if [[ "$ACTION" == uninstall ]]; then
-        INSTALL=$(awk -F '\t' '$1=="installation" {print $2}' "$STATE/installation.tsv")
-    fi
-    if [[ $YES != 1 && -z "$ACTION_EXPLICIT" ]]; then ACTION=$(choose 'What should setup do?' 0 add add 'Add components - keep existing tools' repair 'Repair - verify a replacement' update 'Update - switch to selected version'); fi
-    if [[ "$ACTION" == add ]]; then
-        [[ $(awk -F '\t' '$1=="version" {print $2}' "$STATE/installation.tsv") == "$VERSION" ]] || die 'Choose update to change product version.'
-        INSTALL=$(awk -F '\t' '$1=="installation" {print $2}' "$STATE/installation.tsv")
-        for item in $(awk -F '\t' '$1=="components" {print $2}' "$STATE/installation.tsv"); do
-            if [[ "$item" != none ]] && ! has "$item"; then SELECTED+=("$item"); fi
-        done
-        if ((${#SELECTED[@]} > 1)) && has none; then filtered=(); for item in "${SELECTED[@]}"; do [[ "$item" == none ]] || filtered+=("$item"); done; SELECTED=("${filtered[@]}"); fi
-        for item in $(awk -F '\t' '$1=="packs" {print $2}' "$STATE/installation.tsv"); do
-            present=0; for existing in "${SELECTED_PACKS[@]:-}"; do [[ "$existing" != "$item" ]] || present=1; done
-            [[ $present == 1 ]] || SELECTED_PACKS+=("$item")
-        done
-    fi
-else
-    [[ "$ACTION" != uninstall ]] || die 'This project has no Facet installation to uninstall.'
-    new_path "$SKILL"
-    if [[ -e "$STATE" || -L "$STATE" ]]; then
-        [[ -d "$STATE" && ! -L "$STATE" ]] || die "Preserving unsafe partial installer state: $STATE"
-        real_ancestors "$STATE"
-        [[ -z $(find "$STATE" -type l -print) ]] || die "Preserving linked partial installer state: $STATE"
-        STATE_RESIDUE=1
-    else
-        new_path "$STATE"
-    fi
-fi
-case "$ACTION" in add|repair|update|uninstall) ;; *) die 'Choose add, repair, update, or uninstall.';; esac
-REUSE=0
-if [[ "$ACTION" != uninstall ]]; then
-    real_ancestors "$INSTALL"
-    if [[ -f "$INSTALL/components.tsv" && "$ACTION" != repair ]]; then
-        REUSE=1
-        for item in "${SELECTED[@]}"; do
-            [[ "$item" == none ]] || grep -qx "$item" "$INSTALL/components.tsv" || REUSE=0
-        done
-    fi
-    if [[ -d "$INSTALL" && $REUSE == 0 ]]; then
-        [[ -f "$INSTALL/.facet-receipt" ]] || die 'Existing installation is not managed by these scripts.'
-        INSTALL="$INSTALL-generation-$(date +%s)-$$"
-    fi
-fi
-printf '\n  Agent: %s\n  Project: %s\n  Action: %s\n  Production methods: %s\n  Components: %s\n  Runtime: %s\n' "$TARGET" "$PROJECT" "$ACTION" "${SELECTED_PACKS[*]:-core only}" "${SELECTED[*]}" "$INSTALL"
-printf '%s\n' '  Existing runtimes are retained until a verified replacement is ready.'
-[[ $YES == 1 ]] || [[ $(ask 'Continue?' y) =~ ^(y|yes)$ ]] || die 'Installation cancelled.'
-section '[2/3] Install and verify capabilities'
-required_programs=(awk grep shasum)
-if [[ "$ACTION" != uninstall ]]; then required_programs+=(curl unzip zipinfo); fi
-for program in "${required_programs[@]}"; do command -v "$program" >/dev/null || die "Install required archive utility: $program"; done
-LOG_DIR=${FACET_LOG_DIR:-$HOME/.facet/logs}; mkdir -p "$LOG_DIR"
-LOG="$LOG_DIR/install-$(date +%Y%m%d-%H%M%S)-$$.log"
-TEMP=$(mktemp -d); STAGE=''; PROJECT_STAGE=''; COMMITTED=0; NEW_RUNTIME=1
-[[ ! -d "$INSTALL" ]] || NEW_RUNTIME=0
+
+# ------------------------------------------------------------------ helpers
+if command -v shasum >/dev/null; then SHA_CMD=(shasum -a 256)
+elif command -v sha256sum >/dev/null; then SHA_CMD=(sha256sum)
+else die 'Install shasum or sha256sum and rerun.'; fi
+hash_file() { "${SHA_CMD[@]}" "$1" | awk '{print $1}'; }
+LOG_DIR=${FACET_LOG_DIR:-$FACET_HOME_DIR/logs}
+LOG=''
+TEMP=''; STAGE=''; NEW_RUNTIME=''; COMMITTED=0; ASIDE=''; ASIDE_TARGET=''
 cleanup() {
     rc=$?
-    if [[ $COMMITTED == 0 && -n "$PROJECT_STAGE" ]]; then
-        if [[ -d "$PROJECT_STAGE/old-state" ]]; then rm -rf "$STATE"; mv "$PROJECT_STAGE/old-state" "$STATE"; fi
-        if [[ -d "$PROJECT_STAGE/old-skill" ]]; then rm -rf "$SKILL"; mv "$PROJECT_STAGE/old-skill" "$SKILL"; fi
-        if [[ -f "$PROJECT_STAGE/old-instruction" ]]; then
-            mkdir -p "$(dirname -- "$INSTRUCTION")"; cp "$PROJECT_STAGE/old-instruction" "$INSTRUCTION"
-        elif [[ -f "$PROJECT_STAGE/instruction-was-absent" ]]; then
-            rm -f -- "$INSTRUCTION"
-        fi
+    [[ -z "$STAGE" ]] || rm -rf -- "$STAGE"
+    if [[ $COMMITTED == 0 && -n "$NEW_RUNTIME" ]]; then rm -rf -- "$NEW_RUNTIME"; fi
+    if [[ -n "$ASIDE" ]]; then
+        # A replaced runtime is restored unless its verified replacement was activated.
+        if [[ $COMMITTED == 0 && ! -e "$ASIDE_TARGET" ]]; then mv -- "$ASIDE" "$ASIDE_TARGET"; else rm -rf -- "$ASIDE"; fi
     fi
-    [[ -z "$STAGE" ]] || rm -rf -- "$STAGE"; [[ -z "$PROJECT_STAGE" ]] || rm -rf -- "$PROJECT_STAGE"; rm -rf -- "$TEMP"
-    if [[ $COMMITTED == 0 && $NEW_RUNTIME == 1 ]]; then rm -rf -- "$INSTALL"; fi
-    if [[ $rc != 0 ]]; then printf '\nSetup incomplete. Previous project bindings preserved. Log: %s\nRerun setup to retry.\n' "$LOG" >&2; fi
+    [[ -z "$TEMP" ]] || rm -rf -- "$TEMP"
+    if [[ $rc != 0 && -n "$LOG" ]]; then printf '\nSetup incomplete; the active runtime was not changed. Log: %s\n' "$LOG" >&2; fi
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+start_log() {
+    mkdir -p "$LOG_DIR"
+    LOG="$LOG_DIR/install-$(date +%Y%m%d-%H%M%S)-$$.log"
+    TEMP=$(mktemp -d)
+}
 redact() { sed -E 's#(https?://)[^/@[:space:]]+@#\1<redacted>@#g; s#([?&][^=[:space:]&]+)=[^&[:space:]]+#\1=<redacted>#g'; }
 step() {
     local label=$1 rc; shift
@@ -310,86 +208,6 @@ step() {
     printf '  OK %s\n' "$label"
 }
 fetch() { curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --connect-timeout 20 --proto '=https' --tlsv1.2 --max-time 900 --output "$2" "$1"; }
-hash_file() { shasum -a 256 "$1" | awk '{print $1}'; }
-FACET_SECTION_START='<!-- facet:managed:start -->'
-FACET_SECTION_END='<!-- facet:managed:end -->'
-extract_instruction_section() {
-    local file=$1 out=$2 starts ends
-    [[ -f "$file" ]] || return 1
-    starts=$(grep -Fxc "$FACET_SECTION_START" "$file" || true)
-    ends=$(grep -Fxc "$FACET_SECTION_END" "$file" || true)
-    if [[ $starts == 0 && $ends == 0 ]]; then return 1; fi
-    [[ $starts == 1 && $ends == 1 ]] || die "Malformed Facet section in $INSTRUCTION_REL"
-    awk -v start="$FACET_SECTION_START" -v end="$FACET_SECTION_END" '
-        $0==start {inside=1}
-        inside {print}
-        $0==end && inside {found=1; exit}
-        END {if(!found) exit 1}
-    ' "$file" > "$out" || die "Malformed Facet section in $INSTRUCTION_REL"
-}
-merge_instruction_section() {
-    local existing=$1 section=$2 out=$3 starts ends
-    if [[ ! -e "$existing" ]]; then cp "$section" "$out"; return; fi
-    [[ -f "$existing" && ! -L "$existing" ]] || die "Preserving unsafe governing instruction: $INSTRUCTION_REL"
-    starts=$(grep -Fxc "$FACET_SECTION_START" "$existing" || true)
-    ends=$(grep -Fxc "$FACET_SECTION_END" "$existing" || true)
-    if [[ $starts == 0 && $ends == 0 ]]; then
-        cat "$existing" > "$out"
-        [[ ! -s "$existing" ]] || printf '\n' >> "$out"
-        cat "$section" >> "$out"
-        return
-    fi
-    [[ $INSTRUCTION_OWNED == 1 ]] || die "Preserving unmanaged Facet section in $INSTRUCTION_REL"
-    [[ $starts == 1 && $ends == 1 ]] || die "Malformed Facet section in $INSTRUCTION_REL"
-    awk -v start="$FACET_SECTION_START" -v end="$FACET_SECTION_END" -v replacement="$section" '
-        BEGIN {
-            while ((getline line < replacement) > 0) section = section line ORS
-            close(replacement)
-        }
-        $0==start {
-            printf "%s", section
-            inside=1
-            next
-        }
-        inside && $0==end {inside=0; next}
-        !inside {print}
-    ' "$existing" > "$out"
-}
-remove_instruction_section() {
-    local existing=$1 out=$2
-    awk -v start="$FACET_SECTION_START" -v end="$FACET_SECTION_END" '
-        $0==start {inside=1; next}
-        inside && $0==end {inside=0; next}
-        !inside {print}
-    ' "$existing" > "$out"
-}
-if [[ "$ACTION" == uninstall ]]; then
-    [[ $PREVIOUS == 1 && -f "$STATE/managed-files.sha256" ]] || die 'This project has no ownership-verified Facet installation to uninstall.'
-    [[ $INSTRUCTION_OWNED == 1 ]] || die 'This project has no ownership-verified Facet instruction section to uninstall.'
-    extract_instruction_section "$INSTRUCTION" "$TEMP/current-instruction-section" || die 'Managed Facet instruction section is missing.'
-    [[ $(hash_file "$TEMP/current-instruction-section") == "$owned_hash" ]] || die 'Preserving modified Facet instruction section.'
-    cp "$STATE/managed-files.sha256" "$TEMP/uninstall-files.sha256"
-    while IFS= read -r line; do
-        file=${line#*  }
-        case "$file" in
-            .facet-install/*|"$HOST_PATH/facet/"*) ;;
-            *) die "Invalid uninstall ownership path: $file";;
-        esac
-    done < "$TEMP/uninstall-files.sha256"
-    remove_instruction_section "$INSTRUCTION" "$TEMP/instruction-without-facet"
-    mv "$TEMP/instruction-without-facet" "$INSTRUCTION"
-    while IFS= read -r line; do
-        file=${line#*  }
-        rm -f -- "$PROJECT/$file"
-    done < "$TEMP/uninstall-files.sha256"
-    rm -f -- "$STATE/managed-files.sha256"
-    [[ ! -d "$SKILL" ]] || find "$SKILL" -depth -type d -empty -exec rmdir {} \;
-    [[ ! -d "$STATE" ]] || find "$STATE" -depth -type d -empty -exec rmdir {} \;
-    COMMITTED=1
-    printf '\nFacet was removed from this project. User instructions and unmanaged files were preserved.\n'
-    printf 'Shared runtime retained at: %s\n' "$INSTALL"
-    exit 0
-fi
 verify_checksum() {
     local expected
     expected=$(awk -v name="$3" '{sub(/\r$/, "")} $2==name || $2=="*"name {print tolower($1);n++} END{if(n!=1)exit 1}' "$2") || die "Checksum entry missing or duplicated: $3"
@@ -405,7 +223,7 @@ safe_name() {
     for part in "${parts[@]}"; do [[ "$part" != .. && "$part" != . && -n "$part" && "$part" != *'.' && "$part" != *' ' ]] || die "Unsafe archive path: $name"; done
 }
 expand_zip() {
-    local archive=$1 dest=$2 name mode
+    local archive=$1 dest=$2 name
     zipinfo -1 "$archive" > "$TEMP/zip-names"
     while IFS= read -r name; do safe_name "${name%/}"; done < "$TEMP/zip-names"
     [[ $(sort -f "$TEMP/zip-names" | uniq -di | wc -l | tr -d ' ') == 0 ]] || die 'Duplicate archive entries.'
@@ -414,241 +232,418 @@ expand_zip() {
     unzip -q "$archive" -d "$dest"
     [[ -z $(find "$dest" -type l -print) ]] || die 'Archive contains links.'
 }
-NAME="facet-$VERSION-$OS-$ARCH.zip"
-if [[ -z "$ARCHIVE" && $REUSE == 0 ]]; then
-    base="https://github.com/$(definition facet 4)/releases/download/v$VERSION"
-    CACHE="$HOME/.facet/cache"; mkdir -p "$CACHE"
-    ARCHIVE="$CACHE/$NAME"; SUMS="$TEMP/SHA256SUMS.txt"
-    step 'Check release download' fetch "$base/SHA256SUMS.txt" "$SUMS"
-    expected=$(awk -v name="$NAME" '{sub(/\r$/,"")} $2==name{print $1}' "$SUMS")
-    if [[ -f "$ARCHIVE" && $(hash_file "$ARCHIVE") == "$expected" ]]; then printf '  OK Reusing verified download\n'; else
-        step 'Download Facet' fetch "$base/$NAME" "$ARCHIVE.partial"
-        verify_checksum "$ARCHIVE.partial" "$SUMS" "$NAME"; mv "$ARCHIVE.partial" "$ARCHIVE"
+json_string() { printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"; }
+utc_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+# ------------------------------------------------------------ runtime state
+runtime_dir() { printf '%s/%s' "$RUNTIMES" "$1"; }
+read_state() { [[ -f "$STATE_FILE" ]] || return 0; awk -F '"' -v key="$1" '$2==key {print $4; exit}' "$STATE_FILE"; }
+write_state() {
+    mkdir -p "$FACET_HOME_DIR"
+    printf '{\n  "schema": 1,\n  "current": %s,\n  "previous": %s,\n  "updated_at": %s\n}\n' \
+        "$(json_string "$1")" "$(json_string "$2")" "$(json_string "$(utc_now)")" > "$STATE_FILE.tmp"
+    mv -f "$STATE_FILE.tmp" "$STATE_FILE"
+}
+active_runtime() {
+    [[ -L "$CURRENT" ]] || return 0
+    basename -- "$(readlink "$CURRENT")"
+}
+runtime_record_ok() { [[ -f "$(runtime_dir "$1")/components.json" && -x "$(runtime_dir "$1")/bin/facet" ]]; }
+recorded_components() { [[ -f "$1/components.json" ]] || return 0; tr -d '\n' < "$1/components.json" | sed -n 's/.*"components": *\[\([^]]*\)\].*/\1/p' | tr -d ' "' ; }
+runtime_intact() {
+    local dir=$1
+    [[ -f "$dir/.facet-files.sha256" && -f "$dir/components.json" && ! -L "$dir/bin/facet" ]] || return 1
+    (cd "$dir" && "${SHA_CMD[@]}" -c .facet-files.sha256) >/dev/null 2>&1
+}
+activate() {
+    local target=$1 tmp
+    mkdir -p "$FACET_HOME_DIR"
+    [[ ! -e "$CURRENT" || -L "$CURRENT" ]] || die "$CURRENT exists and is not a link created by the Facet installer; it was left in place."
+    tmp="$FACET_HOME_DIR/.current-$$"
+    rm -f -- "$tmp"
+    ln -s "$(runtime_dir "$target")" "$tmp"
+    if mv -T "$tmp" "$CURRENT" 2>/dev/null; then :; else rm -f -- "$tmp"; ln -sfn "$(runtime_dir "$target")" "$CURRENT"; fi
+}
+v1_notice() {
+    local d
+    for d in "$LEGACY_HOME"/releases/1.*-*; do
+        if [[ -d "$d" ]]; then
+            printf '%s\n' 'Facet v1 project integrations are separate; remove them with the v1.1.0 installer --action uninstall in each project.'
+            return 0
+        fi
+    done
+}
+prune_runtimes() {
+    # One earlier runtime is kept for rollback; older ones are removed.
+    local keep=$1 previous=$2 dir name
+    for dir in "$RUNTIMES"/*; do
+        [[ -d "$dir" && ! -L "$dir" ]] || continue
+        name=$(basename -- "$dir")
+        [[ "$name" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?-(linux|darwin)-(amd64|arm64)$ ]] || continue
+        [[ "$name" != "$keep" && "$name" != "$previous" ]] || continue
+        if rm -rf -- "$dir"; then printf '  OK Removed older runtime %s\n' "$name"; else printf '  Older runtime %s could not be removed and was kept.\n' "$name"; fi
+    done
+}
+
+# --------------------------------------------------------------- PATH block
+profile_files() {
+    printf '%s\n' "$HOME/.profile"
+    [[ ! -f "$HOME/.bashrc" && "${SHELL:-}" != */bash ]] || printf '%s\n' "$HOME/.bashrc"
+    [[ ! -f "$HOME/.zshrc" && "${SHELL:-}" != */zsh ]] || printf '%s\n' "$HOME/.zshrc"
+}
+remove_profile_block() {
+    local file=$1
+    [[ -f "$file" ]] || return 0
+    grep -qxF "$PROFILE_START" "$file" || return 0
+    awk -v s="$PROFILE_START" -v e="$PROFILE_END" '$0==s {skip=1; next} $0==e && skip {skip=0; next} !skip {print}' "$file" > "$file.facet-tmp"
+    cat "$file.facet-tmp" > "$file"; rm -f -- "$file.facet-tmp"
+}
+add_path() {
+    local file changed=0 line
+    # The default home is written as $HOME so the profile line stays portable;
+    # a FACET_HOME is written as the absolute path it resolved to.
+    line='export PATH="$HOME/.facet/current/bin:$PATH"'
+    if [[ "$FACET_HOME_DIR" != "$HOME/.facet" ]]; then
+        line="export PATH=\"$(printf '%s' "$CURRENT/bin" | sed 's/[\\"$`]/\\&/g'):\$PATH\""
     fi
-fi
-archive_hash=''
-if [[ -n "$ARCHIVE" ]]; then verify_checksum "$ARCHIVE" "$SUMS" "$NAME"; archive_hash=$(hash_file "$ARCHIVE"); fi
-if [[ -d "$INSTALL" ]]; then
-    [[ -f "$INSTALL/.facet-receipt" && -f "$INSTALL/.facet-files.sha256" ]] || die 'Existing directory is not managed by these scripts.'
-    [[ -z "$archive_hash" || $(cat "$INSTALL/.facet-receipt") == "$VERSION $archive_hash" ]] || die 'Installation receipt mismatch; choose Repair.'
-    awk '$2=="bin/facet" {found=1} END{if(!found)exit 1}' "$INSTALL/.facet-files.sha256" || die 'Receipt is missing product binary.'
-    while IFS= read -r line; do
-        file=${line#*  }; safe_name "$file"
-        [[ ! -L "$INSTALL/$file" ]] || die 'Installed file replaced by link.'
-        real_ancestors "$(dirname "$INSTALL/$file")"
-    done < "$INSTALL/.facet-files.sha256"
-    [[ -z $(find "$INSTALL/bin" "$INSTALL/bundle/skills" "$INSTALL/bundle/packs" -type l -print) ]] || die 'Installed product replaced by links.'
-    (cd "$INSTALL" && shasum -a 256 -c .facet-files.sha256) >/dev/null || die 'Installed files changed.'
-else
-    mkdir -p -- "$(dirname -- "$INSTALL")"
-    STAGE=$(mktemp -d "$(dirname -- "$INSTALL")/.facet-stage-XXXXXX")
-    expand_zip "$ARCHIVE" "$STAGE"
-    for required in bin/facet bundle/skills/facet/SKILL.md bundle/packs/explainer/SKILL.md bundle/remotion-composer/package-lock.json bundle/app/facet-bundle.json bundle/app/AGENT.md; do [[ -f "$STAGE/$required" ]] || die "Release missing $required"; done
-    chmod +x "$STAGE/bin/facet"
-    [[ $("$STAGE/bin/facet" version) == "facet v$VERSION" ]] || die 'Binary version mismatch.'
-    (cd "$STAGE" && find bin bundle -type f -exec shasum -a 256 '{}' \;) > "$STAGE/.facet-files.sha256"
-    printf '%s %s\n' "$VERSION" "$archive_hash" > "$STAGE/.facet-receipt"
-    mv -- "$STAGE" "$INSTALL"; STAGE=''
-fi
-FACET="$INSTALL/bin/facet"; DEPS="$INSTALL/dependencies"; mkdir -p "$DEPS"
-export PATH="$DEPS/node/bin:$DEPS/piper/bin:$PATH"
+    while IFS= read -r file; do
+        [[ ! -L "$file" ]] || { printf '  Skipped linked profile %s\n' "$file"; continue; }
+        if [[ -f "$file" ]] && grep -qxF "$PROFILE_START" "$file"; then continue; fi
+        printf '\n%s\n%s\n%s\n' "$PROFILE_START" "$line" "$PROFILE_END" >> "$file"
+        printf '  OK Added %s to PATH in %s\n' "$CURRENT/bin" "$file"; changed=1
+    done < <(profile_files)
+    [[ $changed == 0 ]] || printf '%s\n' '  Open a new terminal to use the facet command.'
+}
+remove_path() {
+    local file
+    for file in "$HOME/.profile" "$HOME/.bashrc" "$HOME/.zshrc"; do
+        [[ -L "$file" ]] || remove_profile_block "$file"
+    done
+}
+
+# ----------------------------------------------------------------- wiring
+run_wire() {
+    local exe=$1; shift
+    printf '  -> facet wire %s\n' "$*"
+    "$exe" wire "$@"
+}
+wire_scope_args() {
+    if [[ "$1" == project ]]; then printf '%s\n' --scope project --project "$2"; else printf '%s\n' --scope user; fi
+}
+recorded_wire_groups() {
+    # Prints "scope<TAB>project" per recorded group from facet wire's registry.
+    [[ -f "$WIRING_FILE" ]] || return 0
+    if command -v python3 >/dev/null; then
+        python3 - "$WIRING_FILE" <<'PY'
+import json, sys
+seen = set()
+for w in json.load(open(sys.argv[1], encoding="utf-8")).get("wirings") or []:
+    key = (w.get("scope") or "user", w.get("project") or "")
+    if key not in seen:
+        seen.add(key); print("%s\t%s" % key)
+PY
+    elif command -v node >/dev/null; then
+        node -e 'const s=new Set();for(const w of (JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).wirings||[])){const k=(w.scope||"user")+"\t"+(w.project||"");if(!s.has(k)){s.add(k);console.log(k)}}' "$WIRING_FILE"
+    else
+        printf 'user\t\n'
+    fi
+}
+refresh_wirings() {
+    # facet wire registers current/bin/facet, so every wiring follows the
+    # active runtime; only the skills it copied can be older. Refreshing them
+    # keeps each CLI's Facet guidance at the active runtime's version. Files a
+    # person changed are never overwritten: facet wire reports them.
+    [[ -f "$WIRING_FILE" ]] || return 0
+    section 'Refresh wirings'
+    run_wire "$CURRENT/bin/facet" --refresh
+}
+
+# --------------------------------------------------------- system packages
 install_linux_node() {
-    local version arch stem base name nd entry
+    local deps=$1 version arch stem base name nd entry
     version=$(definition node 3); arch=x64; [[ "$ARCH" != arm64 ]] || arch=arm64
     stem="node-v$version-linux-$arch"; name="$stem.tar.gz"; base="https://nodejs.org/dist/v$version"
-    confirm "Download official Node.js $version runtime (about 30-60 MB) into $DEPS/node"
+    printf '  -> Download official Node.js %s into %s/node\n' "$version" "$deps"
     fetch "$base/$name" "$TEMP/$name"; fetch "$base/SHASUMS256.txt" "$TEMP/node-sums"
     verify_checksum "$TEMP/$name" "$TEMP/node-sums" "$name"
-    new_path "$DEPS/node"
+    [[ ! -e "$deps/node" ]] || rm -rf -- "$deps/node"
     tar -tzf "$TEMP/$name" > "$TEMP/node-names"
     while IFS= read -r entry; do safe_name "${entry%/}"; [[ "$entry" == "$stem/"* ]] || die 'Unexpected Node archive root.'; done < "$TEMP/node-names"
     # Skip npm/npx/corepack links and replace npm/npx with explicit launchers.
-    # No other special files are allowed in the extracted runtime.
     tar -tvzf "$TEMP/$name" --exclude="$stem/bin/npm" --exclude="$stem/bin/npx" --exclude="$stem/bin/corepack" > "$TEMP/node-modes"
     awk 'substr($1,1,1)!="-" && substr($1,1,1)!="d" {bad=1} END {exit bad}' "$TEMP/node-modes" || die 'Unexpected links/special files in Node runtime.'
-    nd="$TEMP/node-unpack"; mkdir "$nd"
+    nd="$TEMP/node-unpack"; mkdir -p "$nd"
     tar -xzf "$TEMP/$name" -C "$nd" --exclude="$stem/bin/npm" --exclude="$stem/bin/npx" --exclude="$stem/bin/corepack"
     for entry in npm npx; do
-        printf '#!/usr/bin/env bash\nexec %q %q "$@"\n' "$DEPS/node/bin/node" "$DEPS/node/lib/node_modules/npm/bin/$entry-cli.js" > "$nd/$stem/bin/$entry"
+        printf '#!/usr/bin/env bash\nexec "$(dirname "$0")/node" "$(dirname "$0")/../lib/node_modules/npm/bin/%s-cli.js" "$@"\n' "$entry" > "$nd/$stem/bin/$entry"
         chmod +x "$nd/$stem/bin/$entry"
     done
-    mv "$nd/$stem" "$DEPS/node"
+    mv "$nd/$stem" "$deps/node"
     hash -r
 }
 system_package() {
-    local id=$1 package
+    local id=$1 package packages
     if [[ "$OS" == darwin ]]; then
         package=$(definition "$id" 7); command -v brew >/dev/null || die "Install Homebrew or $id manually and rerun."
-        confirm "brew install $package"; brew install "$package"
+        printf '  -> brew install %s\n' "$package"; brew install "$package"
         if [[ "$id" == node || "$id" == python ]]; then export PATH="$(brew --prefix "$package")/bin:$PATH"; fi
+        return 0
+    fi
+    package=$(definition "$id" 6); read -r -a packages <<< "$package"
+    if ! command -v apt-get >/dev/null; then
+        printf '  This system has no apt-get. Install these with your package manager, then rerun: %s\n' "${packages[*]}" >&2
+        return 1
+    fi
+    if [[ "$id" == browser-libs ]] && ! apt-cache show libasound2t64 >/dev/null 2>&1; then package=${package//libasound2t64/libasound2}; read -r -a packages <<< "$package"; fi
+    if [[ "$id" == browser-libs ]] && ! apt-cache show fonts-liberation >/dev/null 2>&1; then package=${package//fonts-liberation/fonts-liberation2}; read -r -a packages <<< "$package"; fi
+    printf '  -> sudo apt-get install %s\n' "${packages[*]}"
+    if [[ $EUID == 0 ]]; then
+        apt-get update; DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
     else
-        if [[ "$id" == node ]]; then install_linux_node; return; fi
-        command -v apt-get >/dev/null || die "Install $id with your distribution's package manager and rerun."
-        package=$(definition "$id" 6); local packages; read -r -a packages <<< "$package"
-        if [[ "$id" == browser-libs ]] && ! apt-cache show libasound2t64 >/dev/null 2>&1; then
-            package=${package//libasound2t64/libasound2}; read -r -a packages <<< "$package"
-        fi
-        if [[ "$id" == browser-libs ]] && ! apt-cache show fonts-liberation >/dev/null 2>&1; then
-            package=${package//fonts-liberation/fonts-liberation2}; read -r -a packages <<< "$package"
-        fi
-        confirm "sudo apt-get install ${packages[*]}"
-        if [[ $EUID == 0 ]]; then
-            apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
-        else
-            sudo apt-get update
-            sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
-        fi
+        sudo apt-get update; sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
     fi
 }
-if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then step 'Install media tools' system_package ffmpeg; fi
-step 'Check FFmpeg' ffmpeg -version; step 'Check FFprobe' ffprobe -version
 node_compatible() { command -v node >/dev/null && [[ $(node -p "process.versions.node.split('.')[0]") -ge $(definition node 4) ]]; }
-    if [[ $REUSE == 1 ]]; then printf '  OK Reusing configured dependencies (no package reinstall)\n'; fi
-if has remotion || has hyperframes; then
-    if ! node_compatible; then
-        step 'Install compatible Node runtime' system_package node
-        if [[ "$OS" == darwin ]]; then export PATH="$(brew --prefix "$(definition node 7)")/bin:$PATH"; fi
+# A headless browser needs shared libraries on Linux. Skip apt when the
+# downloaded browser already resolves all of them.
+browser_libraries_missing() {
+    local composer=$1 shell
+    shell=$(find "$composer/node_modules/.remotion" -type f -name 'chrome-headless-shell' 2>/dev/null | head -n 1)
+    [[ -n "$shell" ]] || return 0
+    command -v ldd >/dev/null || return 0
+    ldd "$shell" 2>/dev/null | grep -q 'not found'
+}
+
+# ---------------------------------------------------------------- actions
+do_uninstall() {
+    section 'Uninstall'
+    local exe='' name group scope project problems=0 runtime
+    if [[ -x "$CURRENT/bin/facet" ]]; then exe="$CURRENT/bin/facet"; else
+        for runtime in "$RUNTIMES"/*; do [[ -x "$runtime/bin/facet" ]] && exe="$runtime/bin/facet"; done
     fi
-    node_compatible || die "Node.js $(definition node 4)+ is required; update Node using your distribution's supported method and rerun."
-    command -v npm >/dev/null || die 'npm is missing; install it and rerun.'
-    if [[ "$OS" == linux && $REUSE == 0 ]]; then step 'Install browser system libraries' system_package browser-libs; fi
-fi
-COMPOSER="$INSTALL/$(definition remotion 4)"; HF_ENTRY="$DEPS/hyperframes/node_modules/hyperframes/bin/hyperframes.mjs"
-PYTHON="$DEPS/piper/bin/python"; VOICES="$DEPS/voices"
-if has remotion && [[ $REUSE == 0 ]]; then
-    confirm "Install locked Remotion packages and browser: $COMPOSER"
-    (cd "$COMPOSER" && step 'Install Remotion packages' npm ci --no-audit --no-fund && step 'Prepare Remotion browser' node node_modules/@remotion/cli/remotion-cli.js browser ensure)
-fi
-if has hyperframes && [[ $REUSE == 0 ]]; then
-    HF="$DEPS/hyperframes"; mkdir -p "$HF"
-    [[ -f "$HF/package.json" ]] || printf '{"private":true,"dependencies":{"hyperframes":"%s"}}\n' "$(definition hyperframes 3)" > "$HF/package.json"
-    confirm "Install HyperFrames $(definition hyperframes 3) and browser"
-    action=install; [[ ! -f "$HF/package-lock.json" ]] || action=ci
-    (cd "$HF" && step 'Install HyperFrames packages' npm "$action" --no-audit --no-fund)
-    step 'Prepare HyperFrames browser' node "$HF_ENTRY" browser ensure
-fi
-if has piper && [[ $REUSE == 0 ]]; then
-    command -v python3 >/dev/null || step 'Install Python for Piper' system_package python
-    if [[ "$OS" == darwin ]] && command -v brew >/dev/null; then
-        python_prefix=$(brew --prefix "$(definition python 7)" 2>/dev/null || true)
-        if [[ -d "$python_prefix/bin" ]]; then export PATH="$python_prefix/bin:$PATH"; fi
+    while IFS=$'\t' read -r scope project; do
+        [[ -n "$scope" ]] || continue
+        if [[ -z "$exe" ]]; then printf '%s\n' '  Recorded CLI wirings remain, but no facet executable is available; reinstall Facet and run facet wire --remove all.' >&2; problems=1; break; fi
+        local args=()
+        while IFS= read -r a; do args+=("$a"); done < <(wire_scope_args "$scope" "$project")
+        run_wire "$exe" --remove all "${args[@]}" || { printf '  facet wire --remove all failed for %s scope %s\n' "$scope" "$project" >&2; problems=1; }
+    done < <(recorded_wire_groups)
+    if [[ -L "$CURRENT" ]]; then rm -f -- "$CURRENT"; printf '  OK Removed %s\n' "$CURRENT"
+    elif [[ -e "$CURRENT" ]]; then printf '  %s is not a link created by the Facet installer; it was left in place.\n' "$CURRENT" >&2; problems=1; fi
+    if [[ $NO_PATH != 1 ]]; then remove_path; printf '%s\n' '  OK Removed the facet PATH block from shell profiles'; fi
+    rm -f -- "$STATE_FILE"
+    if [[ $PURGE == 1 ]]; then rm -rf -- "$RUNTIMES"; printf '  OK Deleted %s\n' "$RUNTIMES"
+    else printf '  Runtimes kept in %s (use --purge to delete them).\n' "$RUNTIMES"; fi
+    v1_notice
+    [[ $problems == 0 ]] || exit 1
+    printf '\nFacet is uninstalled.\n'
+}
+
+do_rollback() {
+    section 'Roll back'
+    local active target previous
+    active=$(active_runtime)
+    if [[ $VERSION_EXPLICIT == 1 ]]; then target="$VERSION-$OS-$ARCH"; else target=$(read_state previous); fi
+    [[ -n "$target" && "$target" != "$active" ]] || die 'No previous Facet runtime is installed to roll back to.'
+    runtime_record_ok "$target" || die "Runtime $target is not installed."
+    [[ $("$(runtime_dir "$target")/bin/facet" version 2>/dev/null) == "facet v${target%-$OS-$ARCH}" ]] || die "Runtime $target does not run; reinstall it."
+    activate "$target"
+    write_state "$target" "$active"
+    printf '  OK Active runtime: %s\n' "$target"
+    refresh_wirings || die 'Facet was rolled back, but refreshing the recorded wirings failed; see the output above.'
+}
+
+do_install() {
+    local runtime_name runtime deps archive_hash='' name base cache selected reuse=0 missing=() recorded item composer
+    runtime_name="$VERSION-$OS-$ARCH"; runtime=$(runtime_dir "$runtime_name"); deps="$runtime/dependencies"
+    if [[ -z "$COMPONENTS" && -d "$runtime" ]]; then COMPONENTS=$(recorded_components "$runtime"); fi
+    COMPONENTS=${COMPONENTS:-remotion,piper}
+    if [[ $YES != 1 ]]; then
+        local options=()
+        while IFS=$'\t' read -r kind id version value windows linux darwin size capability; do
+            [[ "$kind" != component ]] || options+=("$id" "$id | $size | $capability")
+        done < "$MANIFEST"
+        COMPONENTS=$(choose 'Optional production tools (plain input: numbers or names, comma separated; none for core only)' 1 "$COMPONENTS" "${options[@]}")
     fi
-    if [[ ! -x "$DEPS/piper/bin/python" ]]; then
-        python3 -m venv "$DEPS/piper" || { system_package python; python3 -m venv "$DEPS/piper"; }
-    fi
-    PYTHON="$DEPS/piper/bin/python"; VOICES="$DEPS/voices"; mkdir -p "$VOICES"
-    confirm "Install Piper $(definition piper 3) and voice $(definition piper 4)"
-    step 'Install Piper' "$PYTHON" -m pip install --only-binary=:all: "piper-tts==$(definition piper 3)"
-    step 'Download speech model' "$PYTHON" -m piper.download_voices --download-dir "$VOICES" "$(definition piper 4)"
-fi
-verify_media() (
-    set -e
-    VERIFY="$TEMP/verify"; mkdir "$VERIFY"; VIDEO="$VERIFY/test.mp4"
-    ffmpeg -v error -f lavfi -i color=c=blue:s=320x180:r=24:d=1 -c:v libx264 -pix_fmt yuv420p "$VIDEO"
-    if has remotion; then
-        # JSON is valid YAML; Node is already a selected renderer dependency.
-        node -e 'require("fs").writeFileSync(process.argv[1],JSON.stringify({paths:{remotion_composer:process.argv[2]}}))' "$VERIFY/.facet.yaml" "$COMPOSER"
-        VIDEO="$VERIFY/render.mp4"
-        node -e 'require("fs").writeFileSync(process.argv[1],JSON.stringify({width:320,height:180,fps:24,duration_seconds:1,output_path:process.argv[2],cuts:[{type:"text_card",text:"Facet setup",in_seconds:0,out_seconds:1}]}))' "$VERIFY/render.json" "$VIDEO"
-        (cd "$VERIFY" && "$FACET" tools run video_compose --input "$VERIFY/render.json")
-    fi
-    ffprobe -v error -show_streams "$VIDEO"; ffmpeg -v error -i "$VIDEO" -f null -
-    if has piper; then
-        printf 'Facet setup verification.\n' | "$PYTHON" -m piper --model "$VOICES/$(definition piper 4).onnx" --output_file "$VERIFY/voice.wav"
-        ffmpeg -v error -i "$VERIFY/voice.wav" -f null -
-    fi
-    if has hyperframes; then
-        mkdir "$VERIFY/html"; cp "$SCRIPT_DIR/installer/verify.html" "$VERIFY/html/index.html"
-        (cd "$VERIFY/html" && node "$HF_ENTRY" render --output "$VERIFY/html/render.mp4" --fps 24)
-        ffmpeg -v error -i "$VERIFY/html/render.mp4" -f null -
-    fi
-)
-if [[ $SKIP_VERIFY == 0 ]]; then step 'Verify selected local capabilities' verify_media; else printf '%s\n' 'Verification skipped: media readiness is unverified.'; fi
-if [[ $PREVIOUS == 0 ]]; then
-    new_path "$SKILL"
-    [[ $STATE_RESIDUE == 1 ]] || new_path "$STATE"
-fi
-if [[ $INSTRUCTION_OWNED == 1 ]]; then
-    extract_instruction_section "$INSTRUCTION" "$TEMP/current-instruction-section" || die 'Managed Facet instruction section is missing.'
-    [[ $(hash_file "$TEMP/current-instruction-section") == "$owned_hash" ]] || die 'Preserving modified Facet instruction section.'
-fi
-section '[3/3] Connect your CLI'
-printf '%s\n' "${SELECTED[@]}" > "$INSTALL/components.tsv"
-mkdir -p "$PROJECT"; PROJECT_STAGE=$(mktemp -d "$PROJECT/.facet-stage-XXXXXX")
-mkdir "$PROJECT_STAGE/state"; cp -R "$INSTALL/bundle/skills/facet" "$PROJECT_STAGE/skill"
-cp -R "$INSTALL/bundle/packs" "$PROJECT_STAGE/state/packs"
-{
-    printf '#!/usr/bin/env bash\n'
-    printf 'export PATH=%q:"$PATH"\n' "$DEPS/node/bin:$DEPS/piper/bin:$(dirname "$(command -v ffmpeg)")"
-    if command -v node >/dev/null; then printf 'export PATH=%q:"$PATH"\n' "$(dirname "$(command -v node)")"; fi
-    if has piper; then printf 'export FACET_PIPER_MODEL=%q\n' "$VOICES/$(definition piper 4).onnx"; fi
-    printf 'exec %q "$@"\n' "$FACET"
-} > "$PROJECT_STAGE/state/run-facet.sh"
-chmod +x "$PROJECT_STAGE/state/run-facet.sh"
-{
-    printf '\n## This installation\n'
-    printf -- '- Invoke Facet through `%s` followed by the normal arguments; use this launcher instead of bare facet in examples.\n' "$STATE/run-facet.sh"
-    printf -- '- Run `facet routes list` and `facet routes assess --input <json>` before choosing a method. Resolve packs/... under `%s` and read only the relevant pack SKILL.md.\n' "$STATE"
-    if ((${#SELECTED_PACKS[@]})); then
-        printf -- '- Active production methods selected during setup:'
-        for item in "${SELECTED_PACKS[@]}"; do printf ' `%s/packs/%s/SKILL.md`' "$STATE" "$item"; done
-        printf '.\n'
-    else
-        printf -- '- No production-method pack is active; use the core guidance only.\n'
-    fi
-    printf -- '- Optional components: %s. Tools report missing media-provider configuration when used.\n' "${SELECTED[*]}"
-    if has piper; then printf -- '- Piper model: `%s`.\n' "$VOICES/$(definition piper 4).onnx"; fi
-    if has hyperframes; then printf -- '- Use `node "%s"` for pinned HyperFrames; avoid unpinned npx.\n' "$HF_ENTRY"; fi
-} >> "$PROJECT_STAGE/skill/SKILL.md"
-printf 'version\t%s\ninstallation\t%s\nhost\t%s\ncomponents\t%s\npacks\t%s\n' "$VERSION" "$INSTALL" "$TARGET" "${SELECTED[*]}" "${SELECTED_PACKS[*]:-}" > "$PROJECT_STAGE/state/installation.tsv"
-{
-    printf '%s\n' "$FACET_SECTION_START"
-    printf '## Facet\n'
-    printf -- '- Facet manages only this bounded section; keep project-specific instructions outside it.\n'
-    printf -- '- Read core guidance at `%s/facet/SKILL.md`.\n' "$HOST_PATH"
-    printf -- '- Invoke Facet through `%s/run-facet.sh`.\n' "$STATE"
-    if ((${#SELECTED_PACKS[@]})); then
-        printf -- '- Active production methods:'
-        for item in "${SELECTED_PACKS[@]}"; do printf ' `%s/packs/%s/SKILL.md`' "$STATE" "$item"; done
-        printf '.\n'
-    else
-        printf -- '- No production-method pack is active; use core guidance only.\n'
-    fi
-    printf '%s\n' "$FACET_SECTION_END"
-} > "$PROJECT_STAGE/instruction-section"
-merge_instruction_section "$INSTRUCTION" "$PROJECT_STAGE/instruction-section" "$PROJECT_STAGE/instruction"
-printf 'path\t%s\nsha256\t%s\n' "$INSTRUCTION_REL" "$(hash_file "$PROJECT_STAGE/instruction-section")" > "$PROJECT_STAGE/state/instruction-section.tsv"
-(
-    cd "$PROJECT_STAGE"
-    find state skill -type f | while IFS= read -r file; do
-        case "$file" in state/*) dest=".facet-install/${file#state/}";; skill/*) dest="$HOST_PATH/facet/${file#skill/}";; esac
-        printf '%s  %s\n' "$(hash_file "$file")" "$dest"
+    [[ "$COMPONENTS" != all ]] || COMPONENTS=$(awk -F '\t' '$1=="component" {printf "%s%s", sep, $2; sep=","}' "$MANIFEST")
+    SELECTED=()
+    local raw
+    IFS=',' read -r -a raw <<< "$COMPONENTS"
+    for item in "${raw[@]:-}"; do
+        item=${item// /}; [[ -n "$item" ]] || continue
+        if [[ "$item" != none ]]; then [[ $(definition "$item" 1 2>/dev/null) == component ]] || die "Unknown component: $item"; fi
+        SELECTED+=("$item")
     done
-) > "$PROJECT_STAGE/managed-files.sha256"
-mv "$PROJECT_STAGE/managed-files.sha256" "$PROJECT_STAGE/state/managed-files.sha256"
-mkdir -p "$(dirname "$SKILL")"
-if [[ $PREVIOUS == 1 ]]; then
-    mv "$STATE" "$PROJECT_STAGE/old-state"
-    mv "$SKILL" "$PROJECT_STAGE/old-skill"
-elif [[ $STATE_RESIDUE == 1 ]]; then
-    mv "$STATE" "$PROJECT_STAGE/old-state"
-    while IFS= read -r -d '' entry; do
-        name=$(basename -- "$entry")
-        [[ ! -e "$PROJECT_STAGE/state/$name" && ! -L "$PROJECT_STAGE/state/$name" ]] || die "Preserving colliding partial installer state: .facet-install/$name"
-        cp -R -- "$entry" "$PROJECT_STAGE/state/$name"
-    done < <(find "$PROJECT_STAGE/old-state" -mindepth 1 -maxdepth 1 -print0)
+    ((${#SELECTED[@]})) || SELECTED=(none)
+    has() { local s; for s in "${SELECTED[@]}"; do [[ "$s" != "$1" ]] || return 0; done; return 1; }
+    if has none && ((${#SELECTED[@]} != 1)); then die 'none cannot be combined with components.'; fi
+    printf '\n  Action:      %s\n  Version:     %s\n  Components:  %s\n  Runtime:     %s\n' "$ACTION" "$VERSION" "${SELECTED[*]}" "$runtime"
+    [[ $YES == 1 ]] || [[ $(ask 'Continue?' y) =~ ^(y|yes)$ ]] || die 'Installation cancelled.'
+
+    section 'Install and verify'
+    local program
+    for program in awk grep curl unzip zipinfo; do command -v "$program" >/dev/null || die "Install required utility: $program"; done
+    start_log
+    mkdir -p "$RUNTIMES"
+    name="facet-$VERSION-$OS-$ARCH.zip"
+    if [[ -z "$ARCHIVE" ]]; then
+        base="https://github.com/$(definition facet 4)/releases/download/v$VERSION"
+        cache="$FACET_HOME_DIR/cache"; mkdir -p "$cache"
+        ARCHIVE="$cache/$name"; SUMS="$TEMP/SHA256SUMS.txt"
+        step 'Check release download' fetch "$base/SHA256SUMS.txt" "$SUMS"
+        local expected
+        expected=$(awk -v name="$name" '{sub(/\r$/,"")} $2==name{print $1}' "$SUMS")
+        if [[ -f "$ARCHIVE" && $(hash_file "$ARCHIVE") == "$expected" ]]; then printf '  OK Reusing verified download\n'; else
+            step 'Download Facet' fetch "$base/$name" "$ARCHIVE.partial"
+            verify_checksum "$ARCHIVE.partial" "$SUMS" "$name"; mv "$ARCHIVE.partial" "$ARCHIVE"
+        fi
+    fi
+    verify_checksum "$ARCHIVE" "$SUMS" "$name"; archive_hash=$(hash_file "$ARCHIVE")
+
+    if [[ -d "$runtime" ]]; then
+        if runtime_intact "$runtime" && grep -q "\"archive_sha256\": \"$archive_hash\"" "$runtime/components.json"; then
+            reuse=1; printf '  OK Reusing installed runtime %s\n' "$runtime_name"
+        else
+            printf '  Installed runtime %s is incomplete or modified; replacing it with a verified copy.\n' "$runtime_name"
+            ASIDE="$RUNTIMES/.facet-old-$runtime_name-$$"; ASIDE_TARGET=$runtime
+            mv -- "$runtime" "$ASIDE"
+        fi
+    fi
+    if [[ $reuse == 0 ]]; then
+        STAGE=$(mktemp -d "$RUNTIMES/.facet-stage-XXXXXX")
+        expand_zip "$ARCHIVE" "$STAGE"
+        local required
+        for required in bin/facet dependencies/remotion-composer/package-lock.json; do [[ -f "$STAGE/$required" ]] || die "Release missing $required"; done
+        chmod +x "$STAGE/bin/facet"
+        [[ $("$STAGE/bin/facet" version) == "facet v$VERSION" ]] || die 'Binary version mismatch.'
+        (cd "$STAGE" && find bin dependencies -type f | LC_ALL=C sort | while IFS= read -r f; do "${SHA_CMD[@]}" "$f"; done) > "$STAGE/.facet-files.sha256"
+        # Components are installed at the final path: Python virtual
+        # environments and npm launchers record absolute paths.
+        mv -- "$STAGE" "$runtime"; STAGE=''; NEW_RUNTIME=$runtime
+        missing=("${SELECTED[@]}")
+    else
+        recorded=",$(recorded_components "$runtime"),"
+        for item in "${SELECTED[@]}"; do [[ "$item" == none || "$recorded" == *",$item,"* ]] || missing+=("$item"); done
+    fi
+    mkdir -p "$deps"
+    export PATH="$deps/node/bin:$deps/piper/bin:$PATH"
+    needs() { local s; for s in "${missing[@]:-}"; do [[ "$s" != "$1" ]] || return 0; done; return 1; }
+
+    if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then step 'Install media tools' system_package ffmpeg; fi
+    step 'Check FFmpeg' ffmpeg -version; step 'Check FFprobe' ffprobe -version
+    composer="$runtime/$(definition remotion 4)"
+    if needs remotion || needs hyperframes; then
+        if ! node_compatible; then
+            if [[ "$OS" == linux ]]; then step 'Install private Node.js runtime' install_linux_node "$deps"; else step 'Install Node.js' system_package node; fi
+        fi
+        node_compatible || die "Node.js $(definition node 4)+ is required."
+        command -v npm >/dev/null || die 'npm is missing; install it and rerun.'
+    fi
+    if needs remotion; then
+        (cd "$composer" && step 'Install Remotion packages' npm ci --no-audit --no-fund && step 'Prepare Remotion browser' node node_modules/@remotion/cli/remotion-cli.js browser ensure)
+        if [[ "$OS" == linux ]] && browser_libraries_missing "$composer"; then
+            step 'Install browser system libraries' system_package browser-libs || printf '%s\n' '  Browser libraries are missing; rendering will fail until they are installed.' >&2
+        fi
+    fi
+    local hf="$deps/hyperframes" hf_entry="$deps/hyperframes/node_modules/hyperframes/bin/hyperframes.mjs"
+    if needs hyperframes; then
+        mkdir -p "$hf"
+        [[ -f "$hf/package.json" ]] || printf '{"private":true,"dependencies":{"hyperframes":"%s"}}\n' "$(definition hyperframes 3)" > "$hf/package.json"
+        (cd "$hf" && step "Install HyperFrames $(definition hyperframes 3)" npm install --no-audit --no-fund)
+        step 'Prepare HyperFrames browser' node "$hf_entry" browser ensure
+    fi
+    local python="$deps/piper/bin/python" voices="$deps/voices"
+    if needs piper; then
+        if ! command -v python3 >/dev/null || ! python3 -c 'import sys, venv' >/dev/null 2>&1; then step 'Install Python for Piper' system_package python; fi
+        [[ -x "$python" ]] || step 'Create Piper environment' python3 -m venv "$deps/piper"
+        mkdir -p "$voices"
+        step "Install Piper $(definition piper 3)" "$python" -m pip install --only-binary=:all: "piper-tts==$(definition piper 3)"
+        step 'Download speech model' "$python" -m piper.download_voices --download-dir "$voices" "$(definition piper 4)"
+    fi
+
+    verify_media() (
+        set -e
+        local dir="$TEMP/verify" video
+        mkdir -p "$dir"; video="$dir/test.mp4"
+        ffmpeg -v error -f lavfi -i color=c=blue:s=320x180:r=24:d=1 -c:v libx264 -pix_fmt yuv420p -y "$video"
+        if has remotion; then
+            video="$dir/render.mp4"
+            printf '{"width":320,"height":180,"fps":24,"duration_seconds":1,"output_path":%s,"cuts":[{"type":"text_card","text":"Facet setup","in_seconds":0,"out_seconds":1}]}\n' "$(json_string "$video")" > "$dir/render.json"
+            # The runtime's own composer, beside its executable, is what
+            # renders: a development override must not redirect the check.
+            (cd "$dir" && env -u FACET_REMOTION_COMPOSER "$runtime/bin/facet" tools run video_compose --input "$dir/render.json")
+        fi
+        ffprobe -v error -show_streams "$video"; ffmpeg -v error -i "$video" -f null -
+        if has piper; then
+            printf 'Facet setup verification.\n' | "$python" -m piper --model "$voices/$(definition piper 4).onnx" --output_file "$dir/voice.wav"
+            ffmpeg -v error -i "$dir/voice.wav" -f null -
+        fi
+        if has hyperframes; then
+            mkdir -p "$dir/html"; cp "$SCRIPT_DIR/installer/verify.html" "$dir/html/index.html"
+            (cd "$dir/html" && node "$hf_entry" render --output "$dir/html/render.mp4" --fps 24)
+            ffmpeg -v error -i "$dir/html/render.mp4" -f null -
+        fi
+    )
+    local verified=true
+    if [[ $SKIP_VERIFY == 0 ]]; then step 'Verify selected local capabilities' verify_media
+    else verified=false; printf '%s\n' '  Verification skipped: media readiness is unverified.'; fi
+
+    local list='' s
+    for s in "${SELECTED[@]}"; do [[ "$s" == none ]] || list="${list:+$list, }$(json_string "$s")"; done
+    if [[ $reuse == 1 ]]; then
+        recorded=$(recorded_components "$runtime")
+        IFS=',' read -r -a raw <<< "$recorded"
+        for s in "${raw[@]:-}"; do [[ -z "$s" || ", $list," == *"\"$s\""* ]] || list="${list:+$list, }$(json_string "$s")"; done
+    fi
+    printf '{\n  "schema": 1,\n  "version": %s,\n  "os": %s,\n  "arch": %s,\n  "components": [%s],\n  "verified": %s,\n  "archive_sha256": %s,\n  "installed_at": %s\n}\n' \
+        "$(json_string "$VERSION")" "$(json_string "$OS")" "$(json_string "$ARCH")" "$list" "$verified" "$(json_string "$archive_hash")" "$(json_string "$(utc_now)")" > "$runtime/components.json"
+
+    local active previous refresh_failed=0
+    active=$(active_runtime)
+    activate "$runtime_name"
+    previous=$(read_state previous)
+    if [[ -n "$active" && "$active" != "$runtime_name" ]]; then previous=$active; fi
+    write_state "$runtime_name" "$previous"
+    COMMITTED=1
+    printf '  OK Active runtime: %s\n' "$runtime_name"
+    prune_runtimes "$runtime_name" "$previous"
+    if [[ $NO_PATH != 1 ]]; then add_path; else printf '  PATH unchanged (--no-path). Run the command as %s\n' "$CURRENT/bin/facet"; fi
+    refresh_wirings || refresh_failed=1
+
+    section 'Wire agentic CLIs'
+    local exe="$CURRENT/bin/facet" detected='' cli
+    for cli in $SUPPORTED_CLIS; do if command -v "$cli" >/dev/null; then detected="${detected:+$detected,}$cli"; fi; done
+    if [[ -z "$WIRE" && $YES != 1 ]]; then
+        local wire_options=()
+        for cli in $SUPPORTED_CLIS; do
+            if [[ ",$detected," == *",$cli,"* ]]; then wire_options+=("$cli" "$cli - detected"); else wire_options+=("$cli" "$cli - not detected"); fi
+        done
+        WIRE=$(choose 'Wire Facet into which CLIs? (none to skip)' 1 "${detected:-none}" "${wire_options[@]}")
+        if [[ "$WIRE" != none ]]; then
+            SCOPE=$(choose 'Wire for all your projects (user) or one project?' 0 "$SCOPE" user 'user - every project' project 'project - one directory')
+            if [[ "$SCOPE" == project && -z "$PROJECT" ]]; then PROJECT=$(absolute "$(ask 'Project directory' .)"); fi
+        fi
+    fi
+    if [[ -n "$WIRE" && "$WIRE" != none ]]; then
+        local args=()
+        while IFS= read -r a; do args+=("$a"); done < <(wire_scope_args "$SCOPE" "$PROJECT")
+        run_wire "$exe" "$WIRE" "${args[@]}" || die 'facet wire failed; Facet is installed. Rerun facet wire after fixing the reported problem.'
+    else
+        printf '%s\n' '  Not wired. Later: facet wire <claude|codex|copilot|opencode|all> [--scope user|project]'
+    fi
+    v1_notice
+    [[ $refresh_failed == 0 ]] || die 'Facet is installed and active, but refreshing the recorded wirings failed; see the output above.'
+    printf '\nFacet v%s is ready.\n  Check it: facet doctor\n' "$VERSION"
+}
+
+# ------------------------------------------------------------------- main
+section 'FACET'
+printf 'Video production tools for your agent.\nInstaller %s | %s/%s\n' "$VERSION" "$OS" "$ARCH"
+if [[ $YES != 1 && $ACTION_EXPLICIT == 0 && -L "$CURRENT" ]]; then
+    ACTION=$(choose 'Facet is installed. What should setup do?' 0 install install 'install - add components or repair' update 'update - install the selected version' rollback 'rollback - return to the previous runtime' uninstall 'uninstall - remove Facet')
 fi
-mv "$PROJECT_STAGE/state" "$STATE"
-mv "$PROJECT_STAGE/skill" "$SKILL"
-mkdir -p "$(dirname -- "$INSTRUCTION")"
-if [[ -f "$INSTRUCTION" ]]; then cp "$INSTRUCTION" "$PROJECT_STAGE/old-instruction"; else touch "$PROJECT_STAGE/instruction-was-absent"; fi
-mv "$PROJECT_STAGE/instruction" "$INSTRUCTION"
-if [[ $LEGACY_MIGRATION == 1 ]]; then
-    backup=$(mktemp -d "$PROJECT/.facet-backup-XXXXXX")
-    mv "$PROJECT_STAGE/old-state" "$backup/state"; mv "$PROJECT_STAGE/old-skill" "$backup/skill"
-    printf 'Original integration preserved at: %s\n' "$backup"
-fi
-COMMITTED=1
-printf '\nFacet is ready for %s.\n  Open a new %s session in: %s\n  Try: Use Facet to make a short title card.\n' "$TARGET" "$TARGET" "$PROJECT"
-printf 'Setup log: %s\nRerun setup to add components, repair, or update this project.\n' "$LOG"
+case "$ACTION" in
+    uninstall) do_uninstall;;
+    rollback) do_rollback;;
+    install|update) do_install;;
+esac

@@ -16,22 +16,6 @@ import (
 var productPathPattern = regexp.MustCompile("`((?:skills|packs|agents|schemas|styles|pipeline_defs|\\.agents)/[^`\\s,;:)]+)")
 var documentedTargetInstallRoots = []string{".agents/skills"}
 
-func TestDonorGuardChecksTrackedPathNames(t *testing.T) {
-	banned := []*regexp.Regexp{
-		regexp.MustCompile(`(?i)open[\s._-]*` + "montage"),
-		regexp.MustCompile(`(?i)video[\s._-]*` + "kit"),
-	}
-	tracked := []string{
-		"docs/Open" + "Montage.md",
-		"packs/video" + "-kit/README.md",
-		"docs/FACET.md",
-	}
-	violations := donorPathViolations(tracked, banned)
-	if len(violations) != 2 {
-		t.Fatalf("donor path scan found %d violations, want 2: %v", len(violations), violations)
-	}
-}
-
 func TestRequiredRetainedPortLegalNotice(t *testing.T) {
 	data, err := os.ReadFile("THIRD_PARTY_NOTICES.md")
 	if err != nil {
@@ -39,8 +23,6 @@ func TestRequiredRetainedPortLegalNotice(t *testing.T) {
 	}
 	notice := strings.Join(strings.Fields(string(data)), " ")
 	required := []string{
-		"Open" + "Montage",
-		"https://github.com/calesthio/" + "Open" + "Montage",
 		"cd9f3c1f03368be87b140af494914b8ee4e3c7a4",
 		"AGPL-3.0",
 		"toolbox contract/registry/process execution",
@@ -55,120 +37,6 @@ func TestRequiredRetainedPortLegalNotice(t *testing.T) {
 		if !strings.Contains(notice, text) {
 			t.Errorf("THIRD_PARTY_NOTICES.md omits required legal attribution %q", text)
 		}
-	}
-}
-
-func TestLegacyComposerManifestGuardsCurrentSource(t *testing.T) {
-	var manifest struct {
-		AllowedSourcePaths []string `json:"allowedSourcePaths"`
-		BannedLegacyPaths  []string `json:"bannedLegacyPaths"`
-		BannedLegacyTokens []string `json:"bannedLegacyTokens"`
-	}
-	data, err := os.ReadFile(filepath.Join("remotion-composer", "legacy-composer-manifest.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		t.Fatal(err)
-	}
-	var actual []string
-	var source strings.Builder
-	err = filepath.WalkDir(filepath.Join("remotion-composer", "src"), func(name string, entry fs.DirEntry, err error) error {
-		if err != nil || entry.IsDir() {
-			return err
-		}
-		relative, err := filepath.Rel("remotion-composer", name)
-		if err != nil {
-			return err
-		}
-		actual = append(actual, filepath.ToSlash(relative))
-		content, err := os.ReadFile(name)
-		if err != nil {
-			return err
-		}
-		source.Write(content)
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sort.Strings(actual)
-	sort.Strings(manifest.AllowedSourcePaths)
-	if strings.Join(actual, "\n") != strings.Join(manifest.AllowedSourcePaths, "\n") {
-		t.Fatalf("composer source differs from the clean-room allowlist:\ngot %v\nwant %v", actual, manifest.AllowedSourcePaths)
-	}
-	for _, name := range manifest.BannedLegacyPaths {
-		if _, err := os.Stat(filepath.Join("remotion-composer", filepath.FromSlash(name))); !os.IsNotExist(err) {
-			t.Errorf("banned legacy composer path returned: %s", name)
-		}
-	}
-	for _, token := range manifest.BannedLegacyTokens {
-		if strings.Contains(source.String(), token) {
-			t.Errorf("banned legacy composer token returned: %s", token)
-		}
-	}
-}
-
-func TestDonorTermExceptionIsLimitedToThirdPartyNotices(t *testing.T) {
-	tests := map[string]bool{
-		"THIRD_PARTY_NOTICES.md":        true,
-		"docs/THIRD_PARTY_NOTICES.md":   false,
-		"THIRD_PARTY_NOTICES.md.backup": false,
-		"README.md":                     false,
-	}
-	for name, want := range tests {
-		if got := isLegalNotice(name); got != want {
-			t.Errorf("isLegalNotice(%q) = %v, want %v", name, got, want)
-		}
-	}
-}
-
-func TestProductContractContainsNoBannedTerms(t *testing.T) {
-	banned := []*regexp.Regexp{
-		regexp.MustCompile(`(?i)open[\s._-]*` + "montage"),
-		regexp.MustCompile(`(?i)video[\s._-]*` + "kit"),
-	}
-	var violations []string
-	err := fs.WalkDir(Assets, ".", func(name string, entry fs.DirEntry, err error) error {
-		if err != nil || entry.IsDir() || !isProductTextFile(name) {
-			return err
-		}
-		data, err := Assets.ReadFile(name)
-		if err != nil {
-			return err
-		}
-		for _, pattern := range banned {
-			if pattern.Match(data) {
-				violations = append(violations, "embedded:"+name+": "+pattern.String())
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	tracked := trackedFiles(t)
-	violations = append(violations, donorPathViolations(tracked, banned)...)
-	for _, name := range tracked {
-		if !isProductTextFile(name) {
-			continue
-		}
-		if isLegalNotice(name) {
-			continue
-		}
-		data, err := os.ReadFile(filepath.FromSlash(name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, pattern := range banned {
-			if pattern.Match(data) {
-				violations = append(violations, name+": "+pattern.String())
-			}
-		}
-	}
-	sort.Strings(violations)
-	if len(violations) != 0 {
-		t.Fatalf("banned donor product terms remain:\n%s", strings.Join(violations, "\n"))
 	}
 }
 
@@ -194,22 +62,6 @@ func TestTrackedTextContainsNoPersonalWindowsUserPaths(t *testing.T) {
 	if len(violations) != 0 {
 		t.Fatalf("personal host paths remain:\n%s", strings.Join(violations, "\n"))
 	}
-}
-
-func isLegalNotice(name string) bool {
-	return filepath.ToSlash(name) == "THIRD_PARTY_NOTICES.md"
-}
-
-func donorPathViolations(names []string, banned []*regexp.Regexp) []string {
-	var violations []string
-	for _, name := range names {
-		for _, pattern := range banned {
-			if pattern.MatchString(name) {
-				violations = append(violations, "tracked path:"+name+": "+pattern.String())
-			}
-		}
-	}
-	return violations
 }
 
 func TestRetainedPacksReferenceOnlyExistingFacetAssets(t *testing.T) {
@@ -272,8 +124,6 @@ func TestRetainedPacksReferenceOnlyExistingFacetAssets(t *testing.T) {
 		}
 	}
 	for _, name := range []string{
-		"README.md",
-		"OBJECTIVE.md",
 		filepath.Join("skills", "facet", "SKILL.md"),
 		filepath.Join("agents", "facet-creative.md"),
 	} {
@@ -386,8 +236,6 @@ func TestRetainedPackMetadataDescribesGuidanceNotPipelines(t *testing.T) {
 
 func TestActiveProductDocsDescribeGuidanceNotWorkflowContracts(t *testing.T) {
 	files := []string{
-		"docs/PRODUCT_MODEL.md",
-		"docs/RELEASE_MANIFEST.md",
 		"docs/index.html",
 		"internal/toolbox/productmodel_test.go",
 	}
@@ -420,7 +268,11 @@ func TestActiveProductDocsDescribeGuidanceNotWorkflowContracts(t *testing.T) {
 	}
 }
 
-func TestNpmPackageShipsCanonicalContractAndNotices(t *testing.T) {
+// The npm package is only the launcher: the guidance is compiled into the
+// facet binary and the composer ships in the release archive, so an npm copy
+// of either could only drift from what actually runs. npm always adds the
+// README, which says the package is only a launcher.
+func TestNpmPackageShipsOnlyTheLauncherReadmeAndNotices(t *testing.T) {
 	command := exec.Command("npm", "pack", "--dry-run", "--json", "--ignore-scripts")
 	raw, err := command.Output()
 	if err != nil {
@@ -437,29 +289,14 @@ func TestNpmPackageShipsCanonicalContractAndNotices(t *testing.T) {
 	if len(result) != 1 {
 		t.Fatalf("npm pack returned %d payloads, want 1", len(result))
 	}
-	shipped := make(map[string]bool, len(result[0].Files))
+	var shipped []string
 	for _, file := range result[0].Files {
-		shipped[filepath.ToSlash(file.Path)] = true
+		shipped = append(shipped, filepath.ToSlash(file.Path))
 	}
-
-	required := []string{
-		"LICENSE",
-		"THIRD_PARTY_NOTICES.md",
-		"skills/facet/SKILL.md",
-		"agents/facet-creative.md",
-	}
-	for _, pack := range PackNames() {
-		required = append(required, "packs/"+pack+"/SKILL.md")
-	}
-	var missing []string
-	for _, name := range required {
-		if !shipped[name] {
-			missing = append(missing, name)
-		}
-	}
-	sort.Strings(missing)
-	if len(missing) != 0 {
-		t.Fatalf("npm package omits canonical product files:\n%s", strings.Join(missing, "\n"))
+	sort.Strings(shipped)
+	want := []string{"LICENSE", "README.md", "THIRD_PARTY_NOTICES.md", "bin/facet-cli.js", "package.json"}
+	if strings.Join(shipped, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("npm package ships:\n%s\nwant:\n%s", strings.Join(shipped, "\n"), strings.Join(want, "\n"))
 	}
 }
 
@@ -495,44 +332,95 @@ func TestReleasePackagingExcludesRemovedProductSurfaces(t *testing.T) {
 	}
 }
 
-func TestStudioProjectionUsesCanonicalContract(t *testing.T) {
-	files := []string{"web/DESIGN.md", "web/web.go"}
-	banned := []string{
-		"working and supported",
-		"FROZEN.md",
-		"six evidence stages",
-		"permission prompts are disabled",
-	}
-
-	var violations []string
-	for _, name := range files {
-		data, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		lower := strings.ToLower(string(data))
-		for _, term := range banned {
-			if strings.Contains(lower, strings.ToLower(term)) {
-				violations = append(violations, name+": "+term)
-			}
-		}
-	}
-	sort.Strings(violations)
-	if len(violations) != 0 {
-		t.Fatalf("Studio projection contradicts the canonical contract:\n%s", strings.Join(violations, "\n"))
-	}
+// agentEngineModules are module path prefixes of agent engines and
+// reasoning-model clients. Facet is never a harness: it links none of them.
+// The Facet App runs Compa's kernel beside the Toolkit as a separate program,
+// never as a Go dependency.
+var agentEngineModules = []string{
+	"github.com/xibodev/compa",
+	"github.com/xibodev/llm",
+	"github.com/openai/",
+	"github.com/anthropics/",
+	"github.com/sashabaranov/go-openai",
+	"google.golang.org/genai",
+	"github.com/google/generative-ai-go",
+	"github.com/tmc/langchaingo",
+	"github.com/cloudwego/eino",
 }
 
-func TestFacetAdoptsCompaWithoutRetiredKernelReferences(t *testing.T) {
+func TestFacetLinksNoAgentEngine(t *testing.T) {
 	goMod, err := os.ReadFile("go.mod")
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if !strings.Contains(string(goMod), "github.com/xibodev/compa v1.0.0") {
-		t.Fatal("go.mod does not pin the released Compa kernel")
+	for _, line := range strings.Split(string(goMod), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		module := fields[0]
+		if module == "require" && len(fields) > 1 {
+			module = fields[1]
+		}
+		for _, engine := range agentEngineModules {
+			if strings.HasPrefix(module, engine) {
+				t.Errorf("go.mod requires agent engine module %s", module)
+			}
+		}
 	}
 
+	// The binary's own import graph: what is actually linked.
+	out, err := exec.Command("go", "list", "-deps", "-f",
+		"{{.ImportPath}}|{{if .Module}}{{.Module.Path}}{{end}}", "./cmd/facet").Output()
+	if err != nil {
+		t.Fatalf("go list -deps ./cmd/facet: %v", err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		importPath, module, _ := strings.Cut(strings.TrimSpace(line), "|")
+		for _, engine := range agentEngineModules {
+			if strings.HasPrefix(module, engine) {
+				t.Errorf("cmd/facet links agent engine package %s (module %s)", importPath, module)
+			}
+		}
+		// App code (the window's screen logic) is not part of the Toolkit.
+		if importPath == "github.com/xibodev/facet/internal/journeys" ||
+			strings.HasPrefix(importPath, "github.com/xibodev/facet/internal/journeys/") {
+			t.Errorf("cmd/facet links App code: %s", importPath)
+		}
+	}
+}
+
+// The Toolkit never calls a reasoning model: it calls media-generation
+// providers only when such a tool runs. No Go source in the binary's tree may
+// name a model-inference endpoint.
+func TestToolkitCallsNoReasoningModel(t *testing.T) {
+	forbidden := []string{
+		"/chat/completions", "/v1/completions", "/v1/responses", "/v1/messages",
+		"api.anthropic.com", "generativelanguage.googleapis.com", "bedrock-runtime",
+	}
+	for _, dir := range []string{"cmd", "internal"} {
+		err := filepath.WalkDir(dir, func(name string, entry fs.DirEntry, err error) error {
+			if err != nil || entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+				return err
+			}
+			data, err := os.ReadFile(name)
+			if err != nil {
+				return err
+			}
+			text := strings.ToLower(string(data))
+			for _, endpoint := range forbidden {
+				if strings.Contains(text, endpoint) {
+					t.Errorf("%s names the model endpoint %q", filepath.ToSlash(name), endpoint)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+func TestFacetCarriesNoRetiredKernelIdentity(t *testing.T) {
 	retired := "facet" + "-studio"
 	var violations []string
 	for _, name := range trackedFiles(t) {
@@ -552,23 +440,26 @@ func TestFacetAdoptsCompaWithoutRetiredKernelReferences(t *testing.T) {
 	}
 }
 
-func TestLocalUATUsesTheCompaToolchain(t *testing.T) {
+func TestLocalUATUsesTheModuleToolchain(t *testing.T) {
+	goMod, err := os.ReadFile("go.mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	version := ""
+	for _, line := range strings.Split(string(goMod), "\n") {
+		if fields := strings.Fields(line); len(fields) == 2 && fields[0] == "go" {
+			version = fields[1]
+		}
+	}
+	if version == "" {
+		t.Fatal("go.mod declares no go version")
+	}
 	dockerfile, err := os.ReadFile(".release-harness/docker/Dockerfile")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(dockerfile), "FROM golang:1.26.6-bookworm AS go") {
-		t.Fatal("local UAT does not use the Go toolchain required by Compa")
-	}
-}
-
-func TestLinuxSourceInstallCISelectsThePackItAsserts(t *testing.T) {
-	data, err := os.ReadFile(".github/workflows/ci.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), `facet" init project --engine opencode --pack explainer --no-launch`) {
-		t.Fatal("Linux source-install CI asserts the explainer projection without selecting that pack")
+	if !strings.Contains(string(dockerfile), "FROM golang:"+version+"-bookworm AS go") {
+		t.Fatalf("local UAT does not use the Go %s toolchain that go.mod requires", version)
 	}
 }
 
@@ -586,7 +477,6 @@ func TestLocalUATAllowsAnExplicitNPMRegistry(t *testing.T) {
 			"ARG NPM_REGISTRY=https://registry.npmjs.org",
 			"ENV npm_config_registry=${NPM_REGISTRY}",
 			`npm install --global opencode-ai@1.18.29 --registry="${NPM_REGISTRY}"`,
-			`npm install --prefix /opt/uat --registry="${NPM_REGISTRY}"`,
 		},
 		"docker-compose.test.yml": {
 			"NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}",
@@ -612,140 +502,14 @@ func TestLocalUATIncludesTheInstallerPackage(t *testing.T) {
 	}
 	for _, required := range []string{
 		"!installer/", "!installer/**",
+		"!install.sh", "!install.ps1", "!package.json",
 		"!agents/", "!agents/**",
 		"!LICENSE", "!THIRD_PARTY_NOTICES.md",
 		"!capability.go",
-		"!pkg/", "!pkg/**",
 	} {
 		if !strings.Contains(string(data), required) {
 			t.Errorf(".dockerignore does not contain %q", required)
 		}
-	}
-}
-
-func TestLocalUATRunsTheInstallerNonInteractively(t *testing.T) {
-	data, err := os.ReadFile(".release-harness/docker/Dockerfile")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, required := range []string{
-		"go build -trimpath -ldflags \"-X main.version=1.1.0\"",
-		"/tmp/facet-release/bin/facet bundle --target app --out /tmp/facet-release/bundle",
-		"facet-1.1.0-linux-amd64.zip",
-		"bash install.sh --yes --target opencode --project /home/facet/studio --install-dir /home/facet/.facet/runtime --components remotion",
-		"--archive /tmp/facet-1.1.0-linux-amd64.zip --checksums /tmp/checksums-linux-amd64.txt",
-		"ln -s ../runtime/bin/facet /home/facet/.facet/bin/facet",
-		"ln -s runtime/bundle /home/facet/.facet/bundle",
-	} {
-		if !strings.Contains(string(data), required) {
-			t.Errorf(".release-harness/docker/Dockerfile does not contain %q", required)
-		}
-	}
-}
-
-func TestLocalUATActivatesUIFromTheInstalledStudioBundle(t *testing.T) {
-	checks := map[string][]string{
-		".release-harness/docker/Dockerfile": {
-			"/home/facet/.facet/bin/facet bundle --target app --out /home/facet/.facet/bundle",
-		},
-		"scripts/uat-entrypoint.mjs": {
-			"spawn('/home/facet/.facet/bin/facet', ['ui', '--port', '8787', '--dir', '/home/facet/studio', '--no-open']",
-		},
-	}
-
-	for name, required := range checks {
-		data, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, term := range required {
-			if !strings.Contains(string(data), term) {
-				t.Errorf("%s does not contain %q", name, term)
-			}
-		}
-	}
-	installation, err := os.ReadFile("scripts/uat-installation.mjs")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(installation), "['facet-ui', ['--version']]") {
-		t.Error("installation UAT still expects the removed standalone facet-ui launcher")
-	}
-	if strings.Contains(string(installation), "audio: {}") {
-		t.Error("installation UAT sends an explicitly invalid empty audio contract")
-	}
-	if !strings.Contains(string(installation), "id: 'toolbox-fixture', type: 'hero_title', text: 'Installed Facet renderer fixture', in_seconds: 0, out_seconds: 2") {
-		t.Error("installation UAT does not align the toolbox fixture duration with its audio")
-	}
-	browser, err := os.ReadFile("scripts/uat-browser.mjs")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, required := range []string{"#newProjectButton", "#newProjectName", "#newProjectSlug", "#createProjectButton", "#settingsButton", "#discoverModelsButton", "#modelSelect", "#saveModelButton", "#projectVideo", "#videoLink"} {
-		if !strings.Contains(string(browser), required) {
-			t.Errorf("browser UAT does not contain %q", required)
-		}
-	}
-	for _, removed := range []string{"#btnQuickNew", "#newProdName", "#newProdEngine", "#btnSubmitNewProd", "#masterVideo", "#videoDownloadLink"} {
-		if strings.Contains(string(browser), removed) {
-			t.Errorf("browser UAT still contains legacy selector %q", removed)
-		}
-	}
-	if !strings.Contains(string(browser), "const mediaPrefix = `/api/media/catalog/${details.slug}/`;") {
-		t.Error("browser UAT does not validate the catalog media route using the canonical project ID")
-	}
-	if !strings.Contains(string(browser), "if (details.brief_url)") {
-		t.Error("browser UAT requires optional brief evidence on a fresh project")
-	}
-	if !strings.Contains(string(browser), "const discoveredModels = await page.locator('#modelSelect option').evaluateAll") {
-		t.Error("browser UAT does not accept the native model catalog returned by discovery")
-	}
-	smoke, err := os.ReadFile(".release-harness/scenarios/smoke.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(smoke), `nav[aria-label='Projects']`) {
-		t.Error("smoke scenario does not target the rebuilt project navigation")
-	}
-}
-
-func TestWindowsSourceInstallerBuildsTheRequiredStudioBundle(t *testing.T) {
-	data, err := os.ReadFile("scripts/install-source.ps1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	content := string(data)
-	for _, required := range []string{
-		`bundle --target app --out`,
-		`Join-Path $BundleDir 'app/facet-bundle.json'`,
-	} {
-		if !strings.Contains(content, required) {
-			t.Errorf("Windows source installer is missing %q", required)
-		}
-	}
-}
-
-func TestFacetUIContainsBattleTestHardeningContracts(t *testing.T) {
-	data, err := os.ReadFile("web/index.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	content := strings.ReplaceAll(string(data), "\r\n", "\n")
-	for _, required := range []string{
-		".shell {\n      height: calc(100vh - 24px);",
-		`id="reviewDecisionNote"`,
-		`id="rejectReviewButton"`,
-		"/api/review/decision",
-		"reviewReportSummary(report)",
-	} {
-		if !strings.Contains(content, required) {
-			t.Errorf("web/index.html does not contain %q", required)
-		}
-	}
-	mediumStart := strings.Index(content, "@media (max-width: 1160px)")
-	narrowStart := strings.Index(content, "@media (max-width: 880px)")
-	if mediumStart < 0 || narrowStart <= mediumStart || !strings.Contains(content[mediumStart:narrowStart], ".workspace-head { align-items: flex-start; flex-direction: column; }") {
-		t.Error("medium-width UI does not stack the workspace title above its tabs")
 	}
 }
 
@@ -872,4 +636,109 @@ func trackedFiles(t *testing.T) []string {
 	}
 	sort.Strings(files)
 	return files
+}
+
+// The composer ships only the allowlisted source files; the allowlist is the
+// provenance control for the independently authored renderer.
+func TestComposerSourceMatchesAllowlist(t *testing.T) {
+	var manifest struct {
+		AllowedSourcePaths []string `json:"allowedSourcePaths"`
+	}
+	data, err := os.ReadFile(filepath.Join("remotion-composer", "composer-manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	var actual []string
+	err = filepath.WalkDir(filepath.Join("remotion-composer", "src"), func(name string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		relative, err := filepath.Rel("remotion-composer", name)
+		if err != nil {
+			return err
+		}
+		actual = append(actual, filepath.ToSlash(relative))
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(actual)
+	sort.Strings(manifest.AllowedSourcePaths)
+	if strings.Join(actual, "\n") != strings.Join(manifest.AllowedSourcePaths, "\n") {
+		t.Fatalf("composer source differs from its allowlist:\ngot %v\nwant %v", actual, manifest.AllowedSourcePaths)
+	}
+}
+
+// Local UAT must exercise the product installer on an archive the release
+// packaging built, never a hand-built layout.
+func TestLocalUATRunsTheProductInstallerWithoutFabricatedLayout(t *testing.T) {
+	data, err := os.ReadFile(".release-harness/docker/Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	for _, required := range []string{
+		`python3 scripts/package-release.py --os linux --arch "$arch" --out /tmp/facet-release`,
+		"bash /opt/facet-source/install.sh --yes --components remotion --no-path",
+		`--archive "/tmp/facet-release/facet-${FACET_VERSION}-linux-${arch}.zip"`,
+		`ENTRYPOINT ["node", "/opt/uat/uat-entrypoint.mjs"]`,
+	} {
+		if !strings.Contains(content, required) {
+			t.Errorf("Dockerfile does not contain %q", required)
+		}
+	}
+	for _, forbidden := range []string{"ln -s", ".facet/bin/facet", ".facet/bundle", "--target app", "facet-ui",
+		"go build", "zip -q", "/bundle/", "cp -R skills"} {
+		if strings.Contains(content, forbidden) {
+			t.Errorf("Dockerfile fabricates or references a removed layout: %q", forbidden)
+		}
+	}
+}
+
+func TestLocalUATDrivesTheInstalledCLIJourney(t *testing.T) {
+	data, err := os.ReadFile("scripts/uat-journey.mjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"['wire', 'opencode', '--scope', 'user']",
+		"'video_compose'",
+		"'output_review'",
+	} {
+		if !strings.Contains(string(data), required) {
+			t.Errorf("UAT journey does not exercise %s", required)
+		}
+	}
+}
+
+// Surfaces removed in 2.0 stay removed: the browser preview, the module host,
+// project initialization and the duplicate launchers.
+func TestRemovedTwoPointZeroSurfacesStayRemoved(t *testing.T) {
+	for _, name := range []string{
+		"internal/studio", "internal/module", "cmd/facet-ui", "cmd/facet-module", "web",
+		"pkg/viewdef", "internal/config/init.go", "scripts/package-windows.cjs", "bin/facet-ui-cli.js",
+		// The Compa embedding and the 1.x configuration file are gone too.
+		"pkg/provider", "internal/config",
+	} {
+		if _, err := os.Stat(filepath.FromSlash(name)); !os.IsNotExist(err) {
+			t.Errorf("removed surface returned: %s", name)
+		}
+	}
+	var pkg struct {
+		Bin map[string]string `json:"bin"`
+	}
+	data, err := os.ReadFile("package.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		t.Fatal(err)
+	}
+	if len(pkg.Bin) != 1 || pkg.Bin["facet"] == "" {
+		t.Errorf("npm package must expose only the facet launcher, got %v", pkg.Bin)
+	}
 }

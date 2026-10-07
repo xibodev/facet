@@ -19,7 +19,7 @@ func composeDeliveryFixture(t *testing.T, script string) string {
 	}
 	_, workspace := isolateComposeRuntime(t)
 	composer := filepath.Join(workspace, "remotion-composer")
-	composeRuntimeFixture(t, filepath.Join(workspace, ".facet.yaml"), "paths:\n  remotion_composer: '"+filepath.ToSlash(composer)+"'\n")
+	t.Setenv(ComposerDirEnv, composer)
 	composeRuntimeFixture(t, filepath.Join(composer, "package.json"), "{}")
 	composeRuntimeFixture(t, filepath.Join(composer, "src", "index.tsx"), "")
 	// This CLI only copies local fixture bytes; it cannot invoke Remotion or a provider.

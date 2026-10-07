@@ -1,7 +1,11 @@
 package bundle
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,410 +14,497 @@ import (
 	facet "github.com/xibodev/facet"
 )
 
-func testSource(t *testing.T) Source {
+const testVersion = "2.0.0-test"
+
+var testTools = []string{"media_probe", "output_review", "video_compose"}
+
+func canonical(t *testing.T, name string) []byte {
 	t.Helper()
-	return Source{
-		SkillsDir:    filepath.Join("..", "..", "skills", "facet"),
-		PacksDir:     filepath.Join("..", "..", "packs"),
-		AgentsDir:    filepath.Join("..", "..", "agents"),
-		SchemasDir:   filepath.Join("..", "..", "schemas"),
-		Tools:        []string{"video_compose", "media_probe", "edge_tts"},
-		FacetVersion: "1.0.2-test",
+	data, err := facet.Assets.ReadFile(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
+}
+
+func filesByPath(t *testing.T, target Target) map[string]File {
+	t.Helper()
+	files, err := Files(target)
+	if err != nil {
+		t.Fatalf("%s: %v", target, err)
+	}
+	out := map[string]File{}
+	for _, f := range files {
+		out[f.Path] = f
+	}
+	return out
+}
+
+// Every target receives the same core skill and one skill per retained pack,
+// byte for byte, read from the embedded canonical assets.
+func TestFilesProjectCanonicalGuidanceForEveryTarget(t *testing.T) {
+	for _, target := range Targets() {
+		files := filesByPath(t, target)
+		core, ok := files["skills/facet/SKILL.md"]
+		if !ok || !bytes.Equal(core.Content, canonical(t, "skills/facet/SKILL.md")) || core.Kind != KindSkill {
+			t.Errorf("%s: core skill missing or drifted from the canonical asset", target)
+		}
+		packs := 0
+		for _, pack := range facet.RetainedPacks() {
+			packs++
+			for _, guidance := range pack.Guidance {
+				rel := strings.TrimPrefix(guidance.Path, "packs/"+pack.ID+"/")
+				got, ok := files["skills/facet-"+pack.ID+"/"+rel]
+				if !ok {
+					t.Errorf("%s: pack guidance %s is not projected", target, guidance.Path)
+					continue
+				}
+				if !bytes.Equal(got.Content, canonical(t, guidance.Path)) || got.Kind != KindPack || got.Name != PackSkillName(pack.ID) {
+					t.Errorf("%s: %s drifted from the canonical asset", target, guidance.Path)
+				}
+			}
+		}
+		if packs != 7 {
+			t.Errorf("retained packs = %d, want 7", packs)
+		}
+		for path := range files {
+			for _, banned := range []string{"package.json", "facet-pack.json", "AGENTS.md", "CLAUDE.md", "AGENT.md", "copilot-instructions.md"} {
+				if filepath.Base(path) == banned {
+					t.Errorf("%s: projection contains %s; packs ship guidance only and Facet never writes instruction files", target, path)
+				}
+			}
+		}
 	}
 }
 
-func TestBundleProjectsOnlyCanonicalRetainedPacks(t *testing.T) {
-	dir := t.TempDir()
-	if _, err := Build(testSource(t), TargetClaude, dir); err != nil {
-		t.Fatal(err)
+func TestPersonaIsProjectedOnlyInValidatedFormats(t *testing.T) {
+	persona := canonical(t, "agents/facet-creative.md")
+	want := map[Target]string{
+		TargetClaude:   "agents/facet-creative.md",
+		TargetCopilot:  "agents/facet-creative.agent.md",
+		TargetOpenCode: "agents/facet-creative.md",
 	}
-	for _, pack := range facet.RetainedPacks() {
-		for _, guidance := range pack.Guidance {
-			rel, err := filepath.Rel(filepath.Join("packs", pack.ID), filepath.FromSlash(guidance.Path))
+	for _, target := range Targets() {
+		files := filesByPath(t, target)
+		var agents []File
+		for _, f := range files {
+			if f.Kind == KindAgent {
+				agents = append(agents, f)
+			}
+		}
+		path, supported := want[target]
+		if supported != HasPersona(target) {
+			t.Errorf("%s: HasPersona = %v", target, HasPersona(target))
+		}
+		if !supported {
+			if len(agents) != 0 {
+				t.Errorf("%s: persona projected without a validated agent format", target)
+			}
+			continue
+		}
+		if len(agents) != 1 || agents[0].Path != path {
+			t.Fatalf("%s: agents = %+v, want %s", target, agents, path)
+		}
+		fields, ok := Frontmatter(agents[0].Content)
+		if !ok || fields["description"] == "" {
+			t.Errorf("%s: persona lacks a description", target)
+		}
+		switch target {
+		case TargetOpenCode:
+			if _, present := fields["name"]; present {
+				t.Error("opencode persona keeps `name`, which OpenCode would pass to the model provider")
+			}
+			_, canonicalBody, _ := splitFrontmatter(persona)
+			_, body, _ := splitFrontmatter(agents[0].Content)
+			if !bytes.Equal(persona[canonicalBody:], agents[0].Content[body:]) {
+				t.Error("opencode persona body drifted from the canonical persona")
+			}
+		default:
+			if !bytes.Equal(agents[0].Content, persona) || fields["name"] != PersonaName {
+				t.Errorf("%s: persona drifted from the canonical asset", target)
+			}
+		}
+	}
+}
+
+// Skill loaders reject a skill whose name differs from its directory, and a
+// loader that splits on "\n" would read a CRLF name as "facet\r".
+func TestProjectedSkillsSatisfyEveryLoader(t *testing.T) {
+	for _, target := range Targets() {
+		for path, f := range filesByPath(t, target) {
+			if bytes.Contains(f.Content, []byte("\r")) {
+				t.Errorf("%s: %s contains CR bytes", target, path)
+			}
+			if strings.HasSuffix(path, "/SKILL.md") {
+				fields, ok := Frontmatter(f.Content)
+				dir := filepath.Base(filepath.Dir(filepath.FromSlash(path)))
+				if !ok || fields["name"] != dir || fields["description"] == "" {
+					t.Errorf("%s: %s frontmatter %v does not name its directory %q", target, path, fields, dir)
+				}
+			}
+		}
+	}
+}
+
+func TestSiblingReferencesResolveInsideEachSkill(t *testing.T) {
+	files := filesByPath(t, TargetClaude)
+	explainer := string(files["skills/facet-explainer/SKILL.md"].Content)
+	for _, sibling := range []string{"SCENE-TYPES.md", "NARRATED-WALKTHROUGH.md"} {
+		if !strings.Contains(explainer, "`"+sibling+"`") {
+			t.Errorf("explainer skill does not reference %s by its skill-relative name", sibling)
+		}
+		if _, ok := files["skills/facet-explainer/"+sibling]; !ok {
+			t.Errorf("%s is not installed beside the explainer skill", sibling)
+		}
+	}
+	for path, f := range files {
+		if strings.Contains(string(f.Content), "packs/") {
+			t.Errorf("%s still references a repository pack path", path)
+		}
+	}
+}
+
+func TestRootsFollowEachCLIsConventions(t *testing.T) {
+	want := map[Scope]map[Target]string{
+		ScopeUser:    {TargetClaude: ".claude", TargetCodex: ".codex", TargetCopilot: ".copilot", TargetOpenCode: ".config/opencode"},
+		ScopeProject: {TargetClaude: ".claude", TargetCodex: ".agents", TargetCopilot: ".github", TargetOpenCode: ".opencode"},
+	}
+	for scope, roots := range want {
+		for target, root := range roots {
+			if got := DefaultRoot(target, scope); got != root {
+				t.Errorf("DefaultRoot(%s, %s) = %q, want %q", target, scope, got, root)
+			}
+		}
+	}
+	base := filepath.Join(t.TempDir(), "home")
+	env := map[string]string{"CLAUDE_CONFIG_DIR": filepath.Join(base, "claude-config"), "CODEX_HOME": filepath.Join(base, "codex-home"), "XDG_CONFIG_HOME": filepath.Join(base, "xdg")}
+	getenv := func(k string) string { return env[k] }
+	for target, want := range map[Target]string{
+		TargetClaude:   env["CLAUDE_CONFIG_DIR"],
+		TargetCodex:    env["CODEX_HOME"],
+		TargetCopilot:  filepath.Join(base, ".copilot"),
+		TargetOpenCode: filepath.Join(env["XDG_CONFIG_HOME"], "opencode"),
+	} {
+		if got := Root(target, ScopeUser, base, getenv); got != want {
+			t.Errorf("Root(%s, user) = %q, want %q", target, got, want)
+		}
+		// Project scope never follows user configuration overrides.
+		if got, want := Root(target, ScopeProject, base, getenv), filepath.Join(base, filepath.FromSlash(DefaultRoot(target, ScopeProject))); got != want {
+			t.Errorf("Root(%s, project) = %q, want %q", target, got, want)
+		}
+	}
+}
+
+func TestParseTargetsAndScopes(t *testing.T) {
+	got, err := ParseTargets("opencode,claude", "claude")
+	if err != nil || len(got) != 2 || got[0] != TargetClaude || got[1] != TargetOpenCode {
+		t.Fatalf("ParseTargets = %v, %v", got, err)
+	}
+	if all, err := ParseTargets("all"); err != nil || len(all) != 4 {
+		t.Fatalf("all = %v, %v", all, err)
+	}
+	for _, bad := range []string{"app", "studio", ""} {
+		if _, err := ParseTargets(bad); err == nil {
+			t.Errorf("target %q accepted", bad)
+		}
+	}
+	if _, err := ParseScope("global"); err == nil {
+		t.Error("unknown scope accepted")
+	}
+}
+
+func build(t *testing.T, target Target, scope Scope, dir string) *Manifest {
+	t.Helper()
+	built, err := Build(Options{Target: target, Scope: scope, Version: testVersion, Tools: testTools}, dir)
+	if err != nil {
+		t.Fatalf("build %s/%s: %v", target, scope, err)
+	}
+	return built.Manifest
+}
+
+func TestBuildWritesNativeLayoutWithVerifiableManifest(t *testing.T) {
+	for _, scope := range []Scope{ScopeUser, ScopeProject} {
+		for _, target := range Targets() {
+			dir := filepath.Join(t.TempDir(), string(target))
+			m := build(t, target, scope, dir)
+			root := DefaultRoot(target, scope)
+			if m.FacetVersion != testVersion || m.Target != target || m.Scope != scope || m.InstallRoot != root {
+				t.Errorf("%s/%s manifest identity = %+v", target, scope, m)
+			}
+			if m.MCPServer.Name != "facet" || strings.Join(m.MCPServer.Args, " ") != "mcp" {
+				t.Errorf("%s/%s MCP server = %+v", target, scope, m.MCPServer)
+			}
+			for _, e := range m.Files {
+				if !strings.HasPrefix(e.Path, root+"/") || !strings.HasPrefix(e.Digest, "sha256:") {
+					t.Errorf("%s/%s entry %+v", target, scope, e)
+				}
+			}
+			if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(root), "skills", "facet", "SKILL.md")); err != nil {
+				t.Errorf("%s/%s core skill not at its native path: %v", target, scope, err)
+			}
+			if _, err := Verify(dir, Expect{Target: target, Scope: scope, Version: testVersion, Tools: testTools, Current: true}); err != nil {
+				t.Errorf("%s/%s: a fresh bundle failed verification: %v", target, scope, err)
+			}
+			raw, err := os.ReadFile(filepath.Join(dir, ManifestName))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := os.Stat(filepath.Join(dir, "skills", pack.ID, rel)); err != nil {
-				t.Errorf("bundle omits canonical guidance %s: %v", guidance.Path, err)
-				continue
-			}
-			got, err := os.ReadFile(filepath.Join(dir, "skills", pack.ID, rel))
-			if err != nil {
-				t.Fatal(err)
-			}
-			want, err := facet.Guidance(guidance.Path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(got) != want {
-				t.Errorf("bundle guidance drifted from canonical content: %s", guidance.Path)
-			}
-		}
-
-	}
-}
-
-func TestBundleIncludesCanonicalSupportAssets(t *testing.T) {
-	dir := t.TempDir()
-	manifest, err := Build(testSource(t), TargetApp, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]string{
-		"agents/facet-creative.md":               "agent",
-		"schemas/tools/video_stitch.schema.json": "schema",
-	}
-	for path, kind := range want {
-		found := false
-		for _, entry := range manifest.Entries {
-			if entry.Path == path && entry.Kind == kind {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("bundle omits canonical %s asset %s", kind, path)
-		}
-		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(path))); err != nil {
-			t.Errorf("bundle did not write %s: %v", path, err)
-		}
-	}
-}
-
-// A bundle must carry identity and provenance, or an installer cannot decide
-// whether to upgrade, and a human cannot tell what was installed.
-func TestBundleCarriesIdentityAndProvenance(t *testing.T) {
-	dir := t.TempDir()
-	m, err := Build(testSource(t), TargetClaude, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if m.Schema != ManifestSchema {
-		t.Errorf("schema %q, want %q", m.Schema, ManifestSchema)
-	}
-	if m.FacetVersion == "" {
-		t.Error("no facet version; the bundle cannot be compared against a running Facet")
-	}
-	if m.AdapterVersion == "" {
-		t.Error("no adapter version; a layout fix would be indistinguishable from a product change")
-	}
-	if m.Target != TargetClaude {
-		t.Errorf("target %q, want claude", m.Target)
-	}
-	if !strings.HasPrefix(m.BundleDigest, "sha256:") {
-		t.Errorf("bundle digest %q is not a sha256", m.BundleDigest)
-	}
-	if len(m.Tools) == 0 {
-		t.Error("no tools recorded; a stale install would be invisible")
-	}
-	if len(m.Entries) == 0 {
-		t.Fatal("no entries")
-	}
-}
-
-// The adapter must produce TARGET-NATIVE shapes. Same product semantics,
-// different packaging -- that is the whole rule.
-func TestEachTargetGetsItsNativeShape(t *testing.T) {
-	want := map[Target]struct{ instruction, root string }{
-		TargetClaude:   {"CLAUDE.md", ".claude"},
-		TargetCodex:    {"AGENTS.md", ".agents"},
-		TargetCopilot:  {"copilot-instructions.md", ".github"},
-		TargetOpenCode: {"AGENTS.md", ".opencode"},
-		TargetApp:      {"AGENT.md", "."},
-	}
-	for tgt, exp := range want {
-		dir := t.TempDir()
-		m, err := Build(testSource(t), tgt, dir)
-		if err != nil {
-			t.Fatalf("%s: %v", tgt, err)
-		}
-		if _, err := os.Stat(filepath.Join(dir, exp.instruction)); err != nil {
-			t.Errorf("%s: expected native instruction file %s: %v", tgt, exp.instruction, err)
-		}
-		if m.Compatibility.InstallRoot != exp.root {
-			t.Errorf("%s: install root %q, want %q", tgt, m.Compatibility.InstallRoot, exp.root)
-		}
-	}
-}
-
-func TestAppBundleDeclaresCompaKernelBinding(t *testing.T) {
-	dir := t.TempDir()
-	m, err := Build(testSource(t), TargetApp, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if m.CapabilityID != "xibodev.facet" {
-		t.Errorf("capability id = %q, want xibodev.facet", m.CapabilityID)
-	}
-	if m.Compatibility.ToolTransport != "native" {
-		t.Errorf("transport = %q, want native", m.Compatibility.ToolTransport)
-	}
-	if m.Compatibility.NativeProvider != "facet-native" {
-		t.Errorf("native provider = %q, want facet-native", m.Compatibility.NativeProvider)
-	}
-	if m.Compatibility.KernelModule != "github.com/xibodev/compa" {
-		t.Errorf("kernel module = %q", m.Compatibility.KernelModule)
-	}
-	if m.Compatibility.KernelVersion != "v1" {
-		t.Errorf("kernel version = %q, want v1", m.Compatibility.KernelVersion)
-	}
-	if m.Compatibility.FacetBinary != "" {
-		t.Errorf("native bundle unexpectedly requires binary %q", m.Compatibility.FacetBinary)
-	}
-
-	instructions, err := os.ReadFile(filepath.Join(dir, "AGENT.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(instructions)
-	if !strings.Contains(body, "facet-native") {
-		t.Error("native binding is not explained to the kernel agent")
-	}
-	if strings.Contains(body, "facet tools run") || strings.Contains(body, "facet executable") {
-		t.Error("app bundle tells the embedded kernel to shell out to Facet")
-	}
-}
-
-// Every target must receive the SAME product semantics. Divergent guidance is
-// the four-hand-maintained-copies failure the adapter rule exists to prevent.
-func TestTargetsShareProductSemantics(t *testing.T) {
-	bodies := map[Target]string{}
-	for _, tgt := range Targets() {
-		dir := t.TempDir()
-		if _, err := Build(testSource(t), tgt, dir); err != nil {
-			t.Fatal(err)
-		}
-		b, err := os.ReadFile(filepath.Join(dir, instructionFileFor(tgt)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		bodies[tgt] = string(b)
-	}
-	// These are product guarantees, not phrasing. Every target must state them.
-	required := []string{
-		"consent",           // paid work needs approval
-		"not the exit code", // verify output, not process exit
-		"estimate",          // estimate before running
-		"Never substitute mock",
-		// A stale binary earlier on PATH rejects the shapes this bundle
-		// documents, and the failure reads as bad guidance rather than a
-		// wrong binary. Every target must tell the agent to check.
-		"version",
-	}
-	for tgt, body := range bodies {
-		for _, r := range required {
-			if !strings.Contains(body, r) {
-				t.Errorf("%s guidance omits %q; product semantics must not differ by target", tgt, r)
+			var decoded map[string]any
+			if err := json.Unmarshal(raw, &decoded); err != nil || decoded["facet_version"] != testVersion || decoded["files"] == nil {
+				t.Errorf("manifest JSON lacks facet_version or files: %s", raw)
 			}
 		}
 	}
 }
 
-// Verify must FAIL on a tampered bundle. A verifier that cannot fail certifies
-// whatever it is given.
-func TestVerifyDetectsTampering(t *testing.T) {
-	dir := t.TempDir()
-	m, err := Build(testSource(t), TargetClaude, dir)
-	if err != nil {
-		t.Fatal(err)
+func TestVerifyComparesTheRunningFacet(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "claude")
+	build(t, TargetClaude, ScopeUser, dir)
+	_, err := Verify(dir, Expect{Version: "2.1.0"})
+	if err == nil || !strings.Contains(err.Error(), testVersion) || !strings.Contains(err.Error(), "2.1.0") {
+		t.Fatalf("version mismatch not reported with both versions: %v", err)
 	}
-
-	if _, err := Verify(dir); err != nil {
-		t.Fatalf("a freshly built bundle failed verification: %v", err)
+	if _, err := Verify(dir, Expect{Tools: []string{"media_probe"}}); err == nil {
+		t.Fatal("a bundle naming tools the running binary lacks passed verification")
 	}
+	if _, err := Verify(dir, Expect{Target: TargetCodex}); err == nil {
+		t.Fatal("target mismatch passed verification")
+	}
+	if _, err := Verify(dir, Expect{Scope: ScopeProject}); err == nil {
+		t.Fatal("scope mismatch passed verification")
+	}
+}
 
-	// Content changed, same length: only the digest can catch it.
-	victim := filepath.Join(dir, filepath.FromSlash(m.Entries[0].Path))
+// A verifier that cannot fail certifies whatever it is given.
+func TestVerifyDetectsTamperingMissingAndUndeclaredFiles(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "opencode")
+	m := build(t, TargetOpenCode, ScopeProject, dir)
+	victim := filepath.Join(dir, filepath.FromSlash(m.Files[0].Path))
 	orig, err := os.ReadFile(victim)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(orig) == 0 {
-		t.Skip("first entry is empty; nothing to corrupt in place")
-	}
 	corrupt := append([]byte(nil), orig...)
-	if corrupt[0] == 'X' {
-		corrupt[0] = 'Y'
-	} else {
-		corrupt[0] = 'X'
-	}
+	corrupt[0] ^= 1
 	if err := os.WriteFile(victim, corrupt, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Verify(dir); err == nil {
-		t.Error("a bundle with altered content passed verification")
+	if _, err := Verify(dir, Expect{}); err == nil {
+		t.Error("altered content passed verification")
 	}
-	os.WriteFile(victim, orig, 0o644)
-
-	// A missing declared file must also fail.
 	if err := os.Remove(victim); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Verify(dir); err == nil {
-		t.Error("a bundle missing a declared entry passed verification")
+	if _, err := Verify(dir, Expect{}); err == nil {
+		t.Error("a missing declared file passed verification")
+	}
+	if err := os.WriteFile(victim, orig, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "extra.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(dir, Expect{}); err == nil || !strings.Contains(err.Error(), "extra.md") {
+		t.Errorf("an undeclared file passed verification: %v", err)
 	}
 }
 
-func TestVerifyTargetRejectsIncompatibleStudioBinding(t *testing.T) {
-	for name, mutate := range map[string]func(*Manifest){
-		"capability": func(m *Manifest) { m.CapabilityID = "example.other" },
-		"target":     func(m *Manifest) { m.Target = TargetClaude },
-		"transport":  func(m *Manifest) { m.Compatibility.ToolTransport = "cli" },
-		"provider":   func(m *Manifest) { m.Compatibility.NativeProvider = "other-native" },
-		"kernel":     func(m *Manifest) { m.Compatibility.KernelModule = "example.com/other-kernel" },
-		"version":    func(m *Manifest) { m.Compatibility.KernelVersion = "v2" },
-	} {
-		t.Run(name, func(t *testing.T) {
-			dir := t.TempDir()
-			if _, err := Build(testSource(t), TargetApp, dir); err != nil {
-				t.Fatal(err)
-			}
-			manifestPath := filepath.Join(dir, "facet-bundle.json")
-			raw, err := os.ReadFile(manifestPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var m Manifest
-			if err := json.Unmarshal(raw, &m); err != nil {
-				t.Fatal(err)
-			}
-			mutate(&m)
-			raw, err = json.MarshalIndent(m, "", "  ")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(manifestPath, raw, 0o644); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := VerifyTarget(dir, TargetApp); err == nil {
-				t.Fatal("incompatible studio binding passed target verification")
-			}
-		})
-	}
-}
-
-// Building twice must produce an identical bundle. A non-reproducible build
-// makes the digest meaningless as an upgrade signal.
 func TestBuildIsReproducible(t *testing.T) {
-	a, b := t.TempDir(), t.TempDir()
-	m1, err := Build(testSource(t), TargetCodex, a)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m2, err := Build(testSource(t), TargetCodex, b)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if m1.BundleDigest != m2.BundleDigest {
-		t.Errorf("two builds of the same source differ: %s vs %s", m1.BundleDigest, m2.BundleDigest)
-	}
-	if len(m1.Entries) != len(m2.Entries) {
-		t.Errorf("entry counts differ: %d vs %d", len(m1.Entries), len(m2.Entries))
+	a := build(t, TargetCodex, ScopeUser, filepath.Join(t.TempDir(), "codex"))
+	b := build(t, TargetCodex, ScopeUser, filepath.Join(t.TempDir(), "codex"))
+	if a.BundleDigest != b.BundleDigest || len(a.Files) != len(b.Files) {
+		t.Fatalf("two builds differ: %s vs %s", a.BundleDigest, b.BundleDigest)
 	}
 }
 
-// A bundle that names no tools would install guidance for a product the agent
-// cannot invoke. Refuse rather than ship something decorative.
-func TestEmptyVocabularyIsRefused(t *testing.T) {
-	src := testSource(t)
-	src.Tools = nil
-	if _, err := Build(src, TargetClaude, t.TempDir()); err == nil {
-		t.Error("a bundle with no tools was accepted")
-	}
-	src = testSource(t)
-	src.FacetVersion = ""
-	if _, err := Build(src, TargetClaude, t.TempDir()); err == nil {
-		t.Error("a bundle with no version was accepted")
-	}
-}
-
-// The manifest must describe the directory it sits in. A manifest listing
-// entries that are not there, or a directory holding files the manifest does
-// not name, is a bundle nobody can trust.
-func TestManifestDescribesTheDirectory(t *testing.T) {
-	dir := t.TempDir()
-	m, err := Build(testSource(t), TargetOpenCode, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	declared := map[string]bool{}
-	for _, e := range m.Entries {
-		declared[e.Path] = true
-	}
-	var undeclared []string
-	err = filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
-			return nil
+func snapshot(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	err := filepath.WalkDir(dir, func(name string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
 		}
-		rel, _ := filepath.Rel(dir, p)
-		rel = filepath.ToSlash(rel)
-		if rel == "facet-bundle.json" {
-			return nil
+		data, err := os.ReadFile(name)
+		if err != nil {
+			return err
 		}
-		if !declared[rel] {
-			undeclared = append(undeclared, rel)
-		}
+		rel, _ := filepath.Rel(dir, name)
+		out[filepath.ToSlash(rel)] = string(data)
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(undeclared) > 0 {
-		t.Errorf("%d files on disk are not in the manifest: %v", len(undeclared), undeclared[:min(3, len(undeclared))])
+	return out
+}
+
+func TestRebuildReplacesOnlyOwnedContent(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "claude")
+	build(t, TargetClaude, ScopeUser, dir)
+	// An unmodified, owned bundle is replaced, including on a scope change.
+	m := build(t, TargetClaude, ScopeProject, dir)
+	if _, err := Verify(dir, Expect{Scope: ScopeProject}); err != nil {
+		t.Fatalf("rebuilt bundle failed verification: %v", err)
 	}
 
-	// And the manifest must round-trip as JSON an installer can read.
-	raw, err := os.ReadFile(filepath.Join(dir, "facet-bundle.json"))
+	// A modified owned file is refused and kept.
+	victim := filepath.Join(dir, filepath.FromSlash(m.Files[0].Path))
+	if err := os.WriteFile(victim, []byte("local edit"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshot(t, dir)
+	_, err := Build(Options{Target: TargetClaude, Scope: ScopeProject, Version: testVersion, Tools: testTools}, dir)
+	var conflict *ConflictError
+	if !errors.As(err, &conflict) || !strings.Contains(err.Error(), "modified") {
+		t.Fatalf("modified owned file not refused: %v", err)
+	}
+	if after := snapshot(t, dir); len(after) != len(before) || after[m.Files[0].Path] != "local edit" {
+		t.Fatal("a refused build changed the directory")
+	}
+	// A missing owned file is no obstacle; an unowned file is.
+	if err := os.Remove(victim); err != nil {
+		t.Fatal(err)
+	}
+
+	// An unowned file is refused and kept.
+	note := filepath.Join(dir, "notes.txt")
+	if err := os.WriteFile(note, []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Build(Options{Target: TargetClaude, Scope: ScopeProject, Version: testVersion, Tools: testTools}, dir)
+	if !errors.As(err, &conflict) || !strings.Contains(err.Error(), "notes.txt") {
+		t.Fatalf("unowned file not refused: %v", err)
+	}
+	if data, err := os.ReadFile(note); err != nil || string(data) != "mine" {
+		t.Fatal("an unowned file was changed or deleted")
+	}
+	entries, err := os.ReadDir(filepath.Dir(dir))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var back Manifest
-	if err := json.Unmarshal(raw, &back); err != nil {
-		t.Fatalf("manifest does not decode: %v", err)
-	}
-	if back.BundleDigest != m.BundleDigest {
-		t.Error("the written manifest disagrees with the built one")
+	for _, entry := range entries {
+		if entry.Name() != "claude" {
+			t.Errorf("a refused build left %s behind", entry.Name())
+		}
 	}
 }
 
-func TestBuiltBundlesContainOnlyCanonicalFacetContent(t *testing.T) {
-	banned := []string{"Open" + "Montage", "Video" + " Kit"}
+func TestBuildRefusesUnownedDirectoriesAndFiles(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "codex")
+	if err := os.MkdirAll(filepath.Join(dir, ".codex", "skills", "facet"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mine := filepath.Join(dir, ".codex", "skills", "facet", "SKILL.md")
+	if err := os.WriteFile(mine, []byte("my own skill"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Build(Options{Target: TargetCodex, Scope: ScopeUser, Version: testVersion}, dir); err == nil {
+		t.Fatal("a directory without a manifest was replaced")
+	}
+	if data, _ := os.ReadFile(mine); string(data) != "my own skill" {
+		t.Fatal("an unowned file was overwritten")
+	}
+	file := filepath.Join(t.TempDir(), "plain")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Build(Options{Target: TargetCodex, Scope: ScopeUser, Version: testVersion}, file); err == nil {
+		t.Fatal("a regular file was replaced by a bundle directory")
+	}
+	// An empty directory is not owned by anyone and may receive a bundle.
+	empty := filepath.Join(t.TempDir(), "copilot")
+	if err := os.MkdirAll(empty, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	build(t, TargetCopilot, ScopeUser, empty)
+}
+
+// Output from the 1.x builder is owned through its manifest and may be
+// replaced; it is never verified as a current bundle.
+func TestBuildReplacesAnUnmodifiedLegacyBundle(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "claude")
+	if err := os.MkdirAll(filepath.Join(dir, "skills", "facet"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := []byte("# legacy\n")
+	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), old, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	legacy, _ := json.Marshal(map[string]any{"schema": legacySchema, "entries": []Entry{{Path: "CLAUDE.md", Bytes: int64(len(old)), Digest: Digest(old)}}})
+	if err := os.WriteFile(filepath.Join(dir, ManifestName), legacy, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(dir, Expect{}); err == nil {
+		t.Fatal("a 1.x bundle verified as current")
+	}
+	build(t, TargetClaude, ScopeUser, dir)
+	if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal("the legacy instruction file survived the rebuild")
+	}
+}
+
+func TestDropFrontmatterKeyKeepsEverythingElse(t *testing.T) {
+	doc := []byte("---\nname: x\ndescription: d: e\n---\n\n# Body\nname: not frontmatter\n")
+	got, err := dropFrontmatterKey("name")(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "---\ndescription: d: e\n---\n\n# Body\nname: not frontmatter\n" {
+		t.Fatalf("got %q", got)
+	}
+	fields, ok := Frontmatter([]byte("---\r\nname: facet\r\ndescription: \"quoted\"\r\n---\r\nbody"))
+	if !ok || fields["name"] != "facet" || fields["description"] != "quoted" {
+		t.Fatalf("CRLF frontmatter = %v, %v", fields, ok)
+	}
+	if _, ok := Frontmatter([]byte("# no frontmatter")); ok {
+		t.Fatal("frontmatter found in a document without one")
+	}
+}
+
+func TestCLIBuildsEveryTargetAndRejectsWithdrawnOnes(t *testing.T) {
+	out := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	if code := CLI([]string{"--target", "all", "--scope", "project", "--out", out}, &stdout, &stderr, testVersion); code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr.String())
+	}
 	for _, target := range Targets() {
-		t.Run(string(target), func(t *testing.T) {
-			dir := t.TempDir()
-			manifest, err := Build(testSource(t), target, dir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, entry := range manifest.Entries {
-				name := filepath.ToSlash(entry.Path)
-				for _, legacy := range []string{"pipeline_defs/", "styles/", "skills/core/", "skills/creative/", "skills/meta/", "skills/pipelines/", ".agents/skills/"} {
-					if strings.Contains(name, legacy) {
-						t.Errorf("bundle contains removed surface %s", name)
-					}
-				}
-				switch strings.ToLower(filepath.Ext(name)) {
-				case ".json", ".md", ".yaml", ".yml":
-				default:
-					continue
-				}
-				data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(entry.Path)))
-				if err != nil {
-					t.Fatal(err)
-				}
-				for _, term := range banned {
-					if strings.Contains(strings.ToLower(string(data)), strings.ToLower(term)) {
-						t.Errorf("%s contains banned donor term %q", name, term)
-					}
-				}
-			}
-		})
+		m, err := Verify(filepath.Join(out, string(target)), Expect{Target: target, Scope: ScopeProject, Version: testVersion})
+		if err != nil {
+			t.Errorf("%s: %v", target, err)
+			continue
+		}
+		if len(m.Tools) == 0 {
+			t.Errorf("%s: manifest records no tool vocabulary", target)
+		}
+		if !strings.Contains(stdout.String(), string(target)) {
+			t.Errorf("summary omits %s: %s", target, stdout.String())
+		}
 	}
-}
+	// Rebuilding the same output is allowed: every file is owned.
+	if code := CLI([]string{"--target", "claude,codex", "--out", out}, io.Discard, &stderr, testVersion); code != 0 {
+		t.Fatalf("rebuild exit %d: %s", code, stderr.String())
+	}
 
-func min(a, b int) int {
-	if a < b {
-		return a
+	for name, args := range map[string][]string{
+		"withdrawn app target": {"--target", "app", "--out", out},
+		"missing out":          {"--target", "claude"},
+		"missing target":       {"--out", out},
+		"bad scope":            {"--target", "claude", "--scope", "global", "--out", out},
+		"positional":           {"--target", "claude", "--out", out, "extra"},
+		"unknown flag":         {"--bogus"},
+	} {
+		stderr.Reset()
+		if code := CLI(args, io.Discard, &stderr, testVersion); code != 2 {
+			t.Errorf("%s: exit %d, want 2 (%s)", name, code, stderr.String())
+		}
 	}
-	return b
+
+	help := t.TempDir()
+	stdout.Reset()
+	if code := CLI([]string{"--help", "--out", help}, &stdout, io.Discard, testVersion); code != 0 || !strings.Contains(stdout.String(), "Usage: facet bundle") {
+		t.Fatalf("help exit %d: %s", code, stdout.String())
+	}
+	if entries, _ := os.ReadDir(help); len(entries) != 0 {
+		t.Fatal("help wrote files")
+	}
 }

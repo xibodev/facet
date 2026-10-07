@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -98,7 +97,7 @@ func doOpenAITTSContext(ctx context.Context, op string, data []byte) (any, []str
 
 	outPath := r.OutputPath
 	if outPath == "" {
-		outPath = fmt.Sprintf("openai_tts.%s", fmtType)
+		outPath = defaultOutput(ctx, fmt.Sprintf("openai_tts.%s", fmtType))
 	}
 	if err := outputPath(outPath, true, false); err != nil {
 		return nil, nil, err
@@ -224,7 +223,7 @@ func doElevenLabsTTSContext(ctx context.Context, op string, data []byte) (any, [
 		if strings.Contains(outFormat, "pcm") || strings.Contains(outFormat, "wav") {
 			ext = "wav"
 		}
-		outPath = fmt.Sprintf("elevenlabs_tts.%s", ext)
+		outPath = defaultOutput(ctx, fmt.Sprintf("elevenlabs_tts.%s", ext))
 	}
 	if err := outputPath(outPath, true, false); err != nil {
 		return nil, nil, err
@@ -309,7 +308,7 @@ func doPiperTTSContext(parent context.Context, op string, data []byte) (any, []s
 
 	piperPath, err := lookPath("piper")
 	if err != nil {
-		return nil, nil, failure("unconfigured", "piper binary is not available on PATH", nil)
+		return nil, nil, failure("dependency_missing", "piper is not installed; install Facet's piper component or put piper on PATH", map[string]any{"expected": runtimeDependency("piper")})
 	}
 
 	model := resolvePiperModel(r.Model)
@@ -324,7 +323,7 @@ func doPiperTTSContext(parent context.Context, op string, data []byte) (any, []s
 
 	outPath := r.OutputPath
 	if outPath == "" {
-		outPath = "piper_tts.wav"
+		outPath = defaultOutput(parent, "piper_tts.wav")
 	}
 	if err := outputPath(outPath, true, false); err != nil {
 		return nil, nil, err
@@ -338,7 +337,7 @@ func doPiperTTSContext(parent context.Context, op string, data []byte) (any, []s
 	ctx, cancel := context.WithTimeout(parent, tmo)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, piperPath,
+	cmd := newCommand(ctx, piperPath,
 		"--model", model,
 		"--speaker", strconv.Itoa(r.SpeakerID),
 		"--length-scale", formatFloat(lengthScale),
@@ -349,8 +348,14 @@ func doPiperTTSContext(parent context.Context, op string, data []byte) (any, []s
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
-	if runErr := cmd.Run(); runErr != nil {
-		return nil, nil, failure("command_failed", "piper failed: "+runErr.Error(), map[string]any{"stderr": stderr.String()})
+	if runErr := cmd.Run(); runErr != nil && !exitedCleanly(cmd, runErr) {
+		if ctx.Err() != nil {
+			return nil, nil, failure("command_timeout", timeoutMessage("piper", tmo), map[string]any{"stderr": bounded(stderr.String())})
+		}
+		return nil, nil, failure("command_failed", "piper failed: "+runErr.Error(), map[string]any{"stderr": bounded(stderr.String())})
+	}
+	if !fileExists(outPath) {
+		return nil, nil, failure("output_validation_failed", "piper finished but wrote no audio", map[string]any{"path": outPath, "stderr": bounded(stderr.String())})
 	}
 
 	dur, _ := probeDurationContext(ctx, outPath, 5*time.Second)
@@ -366,6 +371,15 @@ func doPiperTTSContext(parent context.Context, op string, data []byte) (any, []s
 	}, nil, nil
 }
 
+// defaultPiperVoice is the voice the installer downloads.
+const defaultPiperVoice = "en_US-lessac-medium"
+
+// resolvePiperModel turns a requested model into what piper should load.
+//
+// Order: FACET_PIPER_MODEL (when nothing, or the same voice, was requested),
+// then the runtime's installed voice <runtime>/dependencies/voices/<voice>.onnx
+// for a bare voice name, then the request itself, which piper resolves on its
+// own (a path, or a name in its data directory).
 func resolvePiperModel(requested string) string {
 	requested = strings.TrimSpace(requested)
 	configured := strings.TrimSpace(os.Getenv("FACET_PIPER_MODEL"))
@@ -373,15 +387,34 @@ func resolvePiperModel(requested string) string {
 		if configured != "" {
 			return configured
 		}
-		return "en_US-lessac-medium"
+		if installed := runtimeVoice(defaultPiperVoice); installed != "" {
+			return installed
+		}
+		return defaultPiperVoice
 	}
-	if configured == "" {
-		return requested
+	if configured != "" {
+		requestedName := strings.TrimSuffix(filepath.Base(requested), filepath.Ext(requested))
+		configuredName := strings.TrimSuffix(filepath.Base(configured), filepath.Ext(configured))
+		if requestedName == configuredName {
+			return configured
+		}
 	}
-	requestedName := strings.TrimSuffix(filepath.Base(requested), filepath.Ext(requested))
-	configuredName := strings.TrimSuffix(filepath.Base(configured), filepath.Ext(configured))
-	if requestedName == configuredName {
-		return configured
+	if !strings.ContainsAny(requested, `/\`) && filepath.VolumeName(requested) == "" {
+		if installed := runtimeVoice(strings.TrimSuffix(requested, ".onnx")); installed != "" {
+			return installed
+		}
 	}
 	return requested
+}
+
+// runtimeVoice returns the installed model for a voice name, or "".
+func runtimeVoice(name string) string {
+	if name == "" {
+		return ""
+	}
+	path := runtimeDependency("voices", name+".onnx")
+	if path == "" || !fileExists(path) {
+		return ""
+	}
+	return path
 }

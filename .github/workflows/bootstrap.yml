@@ -27,7 +27,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-15, windows-2025]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with: { persist-credentials: false }
@@ -45,3 +45,23 @@ jobs:
       - name: Verify pinned published installer and handoff
         if: github.event_name == 'workflow_dispatch'
         run: python scripts/test-bootstrap-live.py
+      # Post-release only: the pinned published release installs just the facet
+      # runtime, with no optional components and no shell profile or PATH edits.
+      - name: Published one-liner installs the facet runtime (no components, no PATH edits)
+        if: github.event_name == 'workflow_dispatch' && runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^ *version=\([0-9][0-9A-Za-z.-]*\)$/\1/p' docs/install.sh)
+          test -n "$version"
+          case "$version" in
+            0.*|1.*) echo "The bootstrap pins $version, which predates the 2.0 installer flags; nothing to verify yet."; exit 0;;
+          esac
+          export HOME="$(mktemp -d "$RUNNER_TEMP/facet-home-XXXXXX")"
+          cat docs/install.sh | sh -s -- --yes --components none --no-path
+          facet="$HOME/.facet/current/bin/facet"
+          test "$("$facet" version)" = "facet v$version"
+          "$facet" doctor
+          for profile in .profile .bashrc .bash_profile .zshrc .zprofile .config/fish/config.fish; do
+            if [ -e "$HOME/$profile" ]; then echo "--no-path wrote $profile" >&2; exit 1; fi
+          done

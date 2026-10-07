@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { inspectMedia, decodedAgentMedia } from './uat-media.mjs';
+import { inspectMedia, decodedMedia } from './uat-media.mjs';
 
 test('strict artifact verifier and platform wrapper reject invalid media', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'facet-media-probe-'));
@@ -14,18 +14,18 @@ test('strict artifact verifier and platform wrapper reject invalid media', () =>
     const valid = path.join(dir, 'valid.mp4');
     execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=blue:s=320x180:r=24:d=1', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', valid], { timeout: 30000 });
     assert.equal(inspectMedia(valid).full_decode, true);
-    const measured = decodedAgentMedia(valid, { sampleSeconds: 0.5 });
+    const measured = decodedMedia(valid, { sampleSeconds: 0.5 });
     assert.ok(measured.mean_volume_db > -45);
     const remux = path.join(dir, 'remux.mp4');
     execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', valid, '-c', 'copy', '-metadata', 'comment=synthetic-remux', remux]);
     assert.notEqual(inspectMedia(remux).sha256, inspectMedia(valid).sha256);
-    assert.equal(decodedAgentMedia(remux, { sampleSeconds: 0.5 }).decoded_frame_sha256, measured.decoded_frame_sha256);
+    assert.equal(decodedMedia(remux, { sampleSeconds: 0.5 }).decoded_frame_sha256, measured.decoded_frame_sha256);
     const silent = path.join(dir, 'silent-audio.mp4');
     execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', valid, '-af', 'volume=0', '-c:v', 'copy', '-c:a', 'aac', silent]);
-    assert.throws(() => decodedAgentMedia(silent, { sampleSeconds: 0.5 }), /Audio energy/);
+    assert.throws(() => decodedMedia(silent, { sampleSeconds: 0.5 }), /Audio energy/);
     const changed = path.join(dir, 'changed.mp4');
     execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', valid, '-vf', 'negate', '-c:v', 'libx264', '-c:a', 'copy', changed]);
-    assert.notEqual(decodedAgentMedia(changed, { sampleSeconds: 0.5 }).decoded_frame_sha256, measured.decoded_frame_sha256);
+    assert.notEqual(decodedMedia(changed, { sampleSeconds: 0.5 }).decoded_frame_sha256, measured.decoded_frame_sha256);
     const garbage = path.join(dir, 'garbage.mp4');
     fs.writeFileSync(garbage, Buffer.alloc(4096, 65));
     const truncated = path.join(dir, 'truncated.mp4');

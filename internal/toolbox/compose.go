@@ -14,10 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 type composeCut struct {
@@ -318,6 +315,14 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 	if err != nil {
 		return nil, nil, err
 	}
+	// HyperFrames renders an HTML workspace of its own and reaches the
+	// network for the scripts that workspace loads. video_compose declares
+	// neither effect, and the edit decisions here would not reach that
+	// workspace anyway, so the runtime is offered only through
+	// hyperframes_compose, where both are declared.
+	if r.EditDecisions != nil && strings.EqualFold(strings.TrimSpace(r.EditDecisions.RenderRuntime), "hyperframes") {
+		return nil, nil, failure("invalid_request", "render_runtime hyperframes is served by the hyperframes_compose tool; call it directly", nil)
+	}
 
 	if op == "estimate" {
 		return estimateResult([]string{"video_compose_" + operation}), nil, nil
@@ -335,7 +340,7 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 			outPath = r.Output
 		}
 		if outPath == "" {
-			outPath = "composed_output.mp4"
+			outPath = defaultOutput(ctx, "composed_output.mp4")
 		}
 		if err := outputPath(outPath, true, false); err != nil {
 			return nil, nil, err
@@ -344,16 +349,6 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 		runtime := strings.ToLower(r.EditDecisions.RenderRuntime)
 		if runtime == "remotion" {
 			return doRemotionRenderContext(ctx, r, outPath, tmo)
-		} else if runtime == "hyperframes" {
-			// Delegate to hyperframes
-			hfReq := map[string]any{
-				"operation":      "render",
-				"output_path":    outPath,
-				"edit_decisions": r.EditDecisions,
-				"asset_manifest": r.AssetManifest,
-			}
-			hfData, _ := json.Marshal(hfReq)
-			return doHyperFramesComposeContext(ctx, op, hfData)
 		}
 
 		// FFmpeg compose implementation
@@ -365,7 +360,7 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 			outPath = r.Output
 		}
 		if outPath == "" {
-			outPath = "remotion_output.mp4"
+			outPath = defaultOutput(ctx, "remotion_output.mp4")
 		}
 		if err := outputPath(outPath, true, false); err != nil {
 			return nil, nil, err
@@ -381,7 +376,7 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 		}
 		outPath := r.OutputPath
 		if outPath == "" {
-			outPath = "subtitled_output.mp4"
+			outPath = defaultOutput(ctx, "subtitled_output.mp4")
 		}
 		if err := outputPath(outPath, true, false); err != nil {
 			return nil, nil, err
@@ -406,7 +401,7 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 		}
 		outPath := r.OutputPath
 		if outPath == "" {
-			outPath = "overlay_output.mp4"
+			outPath = defaultOutput(ctx, "overlay_output.mp4")
 		}
 		if err := outputPath(outPath, true, false); err != nil {
 			return nil, nil, err
@@ -448,7 +443,7 @@ func doVideoComposeContext(ctx context.Context, op string, data []byte) (any, []
 		}
 		outPath := r.OutputPath
 		if outPath == "" {
-			outPath = "encoded_output.mp4"
+			outPath = defaultOutput(ctx, "encoded_output.mp4")
 		}
 		if err := outputPath(outPath, true, false); err != nil {
 			return nil, nil, err
@@ -579,126 +574,29 @@ func doFFmpegComposeContext(ctx context.Context, r composeRequest, outPath strin
 	}, nil, nil
 }
 
-// bundleRoot is a host-supplied read-only bundle location. When set it wins
-// over discovery: the host knows where it installed the module's content, and
-// the working directory does not. Under a module host cwd is not promised at
-// all, which made composer discovery depend on where the process was launched.
-var (
-	bundleMu   sync.RWMutex
-	bundleRoot string
-)
+// ComposerDirEnv names the one explicit override of the Remotion composer's
+// location, for development checkouts and tests.
+const ComposerDirEnv = "FACET_REMOTION_COMPOSER"
 
-// SetBundleRoot installs the host-supplied bundle location for one invocation.
-// An empty value restores ordinary discovery, which is what the CLI uses.
-func SetBundleRoot(path string) {
-	bundleMu.Lock()
-	bundleRoot = strings.TrimSpace(path)
-	bundleMu.Unlock()
-}
-
-func hostBundleRoot() string {
-	bundleMu.RLock()
-	defer bundleMu.RUnlock()
-	return bundleRoot
-}
-
+// findComposerDir locates the Remotion composer: FACET_REMOTION_COMPOSER when
+// it is set, else the runtime's own copy beside the executable
+// (<runtime>/dependencies/remotion-composer), like every other dependency.
+//
+// Nothing is searched relative to the working directory or the user's home,
+// and no configuration file is read: which composer renders must not depend
+// on where a call happens to run, and a second Toolkit (the Facet App's) must
+// never pick up the user-wide one's.
 func findComposerDir() (string, error) {
-	// A host-supplied bundle is authoritative and checked before anything else.
-	if root := hostBundleRoot(); root != "" {
-		candidate := filepath.Join(root, "remotion-composer")
-		if fileExists(filepath.Join(candidate, "package.json")) {
-			return filepath.Abs(candidate)
+	if dir := strings.TrimSpace(os.Getenv(ComposerDirEnv)); dir != "" {
+		if !fileExists(filepath.Join(dir, "package.json")) {
+			return "", failure("dependency_missing", ComposerDirEnv+" names no Remotion composer (package.json not found)", map[string]any{"path": dir})
 		}
+		return filepath.Abs(dir)
 	}
-	home, _ := os.UserHomeDir()
-	configPaths := []string{".facet.yaml"}
-	if home != "" {
-		configPaths = append(configPaths, filepath.Join(home, ".config", "facet", "config.yaml"))
+	if dir := runtimeDependency("remotion-composer"); dir != "" && fileExists(filepath.Join(dir, "package.json")) {
+		return dir, nil
 	}
-	// Read only runtime paths here: config imports toolbox, so importing it would cycle.
-	var cfg struct {
-		Paths struct {
-			RemotionComposer string `yaml:"remotion_composer"`
-			Bundle           string `yaml:"bundle"`
-		} `yaml:"paths"`
-	}
-	for _, path := range configPaths {
-		if !fileExists(path) {
-			continue
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return "", failure("invalid_request", "unable to read runtime config: "+err.Error(), nil)
-		}
-		if err := yaml.Unmarshal(data, &cfg); err != nil {
-			return "", failure("invalid_request", "unable to parse runtime config: "+err.Error(), nil)
-		}
-		break
-	}
-	if cfg.Paths.RemotionComposer != "" {
-		if !fileExists(filepath.Join(cfg.Paths.RemotionComposer, "package.json")) {
-			return "", failure("dependency_missing", "configured Remotion Composer package.json not found", map[string]any{"path": cfg.Paths.RemotionComposer})
-		}
-		return filepath.Abs(cfg.Paths.RemotionComposer)
-	}
-	candidates := []string{
-		"remotion-composer",
-		filepath.Join("..", "remotion-composer"),
-		filepath.Join("..", "..", "remotion-composer"),
-		filepath.Join("..", "..", "..", "remotion-composer"),
-		filepath.Join("packs", "explainer", "runtime"),
-		filepath.Join("..", "packs", "explainer", "runtime"),
-		filepath.Join("..", "..", "packs", "explainer", "runtime"),
-	}
-	if cfg.Paths.Bundle != "" {
-		candidates = append([]string{filepath.Join(cfg.Paths.Bundle, "remotion-composer")}, candidates...)
-	}
-	for _, cand := range candidates {
-		if fileExists(filepath.Join(cand, "package.json")) {
-			return filepath.Abs(cand)
-		}
-	}
-
-	curr, err := os.Getwd()
-	if err == nil {
-		for {
-			cand := filepath.Join(curr, "remotion-composer")
-			if fileExists(filepath.Join(cand, "package.json")) {
-				return filepath.Abs(cand)
-			}
-			parent := filepath.Dir(curr)
-			if parent == curr || parent == "." {
-				break
-			}
-			curr = parent
-		}
-	}
-
-	if localApp := os.Getenv("LOCALAPPDATA"); localApp != "" {
-		candidates = []string{
-			filepath.Join(localApp, "Facet", "runtimes", "remotion", "current"),
-			filepath.Join(localApp, "Facet", "runtimes", "remotion"),
-		}
-	} else {
-		candidates = nil
-	}
-	if executable, err := os.Executable(); err == nil {
-		if resolved, err := filepath.EvalSymlinks(executable); err == nil {
-			executable = resolved
-		}
-		root := filepath.Dir(filepath.Dir(executable))
-		candidates = append(candidates, filepath.Join(root, "bundle", "remotion-composer"), filepath.Join(root, "remotion-composer"))
-	}
-	if home != "" {
-		candidates = append(candidates, filepath.Join(home, ".facet", "bundle", "remotion-composer"))
-	}
-	for _, cand := range candidates {
-		if fileExists(filepath.Join(cand, "package.json")) {
-			return filepath.Abs(cand)
-		}
-	}
-
-	return "", failure("dependency_missing", "Remotion Composer runtime not found; install the Facet bundle or configure paths.remotion_composer", nil)
+	return "", failure("dependency_missing", "Remotion composer not found beside this facet; install Facet with the remotion component, or set "+ComposerDirEnv+" to a composer checkout", nil)
 }
 
 // truncatedAudioWarning reports narration that will not fit the timeline.

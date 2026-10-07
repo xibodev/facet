@@ -342,13 +342,18 @@ func doVideoTrimmerContext(ctx context.Context, op string, data []byte) (any, []
 		if _, err := runCommandContext(ctx, "ffmpeg", args...); err != nil {
 			return nil, nil, err
 		}
-		return map[string]any{
+		result := map[string]any{
 			"operation":     "cut",
 			"input":         r.InputPath,
 			"output":        outPath,
 			"start_seconds": r.StartSeconds,
-			"end_seconds":   r.EndSeconds,
-		}, nil, nil
+		}
+		// Present only when requested: a cut without an end runs to the end
+		// of the input, and null is not a number.
+		if r.EndSeconds != nil {
+			result["end_seconds"] = *r.EndSeconds
+		}
+		return result, nil, nil
 
 	case "speed":
 		if err := inputPath(r.InputPath); err != nil {
@@ -386,7 +391,7 @@ func doVideoTrimmerContext(ctx context.Context, op string, data []byte) (any, []
 		}
 		outPath := r.OutputPath
 		if outPath == "" {
-			outPath = "concat_output.mp4"
+			outPath = defaultOutput(ctx, "concat_output.mp4")
 		}
 		if err := outputPath(outPath, true, false); err != nil {
 			return nil, nil, err

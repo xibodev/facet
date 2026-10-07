@@ -1,5 +1,5 @@
 ---
-name: social
+name: facet-social
 description: Repurpose source video into reviewed short-form and vertical edits with Facet.
 ---
 

@@ -10,12 +10,17 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
+
+	"github.com/xibodev/facet/internal/proctree"
 )
 
 const maxDiagnostic = 8192
@@ -56,11 +61,6 @@ var names = []string{
 	"wikimedia",
 }
 
-var compatibilityAliases = map[string]string{
-	"audio_mixer":   "audio_mix",
-	"frame_sampler": "frame_sample",
-}
-
 type Execution struct {
 	Provider      string   `json:"provider"`
 	Network       bool     `json:"network"`
@@ -77,6 +77,10 @@ type Envelope struct {
 	Error     *ToolError `json:"error,omitempty"`
 	Warnings  []string   `json:"warnings"`
 	Execution Execution  `json:"execution"`
+	// Artifacts describes every file a successful run produced. It is
+	// envelope-level provenance, derived centrally from the result, so a tool's
+	// result schema never has to carry it.
+	Artifacts []Artifact `json:"artifacts,omitempty"`
 }
 
 type ToolError struct {
@@ -181,7 +185,12 @@ func executionFor(tool string) Execution {
 		provider = "wikimedia"
 		network = true
 	case "hyperframes_compose":
+		// The scaffolded composition loads GSAP from a CDN, the headless
+		// renderer fetches whatever the HTML references, and add_block pulls
+		// from the HyperFrames registry. The tool reaches the network even
+		// though it runs a local binary.
 		provider = "hyperframes"
+		network = true
 	case "gflow_video", "gflow_image":
 		provider = "google_flow"
 		network = true
@@ -200,14 +209,9 @@ func executionFor(tool string) Execution {
 // chargeableTools is the single source of truth for which Operations can
 // result in a monetary charge to the operator.
 //
-// It lived in two places: this file (as the set given a nil cost) and
-// internal/module (as `paidTools`, the consent gate). Both enumerated the same
-// eight tools, maintained by hand, in two layers. Chargeability is a property
-// of the Operation, so it belongs here — the module layer is a Projection and
-// now derives it rather than restating it.
-//
-// Operator ruling 4 and compa's R1 both require this: chargeability is
-// a per-Operation semantic effect, independent of whether an amount is known.
+// Chargeability is a per-Operation semantic effect, independent of whether an
+// amount is known. Every surface — the listing, describe, the envelope and
+// EffectsFor — derives it from this set rather than restating it.
 var chargeableTools = map[string]bool{
 	"gflow_video":    true,
 	"gflow_image":    true,
@@ -222,16 +226,9 @@ var chargeableTools = map[string]bool{
 // MayCharge reports whether invoking this Operation may result in a monetary
 // charge to the operator.
 //
-// NOT PROJECTED ONTO THE MODULE WIRE, and here is the unblocking event rather
-// than just the state: xibodev.module/v1 carries effects only on the
-// Capability, and v1 is immutable. A host reads capability.Effects at
-// registration to build its tool description, so per-Operation effects have
-// nowhere to land until the v2 effects shape exists. That shape is
-// compa's to publish; when it does, this becomes a mapping rather than
-// a move.
-//
-// Unwired because there is no wire, not because it was forgotten. Those look
-// identical from outside, which is why this says which one it is.
+// Published by `facet tools list`, `describe`, and EffectsFor, which adapters
+// such as the MCP server map onto their own effect declarations. Facet only
+// declares it; whether a charge needs consent is the caller's policy.
 //
 // Independent of cost_known, which answers a different question: whether a
 // numeric amount is known. Both combinations are legal and both occur here —
@@ -281,10 +278,7 @@ var deterministicTools = map[string]bool{
 // Deterministic reports whether this Operation is a proven deterministic
 // function of its request and inputs.
 //
-// NOT PROJECTED ONTO THE MODULE WIRE, for the same reason as MayCharge and
-// with the same unblocking event: v1 has no per-Operation effects and is
-// immutable. Published locally through `facet tools list` and `describe`,
-// which is where an agent choosing an Operation reads it today.
+// Published by `facet tools list`, `describe`, and EffectsFor.
 func Deterministic(tool string) bool {
 	if executionFor(tool).Network || MayCharge(tool) {
 		// Defence in depth: a networked or chargeable Operation cannot be
@@ -309,14 +303,19 @@ func ChargeableTools() []string {
 	return out
 }
 
-// readOnlyTools inspect existing files and report facts about them. Everything
-// else may write, and an unrecognised tool is assumed to write.
+// readOnlyTools only read their inputs and report facts: a run never creates,
+// replaces or deletes a file and never changes remote state. Everything else
+// may write, and an unrecognised tool is assumed to write.
 //
 // This exists because Execution.ExternalWrite was declared and never assigned,
 // so every tool — including ones that demonstrably write media — reported
-// external_write=false. A module host uses declared effects to decide whether
+// external_write=false. A caller uses declared effects to decide whether
 // approval is required, so a constant false routes write-performing tools
 // around approval. It fails OPEN, which is why the unknown case here is true.
+//
+// The classification is per tool, not per request: visual_qa's probe
+// operation writes nothing, but its review operation writes frames, so the
+// tool as a whole is not read-only.
 var readOnlyTools = map[string]bool{
 	"media_probe": true, "audio_probe": true, "music_library": true,
 	"image_selector": true, "video_selector": true,
@@ -337,9 +336,6 @@ func canonicalToolName(tool string) string {
 		if n == tool {
 			return tool
 		}
-	}
-	if canonical, ok := compatibilityAliases[tool]; ok {
-		return canonical
 	}
 	switch tool {
 	case "edgetts", "edge-tts":
@@ -395,20 +391,24 @@ func canonicalToolName(tool string) string {
 	}
 }
 
+// CLI implements `facet tools`. args starts with "tools". It returns the
+// envelope to print and whether the command succeeded.
+//
+// Help (`facet tools --help`, `facet tools help [operation]`, and `--help` or
+// `-h` anywhere after an operation) succeeds with a usage payload, so the
+// caller prints it like any other envelope and exits zero.
 func CLI(args []string) (Envelope, bool) {
 	op, tool := "", ""
 	bad := func(message string) (Envelope, bool) {
-		return errorEnvelope(tool, op, failure("invalid_request", message, nil)), false
+		return errorEnvelope(tool, op, failure("invalid_request", message, map[string]any{"usage": toolsUsage})), false
 	}
-	if len(args) >= 1 && args[0] == "studio" {
-		return success("", "studio", map[string]any{
-			"command":      "studio",
-			"description":  "Facet web interface",
-			"default_port": 8787,
-			"default_dir":  ".",
-		}, nil), true
+	if len(args) == 0 || args[0] != "tools" {
+		return bad("usage: facet tools <list|describe|estimate|run>")
 	}
-	if len(args) < 2 || args[0] != "tools" {
+	if help, ok := cliHelp(args[1:]); ok {
+		return success("", "help", help, nil), true
+	}
+	if len(args) < 2 {
 		return bad("usage: facet tools <list|describe|estimate|run>")
 	}
 	op = args[1]
@@ -435,8 +435,7 @@ func CLI(args []string) (Envelope, bool) {
 		if len(args) != 5 || args[3] != "--input" {
 			return bad("usage: facet tools " + op + " <tool> --input <request.json>")
 		}
-		requestedTool := strings.ToLower(strings.TrimSpace(args[2]))
-		tool = canonicalToolName(requestedTool)
+		tool = canonicalToolName(args[2])
 		if !known(tool) {
 			return bad("unknown tool: " + args[2])
 		}
@@ -454,14 +453,89 @@ func CLI(args []string) (Envelope, bool) {
 				return errorEnvelope(tool, op, failure("input_not_found", "request input could not be read", map[string]any{"path": args[4], "error": bounded(err.Error())})), false
 			}
 		}
-		result, warnings, err := execute(invocationToolName(requestedTool), op, data)
-		if err != nil {
-			return errorEnvelope(tool, op, err), false
+		// An interrupt or termination request cancels the run, which kills the
+		// tool's whole process tree. Without this, a terminal Ctrl+C or a
+		// supervisor's SIGTERM would end Facet and leave its renderer running.
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		var env Envelope
+		if op == "run" {
+			env = runEnvelope(ctx, tool, data)
+		} else {
+			env = estimateEnvelope(ctx, tool, data)
 		}
-		return success(tool, op, result, warnings), true
+		return env, env.OK
 	default:
 		return bad("unknown tools operation: " + op)
 	}
+}
+
+const toolsUsage = `usage: facet tools <operation> [arguments]
+
+Operations:
+  list                                     List every tool with its readiness, cost and effects
+  describe <tool>                          Show a tool's request schema, result schema and effects
+  estimate <tool> --input <request.json>   Validate a request and report cost and effects; runs nothing
+  run <tool> --input <request.json>        Run a tool and print its result envelope
+
+--input takes a path to a JSON file or an inline JSON object.
+Every command prints one JSON envelope; the exit status is zero when "ok" is true.
+Run "facet tools <operation> --help" for details of one operation.`
+
+// toolOperations documents each `facet tools` operation for help output.
+var toolOperations = []struct{ name, usage, summary string }{
+	{"list", "facet tools list", "Lists every tool with its capability, dependencies and their resolution, " +
+		"whether it is configured, its cost, and its effects (may_charge, network, external_write, deterministic)."},
+	{"describe", "facet tools describe <tool>", "Shows one tool's request schema, result schema, provider, cost and effects. " +
+		"Read it before building a request: input field names differ between tools."},
+	{"estimate", "facet tools estimate <tool> --input <request.json>", "Validates a request without producing output: " +
+		"no media is written, nothing is billed. Reports estimated cost and, for renders, expected duration."},
+	{"run", "facet tools run <tool> --input <request.json>", "Runs a tool. The envelope carries the result, warnings, " +
+		"execution effects, and an artifacts list describing every file the run produced (path, media type, size, sha256)."},
+}
+
+// cliHelp reports whether args asks for help and builds the help payload.
+func cliHelp(args []string) (map[string]any, bool) {
+	isHelp := func(arg string) bool { return arg == "-h" || arg == "--help" || arg == "-help" }
+	asked := false
+	for _, arg := range args {
+		if isHelp(arg) {
+			asked = true
+			break
+		}
+	}
+	rest := args
+	if len(args) > 0 && args[0] == "help" {
+		asked, rest = true, args[1:]
+	}
+	if !asked {
+		return nil, false
+	}
+	payload := map[string]any{"usage": toolsUsage}
+	operations := make([]any, 0, len(toolOperations))
+	for _, o := range toolOperations {
+		operations = append(operations, map[string]any{"name": o.name, "usage": o.usage, "summary": o.summary})
+	}
+	payload["operations"] = operations
+	if len(rest) == 0 || isHelp(rest[0]) {
+		return payload, true
+	}
+	for _, o := range toolOperations {
+		if o.name != rest[0] {
+			continue
+		}
+		help := map[string]any{"operation": o.name, "usage": "usage: " + o.usage, "summary": o.summary}
+		// A named tool is the one the caller is about to build a request for,
+		// so its request schema is the most useful thing help can add.
+		if len(rest) > 1 && !isHelp(rest[1]) {
+			if tool := canonicalToolName(rest[1]); known(tool) {
+				help["tool"] = tool
+				help["request_schema"] = schemas[tool]
+			}
+		}
+		return help, true
+	}
+	return payload, true
 }
 
 func success(tool, op string, result any, warnings []string) Envelope {
@@ -507,12 +581,36 @@ func known(name string) bool {
 	return false
 }
 
-func invocationToolName(requested string) string {
-	requested = strings.ToLower(strings.TrimSpace(requested))
-	if _, ok := compatibilityAliases[requested]; ok {
-		return requested
+// runEnvelope runs a canonical tool and builds its envelope, including the
+// descriptors of every file the run produced. RunContext and the CLI share
+// it so the two surfaces cannot drift.
+func runEnvelope(ctx context.Context, tool string, data []byte) Envelope {
+	if err := ctx.Err(); err != nil {
+		return errorEnvelope(tool, "run", failure("cancelled", err.Error(), nil))
 	}
-	return canonicalToolName(requested)
+	result, warnings, err := executeContext(ctx, tool, "run", data)
+	if ctx.Err() != nil {
+		return errorEnvelope(tool, "run", failure("cancelled", ctx.Err().Error(), nil))
+	}
+	if err != nil {
+		return errorEnvelope(tool, "run", err)
+	}
+	env := success(tool, "run", result, warnings)
+	env.Artifacts, env.Warnings = collectArtifacts(tool, result, env.Warnings)
+	return env
+}
+
+// estimateEnvelope validates a request through the tool's estimate path. It
+// writes nothing and bills nothing.
+func estimateEnvelope(ctx context.Context, tool string, data []byte) Envelope {
+	if err := ctx.Err(); err != nil {
+		return errorEnvelope(tool, "estimate", failure("cancelled", err.Error(), nil))
+	}
+	result, warnings, err := executeContext(ctx, tool, "estimate", data)
+	if err != nil {
+		return errorEnvelope(tool, "estimate", err)
+	}
+	return success(tool, "estimate", result, warnings)
 }
 
 // Resolution states. Operator ruling 7: Resolution is not Boolean, and the
@@ -539,12 +637,7 @@ const (
 )
 
 // resolutionOf reports a requirement's state without claiming more than was
-// checked.
-//
-// NOT PROJECTED ONTO THE MODULE WIRE. Unblocking event: v1 has no Resolution
-// vocabulary at all — a host reads `configured`, a boolean, which cannot carry
-// the middle state. The v2 shape is compa's to publish. Until then this
-// is local truth, published through `facet tools describe`.
+// checked. Published per dependency by `facet tools list` and `describe`.
 //
 // A binary or file whose absence is decisive resolves to satisfied or
 // unsatisfied. A credential resolves to unknown when present, because holding
@@ -575,13 +668,7 @@ func dependency(name string) map[string]any {
 // available made video_compose claim it was configured while every render
 // failed.
 func composerDependency() map[string]any {
-	dir, err := findComposerDir()
-	usable := false
-	if err == nil && dir != "" {
-		if _, err := os.Stat(filepath.Join(dir, "node_modules", "@remotion", "cli", "remotion-cli.js")); err == nil {
-			usable = true
-		}
-	}
+	dir, usable, _ := ComposerStatus()
 	return map[string]any{
 		"name": "remotion-composer", "available": usable, "path": dir, "type": "runtime",
 		// Satisfied or unsatisfied, never unknown: usability is decided by the
@@ -602,12 +689,28 @@ func envDependency(name string) map[string]any {
 	}
 }
 
+// envAnyDependency is a credential a tool reads under any of names, in that
+// order. It is reported under the name that is set (else the first), with
+// every accepted name in alternatives, exactly as the tool resolves it.
+func envAnyDependency(names ...string) map[string]any {
+	chosen := names[0]
+	for _, name := range names {
+		if os.Getenv(name) != "" {
+			chosen = name
+			break
+		}
+	}
+	dep := envDependency(chosen)
+	dep["alternatives"] = append([]string(nil), names...)
+	return dep
+}
+
 func summary(name string) map[string]any {
 	deps := []any{}
 	switch name {
 	case "media_probe", "audio_probe":
 		deps = append(deps, dependency("ffprobe"))
-	case "frame_sample", "frame_sampler", "scene_detect", "visual_qa", "output_review", "source_edit", "video_trimmer", "video_stitch", "silence_cutter", "audio_mix", "audio_mixer":
+	case "frame_sample", "scene_detect", "visual_qa", "output_review", "source_edit", "video_trimmer", "video_stitch", "silence_cutter", "audio_mix":
 		deps = append(deps, dependency("ffmpeg"), dependency("ffprobe"))
 	case "color_grade":
 		deps = append(deps, dependency("ffmpeg"))
@@ -622,7 +725,9 @@ func summary(name string) map[string]any {
 	case "ffmpeg_caption_burn":
 		deps = append(deps, dependency("ffmpeg"))
 	case "hyperframes_compose":
-		deps = append(deps, dependency("npx"), dependency("ffmpeg"))
+		// HyperFrames runs from the pinned install under the runtime's
+		// dependencies with node; there is no unpinned npx fallback.
+		deps = append(deps, dependency("node"), hyperframesDependency(), dependency("ffmpeg"))
 	case "music_library":
 		// optional ffprobe
 		deps = append(deps, dependency("ffprobe"))
@@ -636,8 +741,10 @@ func summary(name string) map[string]any {
 		deps = append(deps, envDependency("OPENAI_API_KEY"))
 	case "elevenlabs_tts":
 		deps = append(deps, envDependency("ELEVENLABS_API_KEY"))
-	case "flux_image", "kling_video":
-		deps = append(deps, envDependency("FAL_KEY"))
+	case "flux_image":
+		deps = append(deps, envAnyDependency("FAL_KEY", "FLUX_API_KEY"))
+	case "kling_video":
+		deps = append(deps, envAnyDependency("FAL_KEY", "KLING_API_KEY"))
 	case "piper_tts":
 		deps = append(deps, dependency("piper"))
 	case "gflow_video", "gflow_image":
@@ -705,7 +812,6 @@ func dependenciesAvailable(deps []any) bool {
 
 var capabilities = map[string]string{
 	"audio_mix":           "audio mixing",
-	"audio_mixer":         "audio mixing",
 	"audio_probe":         "audio metadata inspection",
 	"color_grade":         "FFmpeg LUT and color grading tool",
 	"direct_clip_search":  "stock clip search and download",
@@ -713,7 +819,6 @@ var capabilities = map[string]string{
 	"elevenlabs_tts":      "cloud text-to-speech synthesis",
 	"flux_image":          "cloud AI image generation via FLUX",
 	"frame_sample":        "review frame extraction",
-	"frame_sampler":       "frame extraction and sampling",
 	"gflow_image":         "Google Flow Imagen 4 / Nano Banana 2 image generation",
 	"gflow_video":         "Google Flow Veo 3.1 cinematic video generation and 4K upsampling",
 	"hyperframes_compose": "HTML/CSS/GSAP video composition",
@@ -773,11 +878,6 @@ var schemas = map[string]any{
 		}},
 		"image_format": map[string]any{"enum": []string{"jpg", "png"}, "default": "jpg"}, "overwrite": map[string]any{"type": "boolean", "default": false}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 60},
 	}},
-	"frame_sampler": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"input_path", "strategy"}, "properties": map[string]any{
-		"input_path": map[string]any{"type": "string", "minLength": 1}, "strategy": map[string]any{"enum": []string{"interval", "count", "timestamps", "scene_guided"}},
-		"interval_seconds": map[string]any{"type": "number", "minimum": 0.1}, "count": map[string]any{"type": "integer", "minimum": 1}, "timestamps": map[string]any{"type": "array", "items": map[string]any{"type": "number"}},
-		"output_dir": map[string]any{"type": "string"}, "format": map[string]any{"enum": []string{"jpg", "png"}, "default": "jpg"}, "quality": map[string]any{"type": "integer", "default": 2},
-	}},
 	"scene_detect": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"input_path"}, "properties": map[string]any{
 		"input_path": map[string]any{"type": "string", "minLength": 1}, "method": map[string]any{"enum": []string{"content", "threshold", "adaptive"}, "default": "content"},
 		"threshold": map[string]any{"type": "number", "default": 0.3}, "min_scene_length_seconds": map[string]any{"type": "number", "default": 1.0}, "output_path": map[string]any{"type": "string"},
@@ -802,9 +902,22 @@ var schemas = map[string]any{
 		"start_seconds": map[string]any{"type": "number"}, "end_seconds": map[string]any{"type": "number"}, "speed_factor": map[string]any{"type": "number"}, "codec": map[string]any{"type": "string", "default": "copy"},
 	}},
 	"video_stitch": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"operation", "clips"}, "properties": map[string]any{
-		"operation": map[string]any{"enum": []string{"validate", "stitch", "preview_stitch", "spatial"}}, "clips": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}},
-		"output_path": map[string]any{"type": "string"}, "transition": map[string]any{"enum": []string{"cut", "crossfade", "fade"}, "default": "cut"}, "transition_duration": map[string]any{"type": "number", "default": 0.5},
-		"auto_normalize": map[string]any{"type": "boolean", "default": false}, "layout": map[string]any{"enum": []string{"side_by_side", "vertical_stack", "picture_in_picture"}},
+		"operation":           map[string]any{"type": "string", "enum": []string{"validate", "stitch", "preview_stitch", "spatial"}},
+		"clips":               map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}},
+		"output_path":         map[string]any{"type": "string"},
+		"transition":          map[string]any{"type": "string", "enum": []string{"cut", "crossfade", "fade"}, "default": "cut"},
+		"transition_duration": map[string]any{"type": "number", "minimum": 0.1, "maximum": 5.0, "default": 0.5},
+		"auto_normalize":      map[string]any{"type": "boolean", "default": false, "description": "Accepted for compatibility. stitch and preview_stitch always normalize every clip to one size, frame rate and audio format."},
+		"target_resolution":   map[string]any{"type": "string", "pattern": `^\d+x\d+$`, "description": "stitch only: output size such as 1920x1080. Defaults to the first clip's size."},
+		"target_fps":          map[string]any{"type": "integer", "minimum": 1, "maximum": 120, "description": "stitch only: output frame rate. Defaults to the first clip's rate."},
+		"codec":               map[string]any{"type": "string", "default": "libx264", "description": "spatial only: video encoder."},
+		"crf":                 map[string]any{"type": "integer", "minimum": 1, "maximum": 51, "default": 23},
+		"preset":              map[string]any{"type": "string", "enum": []string{"ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"}, "default": "medium"},
+		"layout":              map[string]any{"type": "string", "enum": []string{"side_by_side", "vertical_stack", "picture_in_picture"}, "default": "side_by_side"},
+		"pip_position":        map[string]any{"type": "string", "enum": []string{"top_left", "top_right", "bottom_left", "bottom_right"}, "default": "bottom_right"},
+		"pip_scale":           map[string]any{"type": "number", "minimum": 0.1, "maximum": 0.5, "default": 0.3},
+		"pip_margin":          map[string]any{"type": "integer", "minimum": 1, "default": 10},
+		"timeout_seconds":     map[string]any{"type": "integer", "minimum": 1, "default": 300},
 	}},
 	"video_compose": map[string]any{"type": "object", "additionalProperties": false, "description": "Accepts an operation envelope (default compose), direct Facet Explainer props with nonempty cuts, or a scene plan with nonempty scenes. The Remotion composer supports only text_card, hero_title, stat_card, and media. Direct cuts take precedence over scenes and operation. Width, height, fps, and duration_seconds are explicit; defaults are 1920x1080 at 30 fps and the last cut end. Estimates validate the reduced composer primitive, required fields, and timing shape before routing work; they do not prove a render will succeed because complete metadata validation also runs in Remotion.", "properties": map[string]any{
 		"operation": map[string]any{"enum": []string{"compose", "render", "remotion_render", "burn_subtitles", "overlay", "encode"}}, "input_path": map[string]any{"type": "string"}, "output_path": map[string]any{"type": "string"},
@@ -844,11 +957,6 @@ var schemas = map[string]any{
 		"loudness": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"enabled"}, "properties": map[string]any{"enabled": map[string]any{"type": "boolean"}, "integrated_lufs": map[string]any{"type": "number", "minimum": -70, "maximum": -5}, "true_peak_db": map[string]any{"type": "number", "minimum": -9, "maximum": 0}}},
 		"duration": map[string]any{"const": "video"}, "output": map[string]any{"type": "string", "minLength": 1}, "overwrite": map[string]any{"type": "boolean", "default": false}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 300},
 	}},
-	"audio_mixer": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"video", "duration", "output"}, "properties": map[string]any{
-		"video": map[string]any{"type": "string", "minLength": 1}, "source": audioOperationSchema(false), "music": audioOperationSchema(true),
-		"loudness": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"enabled"}, "properties": map[string]any{"enabled": map[string]any{"type": "boolean"}, "integrated_lufs": map[string]any{"type": "number", "minimum": -70, "maximum": -5}, "true_peak_db": map[string]any{"type": "number", "minimum": -9, "maximum": 0}}},
-		"duration": map[string]any{"const": "video"}, "output": map[string]any{"type": "string", "minLength": 1}, "overwrite": map[string]any{"type": "boolean", "default": false}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 300},
-	}},
 	"music_library": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{
 		"library_dir": map[string]any{"type": "string"},
 	}},
@@ -869,7 +977,7 @@ var schemas = map[string]any{
 	}},
 	"edge_tts": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"text"}, "properties": map[string]any{
 		"text": map[string]any{"type": "string"}, "voice": map[string]any{"type": "string", "default": "en-US-ChristopherNeural"}, "rate": map[string]any{"type": "string", "default": "+0%"},
-		"pitch": map[string]any{"type": "string", "default": "+0Hz"}, "volume": map[string]any{"type": "string", "default": "+0%"}, "output_path": map[string]any{"type": "string"}, "timeout_seconds": map[string]any{"type": "integer"},
+		"volume": map[string]any{"type": "string", "default": "+0%"}, "output_path": map[string]any{"type": "string"}, "timeout_seconds": map[string]any{"type": "integer"},
 	}},
 	"openai_tts": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"text"}, "properties": map[string]any{
 		"text": map[string]any{"type": "string"}, "voice": map[string]any{"type": "string", "default": "alloy"}, "model": map[string]any{"type": "string", "default": "gpt-4o-mini-tts"},
@@ -939,62 +1047,148 @@ var schemas = map[string]any{
 	}},
 }
 
+// resultSchemas describe each tool's successful result exactly: every
+// property a result can carry is declared and nothing else is allowed. They
+// are audited against the real results by TestRunResultsConformToSchemas,
+// which runs every tool offline and validates what it returns.
 var resultSchemas = map[string]any{
 	"media_probe": objectSchema([]string{"input", "sha256", "format", "video_streams", "audio_streams", "warnings"}, map[string]any{
 		"input": stringSchema(), "sha256": map[string]any{"type": "string", "pattern": "^[0-9a-f]{64}$"}, "format": map[string]any{"type": "object", "required": []string{"duration", "format_name", "size", "bit_rate"}}, "video": map[string]any{"type": "object"}, "video_streams": map[string]any{"type": "array", "items": map[string]any{"type": "object", "required": []string{"index", "codec", "width", "height", "pixel_format", "fps", "reported_frame_rate", "rotation"}}}, "audio": map[string]any{"type": "array"}, "audio_streams": map[string]any{"type": "array", "items": map[string]any{"type": "object", "required": []string{"index", "codec", "sample_rate", "channels", "channel_layout"}}}, "warnings": stringArraySchema(),
 	}),
 	"audio_probe": objectSchema([]string{"file", "duration_seconds", "format_name", "format_long_name", "size_bytes", "bit_rate", "stream_count"}, map[string]any{
-		"file": stringSchema(), "duration_seconds": map[string]any{"type": "number"}, "format_name": stringSchema(), "format_long_name": stringSchema(), "size_bytes": map[string]any{"type": "integer"}, "bit_rate": map[string]any{"type": "integer"}, "stream_count": map[string]any{"type": "integer"}, "audio": map[string]any{"type": "object"},
+		"file": stringSchema(), "duration_seconds": numberSchema(), "format_name": stringSchema(), "format_long_name": stringSchema(), "size_bytes": integerSchema(), "bit_rate": integerSchema(), "stream_count": integerSchema(), "audio": map[string]any{"type": "object"},
 	}),
 	"frame_sample": objectSchema([]string{"input", "strategy", "resolved_timestamps", "samples"}, map[string]any{
-		"input": stringSchema(), "strategy": map[string]any{"enum": []string{"timestamps", "uniform", "scenes"}}, "resolved_timestamps": numberArraySchema(), "samples": map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"path", "timestamp", "width", "height"}, "properties": map[string]any{"path": stringSchema(), "timestamp": map[string]any{"type": "number"}, "width": map[string]any{"type": "integer"}, "height": map[string]any{"type": "integer"}}}},
-	}),
-	"frame_sampler": objectSchema([]string{"strategy", "frame_count", "frames", "output_dir"}, map[string]any{
-		"strategy": stringSchema(), "frame_count": map[string]any{"type": "integer"}, "frames": map[string]any{"type": "array"}, "output_dir": stringSchema(),
+		"input": stringSchema(), "strategy": enumSchema("timestamps", "uniform", "scenes"), "resolved_timestamps": numberArraySchema(), "samples": objectArraySchema([]string{"path", "timestamp", "width", "height"}, map[string]any{"path": stringSchema(), "timestamp": numberSchema(), "width": integerSchema(), "height": integerSchema()}),
 	}),
 	"scene_detect": objectSchema([]string{"scene_count", "scenes", "method"}, map[string]any{
-		"scene_count": map[string]any{"type": "integer"}, "scenes": map[string]any{"type": "array"}, "method": stringSchema(), "output": stringSchema(),
+		"scene_count": integerSchema(),
+		"scenes":      objectArraySchema([]string{"index", "start_seconds", "end_seconds", "duration_seconds"}, map[string]any{"index": integerSchema(), "start_seconds": numberSchema(), "end_seconds": numberSchema(), "duration_seconds": numberSchema()}),
+		"method":      stringSchema(),
+		"output":      describedSchema(stringSchema(), "the scene list JSON file written when output_path was given; empty otherwise"),
 	}),
+	// One object for all three operations; each property names the operation
+	// that produces it.
 	"visual_qa": objectSchema([]string{"operation", "input"}, map[string]any{
-		"operation": stringSchema(), "input": stringSchema(), "duration": map[string]any{"type": "number"}, "frames": map[string]any{"type": "array"},
+		"operation": enumSchema("review", "probe", "audio_levels"), "input": stringSchema(),
+		"frame_count": describedSchema(integerSchema(), "review"),
+		"frames":      describedSchema(objectArraySchema([]string{"timestamp", "path"}, map[string]any{"timestamp": numberSchema(), "path": stringSchema()}), "review: the extracted frames"),
+		"duration":    describedSchema(numberSchema(), "probe"), "file_size_mb": describedSchema(numberSchema(), "probe"), "has_audio": describedSchema(booleanSchema(), "probe"),
+		"width": describedSchema(integerSchema(), "probe"), "height": describedSchema(integerSchema(), "probe"), "pixel_format": describedSchema(stringSchema(), "probe"),
+		"video_codec": describedSchema(stringSchema(), "probe"), "fps": describedSchema(numberSchema(), "probe"), "audio_codec": describedSchema(stringSchema(), "probe"),
+		"sample_rate": describedSchema(integerSchema(), "probe"), "channels": describedSchema(integerSchema(), "probe"),
+		"validation_issues": describedSchema(stringArraySchema(), "probe"), "validation_passed": describedSchema(booleanSchema(), "probe"),
+		"levels": describedSchema(objectArraySchema([]string{"timestamp"}, map[string]any{"timestamp": numberSchema(), "mean_volume_db": stringSchema(), "max_volume_db": stringSchema(), "error": stringSchema()}), "audio_levels"),
 	}),
 	"output_review": objectSchema([]string{"execution_status", "review_status", "gates", "samples", "volume", "output_facts"}, map[string]any{
-		"execution_status": map[string]any{"const": "succeeded"}, "review_status": map[string]any{"enum": []string{"pass", "warn", "fail"}}, "gates": map[string]any{"type": "array", "items": map[string]any{"type": "object", "required": []string{"name", "status"}}}, "samples": map[string]any{"type": "array"}, "volume": map[string]any{"type": "object"}, "output_facts": map[string]any{"type": "object"},
+		"execution_status": map[string]any{"const": "succeeded"}, "review_status": enumSchema("pass", "warn", "fail"), "gates": map[string]any{"type": "array", "items": map[string]any{"type": "object", "required": []string{"name", "status"}}}, "samples": map[string]any{"type": "array"}, "volume": map[string]any{"type": "object"}, "output_facts": map[string]any{"type": "object"},
 	}),
-	"source_edit":   mediaOutputResultSchema([]string{"realized_segments", "silent_inputs_filled"}),
-	"video_trimmer": objectSchema([]string{"operation", "output"}, map[string]any{"operation": stringSchema(), "output": stringSchema()}),
-	"video_stitch":  objectSchema([]string{"operation"}, map[string]any{"operation": stringSchema(), "output": stringSchema()}),
-	"video_compose": objectSchema([]string{"operation"}, map[string]any{"operation": stringSchema(), "composition_id": stringSchema(), "output": stringSchema(), "output_facts": map[string]any{"type": "object"}}),
+	"source_edit": mediaOutputResultSchema([]string{"realized_segments", "silent_inputs_filled"}),
+	"video_trimmer": objectSchema([]string{"operation", "output"}, map[string]any{
+		"operation": enumSchema("cut", "speed", "concat"), "input": stringSchema(), "output": stringSchema(),
+		"start_seconds": describedSchema(numberSchema(), "cut"), "end_seconds": describedSchema(numberSchema(), "cut, when requested"),
+		"speed_factor": describedSchema(numberSchema(), "speed"), "segment_count": describedSchema(integerSchema(), "concat"),
+	}),
+	"video_stitch": objectSchema([]string{"operation", "clip_count"}, map[string]any{
+		"operation": enumSchema("validate", "stitch", "preview_stitch", "spatial"), "clip_count": integerSchema(),
+		"compatible": describedSchema(booleanSchema(), "validate"), "total_duration": describedSchema(numberSchema(), "validate"),
+		"mismatches": describedSchema(objectArraySchema([]string{"clip_index", "clip_path", "differences"}, map[string]any{"clip_index": integerSchema(), "clip_path": stringSchema(), "differences": stringArraySchema()}), "validate"),
+		"transition": describedSchema(stringSchema(), "stitch and preview_stitch"), "transition_duration": describedSchema(numberSchema(), "stitch and preview_stitch"),
+		"duration": describedSchema(numberSchema(), "stitch and preview_stitch"), "layout": describedSchema(stringSchema(), "spatial"),
+		"output": describedSchema(stringSchema(), "every operation except validate"),
+	}),
+	"video_compose": objectSchema([]string{"operation", "output"}, map[string]any{
+		"operation": enumSchema("compose", "remotion_render", "burn_subtitles", "overlay", "encode"), "output": stringSchema(),
+		"composition_id": describedSchema(stringSchema(), "remotion_render"), "output_facts": describedSchema(map[string]any{"type": "object"}, "remotion_render: media_probe facts of the published file"),
+		"input": describedSchema(stringSchema(), "burn_subtitles, overlay and encode"), "subtitles": describedSchema(stringSchema(), "burn_subtitles"),
+		"overlay_count": describedSchema(integerSchema(), "overlay"), "codec": describedSchema(stringSchema(), "encode"),
+		"cut_count": describedSchema(integerSchema(), "compose"), "has_subtitles": describedSchema(booleanSchema(), "compose"), "has_mixed_audio": describedSchema(booleanSchema(), "compose"),
+	}),
 	"subtitle_gen": objectSchema([]string{"format", "cue_count", "output"}, map[string]any{
-		"format": stringSchema(), "cue_count": map[string]any{"type": "integer"}, "output": stringSchema(),
+		"format": enumSchema("srt", "vtt", "json"), "cue_count": integerSchema(), "output": stringSchema(),
 	}),
-	"ffmpeg_caption_burn": objectSchema([]string{"method", "output"}, map[string]any{"method": map[string]any{"const": "ffmpeg"}, "output": stringSchema()}),
-	"silence_cutter":      objectSchema([]string{"mode"}, map[string]any{"mode": stringSchema(), "output": stringSchema()}),
-	"hyperframes_compose": objectSchema([]string{"operation"}, map[string]any{"operation": stringSchema()}),
-	"audio_mix":           mediaOutputResultSchema([]string{"loudnorm"}),
-	"audio_mixer":         mediaOutputResultSchema([]string{"loudnorm"}),
+	"ffmpeg_caption_burn": objectSchema([]string{"method", "output", "caption_count", "word_count"}, map[string]any{
+		"method": map[string]any{"const": "ffmpeg"}, "output": stringSchema(),
+		"caption_count": describedSchema(integerSchema(), "captions burned in"), "word_count": describedSchema(integerSchema(), "words across all captions"),
+	}),
+	"silence_cutter": objectSchema([]string{"mode", "input", "output"}, map[string]any{
+		"mode": enumSchema("remove", "speed_up", "mark"), "input": stringSchema(),
+		"output":                  describedSchema(stringSchema(), "the edited video, or for mark the silence map JSON"),
+		"input_duration":          describedSchema(numberSchema(), "remove and speed_up"),
+		"output_duration":         describedSchema(numberSchema(), "remove, when no silence was found and the input was copied"),
+		"silence_removed_seconds": describedSchema(numberSchema(), "remove and speed_up"),
+		"silence_segments":        integerSchema(), "speech_segments_count": integerSchema(),
+		"silences":                 describedSchema(objectArraySchema([]string{"start", "end", "duration"}, map[string]any{"start": numberSchema(), "end": numberSchema(), "duration": numberSchema()}), "mark"),
+		"speech_segments":          describedSchema(objectArraySchema([]string{"start", "end"}, map[string]any{"start": numberSchema(), "end": numberSchema(), "speed": numberSchema()}), "mark"),
+		"total_duration":           describedSchema(numberSchema(), "mark"),
+		"silence_duration_seconds": describedSchema(numberSchema(), "mark"),
+	}),
+	"hyperframes_compose": objectSchema([]string{"operation"}, map[string]any{
+		"operation":     enumSchema("doctor", "scaffold_workspace", "lint", "validate", "inspect", "check", "render", "render_existing", "add_block"),
+		"runtime_check": describedSchema(map[string]any{"type": "object"}, "doctor: which runtime pieces resolved, and where"),
+		"workspace":     describedSchema(stringSchema(), "scaffold_workspace, render and render_existing"),
+		"cut_count":     describedSchema(integerSchema(), "scaffold_workspace"),
+		"files":         describedSchema(stringArraySchema(), "scaffold_workspace: the files written"),
+		"report":        describedSchema(map[string]any{}, "lint, validate, inspect, check and add_block: the HyperFrames CLI's own JSON report"),
+		"raw":           describedSchema(stringSchema(), "lint, validate, inspect, check and add_block: CLI output that was not JSON"),
+		"block_name":    describedSchema(stringSchema(), "add_block"),
+		"output":        describedSchema(stringSchema(), "render and render_existing: the rendered video"),
+	}),
+	"audio_mix": mediaOutputResultSchema([]string{"loudnorm"}),
 	"music_library": objectSchema([]string{"library_dir", "exists", "track_count", "tracks"}, map[string]any{
-		"library_dir": stringSchema(), "exists": map[string]any{"type": "boolean"}, "track_count": map[string]any{"type": "integer"}, "total_duration_seconds": map[string]any{"type": "number"}, "tracks": map[string]any{"type": "array"},
+		"library_dir": stringSchema(), "exists": booleanSchema(), "track_count": integerSchema(), "total_duration_seconds": numberSchema(),
+		"tracks": objectArraySchema([]string{"name", "path", "size_bytes", "duration_seconds"}, map[string]any{"name": stringSchema(), "path": stringSchema(), "size_bytes": integerSchema(), "duration_seconds": numberSchema()}),
 	}),
 	"direct_clip_search": objectSchema([]string{"output_dir", "clips_downloaded", "total_clips", "clips"}, map[string]any{
-		"output_dir": stringSchema(), "clips_downloaded": map[string]any{"type": "integer"}, "total_clips": map[string]any{"type": "integer"}, "clips": map[string]any{"type": "array"},
+		"output_dir": stringSchema(), "clips_downloaded": integerSchema(), "total_clips": integerSchema(),
+		"per_source_counts": map[string]any{"type": "object"}, "queries_run": integerSchema(),
+		"clips": objectArraySchema([]string{"clip_id", "source", "query", "path"}, map[string]any{"clip_id": stringSchema(), "source": stringSchema(), "query": stringSchema(), "slot_id": stringSchema(), "path": stringSchema(), "thumbnail": stringSchema(), "duration": numberSchema()}),
 	}),
-	"pexels_video":   objectSchema([]string{"provider", "video_id", "query", "output"}, map[string]any{"provider": stringSchema(), "video_id": map[string]any{"type": "integer"}, "query": stringSchema(), "output": stringSchema()}),
-	"pixabay_video":  objectSchema([]string{"provider", "video_id", "query", "output"}, map[string]any{"provider": stringSchema(), "video_id": map[string]any{"type": "integer"}, "query": stringSchema(), "output": stringSchema()}),
-	"wikimedia":      objectSchema([]string{"provider", "source_id", "query", "output"}, map[string]any{"provider": stringSchema(), "source_id": stringSchema(), "query": stringSchema(), "output": stringSchema()}),
-	"edge_tts":       objectSchema([]string{"output", "voice", "format", "provider"}, map[string]any{"output": stringSchema(), "voice": stringSchema(), "format": stringSchema(), "provider": stringSchema(), "size_bytes": map[string]any{"type": "integer"}, "duration_seconds": map[string]any{"type": "number"}}),
-	"openai_tts":     objectSchema([]string{"provider", "model", "voice", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "voice": stringSchema(), "output": stringSchema()}),
-	"elevenlabs_tts": objectSchema([]string{"provider", "model", "voice_id", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "voice_id": stringSchema(), "output": stringSchema()}),
-	"piper_tts":      objectSchema([]string{"provider", "model", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "output": stringSchema()}),
-	"openai_image":   objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "size": stringSchema(), "quality": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"}, "url": stringSchema()}),
-	"flux_image":     objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "aspect_ratio": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"}, "url": stringSchema(), "seed": map[string]any{"type": "integer"}}),
-	"kling_video":    objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "duration": map[string]any{"type": "number"}, "aspect_ratio": stringSchema(), "mode": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"}, "video_url": stringSchema()}),
-	"sora_video":     objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "duration": map[string]any{"type": "number"}, "aspect_ratio": stringSchema(), "resolution": stringSchema(), "output": stringSchema(), "mock": map[string]any{"type": "boolean"}, "video_url": stringSchema()}),
+	"pexels_video": objectSchema([]string{"provider", "video_id", "query", "output"}, map[string]any{
+		"provider": stringSchema(), "video_id": integerSchema(), "user": stringSchema(), "duration_seconds": numberSchema(), "width": integerSchema(), "height": integerSchema(), "fps": numberSchema(), "quality": stringSchema(),
+		"query": stringSchema(), "output": stringSchema(), "total_results": integerSchema(), "results_returned": integerSchema(), "license": stringSchema(), "pexels_url": stringSchema(),
+	}),
+	"pixabay_video": objectSchema([]string{"provider", "video_id", "query", "output"}, map[string]any{
+		"provider": stringSchema(), "video_id": integerSchema(), "user": stringSchema(), "tags": stringSchema(), "duration_seconds": numberSchema(), "width": integerSchema(), "height": integerSchema(),
+		"query": stringSchema(), "output": stringSchema(), "total_results": integerSchema(), "results_returned": integerSchema(), "license": stringSchema(), "page_url": stringSchema(),
+	}),
+	"wikimedia": objectSchema([]string{"provider", "source_id", "query", "output"}, map[string]any{
+		"provider": stringSchema(), "source_id": stringSchema(), "duration_seconds": numberSchema(), "width": integerSchema(), "height": integerSchema(),
+		"query": stringSchema(), "output": stringSchema(), "license": stringSchema(), "download_url": stringSchema(),
+	}),
+	"edge_tts": objectSchema([]string{"output", "voice", "format", "provider", "size_bytes"}, map[string]any{
+		"output": stringSchema(), "voice": stringSchema(), "format": stringSchema(), "provider": stringSchema(), "size_bytes": integerSchema(),
+		"duration_seconds": describedSchema(numberSchema(), "measured from the written file; absent when it could not be probed"),
+	}),
+	"openai_tts":     ttsResultSchema("voice"),
+	"elevenlabs_tts": ttsResultSchema("voice_id"),
+	"piper_tts":      ttsResultSchema("speaker_id"),
+	"openai_image":   objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "size": stringSchema(), "quality": stringSchema(), "output": stringSchema(), "mock": booleanSchema(), "url": stringSchema()}),
+	"flux_image":     objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "aspect_ratio": stringSchema(), "output": stringSchema(), "mock": booleanSchema(), "url": stringSchema(), "seed": integerSchema()}),
+	"kling_video":    objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "duration": numberSchema(), "aspect_ratio": stringSchema(), "mode": stringSchema(), "output": stringSchema(), "mock": booleanSchema(), "video_url": stringSchema()}),
+	"sora_video":     objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "duration": numberSchema(), "aspect_ratio": stringSchema(), "resolution": stringSchema(), "output": stringSchema(), "mock": booleanSchema(), "video_url": stringSchema()}),
 	"gflow_video":    gflowResultSchema(true),
 	"gflow_image":    gflowResultSchema(false),
-	"color_grade":    objectSchema([]string{"input", "output", "profile", "intensity", "filter_graph"}, map[string]any{"input": stringSchema(), "output": stringSchema(), "profile": stringSchema(), "intensity": map[string]any{"type": "number"}, "lut_path": stringSchema(), "filter_graph": stringSchema(), "duration": map[string]any{"type": "number"}, "output_facts": map[string]any{"type": "object"}}),
-	"image_selector": objectSchema([]string{"selected_recommendation", "rationale", "candidates", "total_candidates", "configured_candidates"}, map[string]any{"selected_recommendation": stringSchema(), "rationale": stringSchema(), "candidates": map[string]any{"type": "array"}, "total_candidates": map[string]any{"type": "integer"}, "configured_candidates": map[string]any{"type": "integer"}, "requested_aspect_ratio": stringSchema(), "requested_style": stringSchema()}),
-	"video_selector": objectSchema([]string{"selected_recommendation", "rationale", "candidates", "total_candidates", "configured_candidates"}, map[string]any{"selected_recommendation": stringSchema(), "rationale": stringSchema(), "candidates": map[string]any{"type": "array"}, "total_candidates": map[string]any{"type": "integer"}, "configured_candidates": map[string]any{"type": "integer"}, "requested_duration": map[string]any{"type": "number"}, "requested_aspect_ratio": stringSchema()}),
+	"color_grade":    objectSchema([]string{"input", "output", "profile", "intensity", "filter_graph"}, map[string]any{"input": stringSchema(), "output": stringSchema(), "profile": stringSchema(), "intensity": numberSchema(), "lut_path": stringSchema(), "filter_graph": stringSchema(), "duration": numberSchema(), "output_facts": map[string]any{"type": "object"}}),
+	"image_selector": objectSchema([]string{"selected_recommendation", "rationale", "candidates", "total_candidates", "configured_candidates"}, map[string]any{"selected_recommendation": stringSchema(), "rationale": stringSchema(), "candidates": map[string]any{"type": "array"}, "total_candidates": integerSchema(), "configured_candidates": integerSchema(), "requested_aspect_ratio": stringSchema(), "requested_style": stringSchema()}),
+	"video_selector": objectSchema([]string{"selected_recommendation", "rationale", "candidates", "total_candidates", "configured_candidates"}, map[string]any{"selected_recommendation": stringSchema(), "rationale": stringSchema(), "candidates": map[string]any{"type": "array"}, "total_candidates": integerSchema(), "configured_candidates": integerSchema(), "requested_duration": numberSchema(), "requested_aspect_ratio": stringSchema()}),
+}
+
+// ttsResultSchema is the shared result of the providers that synthesize a
+// file through a model: identity, format, input length and the measured
+// duration of what was written.
+func ttsResultSchema(voiceField string) map[string]any {
+	properties := map[string]any{
+		"provider": stringSchema(), "model": stringSchema(), "format": stringSchema(), "output": stringSchema(),
+		"text_length":            describedSchema(integerSchema(), "bytes of input text"),
+		"audio_duration_seconds": describedSchema(numberSchema(), "measured from the written file; 0 when it could not be probed"),
+	}
+	if voiceField == "speaker_id" {
+		properties[voiceField] = integerSchema()
+	} else {
+		properties[voiceField] = stringSchema()
+	}
+	return objectSchema([]string{"provider", "model", voiceField, "format", "text_length", "audio_duration_seconds", "output"}, properties)
 }
 
 func gflowResultSchema(video bool) map[string]any {
@@ -1014,7 +1208,30 @@ func gflowResultSchema(video bool) map[string]any {
 func objectSchema(required []string, properties map[string]any) map[string]any {
 	return map[string]any{"type": "object", "additionalProperties": false, "required": required, "properties": properties}
 }
-func stringSchema() map[string]any { return map[string]any{"type": "string"} }
+func stringSchema() map[string]any  { return map[string]any{"type": "string"} }
+func integerSchema() map[string]any { return map[string]any{"type": "integer"} }
+func numberSchema() map[string]any  { return map[string]any{"type": "number"} }
+func booleanSchema() map[string]any { return map[string]any{"type": "boolean"} }
+
+// enumSchema is a string limited to values.
+func enumSchema(values ...string) map[string]any {
+	return map[string]any{"type": "string", "enum": values}
+}
+
+// objectArraySchema is an array whose items are closed objects.
+func objectArraySchema(required []string, properties map[string]any) map[string]any {
+	return map[string]any{"type": "array", "items": objectSchema(required, properties)}
+}
+
+// describedSchema returns a copy of schema carrying a description.
+func describedSchema(schema map[string]any, description string) map[string]any {
+	out := make(map[string]any, len(schema)+1)
+	for key, value := range schema {
+		out[key] = value
+	}
+	out["description"] = description
+	return out
+}
 func nonBlankStringSchema() map[string]any {
 	return map[string]any{"type": "string", "minLength": 1}
 }
@@ -1105,8 +1322,6 @@ func executeContext(ctx context.Context, tool, op string, data []byte) (any, []s
 		return doAudioProbeContext(ctx, op, data)
 	case "frame_sample":
 		return doFrameSampleContext(ctx, op, data)
-	case "frame_sampler":
-		return doFrameSamplerContext(ctx, op, data)
 	case "scene_detect":
 		return doSceneDetectContext(ctx, op, data)
 	case "visual_qa":
@@ -1122,14 +1337,14 @@ func executeContext(ctx context.Context, tool, op string, data []byte) (any, []s
 	case "video_compose":
 		return doVideoComposeContext(ctx, op, data)
 	case "subtitle_gen":
-		return doSubtitleGen(op, data)
+		return doSubtitleGenContext(ctx, op, data)
 	case "ffmpeg_caption_burn":
 		return doFFmpegCaptionBurnContext(ctx, op, data)
 	case "silence_cutter":
 		return doSilenceCutterContext(ctx, op, data)
 	case "hyperframes_compose":
 		return doHyperFramesComposeContext(ctx, op, data)
-	case "audio_mix", "audio_mixer":
+	case "audio_mix":
 		return doAudioMixContext(ctx, op, data)
 	case "music_library":
 		return doMusicLibraryContext(ctx, op, data)
@@ -1502,21 +1717,44 @@ func runCommand(timeout time.Duration, program string, args ...string) ([]byte, 
 	return runCommandContext(ctx, program, args...)
 }
 
+// newCommand prepares every subprocess the toolbox starts.
+//
+// Cancelling ctx, or its deadline passing, kills the program AND everything
+// it started: node's headless browser, a wrapper's ffmpeg. os/exec alone
+// kills only the direct child, which left renderers running after their
+// render had been abandoned. When the command finishes, anything it left
+// running is killed too, and Wait gives up after WaitDelay on pipes a
+// descendant still holds. See internal/proctree.
+func newCommand(ctx context.Context, path string, args ...string) *proctree.Cmd {
+	return proctree.CommandContext(ctx, path, args...)
+}
+
+// exitedCleanly reports a command whose own process succeeded but whose
+// output pipes stayed open past WaitDelay because a descendant still held
+// them. The program finished its work; the straggler has been killed with
+// the rest of its tree, so the run is not a failure.
+func exitedCleanly(cmd *proctree.Cmd, err error) bool {
+	return errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil && cmd.ProcessState.Success()
+}
+
 // timeoutMessage says what ran out of time and what to do about it.
 //
 // "node was cancelled or timed out" names the binary rather than the work and
 // suggests nothing. An agent reading it cannot tell whether the render was
 // impossible or merely given four seconds too few — and the honest answer is
-// usually the latter, because the module clamps a tool's timeout to the host's
-// remaining budget.
+// usually the latter. The other budget that can run out is the MCP client's
+// own limit on one call, which Facet cannot raise; the shell route
+// (facet tools run) has no such limit.
 func timeoutMessage(program string, budget time.Duration) string {
 	if budget > 0 {
 		return fmt.Sprintf(
-			"%s did not finish within %s; raise timeout_seconds, or the host's "+
-				"deadline_ms if that is the smaller budget", program, budget)
+			"%s did not finish within %s; raise timeout_seconds, or run the call "+
+				"with facet tools run from a shell if the MCP client's own call "+
+				"limit is the smaller budget", program, budget)
 	}
 	return program + " did not finish in the time allowed; raise timeout_seconds, " +
-		"or the host's deadline_ms if that is the smaller budget"
+		"or run the call with facet tools run from a shell if the MCP client's " +
+		"own call limit is the smaller budget"
 }
 
 func runCommandContext(ctx context.Context, program string, args ...string) ([]byte, error) {
@@ -1529,7 +1767,7 @@ func runCommandContext(ctx context.Context, program string, args ...string) ([]b
 	if deadline, ok := ctx.Deadline(); ok {
 		budget = time.Until(deadline)
 	}
-	cmd := exec.CommandContext(ctx, resolved, args...)
+	cmd := newCommand(ctx, resolved, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -1537,24 +1775,32 @@ func runCommandContext(ctx context.Context, program string, args ...string) ([]b
 	if ctx.Err() != nil {
 		return nil, failure("command_timeout", timeoutMessage(program, budget.Round(time.Second)), map[string]any{"stderr": bounded(stderr.String())})
 	}
-	if err != nil {
+	if err != nil && !exitedCleanly(cmd, err) {
 		return nil, failure("command_failed", program+" failed", map[string]any{"stderr": bounded(stderr.String()), "error": bounded(err.Error())})
 	}
 	return append(stdout.Bytes(), stderr.Bytes()...), nil
 }
 
-func runCommandDir(timeout time.Duration, dir, program string, args ...string) ([]byte, error) {
-	return runCommandDirContext(context.Background(), timeout, dir, program, args...)
+func runCommandDirContext(parent context.Context, timeout time.Duration, dir, program string, args ...string) ([]byte, error) {
+	stdout, stderr, err := runCommandDirOutput(parent, timeout, dir, program, args...)
+	if err != nil {
+		return stdout, err
+	}
+	return append(stdout, stderr...), nil
 }
 
-func runCommandDirContext(parent context.Context, timeout time.Duration, dir, program string, args ...string) ([]byte, error) {
+// runCommandDirOutput is runCommandDirContext with standard output and
+// standard error kept apart, for programs whose stdout is a JSON report that
+// diagnostics on stderr would otherwise corrupt. On a timeout the bounded
+// stdout seen so far is returned with the error.
+func runCommandDirOutput(parent context.Context, timeout time.Duration, dir, program string, args ...string) ([]byte, []byte, error) {
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	resolved, err := lookPath(program)
 	if err != nil {
-		return nil, failure("dependency_missing", program+" is not available", nil)
+		return nil, nil, failure("dependency_missing", program+" is not available", nil)
 	}
-	cmd := exec.CommandContext(ctx, resolved, args...)
+	cmd := newCommand(ctx, resolved, args...)
 	if dir != "" {
 		cmd.Dir = dir
 	}
@@ -1563,12 +1809,12 @@ func runCommandDirContext(parent context.Context, timeout time.Duration, dir, pr
 	cmd.Stderr = &stderr
 	err = cmd.Run()
 	if ctx.Err() != nil {
-		return []byte(bounded(stdout.String())), failure("command_timeout", timeoutMessage(program, timeout), map[string]any{"stderr": bounded(stderr.String())})
+		return []byte(bounded(stdout.String())), nil, failure("command_timeout", timeoutMessage(program, timeout), map[string]any{"stderr": bounded(stderr.String())})
 	}
-	if err != nil {
-		return nil, failure("command_failed", program+" failed", map[string]any{"stderr": bounded(stderr.String()), "error": bounded(err.Error()), "output": bounded(stdout.String())})
+	if err != nil && !exitedCleanly(cmd, err) {
+		return nil, nil, failure("command_failed", program+" failed", map[string]any{"stderr": bounded(stderr.String()), "error": bounded(err.Error()), "output": bounded(stdout.String())})
 	}
-	return append(stdout.Bytes(), stderr.Bytes()...), nil
+	return stdout.Bytes(), stderr.Bytes(), nil
 }
 
 func parseFloat(s string) float64 { v, _ := strconv.ParseFloat(s, 64); return v }
@@ -1598,45 +1844,41 @@ const referencePixels = 1280 * 720
 // running, so a caller choosing a deadline needs the pessimistic figure.
 const renderLoadFactor = 4.0
 
-// DefaultHostDeadline is the host's deadline_ms default, from compa
-// internal/module/runner.go:43 (DefaultDeadline = 60 * time.Second).
+// ShortestMCPCallLimit is the shortest default limit that an MCP client facet
+// wire supports puts on a single tool call: Codex stops an MCP call after
+// mcp_servers.<id>.tool_timeout_sec, 60 seconds unless configured.
 //
-// Facet does not own this number and cannot enforce it. It is duplicated here
-// because an estimate must say whether a render fits BEFORE the host has sent
-// a request to read a real deadline_ms from — the whole point of the estimate
-// is to inform the choice of deadline_ms, so it cannot depend on one.
-//
-// Note the RFC (§8) states 180000 ms while the host SHIPS 60s. The shipped
-// constant is what kills the process, so this tracks the code, not the prose.
-// Raised as a discrepancy in compa's lane rather than resolved here.
-const DefaultHostDeadline = 60 * time.Second
+// Facet does not own this number and cannot enforce it. It is needed here
+// because an estimate must say whether a call should leave MCP BEFORE any call
+// is made: a call that may outlast the client's limit belongs on the shell
+// route (facet tools run), which no MCP limit applies to.
+const ShortestMCPCallLimit = 60 * time.Second
 
-// DeadlineSafetyMargin is reserved from any host budget so Facet can still
-// write an envelope after a tool gives up. A tool returning exactly at the
-// deadline is killed before its error can be reported, and the host then sees
-// a dead process rather than a failure it can explain.
+// MCPCallMargin is reserved from that limit so Facet can still return a result
+// after a tool gives up. A tool returning exactly at the limit is abandoned
+// before its result or error reaches the client.
 //
 // Measured: a whole invocation completes in ~0.1s and sha256 over a 200MB
 // artifact takes 0.15s, so one second is roughly 5x the worst case observed.
-const DeadlineSafetyMargin = time.Second
+const MCPCallMargin = time.Second
 
-// FitsDefaultHostDeadline is the longest render that still answers inside the
-// default budget.
+// FitsShortestMCPCallLimit is the longest render that still answers inside the
+// shortest default MCP call limit.
 //
-// DERIVED, never written as a literal. It was previously hardcoded 55, correct
-// when the margin was 5s; the margin later dropped to 1s and the literal did
-// not follow, so for months the estimate warned about renders that had four
+// DERIVED, never written as a literal. An earlier threshold was hardcoded 55,
+// correct when the margin was 5s; the margin later dropped to 1s and the
+// literal did not follow, so the estimate warned about renders that had four
 // spare seconds. That is the duplicated-constant defect this codebase fixed in
 // chargeability and determinism, surviving in the estimate because a stale
 // number stays plausible in a way a stale list does not.
-var FitsDefaultHostDeadline = DefaultHostDeadline - DeadlineSafetyMargin
+var FitsShortestMCPCallLimit = ShortestMCPCallLimit - MCPCallMargin
 
 // estimateRender adds an expected wall-clock duration to an estimate.
 //
 // Without it a caller cannot tell that a 15-second explainer takes 43 seconds
-// to render and will not fit the host's 60-second default deadline. That is
-// the decision async exists to inform, and the estimate mentioned time
-// nowhere — only cost, which is zero for a local render and says nothing.
+// to render, and may not finish inside an MCP client's 60-second call limit.
+// prefer_shell turns that into the decision the caller faces: run the render
+// as an MCP call, or from a shell with facet tools run.
 func estimateRender(ops []string, frames int, width, height int) map[string]any {
 	out := estimateResult(ops)
 	if frames <= 0 || width <= 0 || height <= 0 {
@@ -1646,9 +1888,8 @@ func estimateRender(ops []string, frames int, width, height int) map[string]any 
 	expected := renderFixedSeconds + float64(frames)*renderSecondsPerFrame*scale
 	out["estimated_duration_seconds"] = roundFloat(expected, 1)
 	out["estimated_duration_seconds_max"] = roundFloat(expected*renderLoadFactor, 1)
-	// True means: ask for a longer deadline_ms, or use async.
-	out["exceeds_default_host_deadline"] =
-		expected*renderLoadFactor > FitsDefaultHostDeadline.Seconds()
+	// True means: run it from a shell (facet tools run), not as an MCP call.
+	out["prefer_shell"] = expected*renderLoadFactor > FitsShortestMCPCallLimit.Seconds()
 	return out
 }
 
@@ -1678,8 +1919,10 @@ func contains(values []string, value string) bool {
 // Names returns a defensive copy of the exact public tool catalog.
 func Names() []string { out := append([]string(nil), names...); sort.Strings(out); return out }
 
-// CanonicalName resolves compatibility aliases to the operation identity
-// reported by envelopes, listings, and module projections.
+// CanonicalName resolves a tool name, including the hyphenated and short
+// spellings the CLI accepts, to the identity reported by envelopes and
+// listings. A name that is not a Facet tool is returned normalized but
+// unchanged.
 func CanonicalName(tool string) string { return canonicalToolName(tool) }
 
 // Description returns the tool's human-readable capability description.
@@ -1778,30 +2021,33 @@ func schemaMismatch(rawSchema, value any, path string) string {
 	}
 	if _, hasType := schema["type"]; !hasType {
 		if required := schemaStrings(schema["required"]); len(required) != 0 {
-			object, ok := value.(map[string]any)
-			if !ok {
+			if _, ok := value.(map[string]any); !ok {
 				return path + " must be an object"
-			}
-			for _, name := range required {
-				if _, exists := object[name]; !exists {
-					return path + "." + name + " is required"
-				}
 			}
 		}
 	}
-	switch schema["type"] {
-	case "object":
-		object, ok := value.(map[string]any)
-		if !ok {
+	if schema["type"] == "object" {
+		if _, ok := value.(map[string]any); !ok {
 			return path + " must be an object"
 		}
+	}
+	// Object keywords apply to every object value whether or not the schema
+	// names a type, as in JSON Schema: an if/then condition such as
+	// {"properties": {"mock": {"const": false}}} has no type and must still
+	// look at the property.
+	if object, ok := value.(map[string]any); ok {
 		for _, name := range schemaStrings(schema["required"]) {
 			if _, exists := object[name]; !exists {
 				return path + "." + name + " is required"
 			}
 		}
 		properties, _ := schema["properties"].(map[string]any)
-		for name, child := range object {
+		keys := make([]string, 0, len(object))
+		for name := range object {
+			keys = append(keys, name)
+		}
+		sort.Strings(keys)
+		for _, name := range keys {
 			childSchema, exists := properties[name]
 			if !exists {
 				if schema["additionalProperties"] == false {
@@ -1809,10 +2055,12 @@ func schemaMismatch(rawSchema, value any, path string) string {
 				}
 				continue
 			}
-			if reason := schemaMismatch(childSchema, child, path+"."+name); reason != "" {
+			if reason := schemaMismatch(childSchema, object[name], path+"."+name); reason != "" {
 				return reason
 			}
 		}
+	}
+	switch schema["type"] {
 	case "array":
 		items, ok := value.([]any)
 		if !ok {
@@ -1835,6 +2083,15 @@ func schemaMismatch(rawSchema, value any, path string) string {
 		}
 		if min, ok := numberValue(schema["minLength"]); ok && float64(len(text)) < min {
 			return fmt.Sprintf("%s must contain at least %.0f characters", path, min)
+		}
+		if pattern, ok := schema["pattern"].(string); ok {
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				return fmt.Sprintf("%s has an invalid pattern in its schema: %v", path, err)
+			}
+			if !re.MatchString(text) {
+				return fmt.Sprintf("%s must match %s", path, pattern)
+			}
 		}
 	case "integer":
 		number, ok := numberValue(value)
@@ -1920,22 +2177,18 @@ func Run(tool string, data []byte) Envelope {
 	return RunContext(context.Background(), tool, data)
 }
 
-// RunContext carries cancellation into media execution and network requests.
+// RunContext runs a tool with raw JSON input.
+//
+// Cancelling ctx stops the run: network requests are abandoned and every
+// subprocess the tool started is killed with its whole process tree. A
+// successful envelope lists every file the run produced in Artifacts.
 func RunContext(ctx context.Context, tool string, data []byte) Envelope {
-	requestedTool := strings.ToLower(strings.TrimSpace(tool))
-	tool = canonicalToolName(requestedTool)
+	tool = canonicalToolName(tool)
 	if err := ctx.Err(); err != nil {
 		return errorEnvelope(tool, "run", failure("cancelled", err.Error(), nil))
 	}
 	if !known(tool) {
 		return errorEnvelope(tool, "run", failure("unknown_tool", "unknown tool: "+tool, nil))
 	}
-	result, warnings, err := executeContext(ctx, invocationToolName(requestedTool), "run", data)
-	if ctx.Err() != nil {
-		return errorEnvelope(tool, "run", failure("cancelled", ctx.Err().Error(), nil))
-	}
-	if err != nil {
-		return errorEnvelope(tool, "run", err)
-	}
-	return success(tool, "run", result, warnings)
+	return runEnvelope(ctx, tool, data)
 }

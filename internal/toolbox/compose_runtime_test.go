@@ -28,86 +28,95 @@ func isolateComposeRuntime(t *testing.T) (string, string) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("LOCALAPPDATA", "")
+	t.Setenv(ComposerDirEnv, "")
+	// The executable-relative runtime must be a fixture too, not wherever the
+	// test binary happens to be built.
+	fakeRuntime(t)
 	t.Chdir(workspace)
 	return home, workspace
 }
 
-func TestFindComposerDirHomeInstalled(t *testing.T) {
-	home, _ := isolateComposeRuntime(t)
-	want := filepath.Join(home, ".facet", "bundle", "remotion-composer")
+// Which composer renders must not depend on where a call runs or on the
+// user's home: none of the retired locations is searched any more.
+func TestFindComposerDirIgnoresTheHomeAndTheWorkingDirectory(t *testing.T) {
+	home, workspace := isolateComposeRuntime(t)
+	nested := filepath.Join(workspace, "a", "b")
+	for _, retired := range []string{
+		filepath.Join(home, ".facet", "bundle", "remotion-composer"),
+		filepath.Join(workspace, "remotion-composer"),
+		filepath.Join(workspace, "packs", "explainer", "runtime"),
+		filepath.Join(nested, "remotion-composer"),
+	} {
+		composeRuntimeFixture(t, filepath.Join(retired, "package.json"), "{}")
+	}
+	// Configuration files are not read either.
+	composeRuntimeFixture(t, filepath.Join(workspace, ".facet.yaml"), "paths:\n  remotion_composer: '"+filepath.ToSlash(filepath.Join(workspace, "remotion-composer"))+"'\n")
+	composeRuntimeFixture(t, filepath.Join(home, ".config", "facet", "config.yaml"), "paths:\n  remotion_composer: '"+filepath.ToSlash(filepath.Join(workspace, "remotion-composer"))+"'\n")
+	t.Chdir(nested)
+	if got, err := findComposerDir(); err == nil {
+		t.Fatalf("a composer outside the runtime was used: %q", got)
+	} else if !strings.Contains(err.Error(), ComposerDirEnv) {
+		t.Fatalf("the error does not name the override: %v", err)
+	}
+}
+
+// An installed Facet finds the composer it shipped beside its executable,
+// whatever the working directory.
+func TestFindComposerDirBesideExecutable(t *testing.T) {
+	isolateComposeRuntime(t)
+	root := fakeRuntime(t)
+	want := filepath.Join(root, "dependencies", "remotion-composer")
 	composeRuntimeFixture(t, filepath.Join(want, "package.json"), "{}")
+	got, err := findComposerDir()
+	if err != nil || !sameFile(got, want) {
+		t.Fatalf("findComposerDir() = %q, %v; want %q", got, err, want)
+	}
+	// The retired runtime folder name is not searched.
+	if err := os.RemoveAll(want); err != nil {
+		t.Fatal(err)
+	}
+	composeRuntimeFixture(t, filepath.Join(root, "bundle", "remotion-composer", "package.json"), "{}")
+	if got, err := findComposerDir(); err == nil {
+		t.Fatalf("the retired <runtime>/bundle folder was used: %q", got)
+	}
+}
+
+// %LOCALAPPDATA%\Facet\runtimes was a retired install location; a composer
+// left there must not be picked up in preference to reporting it missing.
+func TestFindComposerDirIgnoresRetiredRuntimeLocation(t *testing.T) {
+	home, _ := isolateComposeRuntime(t)
+	t.Setenv("LOCALAPPDATA", home)
+	for _, retired := range []string{filepath.Join(home, "Facet", "runtimes", "remotion"), filepath.Join(home, "Facet", "runtimes", "remotion", "current")} {
+		composeRuntimeFixture(t, filepath.Join(retired, "package.json"), "{}")
+	}
+	if got, err := findComposerDir(); err == nil {
+		t.Fatalf("a retired runtime location was used: %q", got)
+	}
+}
+
+// FACET_REMOTION_COMPOSER is the one explicit override, and it wins over the
+// runtime's own composer.
+func TestFindComposerDirOverride(t *testing.T) {
+	home, _ := isolateComposeRuntime(t)
+	root := fakeRuntime(t)
+	composeRuntimeFixture(t, filepath.Join(root, "dependencies", "remotion-composer", "package.json"), "{}")
+	want := filepath.Join(home, "checkout", "remotion-composer")
+	composeRuntimeFixture(t, filepath.Join(want, "package.json"), "{}")
+	t.Setenv(ComposerDirEnv, want)
 	got, err := findComposerDir()
 	if err != nil || got != want {
 		t.Fatalf("findComposerDir() = %q, %v; want %q", got, err, want)
 	}
 }
 
-func TestFindComposerDirConfigured(t *testing.T) {
-	for _, scope := range []string{"local", "global"} {
-		for _, key := range []string{"remotion_composer", "bundle"} {
-			t.Run(scope+"/"+key, func(t *testing.T) {
-				home, workspace := isolateComposeRuntime(t)
-				root := filepath.Join(home, "custom runtime")
-				want := root
-				if key == "bundle" {
-					want = filepath.Join(root, "remotion-composer")
-				}
-				composeRuntimeFixture(t, filepath.Join(want, "package.json"), "{}")
-				composeRuntimeFixture(t, filepath.Join(workspace, "remotion-composer", "package.json"), "{}")
-				configPath := filepath.Join(home, ".config", "facet", "config.yaml")
-				if scope == "local" {
-					composeRuntimeFixture(t, configPath, "paths:\n  remotion_composer: missing-global-runtime\n")
-					configPath = filepath.Join(workspace, ".facet.yaml")
-				}
-				composeRuntimeFixture(t, configPath, "paths:\n  "+key+": '"+filepath.ToSlash(root)+"'\n")
-				got, err := findComposerDir()
-				if err != nil || got != want {
-					t.Fatalf("findComposerDir() = %q, %v; want %q", got, err, want)
-				}
-			})
-		}
-	}
-}
-
-func TestFindComposerDirPreservesLocations(t *testing.T) {
-	for _, location := range []string{"remotion-composer", "packs/explainer/runtime", "ancestor", "windows-current", "windows-runtime"} {
-		t.Run(location, func(t *testing.T) {
-			home, workspace := isolateComposeRuntime(t)
-			want := filepath.Join(workspace, filepath.FromSlash(location))
-			switch location {
-			case "ancestor":
-				want = filepath.Join(workspace, "remotion-composer")
-				nested := filepath.Join(workspace, "a", "b", "c", "d")
-				if err := os.MkdirAll(nested, 0755); err != nil {
-					t.Fatal(err)
-				}
-				t.Chdir(nested)
-			case "windows-current", "windows-runtime":
-				t.Setenv("LOCALAPPDATA", home)
-				want = filepath.Join(home, "Facet", "runtimes", "remotion")
-				if location == "windows-current" {
-					want = filepath.Join(want, "current")
-				}
-			}
-			composeRuntimeFixture(t, filepath.Join(want, "package.json"), "{}")
-			got, err := findComposerDir()
-			if err != nil || got != want {
-				t.Fatalf("findComposerDir() = %q, %v; want %q", got, err, want)
-			}
-		})
-	}
-}
-
-func TestFindComposerDirRejectsInvalidConfig(t *testing.T) {
-	for _, config := range []string{"paths:\n  remotion_composer: missing-runtime\n", "paths: ["} {
-		t.Run(config, func(t *testing.T) {
-			_, workspace := isolateComposeRuntime(t)
-			composeRuntimeFixture(t, filepath.Join(workspace, "remotion-composer", "package.json"), "{}")
-			composeRuntimeFixture(t, filepath.Join(workspace, ".facet.yaml"), config)
-			if got, err := findComposerDir(); err == nil || got != "" {
-				t.Fatalf("invalid config must not silently select another runtime: %q, %v", got, err)
-			}
-		})
+// An override naming no composer fails; it never silently selects another.
+func TestFindComposerDirOverrideMustExist(t *testing.T) {
+	_, workspace := isolateComposeRuntime(t)
+	root := fakeRuntime(t)
+	composeRuntimeFixture(t, filepath.Join(root, "dependencies", "remotion-composer", "package.json"), "{}")
+	t.Setenv(ComposerDirEnv, filepath.Join(workspace, "missing-composer"))
+	if got, err := findComposerDir(); err == nil || got != "" {
+		t.Fatalf("a missing override must not silently select another composer: %q, %v", got, err)
 	}
 }
 
@@ -120,7 +129,8 @@ func TestRemotionRenderFailsClosed(t *testing.T) {
 				}
 			}
 			home, workspace := isolateComposeRuntime(t)
-			composer := filepath.Join(home, ".facet", "bundle", "remotion-composer")
+			composer := filepath.Join(home, "composer", "remotion-composer")
+			t.Setenv(ComposerDirEnv, composer)
 			composeRuntimeFixture(t, filepath.Join(composer, "package.json"), "{}")
 			composeRuntimeFixture(t, filepath.Join(composer, "src", "index.tsx"), "")
 			if missing != "cli" {

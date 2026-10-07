@@ -2,17 +2,16 @@ package toolbox
 
 import "sort"
 
-// Operation projection for xibodev.module/v2.
+// Operation catalogue consumed by internal/routes.
 //
 // DERIVED, never a second table. Every field here reads the same canonical
-// source the v1 surface reads: MayCharge, Deterministic, executionFor and
-// summary's dependency list. A second authoritative effects table is the
+// source the rest of the toolbox reads: MayCharge, Deterministic, executionFor
+// and summary's dependency list. A second authoritative effects table is the
 // duplicated-constant defect this repo has already paid for twice — in
 // chargeability and in determinism — and a projection is exactly where it
 // would reappear, because the two layers look independent.
 //
-// The canonical tool NAME is the Operation ID. Compatibility aliases are
-// invocation-only and do not become duplicate Operations in the semantic layer.
+// The canonical tool NAME is the Operation ID.
 
 // V2Effects is an Operation's declared effects.
 //
@@ -32,8 +31,7 @@ type V2Effects struct {
 type V2Requirement struct {
 	Name string `json:"name"`
 	Kind string `json:"kind"`
-	// Strength is "mandatory" or "preferred" -- the frozen vocabulary. A
-	// preferred requirement that is
+	// Strength is "mandatory" or "preferred". A preferred requirement that is
 	// unsatisfied degrades the Operation rather than blocking it.
 	Strength string `json:"strength"`
 	// Resolution is SATISFIED, UNSATISFIED or UNKNOWN — never collapsed to a
@@ -49,9 +47,8 @@ type V2Operation struct {
 	Title        string          `json:"title"`
 	Effects      V2Effects       `json:"effects"`
 	Requirements []V2Requirement `json:"requirements"`
-	// Produces names artifact kinds declared in the descriptor's
-	// artifact_kinds map. An Operation naming a kind that is not declared is a
-	// dangling reference the host reports.
+	// Produces names the artifact kinds the Operation emits, which routes use
+	// to bind one Operation's output to the next one's input.
 	Produces []string `json:"produces,omitempty"`
 	// Implementations are the interchangeable ways this Operation runs. More
 	// than one is a multi-Implementation Operation, NOT a Composite: a
@@ -66,7 +63,7 @@ type V2Operation struct {
 // These were previously expressed as hardcoded overrides — music_library set
 // configured=true after declaring ffprobe, and direct_clip_search did the same
 // — written before there was a vocabulary for strength. The override WAS the
-// strength; v2 gives it a name.
+// strength; this gives it a name.
 var preferredRequirements = map[string]map[string]bool{
 	"music_library":      {"ffprobe": true},
 	"direct_clip_search": {"ffmpeg": true, "ffprobe": true},
@@ -77,7 +74,7 @@ var preferredRequirements = map[string]map[string]bool{
 // changes no declared effect — which is why it is an Implementation list
 // rather than separate Operations.
 var operationImplementations = map[string][]string{
-	"video_compose": {"remotion", "hyperframes"},
+	"video_compose": {"remotion", "ffmpeg"},
 }
 
 // operationProduces maps an Operation to the artifact kinds it emits.
@@ -95,7 +92,6 @@ var operationProduces = map[string][]string{
 	"source_edit":         {"render_video"},
 	"color_grade":         {"render_video"},
 	"frame_sample":        {"frame"},
-	"frame_sampler":       {"frame"},
 	"scene_detect":        {"frame"},
 	"visual_qa":           {"frame"},
 	"output_review":       {"frame"},
@@ -104,7 +100,6 @@ var operationProduces = map[string][]string{
 	"elevenlabs_tts":      {"narration"},
 	"piper_tts":           {"narration"},
 	"audio_mix":           {"render_video"},
-	"audio_mixer":         {"render_video"},
 	"music_library":       {"narration"},
 	"subtitle_gen":        {"captions"},
 	"openai_image":        {"image"},
@@ -123,8 +118,8 @@ var operationProduces = map[string][]string{
 
 // V2Operations projects every public tool as an Operation.
 //
-// Sorted so the descriptor is byte-stable: an unordered map would make two
-// identical modules produce different bytes and defeat digest comparison.
+// Sorted so the catalogue is byte-stable: an unordered map would make two
+// identical builds produce different bytes and defeat digest comparison.
 func V2Operations() []V2Operation {
 	names := Names()
 	sort.Strings(names)
@@ -153,8 +148,8 @@ func V2Operations() []V2Operation {
 	return out
 }
 
-// v2RequirementsFor derives requirements from the SAME dependency list the v1
-// surface publishes, so the two can never disagree.
+// v2RequirementsFor derives requirements from the SAME dependency list the
+// tool listing publishes, so the two can never disagree.
 func v2RequirementsFor(tool string) []V2Requirement {
 	raw, _ := summary(tool)["dependencies"].([]any)
 	out := make([]V2Requirement, 0, len(raw))
@@ -177,22 +172,3 @@ func v2RequirementsFor(tool string) []V2Requirement {
 	}
 	return out
 }
-
-// EstimatedCostKnown reports whether a NUMERIC cost amount is known for a
-// canonical tool, which is the only thing cost_known means.
-//
-// Exported so conformance can assert the projection reads THIS rather than
-// inferring from may_charge. In Facet's current tool set the two are exact
-// inverses for every tool, so a value comparison cannot tell them apart -- a
-// mutation setting cost_known = !may_charge passed every value assertion. The
-// inverse relationship is an accident of today's tools, not the contract.
-func EstimatedCostKnown(tool string) bool { return executionFor(tool).EstimatedCost != nil }
-
-// NetworkFor and ExternalWriteFor expose the canonical per-tool effects so a
-// PROJECTION can derive its pessimistic union instead of restating it.
-//
-// Exported for exactly that reason: a capability that dispatches any canonical
-// tool must declare the worst case any of them can do, and a hardcoded
-// literal there is a second effects table waiting to drift.
-func NetworkFor(tool string) bool       { return executionFor(tool).Network }
-func ExternalWriteFor(tool string) bool { return externalWriteFor(tool, "run") }

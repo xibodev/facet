@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -19,26 +18,16 @@ type sampleStrategy struct {
 	Threshold  float64   `json:"threshold,omitempty"`
 }
 
-type sceneBoundary struct {
-	StartSeconds float64 `json:"start_seconds"`
-	EndSeconds   float64 `json:"end_seconds"`
-}
-
+// sampleRequest is exactly what frame_sample's request schema advertises.
 type sampleRequest struct {
-	Input           string          `json:"input,omitempty"`
-	InputPath       string          `json:"input_path,omitempty"`
-	OutputDir       string          `json:"output_dir,omitempty"`
-	Strategy        any             `json:"strategy,omitempty"`
-	IntervalSeconds float64         `json:"interval_seconds,omitempty"`
-	Count           int             `json:"count,omitempty"`
-	Timestamps      []float64       `json:"timestamps,omitempty"`
-	SceneBoundaries []sceneBoundary `json:"scene_boundaries,omitempty"`
-	MaxFrames       int             `json:"max_frames,omitempty"`
-	ImageFormat     string          `json:"image_format,omitempty"`
-	Format          string          `json:"format,omitempty"`
-	Quality         int             `json:"quality,omitempty"`
-	Overwrite       bool            `json:"overwrite,omitempty"`
-	TimeoutSeconds  int             `json:"timeout_seconds,omitempty"`
+	Input          string `json:"input,omitempty"`
+	InputPath      string `json:"input_path,omitempty"`
+	OutputDir      string `json:"output_dir,omitempty"`
+	Strategy       any    `json:"strategy,omitempty"`
+	ImageFormat    string `json:"image_format,omitempty"`
+	Format         string `json:"format,omitempty"`
+	Overwrite      bool   `json:"overwrite,omitempty"`
+	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
 }
 
 var sceneTimeRE = regexp.MustCompile(`pts_time:([0-9]+(?:\.[0-9]+)?)`)
@@ -276,165 +265,4 @@ func doFrameSampleContext(ctx context.Context, op string, data []byte) (any, []s
 		return nil, nil, err
 	}
 	return map[string]any{"input": input, "strategy": strategyObj.Type, "resolved_timestamps": ts, "samples": samples}, w, nil
-}
-
-func doFrameSampler(op string, data []byte) (any, []string, error) {
-	return doFrameSamplerContext(context.Background(), op, data)
-}
-
-func doFrameSamplerContext(ctx context.Context, op string, data []byte) (any, []string, error) {
-	// Supports both frame_sampler (interval/count/timestamps/scene_guided string strategy) and frame_sample object strategy
-	var raw map[string]any
-	if err := decode(data, &raw); err != nil {
-		return nil, nil, err
-	}
-	if stratMap, ok := raw["strategy"].(map[string]any); ok && stratMap != nil {
-		return doFrameSampleContext(ctx, op, data)
-	}
-
-	input, _ := raw["input_path"].(string)
-	if input == "" {
-		input, _ = raw["input"].(string)
-	}
-	if input == "" {
-		return nil, nil, failure("invalid_request", "input_path is required", nil)
-	}
-	stratStr, _ := raw["strategy"].(string)
-	if stratStr == "" {
-		stratStr = "count"
-	}
-	outputDir, _ := raw["output_dir"].(string)
-	if outputDir == "" {
-		outputDir = filepath.Join(filepath.Dir(input), "frames")
-	}
-	fmtStr, _ := raw["format"].(string)
-	if fmtStr == "" {
-		fmtStr, _ = raw["image_format"].(string)
-	}
-	if fmtStr == "" {
-		fmtStr = "jpg"
-	}
-	quality := 2
-	if q, ok := raw["quality"].(float64); ok && q > 0 {
-		quality = int(q)
-	}
-
-	t, err := positiveTimeout(0, 60)
-	if timeoutVal, ok := raw["timeout_seconds"].(float64); ok && timeoutVal > 0 {
-		t = time.Duration(timeoutVal) * time.Second
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-	if err = inputPath(input); err != nil {
-		return nil, nil, err
-	}
-
-	if op == "estimate" {
-		return estimateResult([]string{"validate", "ffprobe", "extract_frames"}), nil, nil
-	}
-
-	p, _, err := probeWithContext(ctx, input, t)
-	if err != nil {
-		return nil, nil, err
-	}
-	duration := p["format"].(map[string]any)["duration"].(float64)
-
-	var timestamps []float64
-	switch stratStr {
-	case "interval":
-		interval := 5.0
-		if iv, ok := raw["interval_seconds"].(float64); ok && iv > 0 {
-			interval = iv
-		}
-		for cur := 0.0; cur < duration; cur += interval {
-			timestamps = append(timestamps, cur)
-		}
-	case "count":
-		count := 10
-		if c, ok := raw["count"].(float64); ok && c > 0 {
-			count = int(c)
-		}
-		for i := 0; i < count; i++ {
-			timestamps = append(timestamps, duration*float64(2*i+1)/float64(2*count))
-		}
-	case "timestamps":
-		if tsList, ok := raw["timestamps"].([]any); ok {
-			for _, item := range tsList {
-				if num, ok := item.(float64); ok {
-					timestamps = append(timestamps, num)
-				}
-			}
-		}
-		if len(timestamps) == 0 {
-			return nil, nil, failure("invalid_request", "timestamps strategy requires non-empty timestamps", nil)
-		}
-	case "scene_guided":
-		maxFrames := 20
-		if mf, ok := raw["max_frames"].(float64); ok && mf > 0 {
-			maxFrames = int(mf)
-		}
-		if sceneBounds, ok := raw["scene_boundaries"].([]any); ok && len(sceneBounds) > 0 {
-			for _, sb := range sceneBounds {
-				if m, ok := sb.(map[string]any); ok {
-					startS, _ := m["start_seconds"].(float64)
-					endS, _ := m["end_seconds"].(float64)
-					durS := endS - startS
-					timestamps = append(timestamps, startS+0.1)
-					if durS > 3.0 {
-						timestamps = append(timestamps, startS+durS/2.0)
-					}
-				}
-			}
-		} else {
-			// Fallback count
-			count := maxFrames
-			if count > 15 {
-				count = 15
-			}
-			for i := 0; i < count; i++ {
-				timestamps = append(timestamps, duration*float64(2*i+1)/float64(2*count))
-			}
-		}
-		sort.Float64s(timestamps)
-		if len(timestamps) > maxFrames {
-			step := float64(len(timestamps)) / float64(maxFrames)
-			selected := make([]float64, maxFrames)
-			for i := range selected {
-				selected[i] = timestamps[int(float64(i)*step)]
-			}
-			timestamps = selected
-		}
-	default:
-		return nil, nil, failure("invalid_request", "unknown strategy: "+stratStr, nil)
-	}
-
-	if err = os.MkdirAll(outputDir, 0755); err != nil {
-		return nil, nil, failure("command_failed", "output directory could not be created", map[string]any{"error": bounded(err.Error())})
-	}
-
-	frames := []map[string]any{}
-	for i, ts := range timestamps {
-		outFile := filepath.Join(outputDir, fmt.Sprintf("frame_%04d.%s", i+1, fmtStr))
-		args := []string{"-hide_banner", "-loglevel", "error", "-y", "-ss", formatFloat(ts), "-i", input, "-frames:v", "1"}
-		if fmtStr == "jpg" {
-			args = append(args, "-qscale:v", strconv.Itoa(quality))
-		}
-		args = append(args, outFile)
-		if _, err = runCommandDirContext(ctx, t, "", "ffmpeg", args...); err != nil {
-			return nil, nil, err
-		}
-		frames = append(frames, map[string]any{
-			"path":              outFile,
-			"timestamp_seconds": ts,
-			"index":             i,
-		})
-	}
-
-	return map[string]any{
-		"strategy":    stratStr,
-		"frame_count": len(frames),
-		"frames":      frames,
-		"output_dir":  outputDir,
-	}, nil, nil
 }

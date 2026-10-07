@@ -1,14 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync, execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+// Diagnostic process inventory, captured inside the UAT container when a
+// journey runner fails or times out (see uat-probe.mjs runnerDiagnostics).
 // No cmdline, environ, executable paths, auth files, ps arguments or Docker socket.
 // The worker deadline also bounds a filesystem call that does not return promptly.
 export function processInventory({ root = '/proc', uid = process.getuid?.(), now = () => performance.now(), clockTicks, maxEntries = 4096, maxProcesses = 512, maxRows = 128, budgetMs = 1000 } = {}) {
   const started = now();
-  const result = { status: 'complete', scope: 'same-uid-node-ffmpeg-opencode-and-descendants', limits: { maxEntries, maxProcesses, maxRows, budgetMs }, scanned: 0, skipped: 0, truncated: false, processes: [] };
+  const result = { status: 'complete', scope: 'same-uid-journey-tools-and-descendants', limits: { maxEntries, maxProcesses, maxRows, budgetMs }, scanned: 0, skipped: 0, truncated: false, processes: [] };
   const read = (file, limit) => {
     const fd = fs.openSync(file, 'r');
     try {
@@ -49,7 +50,8 @@ export function processInventory({ root = '/proc', uid = process.getuid?.(), now
           if (!rss || ![pid, ppid, userTicks, systemTicks, startTicks].every(value => Number.isSafeInteger(value) && value >= 0)) throw new Error('Invalid metrics');
           const name = stat.slice(start + 1, end);
           // comm is user-controlled too: export only canonical names, not arbitrary text.
-          const canonical = /^(node|ffmpeg|opencode)$/.test(name) ? name : 'other';
+          // (comm is truncated to 15 bytes, hence chrome-headless.)
+          const canonical = /^(node|facet|ffmpeg|ffprobe|opencode|chromium|chrome|chrome-headless)$/.test(name) ? name : 'other';
           rows.set(pid, { pid, ppid, name: canonical, elapsedMs: Math.max(0, (uptime - startTicks / clockTicks) * 1000), cpuMs: (userTicks + systemTicks) / clockTicks * 1000, rssBytes: Number(rss[1]) * 1024 });
         } catch { result.skipped++; } // /proc entries can disappear between any two reads.
       }
@@ -68,13 +70,6 @@ export function processInventory({ root = '/proc', uid = process.getuid?.(), now
   } catch { result.status = 'unavailable'; }
   result.captureElapsedMs = now() - started;
   return result;
-}
-
-export async function captureProcessInventory() {
-  try {
-    const { stdout } = await promisify(execFile)(process.execPath, [fileURLToPath(import.meta.url)], { timeout: 2500, killSignal: 'SIGKILL', maxBuffer: 256 * 1024, encoding: 'utf8' });
-    return JSON.parse(stdout);
-  } catch { return { status: 'unavailable', reason: 'bounded-process-capture-failed', timeoutMs: 2500, processes: [] }; }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

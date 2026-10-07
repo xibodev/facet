@@ -162,7 +162,7 @@ func doColorGradeContext(ctx context.Context, op string, data []byte) (any, []st
 		return nil, nil, err
 	}
 
-	return map[string]any{
+	result := map[string]any{
 		"input":        r.InputPath,
 		"output":       r.OutputPath,
 		"profile":      profile,
@@ -170,6 +170,11 @@ func doColorGradeContext(ctx context.Context, op string, data []byte) (any, []st
 		"lut_path":     r.LutPath,
 		"filter_graph": finalVF,
 		"duration":     duration,
-		"output_facts": outputFacts,
-	}, nil, nil
+	}
+	// Absent rather than null when the graded file could not be probed: the
+	// schema promises an object whenever the field is present.
+	if outputFacts != nil {
+		result["output_facts"] = outputFacts
+	}
+	return result, nil, nil
 }

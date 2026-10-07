@@ -1,12 +1,383 @@
-"""Native package smoke test. No host authentication or media-provider calls."""
+"""Release package and installer lifecycle test. No host authentication,
+media-provider calls, system package installs or PATH changes.
+
+Always: checks the platform archive and the installer archive against the 2.0
+release contract (one `facet` binary, the allowlisted composer sources under
+dependencies/remotion-composer, generated third-party notices, the four
+installer files, checksums) and
+runs the binary when the archive targets this machine.
+
+With FACET_INSTALL_SMOKE=1 it also runs the platform's real installer, taken
+from the installer archive, against the native archive. Every installer run
+gets a throwaway user profile: HOME, USERPROFILE, APPDATA, LOCALAPPDATA and the
+CLI configuration variables point into a temporary directory, for the child
+process only. Covered: install, reuse, repair of a modified runtime, update to
+a second build and rollback (when Go is available to build it), the
+interactive plain menus (Windows), wiring through `facet wire` into a scratch
+project, uninstall with and without --purge, a v1 runtime left untouched, and
+rejection of bad checksums, unsafe archives and invalid options. Every run
+uses --no-path and no optional components. FFmpeg must be on PATH unless
+FACET_INSTALL_SKIP_MEDIA=1, which passes --skip-verify.
+
+On Windows, FACET_TEST_POWERSHELL selects the host (default pwsh; CI also runs
+powershell.exe, Windows PowerShell 5.1).
+"""
 import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import platform
+import shutil
+import stat
 import subprocess
+import sys
 import tempfile
 import zipfile
+
+REPO = Path(__file__).resolve().parent.parent
+RUN_TIMEOUT = 600
+INSTALLER_FILES = {"install.ps1", "install.sh", "installer/manifest.tsv", "installer/verify.html"}
+COMPOSER_METADATA = ("package.json", "package-lock.json", "tsconfig.json", "composer-manifest.json")
+ISOLATED_VARIABLES = (
+    "FACET_ACTION", "FACET_VERSION", "FACET_COMPONENTS", "FACET_WIRE", "FACET_SCOPE", "FACET_PROJECT",
+    "FACET_YES", "FACET_NO_PATH", "FACET_SKIP_VERIFY", "FACET_PURGE", "FACET_PLAIN", "FACET_LOG_DIR",
+    "FACET_HOME", "FACET_REMOTION_COMPOSER",
+    "CLAUDE_CONFIG_DIR", "CODEX_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME",
+)
+VALUE_FLAGS = {
+    "action": ("-Action", "--action"),
+    "version": ("-Version", "--version"),
+    "components": ("-Components", "--components"),
+    "archive": ("-ArchivePath", "--archive"),
+    "checksums": ("-ChecksumPath", "--checksums"),
+    "wire": ("-Wire", "--wire"),
+    "scope": ("-Scope", "--scope"),
+    "project": ("-ProjectDir", "--project"),
+}
+SWITCH_FLAGS = {
+    "yes": ("-NonInteractive", "--yes"),
+    "no_path": ("-NoPath", "--no-path"),
+    "skip_verify": ("-SkipVerify", "--skip-verify"),
+    "purge": ("-Purge", "--purge"),
+}
+
+
+def sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def host_platform():
+    machine = platform.machine().lower()
+    arch = {"x86_64": "amd64", "amd64": "amd64", "arm64": "arm64", "aarch64": "arm64"}.get(machine, machine)
+    return {"win32": "windows", "darwin": "darwin"}.get(sys.platform, "linux"), arch
+
+
+def check_archives(release, version, os_name, arch, updated_installer):
+    suffix = ".exe" if os_name == "windows" else ""
+    archive = release / f"facet-{version}-{os_name}-{arch}.zip"
+    installer = release / f"facet-installer-{version}.zip"
+    manifest = json.loads((REPO / "remotion-composer" / "composer-manifest.json").read_text(encoding="utf-8"))
+    composer = {f"dependencies/remotion-composer/{name}" for name in (*COMPOSER_METADATA, *manifest["allowedSourcePaths"])}
+    expected = {"bin/facet" + suffix, "LICENSE", "THIRD_PARTY_NOTICES.md"} | composer
+    with zipfile.ZipFile(archive) as z:
+        names = {name for name in z.namelist() if not name.endswith("/")}
+        assert names == expected, f"{archive.name}: unexpected {sorted(names - expected)}, missing {sorted(expected - names)}"
+        heading = f"## Go modules linked into the `facet` binary ({os_name}/{arch})"
+        assert heading in z.read("THIRD_PARTY_NOTICES.md").decode("utf-8"), "notices were not generated for this platform"
+        assert z.getinfo("bin/facet" + suffix).external_attr >> 16 & 0o111, "binary is not executable"
+    with zipfile.ZipFile(installer) as z:
+        names = {name for name in z.namelist() if not name.endswith("/")}
+        assert names == INSTALLER_FILES, f"{installer.name} ships {sorted(names)}"
+        rows = [line.split("\t") for line in z.read("installer/manifest.tsv").decode("utf-8").splitlines()]
+        assert [row[2] for row in rows if row[:2] == ["release", "facet"]] == [version], "installer manifest is not stamped with the release version"
+        assert z.read("install.ps1").isascii(), "install.ps1 must stay ASCII for Windows PowerShell 5.1"
+        assert b"\r\n" not in z.read("install.sh"), "install.sh must use LF line endings"
+    for line in (release / f"checksums-{os_name}-{arch}.txt").read_text(encoding="utf-8").splitlines():
+        digest, name = line.split()
+        if updated_installer and name == installer.name:
+            digest, name = (release / "installer-checksums.txt").read_text(encoding="utf-8").split()
+        assert sha256(release / name) == digest, f"checksum mismatch: {name}"
+    return archive, installer
+
+
+class Lifecycle:
+    def __init__(self, os_name, arch, version, archive, checksums, scripts, root):
+        self.os_name, self.arch, self.version = os_name, arch, version
+        self.windows = os_name == "windows"
+        self.suffix = ".exe" if self.windows else ""
+        self.archive, self.checksums, self.scripts, self.root = archive, checksums, scripts, root
+        self.skip_media = os.environ.get("FACET_INSTALL_SKIP_MEDIA") == "1"
+        self.shell = os.environ.get("FACET_TEST_POWERSHELL", "pwsh")
+        self.home = None
+        # FACET_HOME for the installer, when a test moves Facet's home folder.
+        self.moved_home = None
+
+    def new_home(self, name):
+        self.home = self.root / name
+        self.moved_home = None
+        for directory in (self.home / "AppData" / "Roaming", self.home / "AppData" / "Local", self.home / ".config"):
+            directory.mkdir(parents=True)
+        return self.home
+
+    @property
+    def facet_home(self):
+        return self.moved_home or self.home / ".facet"
+
+    def runtime(self, version=None):
+        return self.facet_home / "runtimes" / f"{version or self.version}-{self.os_name}-{self.arch}"
+
+    def environment(self):
+        env = {key: value for key, value in os.environ.items() if key not in ISOLATED_VARIABLES}
+        env.update(HOME=str(self.home), USERPROFILE=str(self.home),
+                   APPDATA=str(self.home / "AppData" / "Roaming"), LOCALAPPDATA=str(self.home / "AppData" / "Local"))
+        if self.moved_home:
+            env.update(FACET_HOME=str(self.moved_home))
+        if not self.windows:
+            env.update(XDG_CONFIG_HOME=str(self.home / ".config"), XDG_DATA_HOME=str(self.home / ".local" / "share"),
+                       XDG_CACHE_HOME=str(self.home / ".cache"))
+        return env
+
+    def install(self, expect_success=True, interactive=None, **options):
+        options.setdefault("archive", self.archive)
+        options.setdefault("checksums", self.checksums)
+        if options.get("archive") is None:
+            options.pop("archive")
+            options.pop("checksums", None)
+        if options.get("action") in ("rollback", "uninstall"):
+            options.pop("archive", None)
+            options.pop("checksums", None)
+        else:
+            options.setdefault("components", "none")
+            options.setdefault("skip_verify", self.skip_media)
+        options.setdefault("no_path", True)
+        options.setdefault("yes", interactive is None)
+        index = 0 if self.windows else 1
+        if self.windows:
+            command = [self.shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(self.scripts / "install.ps1")]
+        else:
+            command = ["bash", str(self.scripts / "install.sh")]
+        for key, value in options.items():
+            if key in SWITCH_FLAGS:
+                if value:
+                    command.append(SWITCH_FLAGS[key][index])
+            elif value is not None:
+                command += [VALUE_FLAGS[key][index], str(value)]
+        result = subprocess.run(command, input=interactive or "", text=True, capture_output=True, env=self.environment(),
+                                cwd=self.root, timeout=RUN_TIMEOUT)
+        output = result.stdout + result.stderr
+        if (result.returncode == 0) != expect_success:
+            raise AssertionError(f"installer exited {result.returncode} for {command[-12:]}:\n{output}")
+        return output
+
+    def current(self):
+        path = self.facet_home / "current"
+        if not os.path.lexists(path):
+            return None
+        info = os.lstat(path)
+        if self.windows:
+            assert getattr(info, "st_reparse_tag", 0) == stat.IO_REPARSE_TAG_MOUNT_POINT, "~/.facet/current is not a junction"
+        else:
+            assert stat.S_ISLNK(info.st_mode), "~/.facet/current is not a symbolic link"
+        return Path(os.path.realpath(path))
+
+    def assert_active(self, version):
+        runtime = self.runtime(version)
+        assert self.current() == Path(os.path.realpath(runtime)), f"current is {self.current()}, expected {runtime}"
+        facet = self.facet_home / "current" / "bin" / ("facet" + self.suffix)
+        reported = subprocess.run([str(facet), "version"], capture_output=True, text=True, timeout=60, env=self.environment())
+        assert reported.returncode == 0 and reported.stdout.strip() == f"facet v{version}", reported
+        record = json.loads((runtime / "components.json").read_text(encoding="utf-8"))
+        assert record["version"] == version and record["components"] == [], record
+        # The composer is a media dependency of the runtime, beside the others.
+        assert (runtime / "dependencies" / "remotion-composer" / "package.json").is_file(), "composer not under dependencies/"
+        for retired in ("bin", "bundle"):
+            assert not (self.facet_home / retired).exists(), f"retired ~/.facet/{retired} layout created"
+            assert not (runtime / "bundle").exists(), "retired <runtime>/bundle layout created"
+
+    def wired_versions(self):
+        registry = self.facet_home / "wiring.json"
+        if not registry.exists():
+            return {}
+        return {(w["cli"], w["scope"]): w["facet_version"] for w in json.loads(registry.read_text(encoding="utf-8"))["wirings"]}
+
+    def assert_no_profile_edits(self):
+        if self.windows:
+            return
+        for profile in (".profile", ".bashrc", ".bash_profile", ".bash_login", ".zshrc", ".zprofile", ".zshenv",
+                        ".config/fish/config.fish", ".config/fish/conf.d/facet.fish"):
+            assert not (self.home / profile).exists(), f"--no-path wrote {profile}"
+
+
+def user_path():
+    """The Windows user PATH, read only, to prove -NoPath leaves it alone."""
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+            return winreg.QueryValueEx(key, "Path")[0]
+    except FileNotFoundError:
+        return None
+
+
+def build_variant(life, version, out):
+    """A second release build of this platform, differing in its version."""
+    if not shutil.which("go"):
+        return None
+    binary = out / ("facet" + life.suffix)
+    subprocess.run(["go", "build", "-trimpath", "-ldflags", f"-X main.Version={version}", "-o", str(binary), "./cmd/facet"],
+                   cwd=REPO, env=dict(os.environ, GOOS=life.os_name, GOARCH=life.arch, CGO_ENABLED="0"), check=True, timeout=RUN_TIMEOUT)
+    variant = out / f"facet-{version}-{life.os_name}-{life.arch}.zip"
+    with zipfile.ZipFile(life.archive) as source, zipfile.ZipFile(variant, "w") as target:
+        for info in source.infolist():
+            target.writestr(info, binary.read_bytes() if info.filename == "bin/facet" + life.suffix else source.read(info))
+    sums = out / f"checksums-{version}.txt"
+    sums.write_text(f"{sha256(variant)}  {variant.name}\n", encoding="utf-8")
+    return variant, sums
+
+
+def lifecycle(life, temp):
+    path_before = user_path() if life.windows else None
+    home = life.new_home("home")
+    v1 = home / ".facet" / "releases" / f"1.1.0-{life.os_name}-{life.arch}"
+    v1.mkdir(parents=True)
+    (v1 / "marker.txt").write_text("v1 runtime", encoding="utf-8")
+
+    output = life.install()
+    life.assert_active(life.version)
+    assert "v1 project integrations are separate" in output and "--action uninstall" in output, output
+    life.assert_no_profile_edits()
+    doctor = subprocess.run([str(life.facet_home / "current" / "bin" / ("facet" + life.suffix)), "doctor"], cwd=temp,
+                            capture_output=True, text=True, timeout=120, env=life.environment())
+    assert doctor.returncode == 0, doctor
+
+    output = life.install()
+    assert "Reusing installed runtime" in output or "reusing" in output.lower(), output
+    assert sorted(p.name for p in (life.facet_home / "runtimes").iterdir() if not p.name.startswith(".")) == [life.runtime().name]
+
+    if life.windows:
+        # Plain menus with numbered answers: 1 selects install in the action
+        # menu (the active runtime exists), then no components, confirmation,
+        # and no wiring when CLIs are detected.
+        output = life.install(interactive="1\nnone\ny\nnone\n", components=None)
+        assert "What should the installer do?" in output and "Action:      install" in output, output
+        life.assert_active(life.version)
+
+    binary = life.runtime() / "bin" / ("facet" + life.suffix)
+    original = sha256(binary)
+    with open(binary, "ab") as stream:
+        stream.write(b"modified")
+    life.install()
+    assert sha256(binary) == original, "a modified runtime was not repaired"
+    life.assert_active(life.version)
+
+    variant = build_variant(life, f"{life.version}-rollback.1", temp)
+    if variant:
+        other = f"{life.version}-rollback.1"
+        life.install(action="update", version=other, archive=variant[0], checksums=variant[1])
+        life.assert_active(other)
+        assert life.runtime().is_dir(), "update removed the previous runtime"
+        life.install(action="rollback")
+        life.assert_active(life.version)
+        life.install(action="rollback")
+        life.assert_active(other)
+        life.install(action="rollback", version=life.version)
+        life.assert_active(life.version)
+    else:
+        print("Go is unavailable: update and rollback between two builds were not exercised.")
+    life.install(action="rollback", version="9.9.9", expect_success=False)
+
+    project = temp / "wired project"
+    project.mkdir()
+    output = life.install(wire="opencode", scope="project", project=project)
+    skills = list((project / ".opencode").rglob("SKILL.md"))
+    assert skills, f"facet wire installed no skills:\n{output}"
+    assert '"facet"' in (project / "opencode.json").read_text(encoding="utf-8"), output
+    registry = json.loads((life.facet_home / "wiring.json").read_text(encoding="utf-8"))
+    assert any(w["cli"] == "opencode" and w["scope"] == "project" for w in registry["wirings"]), registry
+
+    if variant:
+        # Every install, update and rollback refreshes the recorded wirings,
+        # so a CLI's Facet guidance always matches the active runtime.
+        life.install(action="update", version=other, archive=variant[0], checksums=variant[1])
+        life.assert_active(other)
+        assert life.wired_versions() == {("opencode", "project"): other}, life.wired_versions()
+        life.install(action="rollback")
+        life.assert_active(life.version)
+        assert life.wired_versions() == {("opencode", "project"): life.version}, life.wired_versions()
+        # A third build: only the active runtime and the one before it are kept.
+        third = build_variant(life, f"{life.version}-prune.1", temp)
+        newest = f"{life.version}-prune.1"
+        life.install(action="update", version=newest, archive=third[0], checksums=third[1])
+        kept = sorted(p.name for p in (life.facet_home / "runtimes").iterdir() if not p.name.startswith("."))
+        assert kept == sorted([life.runtime().name, life.runtime(newest).name]), f"runtimes kept: {kept}"
+        life.install(action="rollback")
+        life.assert_active(life.version)
+
+    output = life.install(action="uninstall")
+    assert not os.path.lexists(life.facet_home / "current"), "uninstall left ~/.facet/current"
+    assert life.runtime().is_dir(), "uninstall without --purge removed the runtime"
+    assert not list((project / ".opencode").rglob("SKILL.md")), f"uninstall left wired skills:\n{output}"
+    config = project / "opencode.json"
+    assert not config.exists() or '"facet"' not in config.read_text(encoding="utf-8"), output
+    assert "v1 project integrations are separate" in output, output
+
+    life.install()
+    life.assert_active(life.version)
+    life.install(action="uninstall", purge=True)
+    assert not (life.facet_home / "runtimes").exists(), "--purge kept the runtimes"
+    assert not os.path.lexists(life.facet_home / "current")
+    assert (v1 / "marker.txt").read_text(encoding="utf-8") == "v1 runtime", "the v1 runtime was touched"
+    life.assert_no_profile_edits()
+    if life.windows:
+        assert user_path() == path_before, "-NoPath changed the user PATH"
+
+
+def moved_home(life, temp):
+    """FACET_HOME moves the whole installation: nothing lands in ~/.facet."""
+    home = life.new_home("moved")
+    life.moved_home = temp / "moved facet home"
+    life.install()
+    life.assert_active(life.version)
+    assert not (home / ".facet").exists(), "the installer wrote ~/.facet although FACET_HOME is set"
+    life.install(action="uninstall", purge=True)
+    assert not (life.facet_home / "runtimes").exists() and not os.path.lexists(life.facet_home / "current")
+
+
+def rejections(life, temp):
+    life.new_home("rejections")
+    runtimes = life.facet_home / "runtimes"
+    bad_sums = temp / "bad-sums.txt"
+    bad_sums.write_text("0" * 64 + "  " + life.archive.name + "\n", encoding="utf-8")
+    life.install(checksums=bad_sums, expect_success=False)
+    assert not life.runtime().exists() and not os.path.lexists(life.facet_home / "current")
+    for entry in ["../escaped.txt", "/absolute.txt", "C:/escape.txt", "symlink", "duplicate"]:
+        unsafe = temp / "unsafe.zip"
+        with zipfile.ZipFile(unsafe, "w") as z:
+            if entry == "symlink":
+                info = zipfile.ZipInfo("bin/link")
+                info.create_system = 3
+                info.external_attr = 0o120777 << 16
+                z.writestr(info, "../../escaped.txt")
+            elif entry == "duplicate":
+                z.writestr("a.txt", "first")
+                z.writestr("A.txt", "second")
+            else:
+                z.writestr(entry, "must not escape")
+        sums = temp / "unsafe-sums.txt"
+        sums.write_text(f"{sha256(unsafe)}  {life.archive.name}\n", encoding="utf-8")
+        life.install(archive=unsafe, checksums=sums, expect_success=False)
+        assert not life.runtime().exists() and not os.path.lexists(life.facet_home / "current"), entry
+        leftovers = [p.name for p in runtimes.iterdir()] if runtimes.exists() else []
+        assert not leftovers, f"{entry}: left {leftovers}"
+        assert not (runtimes.parent / "escaped.txt").exists() and not (temp / "escaped.txt").exists(), entry
+    life.install(checksums=None, expect_success=False)
+    life.install(components="bogus", expect_success=False)
+    life.install(action="rollback", expect_success=False)
+    assert not os.path.lexists(life.facet_home / "current")
 
 
 def main():
@@ -14,225 +385,36 @@ def main():
     parser.add_argument("--os", required=True)
     parser.add_argument("--arch", required=True)
     parser.add_argument("--release-dir", required=True)
-    parser.add_argument("--updated-installer", action="store_true", help="use installer-only build checksum while retaining product archive checksum")
+    parser.add_argument("--updated-installer", action="store_true", help="use the installer-only build checksum while keeping the product archive checksum")
     args = parser.parse_args()
-    version = json.loads((Path(__file__).resolve().parent.parent / "package.json").read_text())["version"]
+    version = json.loads((REPO / "package.json").read_text(encoding="utf-8"))["version"]
     release = Path(args.release_dir).resolve()
-    suffix = ".exe" if args.os == "windows" else ""
-    installer = release / f"facet-installer-{version}.zip"
-    archive = release / f"facet-{version}-{args.os}-{args.arch}.zip"
-    with tempfile.TemporaryDirectory(prefix="facet package smoke ") as temp:
+    archive, installer = check_archives(release, version, args.os, args.arch, args.updated_installer)
+    native = host_platform() == (args.os, args.arch)
+    with tempfile.TemporaryDirectory(prefix="facet package test ") as temp:
         temp = Path(temp)
-        with zipfile.ZipFile(installer) as z:
-            z.extractall(temp / "installer")
-        def install(project, destination, payload=archive, checksums=None, expect_success=True, interactive=None, action="add", components="none", packs=(), extra_env=None, migrate=False):
-            checksums = checksums or release / f"checksums-{args.os}-{args.arch}.txt"
-            if args.os == "windows":
-                command = [os.environ.get("FACET_TEST_POWERSHELL", "pwsh"), "-NoProfile", "-File", str(temp / "installer/install.ps1"),
-                           "-Target", project.name, "-ProjectDir", str(project), "-InstallDir", str(destination),
-                           "-ArchivePath", str(payload), "-ChecksumPath", str(checksums), "-Components", components, "-Action", action]
-                if interactive is None: command += ["-NonInteractive"]
-                if packs: command += ["-Pack", ",".join(packs)]
-            else:
-                command = ["bash", str(temp / "installer/install.sh"), "--target", project.name,
-                           "--project", str(project), "--install-dir", str(destination), "--archive", str(payload),
-                           "--checksums", str(checksums), "--components", components, "--action", action]
-                if interactive is None: command += ["--yes"]
-                for pack in packs: command += ["--pack", pack]
-            if os.environ.get("FACET_INSTALL_SKIP_MEDIA") == "1":
-                command += ["-SkipVerify" if args.os == "windows" else "--skip-verify"]
-            if migrate: command += ["-MigrateLegacy" if args.os == "windows" else "--migrate-legacy"]
-            result = subprocess.run(command, input=interactive, text=True, capture_output=True, env=dict(os.environ, FACET_LOG_DIR=str(temp / "logs"), **(extra_env or {})))
-            if (result.returncode == 0) != expect_success:
-                raise AssertionError(f"Unexpected installer result {result.returncode}:\n{result.stdout}\n{result.stderr}")
-            return result
-        with zipfile.ZipFile(archive) as z:
-            names = z.namelist()
-            assert "bundle/skills/facet/SKILL.md" in names
-            assert "bundle/app/facet-bundle.json" in names
-            assert "bundle/app/AGENT.md" in names
-            assert not any("facet-install" in n for n in names), "Product archive must not ship a compiled installer"
-            assert not any("node_modules/" in n or "/.env" in n for n in names)
-            binary = "bin/facet" + suffix
-            z.extract(binary, temp)
-            (temp / binary).chmod(0o755)
-        result = subprocess.check_output([str(temp / binary), "version"], text=True).strip()
-        assert result == "facet v" + version, result
-        # Reuse CI-provisioned FFmpeg; installer must not install system software.
+        suffix = ".exe" if args.os == "windows" else ""
+        if native:
+            with zipfile.ZipFile(archive) as z:
+                z.extract("bin/facet" + suffix, temp / "extracted")
+            binary = temp / "extracted" / "bin" / ("facet" + suffix)
+            binary.chmod(0o755)
+            reported = subprocess.check_output([str(binary), "version"], text=True, timeout=60).strip()
+            assert reported == "facet v" + version, reported
         if os.environ.get("FACET_INSTALL_SMOKE") == "1":
-            adapters = {
-                "opencode": (".opencode/skills", "AGENTS.md"),
-                "codex": (".agents/skills", "AGENTS.md"),
-                "claude": (".claude/skills", "CLAUDE.md"),
-                "copilot": (".github/skills", ".github/copilot-instructions.md"),
-                "app": ("skills", "AGENT.md"),
-            }
-            installed_projects = {}
-            for host, (skill_root, instruction_name) in adapters.items():
-                project = temp / host
-                project.mkdir()
-                project = project.resolve()
-                instruction = project / instruction_name
-                instruction.parent.mkdir(parents=True, exist_ok=True)
-                original_instruction = f"Keep user instructions for {host}.\n"
-                instruction.write_text(original_instruction)
-                packs = ("cinematic", "localization") if host == "opencode" else ()
-                first_install = install(project, temp / "release", interactive="none\ny\n" if host == "opencode" else None, packs=packs)
-                skill_path = project / skill_root / "facet/SKILL.md"
-                if not skill_path.is_file():
-                    tree = "\n".join(str(path.relative_to(project)) for path in sorted(project.rglob("*")))
-                    raise AssertionError(
-                        f"Missing installed skill at {skill_path}\n"
-                        f"stdout:\n{first_install.stdout}\n"
-                        f"stderr:\n{first_install.stderr}\n"
-                        f"project tree:\n{tree}"
-                    )
-                instruction_text = instruction.read_text()
-                assert instruction_text.startswith(original_instruction)
-                assert instruction_text.count("<!-- facet:managed:start -->") == 1
-                assert instruction_text.count("<!-- facet:managed:end -->") == 1
-                for other_instruction in {"AGENTS.md", "CLAUDE.md", ".github/copilot-instructions.md"} - {instruction_name}:
-                    assert not (project / other_instruction).exists(), f"{host} wrote unrelated {other_instruction}"
-                ownership_name = "instruction-section.json" if args.os == "windows" else "instruction-section.tsv"
-                assert (project / ".facet-install" / ownership_name).is_file()
-                assert (project / ".facet-install/packs/explainer/SKILL.md").is_file()
-                assert not (project / skill_root / "facet/packs").exists()
-                installed_guidance = (project / skill_root / "facet/SKILL.md").read_text()
-                if packs:
-                    for pack in packs:
-                        assert f".facet-install/packs/{pack}/SKILL.md" in installed_guidance
-                else:
-                    assert "No production-method pack is active" in installed_guidance
-                rerun = install(project, temp / "release")
-                assert "Reusing configured dependencies" in rerun.stdout
-                assert "configuration: --" not in rerun.stdout and "[STREAM]" not in rerun.stdout
-                instruction.write_text(instruction.read_text() + f"\nUser follow-up for {host}.\n")
-                install(project, temp / "release")
-                assert f"User follow-up for {host}." in instruction.read_text()
-                managed = instruction.read_text().replace("## Facet", "## Facet modified", 1)
-                instruction.write_text(managed)
-                install(project, temp / "release", expect_success=False)
-                instruction.write_text(instruction.read_text().replace("## Facet modified", "## Facet", 1))
-                launcher = project / ".facet-install" / ("run-facet.ps1" if args.os == "windows" else "run-facet.sh")
-                before = launcher.read_bytes()
-                repair = install(project, temp / "release", action="repair")
-                assert launcher.read_bytes() != before, "Repair did not rebind to isolated runtime"
-                assert (temp / "release/bin" / ("facet" + suffix)).exists(), "Repair destroyed shared runtime"
-                if host == "opencode":
-                    install(project, temp / "release", action="update")
-                    assert original_instruction in instruction.read_text()
-                skill = project / skill_root / "facet/SKILL.md"
-                original = skill.read_bytes()
-                skill.write_bytes(original + b"\nUser customization\n")
-                install(project, temp / "release", expect_success=False)
-                assert skill.read_bytes() == original + b"\nUser customization\n"
-                skill.write_bytes(original)
-                if host == "claude":
-                    ownership = project / ".facet-install" / ("managed-files.json" if args.os == "windows" else "managed-files.sha256")
-                    ownership.unlink()
-                    (project / ".facet-install/custom-note.txt").write_text("retain legacy customization")
-                    install(project, temp / "release", expect_success=False)
-                    install(project, temp / "release", migrate=True)
-                    backups = list(project.glob(".facet-backup-*/state/custom-note.txt"))
-                    assert len(backups) == 1 and backups[0].read_text() == "retain legacy customization"
-                if host == "codex":
-                    # Fail the dependency subprocess after selecting an addition.
-                    # A new runtime generation must be discarded, with the old
-                    # project's launcher and working runtime still usable.
-                    if os.environ.get("FACET_INSTALL_SKIP_MEDIA") != "1":
-                        fake = temp / "failed-npm"
-                        fake.mkdir()
-                        shim = fake / ("npm.cmd" if args.os == "windows" else "npm")
-                        shim.write_text("@echo off\r\nexit /b 23\r\n" if args.os == "windows" else "#!/bin/sh\nexit 23\n")
-                        shim.chmod(0o755)
-                        before = launcher.read_bytes()
-                        generations = set(temp.glob("release-generation-*"))
-                        failure = install(project, temp / "release", components="remotion", expect_success=False,
-                                          extra_env={"PATH": str(fake) + os.pathsep + os.environ["PATH"]})
-                        assert "failed" in (failure.stdout + failure.stderr).lower()
-                        assert launcher.read_bytes() == before, "Failed addition replaced project binding"
-                        assert set(temp.glob("release-generation-*")) == generations, "Failed addition left a partial generation"
-                        install(project, temp / "release")
-                installed_projects[host] = (project, skill_root, instruction_name, instruction, launcher)
-            remaining_hosts = list(installed_projects)
-            for host in list(installed_projects):
-                project, skill_root, instruction_name, instruction, launcher = installed_projects[host]
-                skill = project / skill_root / "facet/SKILL.md"
-                original = skill.read_bytes()
-                skill.write_bytes(original + b"\nModified before uninstall\n")
-                install(project, temp / "release", action="uninstall", expect_success=False)
-                assert skill.read_bytes() == original + b"\nModified before uninstall\n"
-                skill.write_bytes(original)
-                unmanaged_state = project / ".facet-install/user-note.txt"
-                unmanaged_state.write_text(f"Keep uninstall note for {host}.")
-                remaining_hosts.remove(host)
-                install(project, temp / "release", action="uninstall")
-                assert not skill.exists()
-                assert unmanaged_state.read_text() == f"Keep uninstall note for {host}."
-                instruction_text = instruction.read_text()
-                assert "<!-- facet:managed:start -->" not in instruction_text
-                assert "<!-- facet:managed:end -->" not in instruction_text
-                assert f"Keep user instructions for {host}." in instruction_text
-                assert not (project / ".facet-install" / ("managed-files.json" if args.os == "windows" else "managed-files.sha256")).exists()
-                assert (temp / "release/bin" / ("facet" + suffix)).exists(), "Uninstall removed the shared runtime"
-                if remaining_hosts:
-                    other_launcher = installed_projects[remaining_hosts[0]][4]
-                    if args.os == "windows":
-                        other_version = subprocess.check_output([os.environ.get("FACET_TEST_POWERSHELL", "pwsh"), "-NoProfile", "-File", str(other_launcher), "version"], text=True).strip()
-                    else:
-                        other_version = subprocess.check_output(["bash", str(other_launcher), "version"], text=True).strip()
-                    assert other_version == "facet v" + version
-                install(project, temp / "release")
-                assert unmanaged_state.read_text() == f"Keep uninstall note for {host}."
-                assert skill.is_file()
-                assert instruction.read_text().count("<!-- facet:managed:start -->") == 1
-            partial_project = temp / "partial-state" / "codex"
-            partial_state = partial_project / ".facet-install"
-            partial_state.mkdir(parents=True)
-            (partial_state / "keep.txt").write_text("preserve partial state")
-            install(partial_project, temp / "release")
-            assert (partial_state / "keep.txt").read_text() == "preserve partial state"
-            stale_project = temp / "stale-state" / "codex"
-            stale_state = stale_project / ".facet-install"
-            stale_state.mkdir(parents=True)
-            stale_receipt = "installation.json" if args.os == "windows" else "installation.tsv"
-            (stale_state / stale_receipt).write_text("not a valid receipt")
-            install(stale_project, temp / "release", expect_success=False)
-            assert (stale_state / stale_receipt).read_text() == "not a valid receipt"
-            bad_sums = temp / "bad-sums.txt"
-            bad_sums.write_text("0" * 64 + "  " + archive.name + "\n")
-            bad_project = temp / "bad-project" / "codex"
-            install(bad_project, temp / "not-created", checksums=bad_sums, expect_success=False)
-            assert not (temp / "not-created").exists()
-            assert not bad_project.exists()
-            for entry in ["../escaped.txt", "/absolute.txt", "C:/escape.txt", "symlink", "duplicate"]:
-                unsafe = temp / "unsafe.zip"
-                with zipfile.ZipFile(unsafe, "w") as z:
-                    if entry == "symlink":
-                        info = zipfile.ZipInfo("link")
-                        info.create_system = 3
-                        info.external_attr = 0o120777 << 16
-                        z.writestr(info, "../escaped.txt")
-                    elif entry == "duplicate":
-                        z.writestr("a.txt", "first")
-                        z.writestr("A.txt", "second")
-                    else: z.writestr(entry, "must not escape")
-                bad_sums.write_text(hashlib.sha256(unsafe.read_bytes()).hexdigest() + "  " + archive.name + "\n")
-                install(bad_project, temp / "not-created", payload=unsafe, checksums=bad_sums, expect_success=False)
-                assert not (temp / "not-created").exists()
-            unmanaged = temp / "unmanaged"
-            unmanaged.mkdir()
-            (unmanaged / "keep.txt").write_text("preserve")
-            install(bad_project, unmanaged, expect_success=False)
-            assert (unmanaged / "keep.txt").read_text() == "preserve"
-            with (temp / "release/bin" / ("facet" + suffix)).open("ab") as f: f.write(b"changed")
-            install(bad_project, temp / "release", expect_success=False)
-    for line in (release / f"checksums-{args.os}-{args.arch}.txt").read_text().splitlines():
-        digest, name = line.split()
-        if args.updated_installer and name == installer.name:
-            digest, name = (release / "installer-checksums.txt").read_text().split()
-        assert hashlib.sha256((release / name).read_bytes()).hexdigest() == digest
-    print("Native binary, script installer package, bundle contents and checksums passed.")
+            if not native:
+                raise SystemExit(f"FACET_INSTALL_SMOKE needs a {args.os}/{args.arch} host")
+            if os.environ.get("FACET_INSTALL_SKIP_MEDIA") != "1" and not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
+                raise SystemExit("FFmpeg and FFprobe must be on PATH for the lifecycle test (or set FACET_INSTALL_SKIP_MEDIA=1)")
+            with zipfile.ZipFile(installer) as z:
+                z.extractall(temp / "installer")
+            life = Lifecycle(args.os, args.arch, version, archive, release / f"checksums-{args.os}-{args.arch}.txt", temp / "installer", temp)
+            lifecycle(life, temp)
+            moved_home(life, temp)
+            rejections(life, temp)
+            print("Installer lifecycle passed: install, reuse, repair, update/rollback, wiring refresh, pruning, "
+                  "FACET_HOME, uninstall, purge and rejections.")
+    print("Native binary, script installer package, composer contents and checksums passed.")
 
 
 if __name__ == "__main__":

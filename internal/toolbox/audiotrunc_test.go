@@ -73,7 +73,7 @@ func TestNoWarningWithoutBothDurations(t *testing.T) {
 func synthAudio(t *testing.T, seconds int) string {
 	t.Helper()
 	out := filepath.Join(t.TempDir(), "tone.mp3")
-	cmd := exec.Command("ffmpeg", "-v", "error", "-y",
+	cmd := fixtureCommand(t, "ffmpeg", "-v", "error", "-y",
 		"-f", "lavfi", "-i", "sine=frequency=440:duration="+itoa(seconds), out)
 	if err := cmd.Run(); err != nil {
 		t.Skipf("could not synthesise audio: %v", err)

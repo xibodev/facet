@@ -58,10 +58,16 @@ Create a frame-aligned request whose timeline covers the narration:
 }
 ```
 
-Run `facet tools estimate video_compose --input <request-file>`, then render
-with `facet tools run video_compose --input <request-file>`. Audio longer than
-the video is truncated rather than extending the timeline, so raise
-`duration_seconds` and the last cut end when needed.
+Call `estimate` for `video_compose` with that request, then render by running
+`video_compose` with it. From a shell, the same steps are:
+
+```sh
+facet tools estimate video_compose --input request.json
+facet tools run video_compose --input request.json
+```
+
+Audio longer than the video is truncated rather than extending the timeline,
+so raise `duration_seconds` and the last cut end when needed.
 
 Verify the delivered MP4 with `media_probe`, `frame_sample`, and
 `output_review`. Check the video stream duration, visible frame variation,

@@ -1,156 +1,76 @@
-# Parser and preflight regression tests; no dependencies, builds or user-profile writes.
-param()
+# Parser and preflight regression tests for scripts/install-source.ps1: no
+# builds, downloads, PATH changes or profile writes. Every run of the script
+# is a child process with a throwaway profile and a PATH holding only shims.
 $ErrorActionPreference = 'Stop'
 $installer = Join-Path $PSScriptRoot 'install-source.ps1'
 $tokens = $null
 $errors = $null
-$ast = [System.Management.Automation.Language.Parser]::ParseFile($installer, [ref]$tokens, [ref]$errors)
+$ast = [Management.Automation.Language.Parser]::ParseFile($installer, [ref]$tokens, [ref]$errors)
 if ($errors.Count) { throw ($errors | Out-String) }
 $content = [IO.File]::ReadAllText($installer)
+if ($content -match '\$env:GOTOOLCHAIN\s*=|GOTOOLCHAIN\s*=\s*.?local|bundle --target app|facet-ui|CreateShortcut') { throw 'install-source.ps1 must not pin GOTOOLCHAIN, build an app bundle, or create shortcuts.' }
 try {
-    & ([scriptblock]::Create($content)) -Quiet -NonInteractive
+    & ([scriptblock]::Create($content)) -NoPath
     throw 'Piped invocation unexpectedly succeeded.'
 } catch {
     if ($_.Exception.Message -notmatch 'complete source checkout') { throw }
 }
+if ($env:OS -ne 'Windows_NT') { 'PASS: parser and piped invocation (execution is Windows-only).'; return }
 
-$root = Join-Path ([IO.Path]::GetTempPath()) ('facet-install-preflight-' + [guid]::NewGuid())
-$savedPath = $env:PATH
-$savedOS = $env:OS
-$savedUserProfile = $env:USERPROFILE
+$root = Join-Path ([IO.Path]::GetTempPath()) ('facet-source-preflight-' + [guid]::NewGuid().ToString('N'))
+$shell = (Get-Process -Id $PID).Path
+function Get-StoredUserPath {
+    # The stored value, unexpanded: [Environment]::GetEnvironmentVariable
+    # expands a REG_EXPAND_SZ PATH such as %USERPROFILE%\AppData\... with this
+    # process's variables, which this test redirects to a throwaway profile.
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
+    if (-not $key) { return $null }
+    try { return $key.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) } finally { $key.Close() }
+}
+$userPath = Get-StoredUserPath
+$names = @('HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'PATH')
+$saved = @{}
+foreach ($name in $names) { $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
+function Invoke-Source([string]$Script, [string[]]$Arguments) {
+    $ErrorActionPreference = 'Continue'
+    $text = (& $shell -NoProfile -ExecutionPolicy Bypass -File $Script @Arguments 2>&1 | ForEach-Object { "$_" }) -join "`n"
+    return @{ Code = $LASTEXITCODE; Output = $text }
+}
 try {
-    New-Item -ItemType Directory -Path $root | Out-Null
-    $copy = Join-Path $root 'install.ps1'
+    $profileDir = Join-Path $root 'profile'
+    $shims = Join-Path $root 'shims'
+    foreach ($directory in @($profileDir, (Join-Path $profileDir 'AppData\Roaming'), (Join-Path $profileDir 'AppData\Local'), $shims)) { New-Item -ItemType Directory -Path $directory -Force | Out-Null }
+    $env:HOME = $profileDir; $env:USERPROFILE = $profileDir
+    $env:APPDATA = Join-Path $profileDir 'AppData\Roaming'; $env:LOCALAPPDATA = Join-Path $profileDir 'AppData\Local'
+    $env:PATH = "$shims;$env:SystemRoot\System32"
+    function Set-Shim([string]$Name, [string]$Body) { [IO.File]::WriteAllText((Join-Path $shims "$Name.cmd"), "@echo off`r`n$Body`r`n") }
+
+    $copy = Join-Path $root 'incomplete/scripts/install-source.ps1'
+    New-Item -ItemType Directory -Path (Split-Path -Parent $copy) -Force | Out-Null
     Copy-Item -LiteralPath $installer -Destination $copy
-    try {
-        & $copy -Quiet -NonInteractive
-        throw 'Incomplete checkout unexpectedly succeeded.'
-    } catch {
-        if ($_.Exception.Message -notmatch 'complete source checkout') { throw }
-    }
-    $env:OS = 'Windows_NT'
-    $env:USERPROFILE = Join-Path $root 'user-profile'
-    $homeDir = Join-Path $root 'home'
-    $bin = Join-Path $root 'install/bin'
-    $flags = @{ Quiet = $true; NonInteractive = $true; Isolated = $true; HomeDir = $homeDir; InstallDir = $bin; NoPath = $true; NoShortcuts = $true }
-    foreach ($conflict in @(@{ NoShortcuts = $true }, @{ Isolated = $true })) {
-        try {
-            & $installer -UpdateShortcuts @conflict
-            throw 'Conflicting shortcut flags unexpectedly succeeded.'
-        } catch {
-            if ($_.Exception.Message -notmatch '-UpdateShortcuts cannot be combined') { throw }
-        }
-    }
-    $env:PATH = ''
-    try {
-        & $installer @flags
-        throw 'Missing prerequisite unexpectedly succeeded.'
-    } catch {
-        if ($_.Exception.Message -notmatch 'Missing prerequisite: go') { throw }
-    }
-    if (Test-Path -LiteralPath $bin) { throw 'Preflight wrote install directory.' }
+    $result = Invoke-Source $copy @('-NoPath')
+    if ($result.Code -eq 0 -or $result.Output -notmatch 'complete source checkout') { throw "Incomplete checkout: $($result.Output)" }
 
-    # Functions are local mocks. None of these tests invokes a compiler or package manager.
-    function go { $global:LASTEXITCODE = 0; 'go version go1.24.9 windows/amd64' }
-    function node { $global:LASTEXITCODE = 0; 'v22.0.0' }
-    function npm { $global:LASTEXITCODE = 0; '10.0.0' }
-    function ffmpeg { $global:LASTEXITCODE = 0 }
-    function ffprobe { $global:LASTEXITCODE = 0 }
-    try {
-        & $installer @flags
-        throw 'Old Go unexpectedly succeeded.'
-    } catch {
-        if ($_.Exception.Message -notmatch 'Go 1.25\+ is required') { throw }
-    }
-    function go { $global:LASTEXITCODE = 0; 'go version go1.25.0 windows/amd64' }
-    function node { $global:LASTEXITCODE = 0; 'v16.20.0' }
-    try {
-        & $installer @flags
-        throw 'Old Node unexpectedly succeeded.'
-    } catch {
-        if ($_.Exception.Message -notmatch 'Node.js 18\+ is required') { throw }
-    }
-    function node { $global:LASTEXITCODE = 0; 'v22.0.0' }
-    function ffprobe { $global:LASTEXITCODE = 5 }
-    try {
-        & $installer @flags
-        throw 'Broken ffprobe unexpectedly succeeded.'
-    } catch {
-        if ($_.Exception.Message -notmatch 'ffprobe prerequisite check failed') { throw }
-    }
-    $flags.NoPath = $false
-    try {
-        & $installer @flags
-        throw 'Unsafe isolated flags unexpectedly succeeded.'
-    } catch {
-        if ($_.Exception.Message -notmatch '-Isolated requires') { throw }
-    }
-    $flags.NoPath = $true
-    $flags.Scope = 'global'
-    try {
-        & $installer @flags
-        throw 'Global isolated scope unexpectedly succeeded.'
-    } catch {
-        if ($_.Exception.Message -notmatch '-Isolated requires') { throw }
-    }
-    if ((Test-Path -LiteralPath $bin) -or (Test-Path -LiteralPath $homeDir)) { throw 'Preflight wrote installation or home files.' }
-    Write-Host 'PASS: parser, piped source, incomplete checkout, prerequisites, isolated safety and no preflight writes.'
+    $result = Invoke-Source $installer @('-NoPath')
+    if ($result.Code -eq 0 -or $result.Output -notmatch 'Missing prerequisite: go') { throw "Missing Go: $($result.Output)" }
 
-    # Load only the production shortcut function, never the install body or real COM.
-    $functionAst = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Set-FacetShortcut' }, $true)
-    if (-not $functionAst) { throw 'Shortcut function missing.' }
-    . ([scriptblock]::Create($functionAst.Extent.Text))
-    $local = $env:LOCALAPPDATA
-    if (-not $local) { $local = Join-Path $homeDir 'AppData/Local' }
-    $executable = Join-Path $bin 'facet-ui.exe'
-    $legacy = Join-Path $local 'Programs/Facet/bin/facet-ui.exe'
-    $current = Join-Path $homeDir '.facet/bin/facet-ui.exe'
-    $cases = @(
-        @{ Name = 'new'; Existing = $false; OldTarget = ''; Update = $false; Saves = 1 },
-        @{ Name = 'legacy-preserved'; Existing = $true; OldTarget = $legacy; Update = $false; Saves = 0 },
-        @{ Name = 'current-preserved'; Existing = $true; OldTarget = $current; Update = $false; Saves = 0 },
-        @{ Name = 'legacy-approved'; Existing = $true; OldTarget = $legacy; Update = $true; Saves = 1 },
-        @{ Name = 'current-approved'; Existing = $true; OldTarget = $current; Update = $true; Saves = 1 },
-        @{ Name = 'same-approved'; Existing = $true; OldTarget = $executable; Update = $true; Saves = 1 },
-        @{ Name = 'arbitrary-preserved'; Existing = $true; OldTarget = (Join-Path $root 'other/app.exe'); Update = $false; Saves = 0 },
-        @{ Name = 'arbitrary-opt-in-preserved'; Existing = $true; OldTarget = (Join-Path $root 'other/app.exe'); Update = $true; Saves = 0 },
-        @{ Name = 'custom-facet-preserved'; Existing = $true; OldTarget = (Join-Path $root 'custom/facet-ui.exe'); Update = $true; Saves = 0 },
-        @{ Name = 'custom-arguments-preserved'; Existing = $true; OldTarget = $legacy; Arguments = '--dir custom'; Update = $true; Saves = 0 },
-        @{ Name = 'unreadable-preserved'; Existing = $true; OldTarget = ''; Unreadable = $true; Update = $true; Saves = 0 }
-    )
-    foreach ($case in $cases) {
-        $target = Join-Path $root ("shortcuts/$($case.Name)/Facet.lnk")
-        if ($case.Existing) {
-            New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
-            [IO.File]::WriteAllText($target, 'user shortcut sentinel')
-        }
-        $link = [pscustomobject]@{ TargetPath = $case.OldTarget; Arguments = $case.Arguments; WorkingDirectory = 'keep-work'; Description = 'keep-description'; Saves = 0 }
-        $link | Add-Member ScriptMethod Save { $this.Saves++ }
-        $shell = [pscustomobject]@{ Link = $link; ExpectedTarget = $target; Calls = 0; Unreadable = $case.Unreadable }
-        $shell | Add-Member ScriptMethod CreateShortcut {
-            param($path)
-            if ($path -cne $this.ExpectedTarget) { throw 'Unexpected shortcut path.' }
-            $this.Calls++
-            if ($this.Unreadable) { throw 'Unreadable user shortcut.' }
-            return $this.Link
-        }
-        $warnings = @(Set-FacetShortcut $shell $target $bin $homeDir -UpdateShortcuts:$case.Update 3>&1)
-        $expectedCalls = if (-not $case.Existing -or $case.Update) { 1 } else { 0 }
-        if ($shell.Calls -ne $expectedCalls -or $link.Saves -ne $case.Saves) { throw "Shortcut save mismatch: $($case.Name)" }
-        if ($case.Saves) {
-            if ($link.TargetPath -cne $executable -or $link.WorkingDirectory -cne $homeDir -or $link.Description -cne 'Facet' -or $warnings.Count) { throw "Shortcut update failed: $($case.Name)" }
-        } else {
-            if ($link.TargetPath -cne $case.OldTarget -or $link.Arguments -cne $case.Arguments -or $link.WorkingDirectory -cne 'keep-work' -or $link.Description -cne 'keep-description') { throw "User shortcut mutated: $($case.Name)" }
-            if ($warnings.Count -ne 1 -or "$warnings" -notmatch '-UpdateShortcuts' -or -not "$warnings".Contains("& '$executable'")) { throw "Missing actionable shortcut warning: $($case.Name)" }
-        }
-        if ($case.Existing -and [IO.File]::ReadAllText($target) -cne 'user shortcut sentinel') { throw 'Fixture shortcut file mutated.' }
-    }
-    Write-Host 'PASS: 11 mocked COM shortcut cases; default preservation, approved migration, custom/unreadable link protection and actionable warnings. No user Desktop changes.'
-    # Expected failing prerequisite mocks must not become the CI shell's exit code.
-    $global:LASTEXITCODE = 0
+    $required = @((Get-Content -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'go.mod')) | Where-Object { $_ -match '^go\s+(\S+)' } | ForEach-Object { $Matches[1] })[0]
+    Set-Shim 'go' 'echo go1.21.0'
+    $result = Invoke-Source $installer @('-NoPath')
+    if ($result.Code -eq 0 -or $result.Output -notmatch [regex]::Escape("Go $required or newer is required by go.mod")) { throw "Old Go: $($result.Output)" }
+
+    Set-Shim 'go' 'echo go99.0.0'
+    $result = Invoke-Source $installer @('-NoPath')
+    if ($result.Code -eq 0 -or $result.Output -notmatch 'Missing prerequisite: node') { throw "Missing Node: $($result.Output)" }
+
+    Set-Shim 'node' 'echo v16.20.0'
+    $result = Invoke-Source $installer @('-NoPath')
+    if ($result.Code -eq 0 -or $result.Output -notmatch 'Node\.js \d+\+ is required') { throw "Old Node: $($result.Output)" }
+
+    if (Test-Path -LiteralPath (Join-Path $profileDir '.facet')) { throw 'Preflight wrote into the profile.' }
+    if ((Get-StoredUserPath) -cne $userPath) { throw 'The user PATH changed.' }
+    'PASS: parser, piped invocation, incomplete checkout, go.mod Go requirement, Node requirement, and no profile or PATH writes.'
 } finally {
-    $env:PATH = $savedPath
-    $env:OS = $savedOS
-    $env:USERPROFILE = $savedUserProfile
-    Remove-Item -LiteralPath $root -Recurse -Force
+    foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) }
+    Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }

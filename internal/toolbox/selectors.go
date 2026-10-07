@@ -23,19 +23,19 @@ type imageSelectorRequest struct {
 }
 
 type imageCandidateFact struct {
-	Name                   string   `json:"name"`
-	Provider               string   `json:"provider"`
-	Type                   string   `json:"type"`
-	Configured             bool     `json:"configured"`
-	EstimatedCost          float64  `json:"estimated_cost"`
-	CostDescription        string   `json:"cost_description"`
-	SupportedAspectRatios  []string `json:"supported_aspect_ratios"`
-	SupportsTextRendering  bool     `json:"supports_text_rendering"`
-	SupportsEditing        bool     `json:"supports_editing"`
-	SuitabilityScore       float64  `json:"suitability_score"`
-	Strengths              []string `json:"strengths"`
-	Limitations            []string `json:"limitations"`
-	RankingReasons         []string `json:"ranking_reasons"`
+	Name                  string   `json:"name"`
+	Provider              string   `json:"provider"`
+	Type                  string   `json:"type"`
+	Configured            bool     `json:"configured"`
+	EstimatedCost         float64  `json:"estimated_cost"`
+	CostDescription       string   `json:"cost_description"`
+	SupportedAspectRatios []string `json:"supported_aspect_ratios"`
+	SupportsTextRendering bool     `json:"supports_text_rendering"`
+	SupportsEditing       bool     `json:"supports_editing"`
+	SuitabilityScore      float64  `json:"suitability_score"`
+	Strengths             []string `json:"strengths"`
+	Limitations           []string `json:"limitations"`
+	RankingReasons        []string `json:"ranking_reasons"`
 }
 
 type videoSelectorRequest struct {
@@ -108,32 +108,6 @@ func doImageSelector(op string, data []byte) (any, []string, error) {
 			SupportsEditing:       false,
 			Strengths:             []string{"exceptional photorealism", "cinematic lighting", "high artistic aesthetic", "broad aspect ratio support"},
 			Limitations:           []string{"text rendering is variable", "requires FAL_KEY"},
-		},
-		{
-			Name:                  "pexels_image",
-			Provider:              "pexels",
-			Type:                  "stock",
-			Configured:            os.Getenv("PEXELS_API_KEY") != "",
-			EstimatedCost:         0.00,
-			CostDescription:       "Free ($0.00)",
-			SupportedAspectRatios: []string{"16:9", "9:16", "1:1", "4:3", "3:4"},
-			SupportsTextRendering: false,
-			SupportsEditing:       false,
-			Strengths:             []string{"real-world authentic photography", "high resolution", "urban and lifestyle scenes", "zero cost"},
-			Limitations:           []string{"search library dependent", "cannot create synthetic concepts"},
-		},
-		{
-			Name:                  "pixabay_image",
-			Provider:              "pixabay",
-			Type:                  "stock",
-			Configured:            os.Getenv("PIXABAY_API_KEY") != "",
-			EstimatedCost:         0.00,
-			CostDescription:       "Free ($0.00)",
-			SupportedAspectRatios: []string{"16:9", "9:16", "1:1", "4:3"},
-			SupportsTextRendering: false,
-			SupportsEditing:       false,
-			Strengths:             []string{"large illustration and vector catalog", "diverse stock photos", "zero cost"},
-			Limitations:           []string{"variable photographic quality", "search library dependent"},
 		},
 		{
 			Name:                  "wikimedia",
@@ -260,12 +234,12 @@ func doImageSelector(op string, data []byte) (any, []string, error) {
 		// Style matching
 		if style != "" {
 			if strings.Contains(style, "photo") || strings.Contains(style, "real") {
-				if c.Name == "pexels_image" || c.Name == "flux_image" {
+				if c.Name == "flux_image" {
 					score += 0.15
 					reasons = append(reasons, "well-suited for photorealistic aesthetics")
 				}
 			} else if strings.Contains(style, "illustrat") || strings.Contains(style, "anime") || strings.Contains(style, "diagram") {
-				if c.Name == "flux_image" || c.Name == "pixabay_image" || c.Name == "openai_image" {
+				if c.Name == "flux_image" || c.Name == "openai_image" {
 					score += 0.15
 					reasons = append(reasons, "well-suited for stylized/illustrative aesthetics")
 				}
@@ -359,34 +333,6 @@ func doVideoSelector(op string, data []byte) (any, []string, error) {
 			SupportsNativeAudio:   false,
 			Strengths:             []string{"physical realism and fluid dynamics", "complex multi-subject interactions", "high prompt adherence"},
 			Limitations:           []string{"higher cost per generation", "no native audio sync"},
-		},
-		{
-			Name:                  "seedance_video",
-			Provider:              "seedance",
-			Type:                  "generation",
-			Configured:            os.Getenv("FAL_KEY") != "",
-			EstimatedCost:         0.15,
-			CostDescription:       "$0.15 (5s) - $0.30 (10s)",
-			MinDuration:           3.0,
-			MaxDuration:           10.0,
-			SupportedAspectRatios: []string{"16:9", "9:16", "1:1", "4:3"},
-			SupportsNativeAudio:   true,
-			Strengths:             []string{"native synchronized audio and sound FX", "multi-shot generation", "director camera control", "dialogue lip sync"},
-			Limitations:           []string{"requires FAL_KEY"},
-		},
-		{
-			Name:                  "veo_video",
-			Provider:              "veo",
-			Type:                  "generation",
-			Configured:            os.Getenv("GOOGLE_API_KEY") != "" || os.Getenv("FAL_KEY") != "",
-			EstimatedCost:         0.20,
-			CostDescription:       "$0.20 (5s)",
-			MinDuration:           5.0,
-			MaxDuration:           8.0,
-			SupportedAspectRatios: []string{"16:9", "9:16"},
-			SupportsNativeAudio:   false,
-			Strengths:             []string{"photorealistic landscapes", "lighting fidelity", "high visual coherence"},
-			Limitations:           []string{"fixed duration brackets"},
 		},
 		{
 			Name:                  "pexels_video",
@@ -524,7 +470,7 @@ func doVideoSelector(op string, data []byte) (any, []string, error) {
 		// Intent / style matching
 		if intent != "" {
 			if strings.Contains(intent, "cinematic") || strings.Contains(intent, "trailer") {
-				if c.Name == "seedance_video" || c.Name == "kling_video" || c.Name == "sora_video" {
+				if c.Name == "kling_video" || c.Name == "sora_video" {
 					score += 0.20
 					reasons = append(reasons, "high cinematic motion coherence and aesthetic rating")
 				}
@@ -534,7 +480,7 @@ func doVideoSelector(op string, data []byte) (any, []string, error) {
 					reasons = append(reasons, "well-suited for authentic stock footage")
 				}
 			} else if strings.Contains(intent, "landscape") {
-				if c.Name == "veo_video" || c.Name == "pexels_video" {
+				if c.Name == "pexels_video" {
 					score += 0.20
 					reasons = append(reasons, "strong landscape and environmental rendering")
 				}

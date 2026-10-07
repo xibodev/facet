@@ -1,70 +1,114 @@
 package toolbox
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
-	"sync"
 )
 
-// Binary resolution.
+// Runtime layout.
 //
-// The toolbox normally finds an executable on PATH. Under a module host that is
-// impossible: a detached module inherits NO environment, so PATH is empty and
-// every LookPath fails even though the binary exists. The host instead resolves
-// each binary the module DECLARED and supplies absolute paths per invocation.
+// A user-wide install keeps everything Facet ships or installs under one
+// runtime directory, the parent of the directory holding the executable:
 //
-// SetBinaryPaths installs those paths as an override consulted before PATH.
-// It exists so the toolbox stays mechanical and unaware of the module protocol:
-// the module adapter owns the protocol and simply tells the toolbox where the
-// binaries are.
+//	<runtime>/bin/facet[.exe]
+//	<runtime>/dependencies/remotion-composer/  composer sources (+ node_modules)
+//	<runtime>/dependencies/node/          optional private Node (node.exe, or bin/node)
+//	<runtime>/dependencies/piper/         Python venv (Scripts\piper.exe, or bin/piper)
+//	<runtime>/dependencies/voices/<voice>.onnx (+ .onnx.json)
+//	<runtime>/dependencies/hyperframes/node_modules/hyperframes/bin/hyperframes.mjs
 //
-// An absolute path is an identity rather than a search, so an override cannot
-// resolve to something other than what the host authorized.
-var (
-	binaryMu    sync.RWMutex
-	binaryPaths map[string]string
-)
+// Resolving these relative to the executable makes an installed Facet
+// independent of PATH, of the working directory and of whatever launcher
+// started it, while a development build still finds tools on PATH.
 
-// SetBinaryPaths replaces the resolution override. A nil or empty map restores
-// ordinary PATH lookup, which is what the human-facing `facet tools` CLI uses.
-//
-// Names are matched case-insensitively and without any extension, so a host may
-// supply "ffmpeg" for ffmpeg.exe.
-func SetBinaryPaths(paths map[string]string) {
-	binaryMu.Lock()
-	defer binaryMu.Unlock()
-	if len(paths) == 0 {
-		binaryPaths = nil
-		return
+// executablePath locates the running executable. A variable so tests can
+// place a fake runtime around a fake executable.
+var executablePath = os.Executable
+
+// runtimeRoot returns <runtime>, or "" when the executable cannot be located.
+func runtimeRoot() string {
+	exe, err := executablePath()
+	if err != nil || exe == "" {
+		return ""
 	}
-	next := make(map[string]string, len(paths))
-	for name, path := range paths {
-		key := strings.ToLower(strings.TrimSpace(name))
-		if key == "" || strings.TrimSpace(path) == "" {
-			continue
-		}
-		next[key] = path
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
 	}
-	binaryPaths = next
+	return filepath.Dir(filepath.Dir(exe))
 }
 
-// lookPath resolves a program name, preferring a host-supplied absolute path.
+// runtimeDependency joins parts under <runtime>/dependencies, or returns ""
+// when the runtime directory is unknown.
+func runtimeDependency(parts ...string) string {
+	root := runtimeRoot()
+	if root == "" {
+		return ""
+	}
+	return filepath.Join(append([]string{root, "dependencies"}, parts...)...)
+}
+
+// runtimeBinary returns the private copy of program installed under
+// <runtime>/dependencies, or "" when there is none. Only programs the
+// installer actually places there are looked up.
+func runtimeBinary(program string) string {
+	var candidate string
+	switch strings.ToLower(strings.TrimSpace(program)) {
+	case "node":
+		if runtime.GOOS == "windows" {
+			candidate = runtimeDependency("node", "node.exe")
+		} else {
+			candidate = runtimeDependency("node", "bin", "node")
+		}
+	case "piper":
+		if runtime.GOOS == "windows" {
+			candidate = runtimeDependency("piper", "Scripts", "piper.exe")
+		} else {
+			candidate = runtimeDependency("piper", "bin", "piper")
+		}
+	}
+	if candidate == "" || !executableFile(candidate) {
+		return ""
+	}
+	return candidate
+}
+
+// executableFile reports whether path is a regular file this process could
+// execute. Windows has no execute bit, so a regular file is enough there.
+func executableFile(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	return runtime.GOOS == "windows" || info.Mode().Perm()&0o111 != 0
+}
+
+// lookPath resolves a program: the runtime's private copy first, then PATH.
 //
-// This is the single resolution point for the whole toolbox. Falling back to
-// PATH is correct for the CLI, where the user's environment is the authority;
-// under a host the override is populated and PATH is empty, so the fallback
-// simply fails and reports the binary as unavailable rather than silently
-// finding an unauthorized one.
+// This is the single resolution point for the whole toolbox, so a tool, its
+// dependency report and `tools describe` can never disagree about which
+// binary runs.
 func lookPath(program string) (string, error) {
-	binaryMu.RLock()
-	override, ok := binaryPaths[strings.ToLower(strings.TrimSpace(program))]
-	binaryMu.RUnlock()
-	if ok {
-		return override, nil
+	if path := runtimeBinary(program); path != "" {
+		return path, nil
 	}
 	return exec.LookPath(program)
 }
 
-// LookPathForTest exposes the resolution seam so a sibling package can verify
-// that a host-supplied grant was actually installed rather than only validated.
-func LookPathForTest(program string) (string, error) { return lookPath(program) }
+// ResolveProgram returns the program the toolbox runs for name, resolved
+// exactly as its tools resolve it, so a report (facet doctor) can never
+// disagree with what a tool would run.
+func ResolveProgram(name string) (string, error) { return lookPath(name) }
+
+// ComposerStatus reports the Remotion composer this facet renders with and
+// whether it can render: its render CLI must be installed, not merely its
+// directory present.
+func ComposerStatus() (dir string, usable bool, err error) {
+	dir, err = findComposerDir()
+	if err != nil || dir == "" {
+		return dir, false, err
+	}
+	return dir, fileExists(filepath.Join(dir, "node_modules", "@remotion", "cli", "remotion-cli.js")), nil
+}
