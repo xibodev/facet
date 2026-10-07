@@ -169,7 +169,7 @@ facet wire --status</code></pre>
           </table>
         </div>
         <p>Skills go into <code>skills/</code> and the agent into <code>agents/</code> under each folder. Start a new session in the CLI to load the skills and the MCP server. At project scope, Claude Code asks you to approve the project's MCP server the first time it starts there, and Codex reads a project's <code>.codex/config.toml</code> only for projects you have marked as trusted. Codex passes an MCP server only a few environment variables, so the <code>[mcp_servers.facet]</code> block forwards the ones Facet reads with <code>env_vars</code>.</p>
-        <p>Compa 2 is supported. Set it up with <code>compa-kernel onboard</code> first; <code>facet wire compa</code> follows <code>COMPA_CONFIG</code> and <code>COMPA_HOME</code>, edits <code>config.json</code> in one locked step, and checks the result with <code>compa-kernel mcp list</code> when it finds the kernel. Then restart or reload Compa's gateway. Compa's one-shot <code>compa-kernel agent -m</code> cannot answer an ask, so it refuses the paid tools.</p>
+        <p>Compa 2 or later is supported. Set it up with <code>compa-kernel onboard</code> first; <code>facet wire compa</code> follows <code>COMPA_CONFIG</code> and <code>COMPA_HOME</code>, edits <code>config.json</code> in one locked step, and checks the result with <code>compa-kernel mcp list</code> when it finds the kernel. Then restart or reload Compa's gateway. Compa's one-shot <code>compa-kernel agent -m</code> cannot answer an ask, so it refuses the paid tools.</p>
       </section>
       <section id="plugins">
         <h2>Install as a Plugin</h2>

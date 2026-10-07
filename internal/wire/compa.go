@@ -163,7 +163,7 @@ func (e *env) compaReady() string {
 	var doc compaDoc
 	_ = json.Unmarshal(data, &doc)
 	if v := doc.BuildInfo.Version; v != "" && !versionAtLeast(v, 2, 0) {
-		return fmt.Sprintf("%s was written by Compa %s; facet wire supports Compa 2", file, v)
+		return fmt.Sprintf("%s was written by Compa %s; facet wire supports Compa 2 or later", file, v)
 	}
 	return ""
 }

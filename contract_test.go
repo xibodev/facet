@@ -2,6 +2,7 @@ package facet
 
 import (
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -382,10 +383,28 @@ func TestFacetLinksNoAgentEngine(t *testing.T) {
 				t.Errorf("cmd/facet links agent engine package %s (module %s)", importPath, module)
 			}
 		}
-		// App code (the window's screen logic) is not part of the Toolkit.
-		if importPath == "github.com/xibodev/facet/internal/journeys" ||
-			strings.HasPrefix(importPath, "github.com/xibodev/facet/internal/journeys/") {
-			t.Errorf("cmd/facet links App code: %s", importPath)
+	}
+}
+
+// The Facet App lives in its own repository (xibodev/facet-app) and reaches
+// the Toolkit only through the facet command (design rule R1). Its code (the
+// window, the kernel adapter, the journeys behind its screens) must not come
+// back here, where the Toolkit's release would carry it.
+func TestNoAppCodeInThisRepository(t *testing.T) {
+	for _, dir := range []string{"internal/journeys", "internal/window", "internal/kernel", "internal/studio", "cmd/facet-app"} {
+		if _, err := os.Stat(filepath.FromSlash(dir)); err == nil {
+			t.Errorf("%s is App code; it belongs in the xibodev/facet-app repository", dir)
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			t.Fatal(err)
+		}
+	}
+	entries, err := os.ReadDir("cmd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Name() != "facet" {
+			t.Errorf("cmd/%s: the Toolkit builds one command, facet", entry.Name())
 		}
 	}
 }
