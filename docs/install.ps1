@@ -16,8 +16,8 @@
     if ($env:OS -ne 'Windows_NT') { throw 'Use the curl command on Linux/macOS.' }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
-    $version = '2.1.1'
-    $expected = 'ab6ef413cfec0becd192f5ac183fb2316471e7286dedec3a4562c47c2107aefe'
+    $version = '2.1.2'
+    $expected = '1c74d9a676b593fbdbb497e23d837fc8ccbdd0db9131a00754427c86b8f7d906'
     $url = "https://github.com/xibodev/facet/releases/download/v$version/facet-installer-$version.zip"
     $temp = Join-Path ([IO.Path]::GetTempPath()) ('facet-bootstrap-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $temp | Out-Null
