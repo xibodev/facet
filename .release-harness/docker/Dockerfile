@@ -5,7 +5,7 @@
 FROM golang:1.26.6-bookworm AS go
 FROM node:24.14.0-bookworm
 ARG NPM_REGISTRY=https://registry.npmjs.org
-ARG FACET_VERSION=2.1.0
+ARG FACET_VERSION=2.1.1
 COPY --from=go /usr/local/go /usr/local/go
 ENV npm_config_registry=${NPM_REGISTRY}
 # ~/.facet/current/bin is what the installer puts on PATH; --no-path below leaves

@@ -1,6 +1,6 @@
 {
   "name": "facet",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Create, edit, render, and review video with Facet's production skills and MCP tools. Needs the Facet Toolkit: https://xibodev.github.io/facet/",
   "author": {
     "name": "Facet Contributors",
