@@ -1,7 +1,7 @@
 {
   "schema": "xibodev.facet.bundle/v2",
   "capability_id": "xibodev.facet",
-  "facet_version": "2.0.0",
+  "facet_version": "2.1.0",
   "adapter_version": "2",
   "target": "claude",
   "scope": "plugin",
@@ -52,7 +52,7 @@
     {
       "path": ".claude-plugin/plugin.json",
       "bytes": 573,
-      "digest": "sha256:5671e92b20849e8b7fc0e00b1f726cd5d765269976e235ce3ef8752d8c2d1353",
+      "digest": "sha256:771e3e3e603dd8750c4892bdb3a69cbef14ba9eb29e58c7673c8686d8115b76e",
       "kind": "plugin"
     },
     {
@@ -128,5 +128,5 @@
       "kind": "skill"
     }
   ],
-  "bundle_digest": "sha256:a37e46b1d987b6ba8091023d4c2799e3c73017d64d43fb6c3039eb4efbdafb15"
+  "bundle_digest": "sha256:4b4686df557c6bbcbed45d95b3370224ba21943e230253a550c8af58ae0ec1d4"
 }
