@@ -398,6 +398,13 @@ func canonicalToolName(tool string) string {
 // `-h` anywhere after an operation) succeeds with a usage payload, so the
 // caller prints it like any other envelope and exits zero.
 func CLI(args []string) (Envelope, bool) {
+	return CLIWithProgress(args, nil)
+}
+
+// CLIWithProgress is CLI with a receiver for the milestones a run reports
+// before its envelope, such as the id of a provider job it submitted. The
+// facet command prints them to stderr, so stdout stays one envelope.
+func CLIWithProgress(args []string, progress func(Progress)) (Envelope, bool) {
 	op, tool := "", ""
 	bad := func(message string) (Envelope, bool) {
 		return errorEnvelope(tool, op, failure("invalid_request", message, map[string]any{"usage": toolsUsage})), false
@@ -460,7 +467,7 @@ func CLI(args []string) (Envelope, bool) {
 		defer stop()
 		var env Envelope
 		if op == "run" {
-			env = runEnvelope(ctx, tool, data)
+			env = runEnvelope(WithProgress(ctx, progress), tool, data)
 		} else {
 			env = estimateEnvelope(ctx, tool, data)
 		}
@@ -584,16 +591,21 @@ func known(name string) bool {
 // runEnvelope runs a canonical tool and builds its envelope, including the
 // descriptors of every file the run produced. RunContext and the CLI share
 // it so the two surfaces cannot drift.
+//
+// A run that submitted a provider job and then ended without the media,
+// cancelled or failed, names that job in its error, so it can be collected
+// with resume_job_id instead of being paid for twice.
 func runEnvelope(ctx context.Context, tool string, data []byte) Envelope {
 	if err := ctx.Err(); err != nil {
 		return errorEnvelope(tool, "run", failure("cancelled", err.Error(), nil))
 	}
+	ctx, job := withProviderJob(ctx)
 	result, warnings, err := executeContext(ctx, tool, "run", data)
 	if ctx.Err() != nil {
-		return errorEnvelope(tool, "run", failure("cancelled", ctx.Err().Error(), nil))
+		return withProviderJobError(errorEnvelope(tool, "run", failure("cancelled", ctx.Err().Error(), nil)), job.ID())
 	}
 	if err != nil {
-		return errorEnvelope(tool, "run", err)
+		return withProviderJobError(errorEnvelope(tool, "run", err), job.ID())
 	}
 	env := success(tool, "run", result, warnings)
 	env.Artifacts, env.Warnings = collectArtifacts(tool, result, env.Warnings)
@@ -1008,12 +1020,14 @@ var schemas = map[string]any{
 		"duration": map[string]any{"type": "number", "default": 5}, "aspect_ratio": map[string]any{"enum": []string{"16:9", "9:16", "1:1"}, "default": "16:9"},
 		"mode": map[string]any{"enum": []string{"std", "pro"}, "default": "std"}, "image_url": map[string]any{"type": "string"},
 		"output_path": map[string]any{"type": "string"}, "mock": map[string]any{"type": "boolean", "default": false}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 300},
+		"resume_job_id": resumeJobIDSchema,
 	}},
 	"sora_video": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"prompt"}, "properties": map[string]any{
 		"prompt": map[string]any{"type": "string", "minLength": 1}, "model": map[string]any{"type": "string", "default": "sora-2"},
 		"duration": map[string]any{"type": "number", "minimum": 1, "maximum": 20, "default": 5}, "aspect_ratio": map[string]any{"enum": []string{"16:9", "9:16", "1:1"}, "default": "16:9"},
 		"resolution":  map[string]any{"enum": []string{"720p", "1080p"}, "default": "720p"},
 		"output_path": map[string]any{"type": "string"}, "mock": map[string]any{"type": "boolean", "default": false}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 300},
+		"resume_job_id": resumeJobIDSchema,
 	}},
 	"gflow_video": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"prompt"}, "properties": map[string]any{
 		"prompt": map[string]any{"type": "string", "minLength": 1}, "model": map[string]any{"const": "veo-3.1", "default": "veo-3.1"},
@@ -1165,8 +1179,8 @@ var resultSchemas = map[string]any{
 	"piper_tts":      ttsResultSchema("speaker_id"),
 	"openai_image":   objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "size": stringSchema(), "quality": stringSchema(), "output": stringSchema(), "mock": booleanSchema(), "url": stringSchema()}),
 	"flux_image":     objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "aspect_ratio": stringSchema(), "output": stringSchema(), "mock": booleanSchema(), "url": stringSchema(), "seed": integerSchema()}),
-	"kling_video":    objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "duration": numberSchema(), "aspect_ratio": stringSchema(), "mode": stringSchema(), "output": stringSchema(), "mock": booleanSchema(), "video_url": stringSchema()}),
-	"sora_video":     objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "duration": numberSchema(), "aspect_ratio": stringSchema(), "resolution": stringSchema(), "output": stringSchema(), "mock": booleanSchema(), "video_url": stringSchema()}),
+	"kling_video":    objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "duration": numberSchema(), "aspect_ratio": stringSchema(), "mode": stringSchema(), "output": stringSchema(), "mock": booleanSchema(), "video_url": stringSchema(), "provider_job_id": stringSchema(), "resumed": booleanSchema()}),
+	"sora_video":     objectSchema([]string{"provider", "model", "prompt", "output"}, map[string]any{"provider": stringSchema(), "model": stringSchema(), "prompt": stringSchema(), "duration": numberSchema(), "aspect_ratio": stringSchema(), "resolution": stringSchema(), "output": stringSchema(), "mock": booleanSchema(), "video_url": stringSchema(), "provider_job_id": stringSchema(), "resumed": booleanSchema()}),
 	"gflow_video":    gflowResultSchema(true),
 	"gflow_image":    gflowResultSchema(false),
 	"color_grade":    objectSchema([]string{"input", "output", "profile", "intensity", "filter_graph"}, map[string]any{"input": stringSchema(), "output": stringSchema(), "profile": stringSchema(), "intensity": numberSchema(), "lut_path": stringSchema(), "filter_graph": stringSchema(), "duration": numberSchema(), "output_facts": map[string]any{"type": "object"}}),

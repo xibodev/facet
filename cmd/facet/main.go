@@ -66,7 +66,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 
 	case "tools":
-		result, ok := toolbox.CLI(args)
+		// Milestones such as a submitted provider job go to stderr as they
+		// happen: a run cut off before its envelope still told its job id.
+		result, ok := toolbox.CLIWithProgress(args, func(p toolbox.Progress) {
+			fmt.Fprintln(stderr, "facet: "+p.Message)
+		})
 		return encode(stdout, stderr, result, ok, true)
 
 	case "routes":

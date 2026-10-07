@@ -39,8 +39,8 @@ the offline or privacy-preserving fallback, not a silent downgrade.
   execution and publication require the person's explicit consent, given through
   your harness; never assume or supply it for them. Unknown cost is not free.
   Run paid tools only through MCP, where your harness asks first; never the shell.
-- A paid call cut off midway may already be charged and still running at the
-  provider: read the error and any `recovery_path`, and ask before running it again.
+- A paid call cut off midway may already be charged and still running: ask, then
+  rerun it with its `provider_job_id` as `resume_job_id`, or use any `recovery_path`.
 - The proposal is a conversational checkpoint, not stored workflow state.
   Ordinary local revisions remain covered by approval. Do not silently change
   provider, cost, data exposure, identity/rights use, or quality; explain material
