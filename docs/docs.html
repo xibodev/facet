@@ -87,6 +87,7 @@ irm https://xibodev.github.io/facet/install.ps1 | iex
 # Linux / macOS
 curl -fsSL https://xibodev.github.io/facet/install.sh | sh</code></pre>
         <p>The website bootstrap downloads the installer package pinned by version and SHA-256, checks its file list, then launches the installer. The Unix one-liner needs an interactive terminal for its prompts unless you pass <code>--yes</code>.</p>
+        <p class="notice"><strong>Windows x64 and Microsoft Defender.</strong> Defender flagged <code>facet.exe</code> in the Facet 2.1.0 and 2.1.1 Windows x64 archives as <code>Trojan:Win32/Bearfoos.A!ml</code>. This is a false positive, reported to Microsoft. The one-liners install 2.1.2, a fresh build that carries version information. If Defender still blocks <code>facet.exe</code>, please <a href="https://github.com/xibodev/facet/issues">open an issue</a> with the detection name. Do not turn off your antivirus.</p>
         <p>The installer:</p>
         <ul>
           <li>puts each runtime under <code>~/.facet/runtimes/&lt;version&gt;-&lt;os&gt;-&lt;arch&gt;</code> and activates it as <code>~/.facet/current</code>; set <code>FACET_HOME</code> to use another folder instead of <code>~/.facet</code>;</li>

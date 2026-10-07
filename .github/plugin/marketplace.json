@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "Facet's video production skills and MCP tools for GitHub Copilot CLI.",
-    "version": "2.1.1"
+    "version": "2.1.2"
   },
   "plugins": [
     {
@@ -14,10 +14,10 @@
         "source": "github",
         "repo": "xibodev/facet",
         "path": "plugins/copilot",
-        "ref": "v2.1.1"
+        "ref": "v2.1.2"
       },
       "description": "Create, edit, render, and review video with Facet's production skills and MCP tools. Needs the Facet Toolkit: https://xibodev.github.io/facet/",
-      "version": "2.1.1",
+      "version": "2.1.2",
       "homepage": "https://xibodev.github.io/facet/",
       "repository": "https://github.com/xibodev/facet",
       "license": "AGPL-3.0-or-later",
