@@ -1,7 +1,7 @@
 {
   "schema": "xibodev.facet.bundle/v2",
   "capability_id": "xibodev.facet",
-  "facet_version": "2.0.0",
+  "facet_version": "2.1.0",
   "adapter_version": "2",
   "target": "codex",
   "scope": "plugin",
@@ -52,7 +52,7 @@
     {
       "path": ".codex-plugin/plugin.json",
       "bytes": 1443,
-      "digest": "sha256:c4aa9ac4e5b6c96dd015f10d9b0cc58eb8cadef1f2bfc7cfed8e906d5145c02c",
+      "digest": "sha256:a2741ac57fbb92249325f86da01056c89313e024547a7857c7d5434b0bd41de9",
       "kind": "plugin"
     },
     {
@@ -122,5 +122,5 @@
       "kind": "skill"
     }
   ],
-  "bundle_digest": "sha256:c3e2e2015806896611f5140d62b908dedab8edffc370ccb4b11344dd4ebef8bf"
+  "bundle_digest": "sha256:8c915f4c2de4bb37dcac235931cf35ca04ac6330a04d5e032761b03b930c09d7"
 }
