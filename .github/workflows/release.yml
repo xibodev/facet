@@ -150,6 +150,11 @@ jobs:
           $facet = Join-Path $HOME '.facet/current/bin/facet.exe'
           $reported = & $facet version
           if ($LASTEXITCODE -ne 0 -or $reported -ne "facet v$version") { throw "Unexpected version: $reported" }
+          # The binary says what it is, in its version information.
+          $info = (Get-Item $facet).VersionInfo
+          if ($info.ProductName -ne 'Facet' -or $info.FileDescription -ne 'Facet Toolkit' -or $info.ProductVersion -notlike "$version*") {
+            throw "facet.exe does not carry Facet's version information: $($info | Format-List | Out-String)"
+          }
           & $facet doctor
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ([Environment]::GetEnvironmentVariable('Path', 'User') -ne $userPath) { throw '-NoPath changed the user PATH' }

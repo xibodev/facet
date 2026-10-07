@@ -19,6 +19,8 @@ build/
 bin/facet-*
 bin/facet
 !bin/*.js
+# Windows resource objects scripts/package-release.py generates for a build.
+cmd/facet/rsrc_windows_*.syso
 
 # Scratch probes from coordinating sessions. Several sessions can work in this
 # tree at once, and `git add -A` cannot tell a peer's temporary file from one's
