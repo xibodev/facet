@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/xibodev/facet/internal/toolbox"
 )
@@ -16,12 +17,15 @@ import (
 // throwaway homes, with a stand-in facet that recorded how it was started
 // (Claude Code 2.1.278, Codex 0.160.0, Copilot CLI 1.0.93):
 //
-//	claude   .claude-plugin/plugin.json and .mcp.json. The server is named
-//	         plugin:facet:facet; it starts in the project, which Claude Code
-//	         also offers as its MCP root. A plugin's settings may set only
-//	         `agent` and `subagentStatusLine`, so a plugin cannot add ask
-//	         rules: Claude Code asks before a tool the person has not allowed,
-//	         and facet wire claude adds ask rules that hold even then.
+//	claude   .claude-plugin/plugin.json, .mcp.json and hooks/hooks.json. The
+//	         server is named plugin:facet:facet, so its tools are
+//	         mcp__plugin_facet_facet__<tool>; it starts in the project, which
+//	         Claude Code also offers as its MCP root. A plugin's settings may
+//	         set only `agent` and `subagentStatusLine`, so a plugin cannot add
+//	         ask rules. Its PreToolUse hook runs `facet hook claude` before
+//	         every paid Facet tool and every shell command, and answers "ask"
+//	         for a paid tool, which Claude Code honours even for a tool the
+//	         person has allowed. facet wire claude adds ask rules instead.
 //	codex    .codex-plugin/plugin.json, pointing at skills/ and .mcp.json, whose
 //	         server entry takes config.toml's fields: env_vars, because Codex
 //	         starts MCP servers with only a short allowlist of variables;
@@ -137,6 +141,58 @@ type codexApproval struct {
 	ApprovalMode string `json:"approval_mode"`
 }
 
+// Claude Code's hook registration, hooks/hooks.json: a description and a map
+// from hook event to matchers. A matcher made only of letters, digits, `_`
+// and `|` is a list of exact tool names.
+type claudeHooks struct {
+	Description string                         `json:"description"`
+	Hooks       map[string][]claudeHookMatcher `json:"hooks"`
+}
+
+type claudeHookMatcher struct {
+	Matcher string       `json:"matcher"`
+	Hooks   []claudeHook `json:"hooks"`
+}
+
+type claudeHook struct {
+	Type    string `json:"type"`
+	Command string `json:"command"`
+	Timeout int    `json:"timeout"`
+}
+
+// ClaudeHookCommand is the command the Claude Code plugin's hook runs: the
+// shell form, which every Claude Code version runs, with facet from PATH
+// like the plugin's MCP registration.
+const ClaudeHookCommand = PluginCommand + " hook claude"
+
+// claudeHookTimeout bounds one hook run, in seconds. Claude Code runs the
+// tool when the hook times out, so the bound only limits a hang.
+const claudeHookTimeout = 30
+
+// ClaudeHookMatcher returns the tools the Claude Code plugin's hook runs
+// for: every paid Facet tool, under the plugin's server name and under the
+// name facet wire gives the server, and the two shell tools, where `facet
+// tools run` would reach a paid tool without MCP.
+func ClaudeHookMatcher() string {
+	var names []string
+	for _, prefix := range []string{"mcp__plugin_" + PluginName + "_" + MCPServerName + "__", "mcp__" + MCPServerName + "__"} {
+		for _, tool := range toolbox.PaidTools() {
+			names = append(names, prefix+tool)
+		}
+	}
+	return strings.Join(append(names, "Bash", "PowerShell"), "|")
+}
+
+func claudeHookFile() ([]byte, error) {
+	return renderJSON(claudeHooks{
+		Description: "Ask before every Facet tool that may charge, through MCP or the shell.",
+		Hooks: map[string][]claudeHookMatcher{"PreToolUse": {{
+			Matcher: ClaudeHookMatcher(),
+			Hooks:   []claudeHook{{Type: "command", Command: ClaudeHookCommand, Timeout: claudeHookTimeout}},
+		}}},
+	})
+}
+
 // pluginFiles returns target t's plugin manifest and MCP registration, with
 // paths relative to the plugin root.
 func pluginFiles(t Target, version string) ([]File, error) {
@@ -182,10 +238,18 @@ func pluginFiles(t Target, version string) ([]File, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []File{
+	files := []File{
 		{Path: pluginFile[t], Kind: KindPlugin, Name: PluginName, Content: manifestData},
 		{Path: ".mcp.json", Kind: KindMCP, Name: MCPServerName, Content: serverData},
-	}, nil
+	}
+	if t == TargetClaude {
+		hooks, err := claudeHookFile()
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, File{Path: "hooks/hooks.json", Kind: KindHook, Name: PluginName, Content: hooks})
+	}
+	return files, nil
 }
 
 // renderJSON encodes v with two-space indentation, a final newline, and no

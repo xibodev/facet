@@ -187,9 +187,11 @@ const (
 	KindPack  = "pack"
 	KindAgent = "agent"
 	// KindPlugin is a plugin manifest and KindMCP a plugin's MCP server
-	// registration; only the plugin layout has them.
+	// registration; only the plugin layout has them. KindHook is a plugin's
+	// hook registration (Claude Code only).
 	KindPlugin = "plugin"
 	KindMCP    = "mcp"
+	KindHook   = "hook"
 )
 
 // File is one target-native file. Path is slash-separated and relative to

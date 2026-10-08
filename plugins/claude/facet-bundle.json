@@ -1,7 +1,7 @@
 {
   "schema": "xibodev.facet.bundle/v2",
   "capability_id": "xibodev.facet",
-  "facet_version": "2.2.0",
+  "facet_version": "2.3.0",
   "adapter_version": "2",
   "target": "claude",
   "scope": "plugin",
@@ -52,7 +52,7 @@
     {
       "path": ".claude-plugin/plugin.json",
       "bytes": 573,
-      "digest": "sha256:4a8952b8aa000d9f50f6d786ea134e3c9629a6c332e71a6f690cc29c21d5c468",
+      "digest": "sha256:3202aa465e24b0a81898f85f67d6027e653be7a7a6e1e72de7fea0182efe0296",
       "kind": "plugin"
     },
     {
@@ -66,6 +66,12 @@
       "bytes": 1543,
       "digest": "sha256:590be50bcbe043c5e64170091931a7119f3e6e6477c2db4b5f5bf7a1db67227d",
       "kind": "agent"
+    },
+    {
+      "path": "hooks/hooks.json",
+      "bytes": 836,
+      "digest": "sha256:e980becc6699d4041d1fb64a4670b54f35f4e01d4f6fbbd0642f21dc365b640c",
+      "kind": "hook"
     },
     {
       "path": "skills/facet-character-animation/SKILL.md",
@@ -128,5 +134,5 @@
       "kind": "skill"
     }
   ],
-  "bundle_digest": "sha256:f8936705e8ed329f7d45205625c1f1f6befecad0476b0cf8879ec49fbbcb07c2"
+  "bundle_digest": "sha256:0f0dc2bc73f2a635d30c1f3c84fb287b487dbcbce9fc2fe808aa7fd952bca1b7"
 }

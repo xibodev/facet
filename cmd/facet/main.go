@@ -12,6 +12,7 @@ import (
 
 	"github.com/xibodev/facet/internal/bundle"
 	"github.com/xibodev/facet/internal/doctor"
+	"github.com/xibodev/facet/internal/hook"
 	"github.com/xibodev/facet/internal/mcpserver"
 	"github.com/xibodev/facet/internal/routes"
 	"github.com/xibodev/facet/internal/toolbox"
@@ -20,7 +21,7 @@ import (
 
 // Version is the Facet release version. Release builds set it with
 // -ldflags "-X main.Version=<version>"; it is the only version source.
-var Version = "2.2.0-dev"
+var Version = "2.3.0-dev"
 
 func printUsage(w io.Writer) {
 	fmt.Fprintf(w, `Facet - video-production tools and guidance for agentic CLIs
@@ -35,6 +36,7 @@ Commands:
   mcp              Serve Facet's tools to an agent over MCP (stdio)
   wire             Wire Facet into an agentic CLI at user or project scope
   bundle           Build harness-native bundle layouts for packaging
+  hook claude      Answer Claude Code's tool hook: ask before tools that may charge
   version          Print the Facet version
   help             Show this help
 
@@ -113,6 +115,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	case "bundle":
 		return bundle.CLI(args[1:], stdout, stderr, Version)
+
+	case "hook":
+		return hook.CLI(args[1:], os.Stdin, stdout, stderr)
 
 	default:
 		fmt.Fprintf(stderr, "Unknown command %q. Run 'facet help' for usage.\n", args[0])
