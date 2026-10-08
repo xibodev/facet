@@ -115,6 +115,52 @@ func TestPluginLayoutsCarryGuidanceManifestAndServer(t *testing.T) {
 				t.Errorf("codex: asks before %v, want every paid tool %v", asked, paid)
 			}
 		}
+		_, err := os.Stat(filepath.Join(dir, "hooks", "hooks.json"))
+		if hasHooks := err == nil; hasHooks != (target == TargetClaude) {
+			t.Errorf("%s: hooks/hooks.json present = %v; only the Claude Code plugin registers a hook", target, hasHooks)
+		}
+	}
+}
+
+// A Claude Code plugin cannot add permission rules, so its PreToolUse hook
+// makes Claude Code ask before every paid Facet tool, through MCP under the
+// plugin's server name (and facet wire's) and through either shell.
+func TestClaudePluginHookAsksBeforeEveryPaidTool(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "claude")
+	build(t, TargetClaude, ScopePlugin, dir)
+	doc := readJSONFile(t, filepath.Join(dir, "hooks", "hooks.json"))
+	events, _ := doc["hooks"].(map[string]any)
+	matchers, _ := events["PreToolUse"].([]any)
+	if len(events) != 1 || len(matchers) != 1 {
+		t.Fatalf("hooks = %v", doc["hooks"])
+	}
+	entry, _ := matchers[0].(map[string]any)
+	hooks, _ := entry["hooks"].([]any)
+	hook, _ := hooks[0].(map[string]any)
+	if len(hooks) != 1 || hook["type"] != "command" || hook["command"] != "facet hook claude" || hook["timeout"] != float64(claudeHookTimeout) {
+		t.Fatalf("hook = %v", hooks)
+	}
+	matcher, _ := entry["matcher"].(string)
+	// Only letters, digits, `_` and `|`: Claude Code reads it as a list of
+	// exact tool names, not as a regular expression.
+	if !regexp.MustCompile(`^[A-Za-z0-9_|]+$`).MatchString(matcher) {
+		t.Fatalf("matcher %q is not a list of exact names", matcher)
+	}
+	names := map[string]bool{}
+	for _, name := range strings.Split(matcher, "|") {
+		names[name] = true
+	}
+	want := []string{"Bash", "PowerShell"}
+	for _, tool := range toolbox.PaidTools() {
+		want = append(want, "mcp__plugin_facet_facet__"+tool, "mcp__facet__"+tool)
+	}
+	for _, name := range want {
+		if !names[name] {
+			t.Errorf("the hook does not run for %s", name)
+		}
+	}
+	if len(names) != len(want) {
+		t.Errorf("the hook runs for %d tools, want %d: %s", len(names), len(want), matcher)
 	}
 }
 

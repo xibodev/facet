@@ -1,6 +1,6 @@
 kind	id	version	value	windows	linux	darwin	size	capability
 contract	layout	2	user-runtime	-	-	-	-	One Facet runtime per user, activated through ~/.facet/current
-release	facet	2.2.0	xibodev/facet	-	-	-	-	Facet release repository
+release	facet	2.3.0	xibodev/facet	-	-	-	-	Facet release repository
 runtime	ffmpeg	-	ffmpeg	Gyan.FFmpeg	ffmpeg	ffmpeg	Varies by platform	Core media editing and inspection (includes ffprobe)
 toolchain	go	1.26.6	https://go.dev/dl/	amd64:5b6c5b556525810463b5c897b50dc7a82d6a3dc0bfaf55d990a7e9f31d6b2318 arm64:06dbe785743d534ef8a469dad88adf7f1b2b438507ccfef9b98e7cf8c97b4b68	amd64:708effb774be8237570d0add163225abbdfaf4fca28b2611df167beba4feef89 arm64:d0507e9e9d7fe012aae570108cbd76c15de879e17130ab8cb90d4d7445cb1f2e	amd64:08b65a63f244115121ced6c3b55ad38d801a7442acad5c949a17aad84ae6d684 arm64:2dc95ce4675829f2df0e86b28bcef3283635902062a5f0580ca659bf570f3204	60-75 MB download, removed after the build	The official Go toolchain that builds facet on Windows, and on Linux and macOS with --from-source
 runtime	node	24.18.0	22	OpenJS.NodeJS.LTS	nodejs	node@24	30-60 MB	Node.js/npm for selected renderers
