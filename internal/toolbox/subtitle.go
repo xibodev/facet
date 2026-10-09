@@ -28,6 +28,8 @@ type transcriptSegment struct {
 
 type subtitleGenRequest struct {
 	Segments        []transcriptSegment `json:"segments"`
+	TimingPath      string              `json:"timing_path,omitempty"`
+	Layout          string              `json:"layout,omitempty"`
 	Format          string              `json:"format,omitempty"`
 	OutputPath      string              `json:"output_path,omitempty"`
 	MaxCharsPerLine int                 `json:"max_chars_per_line,omitempty"`
@@ -41,6 +43,7 @@ type captionBurnRequest struct {
 	InputPath      string              `json:"input_path"`
 	OutputPath     string              `json:"output_path"`
 	Segments       []transcriptSegment `json:"segments,omitempty"`
+	TimingPath     string              `json:"timing_path,omitempty"`
 	SRTPath        string              `json:"srt_path,omitempty"`
 	WordsPerPage   int                 `json:"words_per_page,omitempty"`
 	FontSize       int                 `json:"font_size,omitempty"`
@@ -67,8 +70,15 @@ func doSubtitleGenContext(ctx context.Context, op string, data []byte) (any, []s
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
 	}
+	if len(r.Segments) == 0 && strings.TrimSpace(r.TimingPath) != "" {
+		segments, err := timingSegments(r.TimingPath)
+		if err != nil {
+			return nil, nil, err
+		}
+		r.Segments = segments
+	}
 	if len(r.Segments) == 0 {
-		return nil, nil, failure("invalid_request", "segments array is required", nil)
+		return nil, nil, failure("invalid_request", "segments, or a narration timing record (timing_path), is required", nil)
 	}
 	fmtType := strings.ToLower(r.Format)
 	if fmtType == "" {
@@ -80,6 +90,13 @@ func doSubtitleGenContext(ctx context.Context, op string, data []byte) (any, []s
 	maxWords := r.MaxWordsPerCue
 	if maxWords <= 0 {
 		maxWords = 8
+		switch strings.ToLower(r.Layout) {
+		case "vertical":
+			maxWords = 4
+		case "", "horizontal":
+		default:
+			return nil, nil, failure("invalid_request", "layout must be horizontal or vertical", nil)
+		}
 	}
 	maxChars := r.MaxCharsPerLine
 	if maxChars <= 0 {
@@ -136,6 +153,13 @@ func doFFmpegCaptionBurnContext(ctx context.Context, op string, data []byte) (an
 	var r captionBurnRequest
 	if err := decode(data, &r); err != nil {
 		return nil, nil, err
+	}
+	if len(r.Segments) == 0 && r.SRTPath == "" && strings.TrimSpace(r.TimingPath) != "" {
+		segments, err := timingSegments(r.TimingPath)
+		if err != nil {
+			return nil, nil, err
+		}
+		r.Segments = segments
 	}
 	if err := inputPath(r.InputPath); err != nil {
 		return nil, nil, err

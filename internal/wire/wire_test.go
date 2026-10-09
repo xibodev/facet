@@ -463,11 +463,11 @@ func TestWireUserScopeUsesEachCLIsNativeLocationsAndRegistration(t *testing.T) {
 	for target, root := range roots {
 		expectFiles(t, root, target)
 	}
-	if _, err := os.Stat(filepath.Join(s.home, ".claude", "agents", "facet-creative.md")); err != nil {
-		t.Error("Claude Code persona not installed as a native agent")
+	if _, err := os.Stat(filepath.Join(s.home, ".claude", "agents", "facet-critic.md")); err != nil {
+		t.Error("Claude Code role agents not installed as native agents")
 	}
-	if _, err := os.Stat(filepath.Join(s.home, ".copilot", "agents", "facet-creative.agent.md")); err != nil {
-		t.Error("Copilot persona not installed as a native agent")
+	if _, err := os.Stat(filepath.Join(s.home, ".copilot", "agents", "facet.agent.md")); err != nil {
+		t.Error("Copilot producer agent not installed as a native agent")
 	}
 	if _, err := os.Stat(filepath.Join(s.home, ".codex", "agents")); !os.IsNotExist(err) {
 		t.Error("a persona was installed for Codex, whose agent format is not validated")
@@ -675,7 +675,7 @@ func TestRemoveReversesOnlyRecordedUnmodifiedItems(t *testing.T) {
 	}
 
 	mustRun(t, "all")
-	modified := filepath.Join(s.home, ".config", "opencode", "skills", "facet-social", "SKILL.md")
+	modified := filepath.Join(s.home, ".config", "opencode", "agents", "facet-critic.md")
 	if err := os.WriteFile(modified, []byte("my edits"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -872,7 +872,7 @@ func TestStatusReportsDrift(t *testing.T) {
 	if err := os.WriteFile(modified, []byte("edited"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	missing := filepath.Join(s.home, ".codex", "skills", "facet-social", "SKILL.md")
+	missing := filepath.Join(s.home, ".codex", "skills", "facet", "SKILL.md")
 	if err := os.Remove(missing); err != nil {
 		t.Fatal(err)
 	}

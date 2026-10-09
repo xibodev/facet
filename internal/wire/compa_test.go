@@ -127,7 +127,7 @@ func TestWireCompaEditsItsConfigurationAndRemovesExactly(t *testing.T) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
 	}
-	for _, name := range []string{"facet", "facet-explainer", "facet-localization"} {
+	for _, name := range []string{"facet"} {
 		if _, err := os.Stat(filepath.Join(c.workspace, "skills", name, "SKILL.md")); err != nil {
 			t.Errorf("skill %s not in the workspace: %v", name, err)
 		}

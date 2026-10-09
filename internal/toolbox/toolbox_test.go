@@ -38,7 +38,9 @@ var expectedToolNames = []string{
 	"pexels_video",
 	"piper_tts",
 	"pixabay_video",
+	"plan_check",
 	"scene_detect",
+	"script_check",
 	"silence_cutter",
 	"sora_video",
 	"source_edit",
@@ -596,6 +598,8 @@ func TestAllToolEstimates(t *testing.T) {
 		"pexels_video":        map[string]any{"query": "mountains"},
 		"piper_tts":           map[string]any{"text": "Hello world from Piper"},
 		"pixabay_video":       map[string]any{"query": "ocean"},
+		"plan_check":          map[string]any{"scene_plan": map[string]any{"scenes": []map[string]any{{"id": "s1", "type": "text_card", "start_seconds": 0, "end_seconds": 2}}}},
+		"script_check":        map[string]any{"script": map[string]any{"total_duration_seconds": 10, "sections": []map[string]any{{"id": "hook", "text": "Hello world.", "start_seconds": 0, "end_seconds": 2}}}},
 		"ffmpeg_caption_burn": map[string]any{"input_path": dummyFile, "output_path": outPath, "segments": []map[string]any{{"start": 0, "end": 1, "text": "hello"}}},
 		"scene_detect":        map[string]any{"input_path": dummyFile},
 		"silence_cutter":      map[string]any{"input_path": dummyFile},
@@ -629,21 +633,11 @@ func TestAllToolEstimates(t *testing.T) {
 	}
 }
 
-func TestToolAliasesAndInlineJSON(t *testing.T) {
-	// 1. Shorthand spellings resolve to the canonical tool in describe.
-	for alias, expected := range map[string]string{
-		"edgetts": "edge_tts",
-		"edit":    "source_edit",
-		"probe":   "media_probe",
-		"review":  "output_review",
-		"compose": "video_compose",
-	} {
-		env, ok := CLI([]string{"tools", "describe", alias})
-		if !ok || !env.OK {
-			t.Fatalf("describe failed for alias %s: %#v", alias, env)
-		}
-		if env.Tool != expected {
-			t.Errorf("expected tool %s for alias %s, got %s", expected, alias, env.Tool)
+func TestNoAliasesAndInlineJSON(t *testing.T) {
+	// 1. A tool has one name: shorthand spellings are unknown tools.
+	for _, alias := range []string{"edgetts", "edit", "probe", "review", "compose", "veo", "elevenlabs"} {
+		if env, ok := CLI([]string{"tools", "describe", alias}); ok || env.OK {
+			t.Errorf("%s is described, but tools have no aliases: %#v", alias, env)
 		}
 	}
 
@@ -673,7 +667,7 @@ func TestToolAliasesAndInlineJSON(t *testing.T) {
 
 	// 2. Test inline JSON execution for estimate
 	inlineJSON := `{"text": "Hello world from inline json", "output": "narration/test.mp3"}`
-	env, ok := CLI([]string{"tools", "estimate", "edgetts", "--input", inlineJSON})
+	env, ok := CLI([]string{"tools", "estimate", "edge_tts", "--input", inlineJSON})
 	if !ok || !env.OK {
 		t.Fatalf("estimate with inline JSON failed: %#v", env)
 	}
@@ -683,7 +677,7 @@ func TestToolAliasesAndInlineJSON(t *testing.T) {
 
 	// 3. Test inline JSON with surrounding single quotes
 	inlineWithQuotes := `'{"text": "Hello world quoted", "output": "narration/test.mp3"}'`
-	env, ok = CLI([]string{"tools", "estimate", "edgetts", "--input", inlineWithQuotes})
+	env, ok = CLI([]string{"tools", "estimate", "edge_tts", "--input", inlineWithQuotes})
 	if !ok || !env.OK {
 		t.Fatalf("estimate with quoted inline JSON failed: %#v", env)
 	}

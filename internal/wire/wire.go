@@ -31,9 +31,9 @@ const usage = `Usage:
   facet wire --refresh [--dry-run]
   facet wire --status
 
-Wires Facet into an agentic CLI: installs the facet skill, one facet-<pack>
-skill per production-method pack, and the facet-creative agent where the CLI
-supports agents, then registers the MCP server "facet" (the facet executable
+Wires Facet into an agentic CLI: installs the facet skill (the guide), and
+the facet producer and role agents where the CLI supports agents, then
+registers the MCP server "facet" (the facet executable
 started with "mcp") through the CLI's own configuration. Instruction files such
 as AGENTS.md or CLAUDE.md are never edited.
 

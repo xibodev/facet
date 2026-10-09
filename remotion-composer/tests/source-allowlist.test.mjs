@@ -38,3 +38,14 @@ test("src contains exactly the allowlisted files", async () => {
   const actual = (await listFiles(path.join(root, "src"))).sort();
   assert.deepEqual(actual, manifest.allowedSourcePaths);
 });
+
+// Remotion resets its list of render holds while its own modules load. A hold
+// taken as fonts.ts loads is dropped from that list but its timer still runs,
+// so every render longer than the timeout failed. The hold is taken in Root.
+test("the fonts hold is taken while rendering the root, not as a module loads", async () => {
+  const fonts = await readFile(path.join(root, "src", "fonts.ts"), "utf8");
+  const rootSource = await readFile(path.join(root, "src", "Root.tsx"), "utf8");
+  assert.doesNotMatch(fonts, /^ensureFonts\(\);?\s*$/m);
+  assert.doesNotMatch(rootSource, /^import "\.\/fonts";/m);
+  assert.match(rootSource, /useState\(ensureFonts\)/);
+});

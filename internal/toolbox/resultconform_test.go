@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kolonist/edgetts"
 )
 
 // A fake piper: the test binary installed under a fake runtime's
@@ -229,6 +231,14 @@ func TestRunResultsConformToSchemas(t *testing.T) {
 		{name: "color_grade", tool: "color_grade", request: req(map[string]any{"input_path": f.video, "output_path": out("graded.mp4"), "profile": "neutral"}), artifacts: 1},
 		{name: "image_selector", tool: "image_selector", request: req(map[string]any{"prompt": "a lighthouse", "aspect_ratio": "16:9"}), artifacts: 0},
 		{name: "video_selector", tool: "video_selector", request: req(map[string]any{"prompt": "waves", "duration": 5}), artifacts: 0},
+		{name: "script_check", tool: "script_check", request: req(map[string]any{"script": map[string]any{"total_duration_seconds": 10, "sections": []any{
+			map[string]any{"id": "hook", "text": "Why is the sky blue? Sunlight scatters off the air.", "start_seconds": 0, "end_seconds": 4},
+			map[string]any{"id": "body", "text": "Blue light scatters most, so it reaches your eye from every direction.", "start_seconds": 4, "end_seconds": 10},
+		}}, "structure": map[string]any{"beats": []any{map[string]any{"id": "hook", "share": 0.3}, map[string]any{"id": "body", "share": 0.7}}}}), artifacts: 0},
+		{name: "plan_check", tool: "plan_check", request: req(map[string]any{"scene_plan": map[string]any{"scenes": []any{
+			map[string]any{"id": "s1", "type": "hero_title", "start_seconds": 0, "end_seconds": 3},
+			map[string]any{"id": "s2", "type": "bar_chart", "start_seconds": 3, "end_seconds": 8},
+		}}, "delivery_promise": "data_explainer", "duration_seconds": 8}), artifacts: 0},
 	}
 
 	covered := map[string]bool{}
@@ -343,8 +353,8 @@ if (args[0] === 'render') {
 func fakeEdgeSynthesis(t *testing.T) {
 	t.Helper()
 	previous := edgeSynthesize
-	edgeSynthesize = func(context.Context, string, string, string, string, time.Duration) ([]byte, error) {
-		return testWAV(0.5), nil
+	edgeSynthesize = func(context.Context, string, string, string, string, time.Duration) ([]byte, []edgetts.SpeechMetadata, error) {
+		return testWAV(0.5), nil, nil
 	}
 	t.Cleanup(func() { edgeSynthesize = previous })
 }

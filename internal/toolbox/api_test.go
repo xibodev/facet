@@ -43,7 +43,7 @@ func TestEffectsForAgreesWithEveryPublishedSurface(t *testing.T) {
 		}
 	}
 	sort.Strings(readOnly)
-	want := []string{"audio_probe", "image_selector", "media_probe", "music_library", "video_selector"}
+	want := []string{"audio_probe", "image_selector", "media_probe", "music_library", "plan_check", "script_check", "video_selector"}
 	if !reflect.DeepEqual(readOnly, want) {
 		t.Fatalf("read-only tools = %v, want %v", readOnly, want)
 	}
@@ -76,8 +76,8 @@ func TestEffectsForUnknownToolIsConservative(t *testing.T) {
 	if got != want {
 		t.Fatalf("EffectsFor(unknown) = %+v, want %+v", got, want)
 	}
-	if EffectsFor("edgetts") != EffectsFor("edge_tts") {
-		t.Fatal("a shorthand name did not resolve to the canonical tool")
+	if EffectsFor("edgetts") != want {
+		t.Fatal("a name that is not a tool's own must over-gate: there are no aliases")
 	}
 }
 

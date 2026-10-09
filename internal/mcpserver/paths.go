@@ -12,20 +12,19 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/xibodev/facet/internal/routes"
 	"github.com/xibodev/facet/internal/toolbox"
 )
 
-// The path policy confines every path argument of a tool call to one allowed
-// root. It runs in the server, before the tool, because once a file has been
-// written outside the root no error can undo it.
+// The path policy resolves every path argument of a tool call against one
+// allowed root and holds every OUTPUT inside it. It runs in the server, before
+// the tool, because once a file has been written outside the root no error can
+// undo it. Inputs may be read from anywhere the operator points.
 //
 // Which fields hold paths is decided exactly as toolbox.ProjectArguments
 // decides it, so the CLI's project resolution and the server cannot disagree.
-// A relative path resolves against the root, every path is rewritten to the
-// clean absolute path that was checked, and a path that lands outside the
-// root, through "..", an absolute location or a link in its existing part,
-// is refused naming the root.
+// A relative path resolves against the root and every path is rewritten to its
+// clean absolute form. An output that lands outside the root, through "..", an
+// absolute location or a link in its existing part, is refused naming the root.
 
 // extraPathKeys are fields the toolbox reads as files although
 // ProjectArguments does not recognise their names: video_stitch's clips and
@@ -212,6 +211,17 @@ func confinePath(rootOf rootSource, key, at, value string) (string, *pathRefusal
 		}
 	}
 	local = filepath.Clean(local)
+	if strings.HasPrefix(local, `\\`) || strings.HasPrefix(local, "//") {
+		// A network path is refused without being touched: on Windows even
+		// inspecting a UNC path connects, and authenticates, to its host.
+		return refuse(local, "is a network path, outside the allowed root; copy the file to this machine first")
+	}
+	if !isOutputKey(key) {
+		// Inputs may be read from anywhere the operator points: footage, a
+		// music library or a brand folder often live outside the project.
+		// Only what a tool writes is held inside the allowed root.
+		return local, nil
+	}
 	if !strings.EqualFold(filepath.VolumeName(local), filepath.VolumeName(root)) {
 		// Another drive or a network share is outside the root, and is
 		// refused without touching it: on Windows even inspecting a UNC
@@ -226,6 +236,15 @@ func confinePath(rootOf rootSource, key, at, value string) (string, *pathRefusal
 		return refuse(real, reason)
 	}
 	return local, nil
+}
+
+// outputKeys name the fields a tool writes to. Every other path field is an
+// input, which may point anywhere; an output must land inside the allowed root.
+var outputKeys = map[string]bool{"evidence_dir": true, "workspace_path": true, "timing_path": true}
+
+func isOutputKey(key string) bool {
+	k := strings.ToLower(key)
+	return strings.HasPrefix(k, "output") || outputKeys[k]
 }
 
 // outside explains why path is not inside root, or returns "".
@@ -403,92 +422,4 @@ func nonEmpty(elements []string) []string {
 		}
 	}
 	return out
-}
-
-// fileInputs are the route inputs that name files, which routes_assess
-// checks on disk.
-var fileInputs = sync.OnceValue(func() map[string]bool {
-	set := map[string]bool{}
-	for _, method := range routes.Catalog() {
-		for _, route := range method.Routes {
-			for _, input := range route.RequiredInputs {
-				if input.Kind == "file" || input.Kind == "files" {
-					set[input.Name] = true
-				}
-			}
-		}
-	}
-	return set
-})
-
-// confineAssessment applies the path policy to a routes_assess request: file
-// inputs and every operation request, which assessment validates against the
-// filesystem. Both are rewritten alike, so the bindings between them still
-// compare equal.
-func confineAssessment(root rootSource, request map[string]any) (map[string]any, *pathRefusal) {
-	out := make(map[string]any, len(request))
-	for k, v := range request {
-		out[k] = v
-	}
-	if inputs, ok := request["inputs"].(map[string]any); ok {
-		confined := make(map[string]any, len(inputs))
-		for _, name := range sortedKeys(inputs) {
-			value := inputs[name]
-			if fileInputs()[name] {
-				var refusal *pathRefusal
-				if value, refusal = confineInput(root, "inputs."+name, value); refusal != nil {
-					return nil, refusal
-				}
-			}
-			confined[name] = value
-		}
-		out["inputs"] = confined
-	}
-	if requests, ok := request["operation_requests"].(map[string]any); ok {
-		confined := make(map[string]any, len(requests))
-		for _, name := range sortedKeys(requests) {
-			value := requests[name]
-			if args, ok := value.(map[string]any); ok {
-				var refusal *pathRefusal
-				if value, refusal = confineValue(root, "", "operation_requests."+name, args); refusal != nil {
-					return nil, refusal
-				}
-			}
-			confined[name] = value
-		}
-		out["operation_requests"] = confined
-	}
-	return out, nil
-}
-
-// confineInput resolves a file input (one path or a list). A URL is left for
-// the assessment to report: route inputs must be files on disk.
-func confineInput(root rootSource, at string, value any) (any, *pathRefusal) {
-	one := func(at, s string) (string, *pathRefusal) {
-		if _, isURL := urlScheme(s); isURL {
-			return s, nil
-		}
-		return confinePath(root, "", at, s)
-	}
-	switch v := value.(type) {
-	case string:
-		return one(at, v)
-	case []any:
-		out := make([]any, len(v))
-		for i, item := range v {
-			s, ok := item.(string)
-			if !ok {
-				out[i] = item
-				continue
-			}
-			confined, refusal := one(fmt.Sprintf("%s[%d]", at, i), s)
-			if refusal != nil {
-				return nil, refusal
-			}
-			out[i] = confined
-		}
-		return out, nil
-	default:
-		return value, nil
-	}
 }

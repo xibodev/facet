@@ -13,8 +13,8 @@ import (
 const bundleUsage = `Usage: facet bundle --target <claude|codex|copilot|opencode|compa|all> [--scope user|project|plugin] --out DIR
 
 Writes Facet's guidance in each CLI's native layout for packaging: the facet
-skill, one facet-<pack> skill per production-method pack, the facet-creative
-agent where the CLI's agent format is supported, and a facet-bundle.json
+skill (the guide), and where the CLI's agent format is supported the facet
+producer agent and the role agents, and a facet-bundle.json
 manifest with the Facet version and every file's digest.
 
 Each target is written to DIR/<target>. At user and project scope it is laid

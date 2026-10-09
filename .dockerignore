@@ -17,8 +17,12 @@
 !internal/**
 !skills/
 !skills/**
-!packs/
-!packs/**
+!pipelines/
+!pipelines/**
+!guidance/
+!guidance/**
+!styles/
+!styles/**
 !schemas/
 !schemas/**
 !remotion-composer/

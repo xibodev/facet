@@ -43,7 +43,7 @@ func TestStageRemotionMediaPaths(t *testing.T) {
 		"metadata": map[string]any{"src": ".env"},
 	}
 	original, _ := json.Marshal(props)
-	result, err := stageRemotionMedia(original, composer, public)
+	result, err := stageRemotionMedia(original, composer, public, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestStageRemotionMediaRejectsUnsafeSources(t *testing.T) {
 		t.Run(src, func(t *testing.T) {
 			data, _ := json.Marshal(map[string]any{"audio": map[string]any{"narration": map[string]any{"src": src}}})
 			public := t.TempDir()
-			if _, err := stageRemotionMedia(data, t.TempDir(), public); err == nil {
+			if _, err := stageRemotionMedia(data, t.TempDir(), public, ""); err == nil {
 				t.Fatalf("unsafe/missing media accepted: %q", src)
 			}
 			entries, _ := os.ReadDir(public)
@@ -116,7 +116,7 @@ func TestStageRemotionMediaConfinesSymlinks(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(workspace, "escape.wav")); err != nil {
 		t.Skipf("symlink creation unavailable: %v", err)
 	}
-	if _, err := stageRemotionMedia([]byte(`{"audio":{"narration":{"src":"escape.wav"}}}`), t.TempDir(), t.TempDir()); err == nil {
+	if _, err := stageRemotionMedia([]byte(`{"audio":{"narration":{"src":"escape.wav"}}}`), t.TempDir(), t.TempDir(), ""); err == nil {
 		t.Fatal("relative symlink escaped project")
 	}
 }
@@ -133,7 +133,7 @@ func TestStageRemotionMediaLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 	public := t.TempDir()
-	if _, err := stageRemotionMedia([]byte(`{"audio":{"narration":{"src":"oversized.wav"}}}`), t.TempDir(), public); err == nil {
+	if _, err := stageRemotionMedia([]byte(`{"audio":{"narration":{"src":"oversized.wav"}}}`), t.TempDir(), public, ""); err == nil {
 		t.Fatal("oversized source accepted")
 	}
 	entries, _ := os.ReadDir(public)

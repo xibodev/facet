@@ -44,17 +44,20 @@ const (
 	// often needs more than. Longer work belongs on the shell route (facet
 	// tools run), where no MCP limit applies.
 	CodexToolTimeoutSec = 600
-	// CoreSkillName is the core production-contract skill.
+	// CoreSkillName is the guide: Facet's production-studio skill.
 	CoreSkillName = "facet"
-	// PersonaName is the creative persona agent.
-	PersonaName = "facet-creative"
+	// MainAgentName is the producer agent generated from the guide.
+	MainAgentName = "facet"
 	// AdapterVersion versions the projection logic separately from the Facet
 	// version: a layout fix changes it without changing product truth.
-	AdapterVersion = "2"
+	AdapterVersion = "3"
 
 	coreSkillSource = "skills/facet"
-	personaSource   = "agents/facet-creative.md"
 )
+
+// RoleAgentNames are the agents that do parts of a production on the
+// producer's behalf, in projection order.
+var RoleAgentNames = []string{"facet-researcher", "facet-critic", "facet-reference-analyst"}
 
 // MCPServerArgs returns the arguments that start Facet's MCP server when
 // appended to the facet executable.
@@ -184,7 +187,6 @@ func (s Scope) valid() bool { return s == ScopeUser || s == ScopeProject || s ==
 // Asset kinds recorded in manifests and wiring records.
 const (
 	KindSkill = "skill"
-	KindPack  = "pack"
 	KindAgent = "agent"
 	// KindPlugin is a plugin manifest and KindMCP a plugin's MCP server
 	// registration; only the plugin layout has them. KindHook is a plugin's
@@ -211,11 +213,6 @@ func Digest(content []byte) string {
 	sum := sha256.Sum256(content)
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
-
-// PackSkillName is the skill name a pack is installed under. Packs are
-// namespaced so that installing them user-wide never collides with a user's
-// own generically named skills; a route's `pack` value maps to this name.
-func PackSkillName(pack string) string { return "facet-" + pack }
 
 // DefaultRoot returns a target's install root relative to the scope's base
 // directory (the home directory for user scope, the project directory for
@@ -296,39 +293,82 @@ func Root(t Target, s Scope, base string, getenv func(string) string) string {
 	return filepath.Join(base, filepath.FromSlash(DefaultRoot(t, s)))
 }
 
-// personaFile returns the persona's file name under <root>/agents and how its
-// canonical bytes are adapted, or false when the target's agent format has
-// not been validated and the persona is therefore not installed there.
-func personaFile(t Target) (string, func([]byte) ([]byte, error), bool) {
+// agentFile returns an agent's file name under <root>/agents and how its
+// canonical bytes are adapted, or false when the target's agent format has not
+// been validated and agents are therefore not installed there. main is the
+// Facet producer, generated from the guide; the others are role agents that do
+// parts of the work (research, critique, reference analysis).
+func agentFile(t Target, name string, main bool) (string, func([]byte) ([]byte, error), bool) {
 	switch t {
 	case TargetClaude:
-		// Claude Code subagents: agents/<name>.md with name and description
-		// frontmatter.
-		return PersonaName + ".md", keepBytes, true
+		// Claude Code installs agents as subagents. The producer must stay in
+		// the main conversation, so only the role agents go here.
+		if main {
+			return "", nil, false
+		}
+		return name + ".md", keepBytes, true
 	case TargetCopilot:
 		// Copilot CLI custom agents: agents/<name>.agent.md with description
-		// (and optional name) frontmatter.
-		return PersonaName + ".agent.md", keepBytes, true
+		// (and optional name) frontmatter, selectable as the main agent.
+		return name + ".agent.md", keepBytes, true
 	case TargetOpenCode:
-		// OpenCode agents: agents/<name>.md. The file name is the agent name,
-		// and frontmatter keys outside OpenCode's agent schema are passed to
-		// the model provider as options, so `name` is dropped.
-		return PersonaName + ".md", dropFrontmatterKey("name"), true
+		// OpenCode agents: agents/<name>.md. The file name is the agent name;
+		// keys outside OpenCode's agent schema would reach the model provider,
+		// so `name` is dropped and `mode` says how the agent is used.
+		mode := "subagent"
+		if main {
+			mode = "primary"
+		}
+		return name + ".md", openCodeAgent(mode), true
 	}
 	// Codex: no agent format validated for this release. Compa: an agent is
 	// a whole workspace (AGENT.md), not a file beside the user's own agent.
 	return "", nil, false
 }
 
-// HasPersona reports whether target t receives the creative persona agent.
-func HasPersona(t Target) bool {
-	_, _, ok := personaFile(t)
+// HasAgents reports whether target t receives Facet's agents.
+func HasAgents(t Target) bool {
+	_, _, ok := agentFile(t, RoleAgentNames[0], false)
 	return ok
 }
 
-// Files projects the canonical assets for target t: the core skill, one skill
-// per retained pack, and the persona where supported. Paths are relative to
-// the target's install root; the result is sorted by path.
+// openCodeAgent drops the name key and sets the agent's mode.
+func openCodeAgent(mode string) func([]byte) ([]byte, error) {
+	drop := dropFrontmatterKey("name")
+	return func(b []byte) ([]byte, error) {
+		out, err := drop(b)
+		if err != nil {
+			return nil, err
+		}
+		text := string(out)
+		if !strings.HasPrefix(text, "---\n") {
+			return nil, fmt.Errorf("agent has no frontmatter")
+		}
+		return []byte("---\nmode: " + mode + "\n" + strings.TrimPrefix(text, "---\n")), nil
+	}
+}
+
+// mainAgent turns the guide (skills/facet/SKILL.md) into the producer agent:
+// the same text, with agent frontmatter instead of skill frontmatter.
+func mainAgent(guide []byte) ([]byte, error) {
+	fields, ok := Frontmatter(guide)
+	if !ok || fields["description"] == "" {
+		return nil, fmt.Errorf("the guide has no description")
+	}
+	text := string(guide)
+	end := strings.Index(text[4:], "\n---\n")
+	if !strings.HasPrefix(text, "---\n") || end < 0 {
+		return nil, fmt.Errorf("the guide's frontmatter is not closed")
+	}
+	body := text[4+end+len("\n---\n"):]
+	description := "The Facet producer: makes, edits and reviews videos through Facet's pipelines, from understanding the brief to delivery."
+	return []byte("---\nname: " + MainAgentName + "\ndescription: " + description + "\n---\n" + body), nil
+}
+
+// Files projects the canonical assets for target t: the guide as the core
+// skill, and where the target supports agents, the producer and the role
+// agents. Paths are relative to the target's install root; the result is
+// sorted by path.
 func Files(t Target) ([]File, error) {
 	if !t.valid() {
 		return nil, fmt.Errorf("unsupported target %q", t)
@@ -349,33 +389,36 @@ func Files(t Target) ([]File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading the core skill: %w", err)
 	}
-	for _, pack := range facet.RetainedPacks() {
-		if pack.ID == "" || path.Base(pack.ID) != pack.ID {
-			return nil, fmt.Errorf("invalid pack id %q", pack.ID)
+	if file, render, ok := agentFile(t, MainAgentName, true); ok {
+		guide, err := facet.Assets.ReadFile(coreSkillSource + "/SKILL.md")
+		if err != nil {
+			return nil, fmt.Errorf("reading the guide: %w", err)
 		}
-		name := PackSkillName(pack.ID)
-		prefix := "packs/" + pack.ID + "/"
-		for _, guidance := range pack.Guidance {
-			if !strings.HasPrefix(guidance.Path, prefix) {
-				return nil, fmt.Errorf("pack %s guidance %s is outside the pack", pack.ID, guidance.Path)
-			}
-			data, err := facet.Assets.ReadFile(guidance.Path)
-			if err != nil {
-				return nil, fmt.Errorf("reading pack %s: %w", pack.ID, err)
-			}
-			files = append(files, File{Path: "skills/" + name + "/" + strings.TrimPrefix(guidance.Path, prefix), Kind: KindPack, Name: name, Content: normalizeText(guidance.Path, data)})
+		agent, err := mainAgent(normalizeText(coreSkillSource+"/SKILL.md", guide))
+		if err != nil {
+			return nil, fmt.Errorf("generating the producer agent: %w", err)
 		}
+		content, err := render(agent)
+		if err != nil {
+			return nil, fmt.Errorf("adapting the producer agent for %s: %w", t, err)
+		}
+		files = append(files, File{Path: "agents/" + file, Kind: KindAgent, Name: MainAgentName, Content: content})
 	}
-	if file, render, ok := personaFile(t); ok {
-		data, err := facet.Assets.ReadFile(personaSource)
-		if err != nil {
-			return nil, fmt.Errorf("reading the persona: %w", err)
+	for _, name := range RoleAgentNames {
+		file, render, ok := agentFile(t, name, false)
+		if !ok {
+			break
 		}
-		content, err := render(normalizeText(personaSource, data))
+		source := "agents/" + name + ".md"
+		data, err := facet.Assets.ReadFile(source)
 		if err != nil {
-			return nil, fmt.Errorf("adapting the persona for %s: %w", t, err)
+			return nil, fmt.Errorf("reading agent %s: %w", name, err)
 		}
-		files = append(files, File{Path: "agents/" + file, Kind: KindAgent, Name: PersonaName, Content: content})
+		content, err := render(normalizeText(source, data))
+		if err != nil {
+			return nil, fmt.Errorf("adapting agent %s for %s: %w", name, t, err)
+		}
+		files = append(files, File{Path: "agents/" + file, Kind: KindAgent, Name: name, Content: content})
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	if err := validateFiles(t, files); err != nil {
@@ -391,13 +434,17 @@ var skillNamePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 func validateFiles(t Target, files []File) error {
 	skills := map[string]bool{}
 	for _, f := range files {
-		if f.Kind == KindSkill || f.Kind == KindPack {
+		if f.Kind == KindSkill {
 			skills[f.Name] = false
 		}
 	}
+	agents := map[string]bool{MainAgentName: true}
+	for _, name := range RoleAgentNames {
+		agents[name] = true
+	}
 	for _, f := range files {
 		switch {
-		case (f.Kind == KindSkill || f.Kind == KindPack) && f.Path == "skills/"+f.Name+"/SKILL.md":
+		case f.Kind == KindSkill && f.Path == "skills/"+f.Name+"/SKILL.md":
 			skills[f.Name] = true
 			fields, ok := Frontmatter(f.Content)
 			if !ok {
@@ -415,10 +462,13 @@ func validateFiles(t Target, files []File) error {
 		case f.Kind == KindAgent:
 			fields, ok := Frontmatter(f.Content)
 			if !ok || fields["description"] == "" {
-				return fmt.Errorf("%s persona needs a description", t)
+				return fmt.Errorf("%s agent %s needs a description", t, f.Name)
 			}
-			if name, present := fields["name"]; present && name != PersonaName {
-				return fmt.Errorf("%s persona declares name %q, want %q", t, name, PersonaName)
+			if !agents[f.Name] {
+				return fmt.Errorf("%s agent %q is not one of Facet's agents", t, f.Name)
+			}
+			if name, present := fields["name"]; present && name != f.Name {
+				return fmt.Errorf("%s agent declares name %q, want %q", t, name, f.Name)
 			}
 		}
 	}

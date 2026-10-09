@@ -41,6 +41,16 @@ type reviewRequest struct {
 	Samples        sampleStrategy `json:"samples,omitempty"`
 	EvidenceDir    string         `json:"evidence_dir,omitempty"`
 	TimeoutSeconds int            `json:"timeout_seconds,omitempty"`
+	// ContactSheet tiles evenly spaced frames into one image in evidence_dir.
+	ContactSheet *struct {
+		Count   int `json:"count,omitempty"`
+		Columns int `json:"columns,omitempty"`
+	} `json:"contact_sheet,omitempty"`
+	// Coverage checks the narration and captions against the video.
+	Coverage *struct {
+		TimingPath   string `json:"timing_path,omitempty"`
+		CaptionsPath string `json:"captions_path,omitempty"`
+	} `json:"coverage,omitempty"`
 }
 
 type visualQARequest struct {
@@ -321,7 +331,25 @@ func doOutputReviewContext(ctx context.Context, op string, data []byte) (any, []
 	if status == "pass" && len(w) > 0 {
 		status = "warn"
 	}
-	return map[string]any{"execution_status": "succeeded", "review_status": status, "gates": gates, "samples": samples.(map[string]any)["samples"], "volume": volume, "output_facts": p}, w, nil
+	result := map[string]any{"execution_status": "succeeded", "review_status": status, "gates": gates, "samples": samples.(map[string]any)["samples"], "volume": volume, "output_facts": p}
+	duration := dur
+	if r.ContactSheet != nil {
+		sheet, err := contactSheet(ctx, r.Input, r.EvidenceDir, duration, r.ContactSheet.Count, r.ContactSheet.Columns)
+		if err != nil {
+			w = append(w, "contact sheet unavailable: "+err.Error())
+		} else {
+			result["contact_sheet"] = sheet
+		}
+	}
+	if r.Coverage != nil {
+		cov, findings := reviewCoverage(ctx, r.Input, duration, r.Coverage.TimingPath, r.Coverage.CaptionsPath)
+		result["coverage"] = cov
+		w = append(w, findings...)
+		if len(findings) > 0 && status == "pass" {
+			result["review_status"] = "warn"
+		}
+	}
+	return result, w, nil
 }
 
 func doVisualQA(op string, data []byte) (any, []string, error) {

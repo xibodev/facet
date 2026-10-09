@@ -35,3 +35,12 @@ func defaultOutput(ctx context.Context, name string) string {
 	}
 	return name
 }
+
+// workDirOf returns the call's working folder, or "" when it has none.
+func workDirOf(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	dir, _ := ctx.Value(workDirKey{}).(string)
+	return dir
+}
