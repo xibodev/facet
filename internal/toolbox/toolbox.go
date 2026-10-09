@@ -48,7 +48,9 @@ var names = []string{
 	"pexels_video",
 	"piper_tts",
 	"pixabay_video",
+	"plan_check",
 	"scene_detect",
+	"script_check",
 	"silence_cutter",
 	"sora_video",
 	"source_edit",
@@ -273,6 +275,7 @@ var deterministicTools = map[string]bool{
 	"audio_probe":   true,
 	"scene_detect":  true,
 	"frame_sample":  true,
+	"script_check":  true,
 }
 
 // Deterministic reports whether this Operation is a proven deterministic
@@ -319,6 +322,7 @@ func ChargeableTools() []string {
 var readOnlyTools = map[string]bool{
 	"media_probe": true, "audio_probe": true, "music_library": true,
 	"image_selector": true, "video_selector": true,
+	"script_check": true, "plan_check": true,
 }
 
 // externalWriteFor reports whether an operation can write outside the process.
@@ -330,65 +334,10 @@ func externalWriteFor(tool, op string) bool {
 	return !readOnlyTools[tool]
 }
 
+// canonicalToolName normalises case and surrounding space. Every tool has one
+// name; there are no aliases.
 func canonicalToolName(tool string) string {
-	tool = strings.ToLower(strings.TrimSpace(tool))
-	for _, n := range names {
-		if n == tool {
-			return tool
-		}
-	}
-	switch tool {
-	case "edgetts", "edge-tts":
-		return "edge_tts"
-	case "edit", "source-edit":
-		return "source_edit"
-	case "probe", "media-probe":
-		return "media_probe"
-	case "audio-probe":
-		return "audio_probe"
-	case "output-review", "review":
-		return "output_review"
-	case "frame-sample":
-		return "frame_sample"
-	case "audio-mix":
-		return "audio_mix"
-	case "video-compose", "compose":
-		return "video_compose"
-	case "remotion_render", "remotion-render":
-		return "video_compose"
-	case "hyperframes", "hyperframes-compose":
-		return "hyperframes_compose"
-	case "gflow-video", "gflowvideo", "veo":
-		return "gflow_video"
-	case "gflow-image", "gflowimage", "imagen":
-		return "gflow_image"
-	case "openai-tts", "openaitts":
-		return "openai_tts"
-	case "elevenlabs-tts", "elevenlabs":
-		return "elevenlabs_tts"
-	case "piper-tts", "piper":
-		return "piper_tts"
-	case "subtitle-gen", "subtitles":
-		return "subtitle_gen"
-	case "remotion_caption_burn", "remotion-caption-burn", "subtitle_burn", "subtitle-burn", "caption-burn":
-		return "ffmpeg_caption_burn"
-	case "scene-detect":
-		return "scene_detect"
-	case "silence-cutter":
-		return "silence_cutter"
-	case "color-grade":
-		return "color_grade"
-	case "video-trimmer", "trimmer":
-		return "video_trimmer"
-	case "video-stitch", "stitch":
-		return "video_stitch"
-	case "visual-qa", "vqa":
-		return "visual_qa"
-	case "clip_search", "direct-clip-search":
-		return "direct_clip_search"
-	default:
-		return tool
-	}
+	return strings.ToLower(strings.TrimSpace(tool))
 }
 
 // CLI implements `facet tools`. args starts with "tools". It returns the
@@ -790,9 +739,13 @@ func summary(name string) map[string]any {
 	// Taken from executionFor, the same source describe uses, so the two
 	// cannot drift into disagreeing again.
 	exec := executionFor(name)
-	return map[string]any{
+	meta := ToolMeta(name)
+	out := map[string]any{
 		"name":         name,
 		"capability":   capabilities[name],
+		"capabilities": meta.Capabilities,
+		"runtime":      meta.Runtime,
+		"knowledge":    meta.Knowledge,
 		"implemented":  true,
 		"configured":   configured,
 		"dependencies": deps,
@@ -809,6 +762,10 @@ func summary(name string) map[string]any {
 		"network":        exec.Network,
 		"external_write": externalWriteFor(name, "run"),
 	}
+	if meta.CreditNote != "" {
+		out["credit_note"] = meta.CreditNote
+	}
+	return out
 }
 
 func dependenciesAvailable(deps []any) bool {
@@ -856,6 +813,8 @@ var capabilities = map[string]string{
 	"video_trimmer":       "video trimming, speed, and concatenation",
 	"visual_qa":           "visual quality assurance and inspection",
 	"wikimedia":           "Wikimedia Commons stock search and download",
+	"script_check":        "script check: words against duration, the hook, caption-length lines, section shares",
+	"plan_check":          "scene plan check: timeline gaps, variety, slideshow risk, narration coverage, provider feasibility",
 }
 
 func description(name string) map[string]any {
@@ -902,7 +861,7 @@ var schemas = map[string]any{
 		"input": map[string]any{"type": "string", "minLength": 1}, "rendered_file": map[string]any{"type": "string", "minLength": 1}, "input_path": map[string]any{"type": "string", "minLength": 1}, "sample_count": map[string]any{"type": "integer", "minimum": 1},
 		"profile": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"width", "height", "fps"}, "properties": map[string]any{"width": map[string]any{"type": "integer", "minimum": 1}, "height": map[string]any{"type": "integer", "minimum": 1}, "fps": map[string]any{"type": "number", "exclusiveMinimum": 0}}},
 		"checks":  map[string]any{"type": "object", "additionalProperties": false, "required": []string{"duration", "video_codec", "pixel_format", "audio"}, "properties": map[string]any{"duration": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"expected", "tolerance"}, "properties": map[string]any{"expected": map[string]any{"type": "number", "exclusiveMinimum": 0}, "tolerance": map[string]any{"type": "number", "minimum": 0}}}, "video_codec": map[string]any{"type": "string", "minLength": 1}, "pixel_format": map[string]any{"type": "string", "minLength": 1}, "audio": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"required", "codec", "sample_rate", "channels"}, "properties": map[string]any{"required": map[string]any{"type": "boolean"}, "codec": map[string]any{"type": "string", "minLength": 1}, "sample_rate": map[string]any{"type": "integer", "minimum": 1}, "channels": map[string]any{"type": "integer", "minimum": 1}}}}},
-		"samples": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{"type": map[string]any{"const": "uniform"}, "count": map[string]any{"type": "integer", "minimum": 1}}}, "evidence_dir": map[string]any{"type": "string", "minLength": 1}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 90},
+		"samples": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{"type": map[string]any{"const": "uniform"}, "count": map[string]any{"type": "integer", "minimum": 1}}}, "evidence_dir": map[string]any{"type": "string", "minLength": 1}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "default": 90}, "contact_sheet": map[string]any{"type": "object", "additionalProperties": false, "description": "tile evenly spaced frames into evidence_dir/contact-sheet.jpg", "properties": map[string]any{"count": map[string]any{"type": "integer", "minimum": 4, "maximum": 24, "default": 12}, "columns": map[string]any{"type": "integer", "minimum": 1, "maximum": 8, "default": 4}}}, "coverage": map[string]any{"type": "object", "additionalProperties": false, "description": "check narration and captions against the video, and measure integrated loudness", "properties": map[string]any{"timing_path": stringSchema(), "captions_path": stringSchema()}},
 	}},
 	"source_edit": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"segments", "target", "output"}, "properties": map[string]any{
 		"segments":          map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"input", "start", "end"}, "properties": map[string]any{"input": map[string]any{"type": "string", "minLength": 1}, "start": map[string]any{"type": "number", "minimum": 0}, "end": map[string]any{"type": "number", "exclusiveMinimum": 0}, "transition": map[string]any{"enum": []string{"cut"}}, "position": map[string]any{"enum": framePositions}, "focal_point": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"x", "y"}, "properties": map[string]any{"x": map[string]any{"type": "number", "minimum": 0, "maximum": 1}, "y": map[string]any{"type": "number", "minimum": 0, "maximum": 1}}}}}},
@@ -931,28 +890,49 @@ var schemas = map[string]any{
 		"pip_margin":          map[string]any{"type": "integer", "minimum": 1, "default": 10},
 		"timeout_seconds":     map[string]any{"type": "integer", "minimum": 1, "default": 300},
 	}},
-	"video_compose": map[string]any{"type": "object", "additionalProperties": false, "description": "Accepts an operation envelope (default compose), direct Facet Explainer props with nonempty cuts, or a scene plan with nonempty scenes. The Remotion composer supports only text_card, hero_title, stat_card, and media. Direct cuts take precedence over scenes and operation. Width, height, fps, and duration_seconds are explicit; defaults are 1920x1080 at 30 fps and the last cut end. Estimates validate the reduced composer primitive, required fields, and timing shape before routing work; they do not prove a render will succeed because complete metadata validation also runs in Remotion.", "properties": map[string]any{
+	"video_compose": map[string]any{"type": "object", "additionalProperties": false, "description": "Render a video. Composer props: cuts (or scenes) for the Explainer, or composition / renderer_family for another composition, with width, height, fps, duration_seconds, theme, captions, audio and overlays; the composer checks every field before rendering (guidance/runtimes/scene-types.md). timing_path lets cuts name narration lines, captions come from the narration's word timings, and music duck under the narration. edit_decisions with render_runtime remotion render the same way; composition_mode atelier with bespoke {entry, composition_id, props_path} renders the project's own Remotion composition. Audio is normalised to loudness_target (default -14 LUFS). An operation envelope (compose, burn_subtitles, overlay, encode) runs FFmpeg.", "properties": map[string]any{
 		"operation": map[string]any{"enum": []string{"compose", "render", "remotion_render", "burn_subtitles", "overlay", "encode"}}, "input_path": map[string]any{"type": "string"}, "output_path": map[string]any{"type": "string"},
 		"edit_decisions": map[string]any{"type": "object"}, "asset_manifest": map[string]any{"type": "object"}, "audio_path": map[string]any{"type": "string"}, "subtitle_path": map[string]any{"type": "string"},
-		"output": stringSchema(), "composition_id": map[string]any{"const": "Explainer"}, "composition": map[string]any{"const": "Explainer"},
-		"width":            map[string]any{"type": "integer", "minimum": 2, "maximum": 9007199254740991, "multipleOf": 2, "default": 1920, "description": "Direct Explainer props: positive even safe integer pixels."},
-		"height":           map[string]any{"type": "integer", "minimum": 2, "maximum": 9007199254740991, "multipleOf": 2, "default": 1080, "description": "Direct Explainer props: positive even safe integer pixels."},
-		"fps":              map[string]any{"type": "number", "exclusiveMinimum": 0, "default": 30, "description": "Direct Explainer props: positive finite frame rate, used for metadata and scene timing."},
-		"duration_seconds": map[string]any{"type": "number", "exclusiveMinimum": 0, "description": "Direct Explainer props: exact duration; duration_seconds * fps must be a positive safe integer frame count. Cuts must fit within it and span at least one frame after boundary rounding. Omit to end at the last cut."},
-		"backgroundColor":  stringSchema(),
+		"output":           stringSchema(),
+		"composition":      map[string]any{"enum": []string{"Explainer", "CinematicRenderer", "TalkingHead", "TitledVideo", "ProductReveal", "ProductRevealVertical", "CollageBurst", "LyricOverlay", "EndTag", "EndTagOverlay", "CaptionOverlayOnly", "HeroTitle"}},
+		"composition_id":   map[string]any{"type": "string"},
+		"renderer_family":  map[string]any{"enum": []string{"explainer-data", "explainer-teacher", "product-reveal", "screen-demo", "animation-first", "cinematic-trailer", "documentary-montage", "presenter"}},
+		"render_runtime":   map[string]any{"enum": []string{"remotion", "hyperframes", "ffmpeg"}},
+		"composition_mode": map[string]any{"enum": []string{"templated", "atelier"}},
+		"bespoke":          objectSchema([]string{"entry", "composition_id"}, map[string]any{"entry": stringSchema(), "composition_id": stringSchema(), "props_path": stringSchema()}),
+		"delivery_promise": map[string]any{"type": "object"},
+		"theme":            map[string]any{"enum": []string{"clean-professional", "flat-motion-graphics", "minimalist-diagram", "premium-minimalist", "anime-ghibli"}},
+		"themeConfig":      map[string]any{"type": "object"},
+		"timing_path":      map[string]any{"type": "string", "description": "a voice tool's narration timing record"},
+		"loudness_target":  map[string]any{"type": "number", "minimum": -40, "maximum": -5, "default": -14},
+		"width":            map[string]any{"type": "integer", "minimum": 2, "multipleOf": 2},
+		"height":           map[string]any{"type": "integer", "minimum": 2, "multipleOf": 2},
+		"fps":              map[string]any{"type": "number", "exclusiveMinimum": 0, "default": 30},
+		"duration_seconds": map[string]any{"type": "number", "exclusiveMinimum": 0, "description": "omit to end at the last cut (or the narration's end when cuts name lines)"},
 		"cuts":             map[string]any{"type": "array", "minItems": 1, "items": explainerCutSchema("in_seconds", "out_seconds")},
-		"scenes":           map[string]any{"type": "array", "minItems": 1, "items": explainerCutSchema("start_seconds", "end_seconds")},
+		"scenes":           map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "object"}, "description": "a scene plan (start_seconds/end_seconds), or CinematicRenderer scenes with composition CinematicRenderer"},
 		"audio":            explainerAudioSchema(),
-		"overlays":         map[string]any{"type": "array", "items": map[string]any{"type": "object"}}, "captions": map[string]any{}, "subtitle_style": map[string]any{"type": "object"},
-		"codec": stringSchema(), "crf": map[string]any{"type": "integer"}, "preset": stringSchema(), "profile": stringSchema(), "remotion_timeout_ms": map[string]any{"type": "integer"}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1},
+		"overlays":         map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+		"captions":         map[string]any{"type": "object", "description": "{timing_path or words, words_per_page, highlight_color, position: bottom|center|top, font_size}"},
+		"subtitle_style":   map[string]any{"type": "object"},
+		"codec":            stringSchema(), "crf": map[string]any{"type": "integer"}, "preset": stringSchema(), "profile": stringSchema(), "remotion_timeout_ms": map[string]any{"type": "integer"}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1},
+		"videoSrc": stringSchema(), "titleFontSize": numberSchema(), "titleWidth": numberSchema(), "signalLineCount": numberSchema(), "soundtrack": map[string]any{"type": "object"}, "music": map[string]any{"type": "object"},
+		"wordsPerPage": numberSchema(), "fontSize": numberSchema(), "highlightColor": stringSchema(), "captionColor": stringSchema(), "captionBackgroundColor": stringSchema(),
+		"tagline": stringSchema(), "taglineInSeconds": numberSchema(), "taglineOutSeconds": numberSchema(), "topPx": numberSchema(), "accentColor": stringSchema(),
+		"productImage": stringSchema(), "productName": stringSchema(), "price": stringSchema(), "closer": stringSchema(),
+		"backgroundSrc": stringSchema(), "backgroundInSeconds": numberSchema(), "curtainStartSeconds": numberSchema(), "curtainEndSeconds": numberSchema(), "clips": map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+		"lyrics": map[string]any{"type": "array", "items": map[string]any{"type": "object"}}, "bottomY": numberSchema(),
+		"text": stringSchema(), "palette": stringSchema(), "fadeInSeconds": numberSchema(), "holdSeconds": numberSchema(), "fadeOutSeconds": numberSchema(),
+		"words": map[string]any{"type": "array", "items": map[string]any{"type": "object"}}, "color": stringSchema(), "backgroundColor": stringSchema(), "fontFamily": stringSchema(), "wordSeparator": stringSchema(), "position": stringSchema(),
+		"title": stringSchema(), "subtitle": stringSchema(), "textColor": stringSchema(), "subtitleColor": stringSchema(), "scrimBackground": stringSchema(),
 	}},
-	"subtitle_gen": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"segments"}, "properties": map[string]any{
+	"subtitle_gen": map[string]any{"type": "object", "additionalProperties": false, "anyOf": []any{map[string]any{"required": []string{"segments"}}, map[string]any{"required": []string{"timing_path"}}}, "properties": map[string]any{"timing_path": map[string]any{"type": "string", "description": "a voice tool's narration timing record: cues from its lines and words"}, "layout": map[string]any{"enum": []string{"horizontal", "vertical"}, "default": "horizontal", "description": "words a cue: horizontal 8, vertical 4 (unless max_words_per_cue)"},
 		"segments": map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{"text": stringSchema(), "start": map[string]any{"type": "number", "description": "Start time in seconds"}, "end": map[string]any{"type": "number", "description": "End time in seconds"}, "words": map[string]any{"type": "array", "items": map[string]any{"type": "object", "properties": map[string]any{"word": stringSchema(), "start": map[string]any{"type": "number"}, "end": map[string]any{"type": "number"}, "startMs": map[string]any{"type": "integer"}, "endMs": map[string]any{"type": "integer"}}}}}}}, "format": map[string]any{"enum": []string{"srt", "vtt", "json"}, "default": "srt"},
 		"output_path": map[string]any{"type": "string"}, "max_chars_per_line": map[string]any{"type": "integer", "default": 42}, "max_words_per_cue": map[string]any{"type": "integer", "default": 8},
 		"highlight_style": map[string]any{"enum": []string{"none", "word_by_word", "karaoke"}, "default": "none"}, "corrections": map[string]any{"type": "object"},
 	}},
 	"ffmpeg_caption_burn": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"input_path", "output_path"}, "properties": map[string]any{
-		"input_path": map[string]any{"type": "string"}, "output_path": map[string]any{"type": "string"}, "segments": map[string]any{"type": "array"},
+		"input_path": map[string]any{"type": "string"}, "output_path": map[string]any{"type": "string"}, "segments": map[string]any{"type": "array"}, "timing_path": map[string]any{"type": "string", "description": "a voice tool's narration timing record"},
 		"srt_path": map[string]any{"type": "string"}, "words_per_page": map[string]any{"type": "integer", "default": 4}, "font_size": map[string]any{"type": "integer", "default": 52},
 		"highlight_color": map[string]any{"type": "string", "default": "#22D3EE"},
 	}},
@@ -987,19 +967,19 @@ var schemas = map[string]any{
 	"wikimedia": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"query"}, "properties": map[string]any{
 		"query": map[string]any{"type": "string"}, "kind": map[string]any{"enum": []string{"video", "image", "any"}, "default": "video"}, "per_page": map[string]any{"type": "integer", "default": 5}, "output_path": map[string]any{"type": "string"},
 	}},
-	"edge_tts": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"text"}, "properties": map[string]any{
+	"edge_tts": map[string]any{"type": "object", "additionalProperties": false, "oneOf": textOrLines(), "properties": map[string]any{"lines": narrationLinesSchema(), "pause_seconds": map[string]any{"type": "number", "minimum": 0, "maximum": 10, "default": 0.35}, "timing_path": map[string]any{"type": "string"},
 		"text": map[string]any{"type": "string"}, "voice": map[string]any{"type": "string", "default": "en-US-ChristopherNeural"}, "rate": map[string]any{"type": "string", "default": "+0%"},
 		"volume": map[string]any{"type": "string", "default": "+0%"}, "output_path": map[string]any{"type": "string"}, "timeout_seconds": map[string]any{"type": "integer"},
 	}},
-	"openai_tts": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"text"}, "properties": map[string]any{
+	"openai_tts": map[string]any{"type": "object", "additionalProperties": false, "oneOf": textOrLines(), "properties": map[string]any{"lines": narrationLinesSchema(), "pause_seconds": map[string]any{"type": "number", "minimum": 0, "maximum": 10, "default": 0.35}, "timing_path": map[string]any{"type": "string"},
 		"text": map[string]any{"type": "string"}, "voice": map[string]any{"type": "string", "default": "alloy"}, "model": map[string]any{"type": "string", "default": "gpt-4o-mini-tts"},
 		"response_format": map[string]any{"enum": []string{"mp3", "opus", "aac", "flac", "wav", "pcm"}, "default": "mp3"}, "instructions": map[string]any{"type": "string"}, "speed": map[string]any{"type": "number", "default": 1.0}, "output_path": map[string]any{"type": "string"},
 	}},
-	"elevenlabs_tts": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"text"}, "properties": map[string]any{
+	"elevenlabs_tts": map[string]any{"type": "object", "additionalProperties": false, "oneOf": textOrLines(), "properties": map[string]any{"lines": narrationLinesSchema(), "pause_seconds": map[string]any{"type": "number", "minimum": 0, "maximum": 10, "default": 0.35}, "timing_path": map[string]any{"type": "string"},
 		"text": map[string]any{"type": "string"}, "voice_id": map[string]any{"type": "string"}, "model_id": map[string]any{"type": "string", "default": "eleven_multilingual_v2"},
 		"stability": map[string]any{"type": "number", "default": 0.5}, "similarity_boost": map[string]any{"type": "number", "default": 0.75}, "output_format": map[string]any{"type": "string", "default": "mp3_44100_128"}, "output_path": map[string]any{"type": "string"},
 	}},
-	"piper_tts": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"text"}, "properties": map[string]any{
+	"piper_tts": map[string]any{"type": "object", "additionalProperties": false, "oneOf": textOrLines(), "properties": map[string]any{"lines": narrationLinesSchema(), "pause_seconds": map[string]any{"type": "number", "minimum": 0, "maximum": 10, "default": 0.35}, "timing_path": map[string]any{"type": "string"},
 		"text": map[string]any{"type": "string"}, "model": map[string]any{"type": "string", "default": "en_US-lessac-medium"}, "speaker_id": map[string]any{"type": "integer", "default": 0},
 		"length_scale": map[string]any{"type": "number", "default": 1.0}, "sentence_silence": map[string]any{"type": "number", "default": 0.3}, "output_path": map[string]any{"type": "string"},
 	}},
@@ -1059,6 +1039,17 @@ var schemas = map[string]any{
 		"max_cost": map[string]any{"type": "number", "minimum": 0}, "preferred_provider": map[string]any{"type": "string"}, "allowed_providers": map[string]any{"type": "array", "items": stringSchema()},
 		"source_type": map[string]any{"enum": []string{"text_to_video", "image_to_video", "stock", "any"}}, "require_audio": map[string]any{"type": "boolean"},
 	}},
+	"script_check": map[string]any{"type": "object", "additionalProperties": false, "anyOf": []any{map[string]any{"required": []string{"script_path"}}, map[string]any{"required": []string{"script"}}}, "properties": map[string]any{
+		"script_path": stringSchema(), "script": map[string]any{"type": "object", "description": "a script record (schemas/artifacts/script.schema.json)"},
+		"duration_seconds": map[string]any{"type": "number", "exclusiveMinimum": 0}, "words_per_minute": map[string]any{"type": "number", "minimum": 60, "maximum": 260, "default": 150},
+		"hook_seconds": map[string]any{"type": "number", "exclusiveMinimum": 0, "default": 5}, "max_line_chars": map[string]any{"type": "integer", "minimum": 10, "default": 42},
+		"structure": map[string]any{"type": "object", "description": "the pipeline structure's beats: {beats: [{id, share}]}"},
+	}},
+	"plan_check": map[string]any{"type": "object", "additionalProperties": false, "anyOf": []any{map[string]any{"required": []string{"scene_plan_path"}}, map[string]any{"required": []string{"scene_plan"}}}, "properties": map[string]any{
+		"scene_plan_path": stringSchema(), "scene_plan": map[string]any{"type": "object", "description": "a scene_plan record"}, "timing_path": stringSchema(),
+		"delivery_promise": map[string]any{"enum": []string{"motion_led", "source_led", "data_explainer", "teacher_explainer", "screen_demo", "avatar_presenter", "hybrid", "localization"}},
+		"duration_seconds": map[string]any{"type": "number", "exclusiveMinimum": 0},
+	}},
 }
 
 // resultSchemas describe each tool's successful result exactly: every
@@ -1066,6 +1057,8 @@ var schemas = map[string]any{
 // are audited against the real results by TestRunResultsConformToSchemas,
 // which runs every tool offline and validates what it returns.
 var resultSchemas = map[string]any{
+	"script_check": objectSchema([]string{"operation", "words", "spoken_seconds", "fit", "hook", "sections", "findings"}, map[string]any{"operation": stringSchema(), "words": integerSchema(), "words_per_minute": numberSchema(), "spoken_seconds": numberSchema(), "target_seconds": numberSchema(), "fit": stringSchema(), "hook": map[string]any{"type": "object"}, "sections": map[string]any{"type": "array"}, "findings": map[string]any{"type": "array"}}),
+	"plan_check":   objectSchema([]string{"operation", "scenes", "motion_share", "slideshow_risk", "findings"}, map[string]any{"operation": stringSchema(), "scenes": integerSchema(), "scene_types": integerSchema(), "motion_share": numberSchema(), "slideshow_risk": stringSchema(), "ends_at": numberSchema(), "coverage": map[string]any{"type": "object"}, "unavailable": map[string]any{"type": "array"}, "findings": map[string]any{"type": "array"}}),
 	"media_probe": objectSchema([]string{"input", "sha256", "format", "video_streams", "audio_streams", "warnings"}, map[string]any{
 		"input": stringSchema(), "sha256": map[string]any{"type": "string", "pattern": "^[0-9a-f]{64}$"}, "format": map[string]any{"type": "object", "required": []string{"duration", "format_name", "size", "bit_rate"}}, "video": map[string]any{"type": "object"}, "video_streams": map[string]any{"type": "array", "items": map[string]any{"type": "object", "required": []string{"index", "codec", "width", "height", "pixel_format", "fps", "reported_frame_rate", "rotation"}}}, "audio": map[string]any{"type": "array"}, "audio_streams": map[string]any{"type": "array", "items": map[string]any{"type": "object", "required": []string{"index", "codec", "sample_rate", "channels", "channel_layout"}}}, "warnings": stringArraySchema(),
 	}),
@@ -1095,7 +1088,7 @@ var resultSchemas = map[string]any{
 		"levels": describedSchema(objectArraySchema([]string{"timestamp"}, map[string]any{"timestamp": numberSchema(), "mean_volume_db": stringSchema(), "max_volume_db": stringSchema(), "error": stringSchema()}), "audio_levels"),
 	}),
 	"output_review": objectSchema([]string{"execution_status", "review_status", "gates", "samples", "volume", "output_facts"}, map[string]any{
-		"execution_status": map[string]any{"const": "succeeded"}, "review_status": enumSchema("pass", "warn", "fail"), "gates": map[string]any{"type": "array", "items": map[string]any{"type": "object", "required": []string{"name", "status"}}}, "samples": map[string]any{"type": "array"}, "volume": map[string]any{"type": "object"}, "output_facts": map[string]any{"type": "object"},
+		"execution_status": map[string]any{"const": "succeeded"}, "review_status": enumSchema("pass", "warn", "fail"), "gates": map[string]any{"type": "array", "items": map[string]any{"type": "object", "required": []string{"name", "status"}}}, "samples": map[string]any{"type": "array"}, "volume": map[string]any{"type": "object"}, "output_facts": map[string]any{"type": "object"}, "contact_sheet": map[string]any{"type": "object"}, "coverage": map[string]any{"type": "object"},
 	}),
 	"source_edit": mediaOutputResultSchema([]string{"realized_segments", "silent_inputs_filled"}),
 	"video_trimmer": objectSchema([]string{"operation", "output"}, map[string]any{
@@ -1173,6 +1166,9 @@ var resultSchemas = map[string]any{
 	"edge_tts": objectSchema([]string{"output", "voice", "format", "provider", "size_bytes"}, map[string]any{
 		"output": stringSchema(), "voice": stringSchema(), "format": stringSchema(), "provider": stringSchema(), "size_bytes": integerSchema(),
 		"duration_seconds": describedSchema(numberSchema(), "measured from the written file; absent when it could not be probed"),
+		"words":            describedSchema(objectArraySchema([]string{"word", "start", "end"}, map[string]any{"word": stringSchema(), "start": numberSchema(), "end": numberSchema()}), "the service's word timings in seconds"),
+		"timing_path":      describedSchema(stringSchema(), "with lines: the narration_timing record"),
+		"line_count":       describedSchema(integerSchema(), "with lines: how many lines were voiced"),
 	}),
 	"openai_tts":     ttsResultSchema("voice"),
 	"elevenlabs_tts": ttsResultSchema("voice_id"),
@@ -1196,6 +1192,8 @@ func ttsResultSchema(voiceField string) map[string]any {
 		"provider": stringSchema(), "model": stringSchema(), "format": stringSchema(), "output": stringSchema(),
 		"text_length":            describedSchema(integerSchema(), "bytes of input text"),
 		"audio_duration_seconds": describedSchema(numberSchema(), "measured from the written file; 0 when it could not be probed"),
+		"timing_path":            describedSchema(stringSchema(), "with lines: the narration_timing record"),
+		"line_count":             describedSchema(integerSchema(), "with lines: how many lines were voiced"),
 	}
 	if voiceField == "speaker_id" {
 		properties[voiceField] = integerSchema()
@@ -1249,52 +1247,36 @@ func describedSchema(schema map[string]any, description string) map[string]any {
 func nonBlankStringSchema() map[string]any {
 	return map[string]any{"type": "string", "minLength": 1}
 }
+
+// explainerCutSchema describes a composer cut for agents. The composer's own
+// contract checks every field before rendering, so this schema lists the
+// common fields and scene types and lets scene-specific fields through.
 func explainerCutSchema(start, end string) map[string]any {
-	common := func(extra map[string]any) map[string]any {
-		properties := map[string]any{
-			"id": stringSchema(), "type": nonBlankStringSchema(),
-			start:             map[string]any{"type": "number", "minimum": 0},
-			end:               map[string]any{"type": "number", "exclusiveMinimum": 0},
-			"backgroundColor": stringSchema(), "color": stringSchema(),
-		}
-		for key, value := range extra {
-			properties[key] = value
-		}
-		return properties
+	return map[string]any{
+		"type": "object", "additionalProperties": true,
+		"description": "One scene. Give in/out seconds, or lines (narration line ids, with a top-level timing_path). Scene types and their fields: guidance/runtimes/scene-types.md.",
+		"properties": map[string]any{
+			"id":     stringSchema(),
+			"type":   map[string]any{"enum": []string{"text_card", "hero_title", "section_title", "callout", "stat_card", "stat_reveal", "kpi_grid", "progress_bar", "comparison", "bar_chart", "line_chart", "pie_chart", "terminal_scene", "screenshot_scene", "anime_scene", "provider_chip", "image", "video"}},
+			start:    map[string]any{"type": "number", "minimum": 0},
+			end:      map[string]any{"type": "number", "exclusiveMinimum": 0},
+			"lines":  map[string]any{"type": "array", "minItems": 1, "items": stringSchema(), "description": "narration line ids this scene covers"},
+			"source": stringSchema(), "media_kind": map[string]any{"enum": []string{"image", "video"}},
+			"animation":           map[string]any{"enum": []string{"zoom-in", "zoom-out", "pan-left", "pan-right", "ken-burns", "ken-burns-slow-zoom", "parallax", "static", "none", "drift-up", "drift-down"}},
+			"transition":          map[string]any{"enum": []string{"cut", "fade", "slide", "wipe", "flip", "clock-wipe", "iris"}},
+			"transition_duration": map[string]any{"type": "number", "exclusiveMinimum": 0, "maximum": 3},
+		},
 	}
-	return map[string]any{"oneOf": []any{
-		objectSchema([]string{"type", start, end, "text"}, common(map[string]any{
-			"type": map[string]any{"const": "text_card"}, "text": nonBlankStringSchema(),
-			"fontSize": map[string]any{"type": "number", "exclusiveMinimum": 0},
-		})),
-		objectSchema([]string{"type", start, end, "text"}, common(map[string]any{
-			"type": map[string]any{"const": "hero_title"}, "text": nonBlankStringSchema(),
-			"subtitle": nonBlankStringSchema(),
-		})),
-		objectSchema([]string{"type", start, end, "stat"}, common(map[string]any{
-			"type": map[string]any{"const": "stat_card"}, "stat": nonBlankStringSchema(),
-			"label": nonBlankStringSchema(),
-		})),
-		objectSchema([]string{"type", start, end, "source", "media_kind"}, common(map[string]any{
-			"type": map[string]any{"const": "media"}, "source": nonBlankStringSchema(),
-			"media_kind": map[string]any{"enum": []string{"image", "video"}},
-			"fit":        map[string]any{"enum": []string{"contain", "cover"}},
-			"title":      nonBlankStringSchema(), "muted": map[string]any{"type": "boolean"},
-		})),
-	}}
 }
+
 func explainerAudioSchema() map[string]any {
-	track := func() map[string]any {
-		return objectSchema([]string{"src"}, map[string]any{
-			"src":    nonBlankStringSchema(),
-			"volume": map[string]any{"type": "number", "minimum": 0, "maximum": 1},
-			"loop":   map[string]any{"type": "boolean"},
-		})
-	}
 	return map[string]any{"type": "object", "additionalProperties": false, "minProperties": 1, "properties": map[string]any{
-		"narration": track(), "music": track(),
+		"narration": map[string]any{"description": "the narration file, or {src, volume}"},
+		"music":     map[string]any{"type": "object", "description": "{src, volume, loop, offset_seconds, fade_in_seconds, fade_out_seconds, duck_under_narration (needs timing_path), duck_level}"},
+		"sfx":       map[string]any{"type": "array", "items": objectSchema([]string{"src", "at_seconds"}, map[string]any{"src": stringSchema(), "at_seconds": map[string]any{"type": "number", "minimum": 0}, "gain_db": numberSchema()})},
 	}}
 }
+
 func stringArraySchema() map[string]any {
 	return map[string]any{"type": "array", "items": stringSchema()}
 }
@@ -1329,6 +1311,9 @@ func execute(tool, op string, data []byte) (any, []string, error) {
 }
 
 func executeContext(ctx context.Context, tool, op string, data []byte) (any, []string, error) {
+	if narrationRequested(tool, data) {
+		return doNarrationContext(ctx, tool, op, data)
+	}
 	switch tool {
 	case "media_probe":
 		return doMediaProbeContext(ctx, op, data)
@@ -1396,6 +1381,10 @@ func executeContext(ctx context.Context, tool, op string, data []byte) (any, []s
 		return doImageSelector(op, data)
 	case "video_selector":
 		return doVideoSelector(op, data)
+	case "script_check":
+		return doScriptCheckContext(ctx, op, data)
+	case "plan_check":
+		return doPlanCheckContext(ctx, op, data)
 	}
 	return nil, nil, failure("invalid_request", "unknown tool: "+tool, nil)
 }

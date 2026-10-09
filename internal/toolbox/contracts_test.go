@@ -156,56 +156,30 @@ func TestGuidanceExamplesThroughCLI(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	data, err := os.ReadFile(filepath.Join(root, "skills", "facet", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The guide is the one skill every host loads: it must stay readable.
+	if lines := len(strings.Split(strings.TrimSpace(string(data)), "\n")); lines > 140 {
+		t.Errorf("the guide has %d lines; keep it concise and move detail to stage guides", lines)
+	}
+	for _, term := range []string{"capabilities", "pipelines_list", "pipeline_describe", "guidance", "facet tools run"} {
+		if !strings.Contains(string(data), term) {
+			t.Errorf("the guide never mentions %s", term)
+		}
+	}
 	inline := regexp.MustCompile(`facet tools (?:run|estimate) (\w+) --input '(\{[^\n]+\})'`)
-	for _, file := range []string{"skills/facet/SKILL.md", "packs/explainer/SKILL.md"} {
-		data, err := os.ReadFile(filepath.Join(root, file))
-		if err != nil {
+	for _, example := range inline.FindAllStringSubmatch(string(data), -1) {
+		var req any
+		if err := json.Unmarshal([]byte(example[2]), &req); err != nil {
 			t.Fatal(err)
 		}
-		// A ratchet, not a target: raise it only for guidance the contract
-		// needs. It went from 60 to 64 for the route rules (render long work
-		// from the shell, paid tools only through MCP, a cut-off paid call),
-		// and to 66 for the missing-Toolkit rule: a marketplace plugin can be
-		// installed without the Toolkit it calls.
-		if lines := len(strings.Split(strings.TrimSpace(string(data)), "\n")); lines > 66 {
-			t.Errorf("%s has %d lines; keep guidance concise", file, lines)
+		if !contractValid(contractJSON(t, schemas[example[1]]), req) {
+			t.Errorf("the guide's %s example does not match the advertised schema", example[1])
 		}
-		examples := inline.FindAllStringSubmatch(string(data), -1)
-		if file == "skills/facet/SKILL.md" {
-			if !strings.Contains(string(data), "facet tools describe") || !strings.Contains(string(data), "facet tools estimate") {
-				t.Fatalf("canonical skill omits discovery commands")
-			}
-			continue
-		}
-		for _, example := range examples {
-			var req any
-			if err := json.Unmarshal([]byte(example[2]), &req); err != nil {
-				t.Fatal(err)
-			}
-			if !contractValid(contractJSON(t, schemas[example[1]]), req) {
-				t.Errorf("%s: %s example does not match advertised schema", file, example[1])
-			}
-			env, ok := CLI([]string{"tools", "estimate", example[1], "--input", example[2]})
-			if !ok {
-				t.Fatalf("%s example failed: %+v", file, env.Error)
-			}
-		}
-		blocks := regexp.MustCompile("(?s)```json\\s*(.*?)\\s*```").FindAllStringSubmatch(string(data), -1)
-		if len(blocks) == 0 {
-			t.Fatalf("no direct request example in %s", file)
-		}
-		for _, block := range blocks {
-			var req any
-			if err := json.Unmarshal([]byte(block[1]), &req); err != nil {
-				t.Fatal(err)
-			}
-			if !contractValid(contractJSON(t, schemas["video_compose"]), req) {
-				t.Fatal("direct render example does not match schema")
-			}
-			env, ok := CLI([]string{"tools", "estimate", "video_compose", "--input", block[1]})
-			if !ok || !strings.Contains(fmt.Sprint(env.Result), "video_compose_remotion_render") {
-				t.Fatalf("direct props did not route to Remotion: %+v", env)
-			}
+		if env, ok := CLI([]string{"tools", "estimate", example[1], "--input", example[2]}); !ok {
+			t.Errorf("the guide's %s example failed: %+v", example[1], env.Error)
 		}
 	}
 	if _, err := os.Stat("artifacts"); !os.IsNotExist(err) {

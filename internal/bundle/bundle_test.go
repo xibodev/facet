@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -40,8 +41,8 @@ func filesByPath(t *testing.T, target Target) map[string]File {
 	return out
 }
 
-// Every target receives the same core skill and one skill per retained pack,
-// byte for byte, read from the embedded canonical assets.
+// Every target receives the guide as the core skill, byte for byte, read from
+// the embedded canonical assets, and nothing else as a skill.
 func TestFilesProjectCanonicalGuidanceForEveryTarget(t *testing.T) {
 	for _, target := range Targets() {
 		files := filesByPath(t, target)
@@ -49,80 +50,58 @@ func TestFilesProjectCanonicalGuidanceForEveryTarget(t *testing.T) {
 		if !ok || !bytes.Equal(core.Content, canonical(t, "skills/facet/SKILL.md")) || core.Kind != KindSkill {
 			t.Errorf("%s: core skill missing or drifted from the canonical asset", target)
 		}
-		packs := 0
-		for _, pack := range facet.RetainedPacks() {
-			packs++
-			for _, guidance := range pack.Guidance {
-				rel := strings.TrimPrefix(guidance.Path, "packs/"+pack.ID+"/")
-				got, ok := files["skills/facet-"+pack.ID+"/"+rel]
-				if !ok {
-					t.Errorf("%s: pack guidance %s is not projected", target, guidance.Path)
-					continue
-				}
-				if !bytes.Equal(got.Content, canonical(t, guidance.Path)) || got.Kind != KindPack || got.Name != PackSkillName(pack.ID) {
-					t.Errorf("%s: %s drifted from the canonical asset", target, guidance.Path)
-				}
+		for path, f := range files {
+			if f.Kind == KindSkill && !strings.HasPrefix(path, "skills/facet/") {
+				t.Errorf("%s: unexpected skill %s; pipelines and guidance are served by facet, not installed", target, path)
 			}
-		}
-		if packs != 7 {
-			t.Errorf("retained packs = %d, want 7", packs)
-		}
-		for path := range files {
 			for _, banned := range []string{"package.json", "facet-pack.json", "AGENTS.md", "CLAUDE.md", "AGENT.md", "copilot-instructions.md"} {
 				if filepath.Base(path) == banned {
-					t.Errorf("%s: projection contains %s; packs ship guidance only and Facet never writes instruction files", target, path)
+					t.Errorf("%s: projection contains %s; Facet never writes instruction files", target, path)
 				}
 			}
 		}
 	}
 }
 
-func TestPersonaIsProjectedOnlyInValidatedFormats(t *testing.T) {
-	persona := canonical(t, "agents/facet-creative.md")
-	want := map[Target]string{
-		TargetClaude:   "agents/facet-creative.md",
-		TargetCopilot:  "agents/facet-creative.agent.md",
-		TargetOpenCode: "agents/facet-creative.md",
+// The role agents go to every target with a validated agent format; the
+// producer agent, generated from the guide, only where it can be the main
+// agent (never as a Claude Code subagent).
+func TestAgentsAreProjectedOnlyInValidatedFormats(t *testing.T) {
+	want := map[Target][]string{
+		TargetClaude:   {"agents/facet-critic.md", "agents/facet-reference-analyst.md", "agents/facet-researcher.md"},
+		TargetCopilot:  {"agents/facet-critic.agent.md", "agents/facet-reference-analyst.agent.md", "agents/facet-researcher.agent.md", "agents/facet.agent.md"},
+		TargetOpenCode: {"agents/facet-critic.md", "agents/facet-reference-analyst.md", "agents/facet-researcher.md", "agents/facet.md"},
 	}
 	for _, target := range Targets() {
-		files := filesByPath(t, target)
-		var agents []File
-		for _, f := range files {
-			if f.Kind == KindAgent {
-				agents = append(agents, f)
+		var got []string
+		for path, f := range filesByPath(t, target) {
+			if f.Kind != KindAgent {
+				continue
+			}
+			got = append(got, path)
+			fields, ok := Frontmatter(f.Content)
+			if !ok || fields["description"] == "" {
+				t.Errorf("%s: %s lacks a description", target, path)
+			}
+			if target == TargetOpenCode {
+				if _, present := fields["name"]; present {
+					t.Errorf("opencode agent %s keeps `name`, which OpenCode would pass to the model provider", path)
+				}
+				mode := "subagent"
+				if path == "agents/facet.md" {
+					mode = "primary"
+				}
+				if fields["mode"] != mode {
+					t.Errorf("opencode agent %s mode = %q, want %q", path, fields["mode"], mode)
+				}
 			}
 		}
-		path, supported := want[target]
-		if supported != HasPersona(target) {
-			t.Errorf("%s: HasPersona = %v", target, HasPersona(target))
+		sort.Strings(got)
+		if strings.Join(got, ",") != strings.Join(want[target], ",") {
+			t.Errorf("%s: agents = %v, want %v", target, got, want[target])
 		}
-		if !supported {
-			if len(agents) != 0 {
-				t.Errorf("%s: persona projected without a validated agent format", target)
-			}
-			continue
-		}
-		if len(agents) != 1 || agents[0].Path != path {
-			t.Fatalf("%s: agents = %+v, want %s", target, agents, path)
-		}
-		fields, ok := Frontmatter(agents[0].Content)
-		if !ok || fields["description"] == "" {
-			t.Errorf("%s: persona lacks a description", target)
-		}
-		switch target {
-		case TargetOpenCode:
-			if _, present := fields["name"]; present {
-				t.Error("opencode persona keeps `name`, which OpenCode would pass to the model provider")
-			}
-			_, canonicalBody, _ := splitFrontmatter(persona)
-			_, body, _ := splitFrontmatter(agents[0].Content)
-			if !bytes.Equal(persona[canonicalBody:], agents[0].Content[body:]) {
-				t.Error("opencode persona body drifted from the canonical persona")
-			}
-		default:
-			if !bytes.Equal(agents[0].Content, persona) || fields["name"] != PersonaName {
-				t.Errorf("%s: persona drifted from the canonical asset", target)
-			}
+		if HasAgents(target) != (len(want[target]) > 0) {
+			t.Errorf("%s: HasAgents = %v", target, HasAgents(target))
 		}
 	}
 }
@@ -146,20 +125,14 @@ func TestProjectedSkillsSatisfyEveryLoader(t *testing.T) {
 	}
 }
 
-func TestSiblingReferencesResolveInsideEachSkill(t *testing.T) {
-	files := filesByPath(t, TargetClaude)
-	explainer := string(files["skills/facet-explainer/SKILL.md"].Content)
-	for _, sibling := range []string{"SCENE-TYPES.md", "NARRATED-WALKTHROUGH.md"} {
-		if !strings.Contains(explainer, "`"+sibling+"`") {
-			t.Errorf("explainer skill does not reference %s by its skill-relative name", sibling)
-		}
-		if _, ok := files["skills/facet-explainer/"+sibling]; !ok {
-			t.Errorf("%s is not installed beside the explainer skill", sibling)
-		}
-	}
-	for path, f := range files {
-		if strings.Contains(string(f.Content), "packs/") {
-			t.Errorf("%s still references a repository pack path", path)
+// The projected guide points to bundled guidance by its served path, never to a
+// repository path that no CLI installs.
+func TestProjectedGuidanceReferencesNoRepositoryPaths(t *testing.T) {
+	for _, target := range Targets() {
+		for path, f := range filesByPath(t, target) {
+			if strings.Contains(string(f.Content), "packs/") {
+				t.Errorf("%s: %s still references a removed pack path", target, path)
+			}
 		}
 	}
 }

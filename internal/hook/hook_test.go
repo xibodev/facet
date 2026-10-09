@@ -54,9 +54,9 @@ func TestPaidInCommand(t *testing.T) {
 	for command, want := range map[string][]string{
 		"facet tools run sora_video --input request.json":                                         {"sora_video"},
 		"cd project && facet tools run kling_video --input '{\"prompt\":\"x\"}'":                  {"kling_video"},
-		"facet tools run veo --input r.json":                                                      {"gflow_video"}, // an alias
-		"facet tools run SORA_VIDEO --input r.json":                                               {"sora_video"},  // any case
-		"facet tools run 'elevenlabs' --input r.json":                                             {"elevenlabs_tts"},
+		"facet tools run veo --input r.json":                                                      nil,            // no aliases: an unknown tool runs nothing
+		"facet tools run SORA_VIDEO --input r.json":                                               {"sora_video"}, // any case
+		"facet tools run 'elevenlabs_tts' --input r.json":                                         {"elevenlabs_tts"},
 		"/home/a/.facet/current/bin/facet tools run openai_image --input r.json":                  {"openai_image"},
 		`& "C:\Users\test user\.facet\current\bin\facet.exe" tools run flux_image --input r.json`: {"flux_image"},
 		"npx @xibodev/facet tools run openai_tts --input r.json":                                  {"openai_tts"},

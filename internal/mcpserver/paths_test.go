@@ -124,6 +124,8 @@ func TestConfineArguments(t *testing.T) {
 		{"numbers keep their spelling", `{"start_seconds":1.50,"seed":9007199254740993}`, map[string]any{"start_seconds": json.Number("1.50"), "seed": json.Number("9007199254740993")}},
 		{"a blank path is left for the tool to report", `{"input_path":"  "}`, map[string]any{"input_path": "  "}},
 		{"clips resolve item by item", `{"clips":["a.mp4","b/c.mp4"]}`, map[string]any{"clips": []any{inside("a.mp4"), inside("b", "c.mp4")}}},
+		{"an input outside the root", `{"input_path":` + quote(filepath.Join(parent, "x.mp4")) + `}`, map[string]any{"input_path": filepath.Join(parent, "x.mp4")}},
+		{"a nested input outside", `{"segments":[{"input":"../../library/a.mp4"}]}`, nil},
 	}
 	for _, c := range allowed {
 		t.Run(c.name, func(t *testing.T) {
@@ -155,11 +157,11 @@ func TestConfineArguments(t *testing.T) {
 	}{
 		{"a leading parent segment", `{"output_path":"../escaped.mp4"}`, "output_path"},
 		{"a parent segment deeper in", `{"output_path":"renders/../../deep.mp4"}`, "output_path"},
-		{"an absolute path outside", `{"input_path":` + quote(filepath.Join(parent, "x.mp4")) + `}`, "input_path"},
-		{"a nested value", `{"segments":[{"input":"ok.mp4"},{"input":"../../evil.mp4"}]}`, "segments[1].input"},
-		{"an array item", `{"clips":["ok.mp4","../evil.mp4"]}`, "clips[1]"},
-		{"an unknown nested object", `{"edit_decisions":{"cuts":[{"path":"../x.mp4"}]}}`, "edit_decisions.cuts[0].path"},
-		{"a file URL outside", `{"input":` + quote(fileURL(filepath.Join(parent, "x.mp4"))) + `}`, "input"},
+		{"an absolute output outside", `{"output_path":` + quote(filepath.Join(parent, "x.mp4")) + `}`, "output_path"},
+		{"a nested output", `{"segments":[{"output":"ok.mp4"},{"output":"../../evil.mp4"}]}`, "segments[1].output"},
+
+		{"an output in an unknown nested object", `{"edit_decisions":{"cuts":[{"output_path":"../x.mp4"}]}}`, "edit_decisions.cuts[0].output_path"},
+		{"an output file URL outside", `{"output":` + quote(fileURL(filepath.Join(parent, "x.mp4"))) + `}`, "output"},
 		{"a URL as an output", `{"output_path":"https://example.com/upload"}`, "output_path"},
 		{"an FFmpeg protocol as an input", `{"input_path":"concat:a.mp4|b.mp4"}`, "input_path"},
 		{"a remote URL as an input file", `{"input":"http://example.com/a.mp4"}`, "input"},
@@ -167,7 +169,7 @@ func TestConfineArguments(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		refused = append(refused,
 			struct{ name, args, at string }{"a drive-relative path", `{"input":"C:secret.mp4"}`, "input"},
-			struct{ name, args, at string }{"another drive", `{"input":"Q:\\x.mp4"}`, "input"},
+			struct{ name, args, at string }{"an output on another drive", `{"output":"Q:\\x.mp4"}`, "output"},
 			struct{ name, args, at string }{"a network share", `{"input":"\\\\attacker.invalid\\share\\x.mp4"}`, "input"},
 			struct{ name, args, at string }{"a network share by file URL", `{"input":"file://attacker.invalid/share/x.mp4"}`, "input"},
 			struct{ name, args, at string }{"a device name", `{"output_path":"NUL"}`, "output_path"},
@@ -380,48 +382,6 @@ func TestResolveRootNeedsAnExistingDirectory(t *testing.T) {
 	}
 	if _, err := newServer(context.Background(), Options{Root: filepath.Join(dir, "missing")}); err == nil {
 		t.Error("the server started with a root that does not exist")
-	}
-}
-
-func TestConfineAssessment(t *testing.T) {
-	root := testRoot(t)
-	request := decodeArgs(t, `{
-		"method":"content-repurpose",
-		"inputs":{"source_media":"clip.mp4","visual_assets":["a.png","https://example.com/b.png"],"script":"../prose is not a path"},
-		"operation_requests":{"source_edit":{"segments":[{"input":"clip.mp4","start":0,"end":1}],"output":"out.mp4"}}
-	}`)
-	got, refusal := confineAssessment(fixedRoot(root), request)
-	if refusal != nil {
-		t.Fatalf("refused: %s", refusal.message())
-	}
-	inputs := got["inputs"].(map[string]any)
-	if !samePath(inputs["source_media"].(string), filepath.Join(root, "clip.mp4")) {
-		t.Errorf("file input not resolved: %v", inputs["source_media"])
-	}
-	assets := inputs["visual_assets"].([]any)
-	if !samePath(assets[0].(string), filepath.Join(root, "a.png")) || assets[1] != "https://example.com/b.png" {
-		t.Errorf("file list not resolved item by item: %v", assets)
-	}
-	if inputs["script"] != "../prose is not a path" {
-		t.Errorf("a text input was treated as a path: %v", inputs["script"])
-	}
-	edit := got["operation_requests"].(map[string]any)["source_edit"].(map[string]any)
-	segment := edit["segments"].([]any)[0].(map[string]any)
-	if !samePath(segment["input"].(string), filepath.Join(root, "clip.mp4")) || !samePath(edit["output"].(string), filepath.Join(root, "out.mp4")) {
-		t.Errorf("operation request paths not resolved: %#v", edit)
-	}
-	if request["inputs"].(map[string]any)["source_media"] != "clip.mp4" {
-		t.Error("the caller's request was modified")
-	}
-
-	for _, escaping := range []string{
-		`{"inputs":{"source_media":"../x.mp4"}}`,
-		`{"inputs":{"visual_assets":["ok.png","../x.png"]}}`,
-		`{"operation_requests":{"video_stitch":{"operation":"stitch","clips":["../x.mp4"]}}}`,
-	} {
-		if _, refusal := confineAssessment(fixedRoot(root), decodeArgs(t, escaping)); refusal == nil {
-			t.Errorf("allowed %s", escaping)
-		}
 	}
 }
 

@@ -1,4 +1,7 @@
-// Package facet contains the canonical creative assets shared by Facet hosts.
+// Package facet contains the production knowledge every Facet host shares: the
+// guide, role agents, pipelines, stage guides, stances, craft and vendor
+// knowledge, styles and record schemas. It is compiled into the binary, so a
+// projection or a read never depends on the working directory.
 package facet
 
 import (
@@ -10,128 +13,57 @@ import (
 	"strings"
 )
 
-// Assets is compiled from the same files used by the CLI bundle and module.
-// It is independent of the executable's working directory.
+// Assets holds every bundled file. Vendor knowledge keeps its own folder
+// layout, so guidance is embedded with all: to include every file in it.
 //
-//go:embed skills packs agents schemas/tools
+//go:embed skills agents pipelines all:guidance styles schemas
 var Assets embed.FS
 
-type GuidanceAsset struct {
-	ID      string
-	Title   string
-	Summary string
-	Path    string
-}
+// GuidanceRoots are the top-level folders the guidance reader serves.
+var GuidanceRoots = []string{"skills", "agents", "pipelines", "guidance", "styles", "schemas"}
 
-type Pack struct {
-	ID       string
-	Title    string
-	Summary  string
-	Guidance []GuidanceAsset
-}
+var guidanceExtensions = map[string]bool{".md": true, ".json": true, ".yaml": true}
 
-var retainedPacks = []Pack{
-	{
-		ID: "character-animation", Title: "2D Character Animation",
-		Summary: "Produce character-led 2D animation from supplied or licensed assets with Facet.",
-		Guidance: []GuidanceAsset{{
-			ID: "facet-character-animation", Title: "2D character animation",
-			Summary: "Character-led 2D animation using supplied or licensed assets.",
-			Path:    "packs/character-animation/SKILL.md",
-		}},
-	},
-	{
-		ID: "cinematic", Title: "Cinematic & Documentary",
-		Summary: "Produce source-led documentary, montage, and cinematic edits with Facet.",
-		Guidance: []GuidanceAsset{{
-			ID: "facet-cinematic", Title: "Cinematic and documentary editing",
-			Summary: "Source-led documentary, montage, and cinematic editing guidance.",
-			Path:    "packs/cinematic/SKILL.md",
-		}},
-	},
-	{
-		ID: "explainer", Title: "Animated Explainer",
-		Summary: "Produce reviewed 2D explainers and motion graphics with Facet and Remotion.",
-		Guidance: []GuidanceAsset{
-			{
-				ID: "facet-explainer", Title: "Animated explainer",
-				Summary: "Entry guidance for reviewed 2D explainers and motion graphics.",
-				Path:    "packs/explainer/SKILL.md",
-			},
-			{
-				ID: "facet-explainer-walkthrough", Title: "Narrated explainer, end to end",
-				Summary: "Narration-first production order, timing, rendering, and verification.",
-				Path:    "packs/explainer/NARRATED-WALKTHROUGH.md",
-			},
-			{
-				ID: "facet-explainer-scene-types", Title: "Explainer scene types",
-				Summary: "Supported Explainer scene primitives and their required fields.",
-				Path:    "packs/explainer/SCENE-TYPES.md",
-			},
-		},
-	},
-	{
-		ID: "localization", Title: "Video Localization & Dubbing",
-		Summary: "Produce translated subtitles, narration, and localized video variants with Facet.",
-		Guidance: []GuidanceAsset{{
-			ID: "facet-localization", Title: "Video localization and dubbing",
-			Summary: "Translated subtitles, narration, and localized video variants.",
-			Path:    "packs/localization/SKILL.md",
-		}},
-	},
-	{
-		ID: "screen-demo", Title: "Screen Demo & Walkthrough",
-		Summary: "Produce recorded or synthetic software walkthroughs with Facet.",
-		Guidance: []GuidanceAsset{{
-			ID: "facet-screen-demo", Title: "Screen demo and walkthrough",
-			Summary: "Recorded or synthetic software demonstration guidance.",
-			Path:    "packs/screen-demo/SKILL.md",
-		}},
-	},
-	{
-		ID: "social", Title: "Social & Short-Form",
-		Summary: "Repurpose source video into reviewed short-form and vertical edits with Facet.",
-		Guidance: []GuidanceAsset{{
-			ID: "facet-social", Title: "Social and short-form editing",
-			Summary: "Source repurposing for reviewed short-form and vertical edits.",
-			Path:    "packs/social/SKILL.md",
-		}},
-	},
-	{
-		ID: "talking-head", Title: "Talking Head & Avatar",
-		Summary: "Produce presenter-led edits and consented avatar videos with Facet.",
-		Guidance: []GuidanceAsset{{
-			ID: "facet-talking-head", Title: "Talking head and avatar video",
-			Summary: "Presenter-led editing and consented avatar-video guidance.",
-			Path:    "packs/talking-head/SKILL.md",
-		}},
-	},
-}
-
-func RetainedPacks() []Pack {
-	out := make([]Pack, len(retainedPacks))
-	for i, pack := range retainedPacks {
-		out[i] = pack
-		out[i].Guidance = append([]GuidanceAsset(nil), pack.Guidance...)
+// Guidance returns one bundled file by its path, for example
+// "guidance/stages/script.md" or "pipelines/animated-explainer.yaml".
+func Guidance(name string) (string, error) {
+	name = strings.TrimSpace(strings.ReplaceAll(name, "\\", "/"))
+	name = strings.TrimPrefix(name, "/")
+	if !fs.ValidPath(name) || !guidanceExtensions[path.Ext(name)] || !underRoot(name) {
+		return "", fmt.Errorf("%q is not a bundled Facet guidance file; paths start with %s and end in .md, .json or .yaml", name, strings.Join(GuidanceRoots, "/, ")+"/")
 	}
+	data, err := Assets.ReadFile(name)
+	if err != nil {
+		return "", fmt.Errorf("no bundled Facet guidance file %q", name)
+	}
+	return string(data), nil
+}
+
+// GuidanceFiles lists every bundled guidance file under prefix ("" for all),
+// sorted.
+func GuidanceFiles(prefix string) []string {
+	prefix = strings.Trim(strings.ReplaceAll(prefix, "\\", "/"), "/")
+	var out []string
+	for _, root := range GuidanceRoots {
+		_ = fs.WalkDir(Assets, root, func(name string, entry fs.DirEntry, err error) error {
+			if err != nil || entry.IsDir() || !guidanceExtensions[path.Ext(name)] {
+				return nil
+			}
+			if prefix == "" || name == prefix || strings.HasPrefix(name, prefix+"/") {
+				out = append(out, name)
+			}
+			return nil
+		})
+	}
+	sort.Strings(out)
 	return out
 }
 
-func Guidance(name string) (string, error) {
-	name = strings.TrimSpace(name)
-	if !fs.ValidPath(name) || !(strings.HasPrefix(name, "skills/") || strings.HasPrefix(name, "packs/") || strings.HasPrefix(name, "agents/") || strings.HasPrefix(name, "schemas/")) || !(path.Ext(name) == ".md" || path.Ext(name) == ".json") {
-		return "", fmt.Errorf("invalid Facet guidance path %q", name)
+func underRoot(name string) bool {
+	for _, root := range GuidanceRoots {
+		if strings.HasPrefix(name, root+"/") {
+			return true
+		}
 	}
-	data, err := Assets.ReadFile(name)
-	return string(data), err
-}
-
-func PackNames() []string {
-	packs := RetainedPacks()
-	names := make([]string, 0, len(packs))
-	for _, pack := range packs {
-		names = append(names, pack.ID)
-	}
-	sort.Strings(names)
-	return names
+	return false
 }

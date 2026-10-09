@@ -19,13 +19,12 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/xibodev/facet/internal/routes"
 	"github.com/xibodev/facet/internal/toolbox"
 )
 
 const testTimeout = 60 * time.Second
 
-var planningTools = []string{"tools_list", "describe", "estimate", "routes_list", "routes_describe", "routes_assess"}
+var planningTools = []string{"tools_list", "describe", "estimate", "capabilities", "pipelines_list", "pipeline_describe", "guidance"}
 
 func testContext(t *testing.T) context.Context {
 	t.Helper()
@@ -699,7 +698,7 @@ func TestClientRootsConfineWhenNoRootIsSet(t *testing.T) {
 	if got := rec.received(t); len(got) != 1 || !samePath(got[0]["input"].(string), filepath.Join(firstRoot, "clip.mp4")) {
 		t.Fatalf("the client root was not used: %v", got)
 	}
-	res, env := call(t, cs, "media_probe", map[string]any{"input": "../clip.mp4"})
+	res, env := call(t, cs, "subtitle_gen", map[string]any{"segments": []any{map[string]any{"text": "hi", "start": 0, "end": 1}}, "output_path": "../escaped.srt"})
 	if !res.IsError || !strings.Contains(env.Error.Message, firstRoot) {
 		t.Fatalf("an escape from the client root was allowed or not explained: %+v", env.Error)
 	}
@@ -810,7 +809,7 @@ func TestWithoutRootsTheWorkingDirectoryConfines(t *testing.T) {
 	if len(got) != 1 || !samePath(got[0]["input"].(string), filepath.Join(root, "no-such-dir", "clip.mp4")) {
 		t.Fatalf("the working directory was not the root: %v", got)
 	}
-	res, env := call(t, cs, "media_probe", map[string]any{"input": filepath.Join(filepath.Dir(root), "x.mp4")})
+	res, env := call(t, cs, "subtitle_gen", map[string]any{"segments": []any{map[string]any{"text": "hi", "start": 0, "end": 1}}, "output_path": filepath.Join(filepath.Dir(root), "x.srt")})
 	if !res.IsError || !strings.Contains(env.Error.Message, root) {
 		t.Errorf("a path outside the working directory was allowed: %+v", env)
 	}
@@ -837,9 +836,9 @@ func TestEstimateValidatesWithoutWriting(t *testing.T) {
 	if !res.IsError || env.Error.Code != "unknown_tool" {
 		t.Errorf("unknown tool: %+v", env)
 	}
-	res, env = call(t, cs, "estimate", map[string]any{"tool": "probe", "arguments": map[string]any{}})
+	res, env = call(t, cs, "estimate", map[string]any{"tool": "media_probe", "arguments": map[string]any{}})
 	if !res.IsError || env.Tool != "media_probe" || env.Error.Code != "invalid_request" {
-		t.Errorf("an alias must estimate the canonical tool and report its validation: %+v", env)
+		t.Errorf("an estimate must report the tool's validation: %+v", env)
 	}
 }
 
@@ -867,7 +866,6 @@ func TestArgumentErrorsSpeakJSON(t *testing.T) {
 func TestPlanningTools(t *testing.T) {
 	dir := t.TempDir()
 	cs := connect(t, Options{Root: dir}, nil)
-	root, _ := resolveRoot(dir)
 
 	res, env := call(t, cs, "tools_list", nil)
 	var listing struct {
@@ -890,48 +888,22 @@ func TestPlanningTools(t *testing.T) {
 		}
 	}
 
-	if res, env := call(t, cs, "routes_list", map[string]any{}); res.IsError {
-		t.Errorf("routes_list: %+v", env.Error)
+	if res, env := call(t, cs, "capabilities", map[string]any{}); res.IsError {
+		t.Errorf("capabilities: %+v", env.Error)
 	}
-	method := routes.Catalog()[0].ID
-	if res, env := call(t, cs, "routes_describe", map[string]any{"method": method}); res.IsError {
-		t.Errorf("routes_describe %s: %+v", method, env.Error)
+	if res, env := call(t, cs, "pipelines_list", map[string]any{}); res.IsError {
+		t.Errorf("pipelines_list: %+v", env.Error)
 	}
-	if res, _ := call(t, cs, "routes_describe", map[string]any{"method": "no-such-method"}); !res.IsError {
-		t.Error("routes_describe accepted an unknown method")
+	if res, env := call(t, cs, "pipeline_describe", map[string]any{"name": "animated-explainer", "stage": "script"}); res.IsError {
+		t.Errorf("pipeline_describe: %+v", env.Error)
 	}
-
-	// Assessment checks file inputs on disk, relative to the root.
-	if err := os.WriteFile(filepath.Join(root, "clip.mp4"), []byte("not really video"), 0o644); err != nil {
-		t.Fatal(err)
+	if res, _ := call(t, cs, "pipeline_describe", map[string]any{"name": "no-such-pipeline"}); !res.IsError {
+		t.Error("pipeline_describe accepted an unknown pipeline")
 	}
-	res, env = call(t, cs, "routes_assess", map[string]any{"request": map[string]any{
-		"method": "content-repurpose",
-		"inputs": map[string]any{"source_media": "clip.mp4"},
-	}})
-	if res.IsError {
-		t.Fatalf("routes_assess: %+v", env.Error)
+	if res, env := call(t, cs, "guidance", map[string]any{"path": "guidance/stages/script.md"}); res.IsError {
+		t.Errorf("guidance: %+v", env.Error)
 	}
-	var assessment routes.Assessment
-	if err := json.Unmarshal(env.Result, &assessment); err != nil || len(assessment.Methods) != 1 {
-		t.Fatalf("assessment: %v %s", err, env.Result)
-	}
-	for _, route := range assessment.Methods[0].Routes {
-		for _, invalid := range route.InvalidInputs {
-			if invalid == "source_media" {
-				t.Errorf("route %s could not find clip.mp4 inside the root: %v", route.ID, route.Reasons)
-			}
-		}
-	}
-	res, env = call(t, cs, "routes_assess", map[string]any{"request": map[string]any{
-		"inputs": map[string]any{"source_media": "../clip.mp4"},
-	}})
-	if !res.IsError || !strings.Contains(env.Error.Message, root) {
-		t.Errorf("an escaping assessment input was allowed: %+v", env)
-	}
-	for _, args := range []any{map[string]any{}, map[string]any{"request": []any{1}}, map[string]any{"request": "x"}} {
-		if res, _ := call(t, cs, "routes_assess", args); !res.IsError {
-			t.Errorf("routes_assess %v succeeded", args)
-		}
+	if res, _ := call(t, cs, "guidance", map[string]any{"path": "../go.mod"}); !res.IsError {
+		t.Error("guidance served a file outside the bundle")
 	}
 }

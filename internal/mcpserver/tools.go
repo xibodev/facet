@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/xibodev/facet/internal/routes"
+	"github.com/xibodev/facet/internal/catalog"
+	"github.com/xibodev/facet/internal/planning"
 	"github.com/xibodev/facet/internal/toolbox"
 )
 
@@ -49,22 +49,30 @@ func (s *server) tools() []toolDef {
 				"tool":      map[string]any{"type": "string", "enum": names, "description": "The Facet tool to estimate."},
 				"arguments": map[string]any{"type": "object", "description": "The request exactly as the tool would receive it. Paths follow the same root policy as a run."},
 			}, "tool"), s.estimate},
-		{"routes_list", "List Facet's production methods and their routes. Advisory: it executes nothing, " +
-			"stores nothing and selects no provider.",
-			objectSchema(map[string]any{}), s.routesList},
-		{"routes_describe", "Describe one production method: its routes, required inputs, operations and the " +
-			"bindings between them.",
+		{"capabilities", "The preflight menu: every capability (voice, stock and generated images and video, music, " +
+			"captions, composition, editing, review, ...) with its tools listed free first, how many are configured " +
+			"on this machine, what each is missing, and the credit note of each paid tool; plus which composition " +
+			"runtimes (Remotion, HyperFrames, FFmpeg) are installed. Run it before planning a production.",
+			objectSchema(map[string]any{}), s.capabilities},
+		{"pipelines_list", "List Facet's production pipelines (OpenMontage's production methods): what each makes, " +
+			"what it starts from, its default producer stance, runtimes, composition modes and styles. Every " +
+			"production goes through one pipeline.",
+			objectSchema(map[string]any{}), s.pipelinesList},
+		{"pipeline_describe", "Describe one pipeline: its stages in order (role, records consumed and produced, " +
+			"approval point, capabilities needed, review focus, success criteria, notes), its story structures, " +
+			"its producer stance guide, and live availability of the capabilities it needs. Pass a stage to also " +
+			"get that stage's guide; call it before working on each stage.",
 			objectSchema(map[string]any{
-				"method": map[string]any{"type": "string", "enum": methodIDs(), "description": "A production method id, as listed by routes_list."},
-			}, "method"), s.routesDescribe},
-		{"routes_assess", "Assess which routes are feasible for the inputs and operation requests you have, " +
-			"against the live tool registry: missing inputs, invalid requests, dependencies, network use and " +
-			"charges. Advisory and stateless: it executes nothing.",
+				"name":  map[string]any{"type": "string", "enum": catalog.Names(), "description": "A pipeline name, as listed by pipelines_list."},
+				"stage": map[string]any{"type": "string", "enum": catalog.StageIDs, "description": "Optional: a stage id to get its guide and the pipeline's notes for it."},
+			}, "name"), s.pipelineDescribe},
+		{"guidance", "Read Facet's bundled production knowledge by path: the guide (skills/facet/SKILL.md), " +
+			"role agents (agents/), pipelines/, stage guides (guidance/stages/), stances (guidance/stances/), craft " +
+			"(guidance/craft/), runtimes and the scene reference (guidance/runtimes/), vendor knowledge " +
+			"(guidance/vendor/), styles/ and record schemas (schemas/artifacts/). A folder path lists its files.",
 			objectSchema(map[string]any{
-				"request": map[string]any{"type": "object", "description": "An assessment request: method or methods, " +
-					"inputs (by input name; file inputs are paths), operation_requests (by operation id), " +
-					"allow_network and allow_charges."},
-			}, "request"), s.routesAssess},
+				"path": map[string]any{"type": "string", "description": "A bundled file or folder, for example guidance/runtimes/scene-types.md or guidance/craft."},
+			}), s.guidance},
 	}
 	for _, p := range plan {
 		defs = append(defs, toolDef{&mcp.Tool{
@@ -250,15 +258,6 @@ func requiredAlternatives(keyword string, value any) string {
 	return "Give at least one of: " + strings.Join(options, " | ") + "."
 }
 
-func methodIDs() []string {
-	var ids []string
-	for _, method := range routes.Catalog() {
-		ids = append(ids, method.ID)
-	}
-	sort.Strings(ids)
-	return ids
-}
-
 // runFacetTool runs one registry tool with the request's context, so a
 // client's cancellation, or its hanging up, kills the run.
 //
@@ -350,65 +349,53 @@ func unknownTool(name, op string) outcome {
 	return failure("", op, "unknown_tool", "unknown tool: "+name+"; tools_list lists Facet's tools", map[string]any{"tool": name})
 }
 
-func (s *server) routesList(_ context.Context, req *mcp.CallToolRequest) outcome {
+func (s *server) capabilities(_ context.Context, req *mcp.CallToolRequest) outcome {
 	var in struct{}
 	if err := strictDecode(req.Params.Arguments, &in); err != nil {
-		return routesFailure("list", argumentsError(err))
+		return planningFailure("capabilities", argumentsError(err))
 	}
-	envelope, ok := routes.CLI([]string{"list"})
-	return outcome{envelope, ok}
+	envelope := planning.Capabilities()
+	return outcome{envelope, envelope.OK}
 }
 
-func (s *server) routesDescribe(_ context.Context, req *mcp.CallToolRequest) outcome {
+func (s *server) pipelinesList(_ context.Context, req *mcp.CallToolRequest) outcome {
+	var in struct{}
+	if err := strictDecode(req.Params.Arguments, &in); err != nil {
+		return planningFailure("pipelines_list", argumentsError(err))
+	}
+	envelope := planning.PipelinesList()
+	return outcome{envelope, envelope.OK}
+}
+
+func (s *server) pipelineDescribe(_ context.Context, req *mcp.CallToolRequest) outcome {
 	var in struct {
-		Method string `json:"method"`
+		Name  string `json:"name"`
+		Stage string `json:"stage"`
 	}
 	if err := strictDecode(req.Params.Arguments, &in); err != nil {
-		return routesFailure("describe", argumentsError(err))
+		return planningFailure("pipeline_describe", argumentsError(err))
 	}
-	if strings.TrimSpace(in.Method) == "" {
-		return routesFailure("describe", `"method" must name a production method; routes_list lists them`)
-	}
-	envelope, ok := routes.CLI([]string{"describe", in.Method})
-	return outcome{envelope, ok}
+	envelope := planning.PipelineDescribe(in.Name, in.Stage)
+	return outcome{envelope, envelope.OK}
 }
 
-func (s *server) routesAssess(ctx context.Context, req *mcp.CallToolRequest) outcome {
+func (s *server) guidance(_ context.Context, req *mcp.CallToolRequest) outcome {
 	var in struct {
-		Request json.RawMessage `json:"request"`
+		Path string `json:"path"`
 	}
 	if err := strictDecode(req.Params.Arguments, &in); err != nil {
-		return routesFailure("assess", argumentsError(err))
+		return planningFailure("guidance", argumentsError(err))
 	}
-	var request map[string]any
-	decoder := json.NewDecoder(strings.NewReader(string(in.Request)))
-	decoder.UseNumber()
-	if err := decoder.Decode(&request); err != nil || request == nil || decoder.More() {
-		return routesFailure("assess", `"request" must be a JSON object`)
-	}
-	confined, refusal := confineAssessment(s.lazyRoot(ctx, req.Session), request)
-	if refusal != nil {
-		return routesFailureCode("assess", refusal.code(), refusal.message())
-	}
-	data, err := json.Marshal(confined)
-	if err != nil {
-		return routesFailure("assess", "the request could not be encoded: "+err.Error())
-	}
-	// The routes CLI takes an inline JSON object; data is always one.
-	envelope, ok := routes.CLI([]string{"assess", "--input", string(data)})
-	return outcome{envelope, ok}
+	envelope := planning.Guidance(in.Path)
+	return outcome{envelope, envelope.OK}
 }
 
-// routesFailure is a routes envelope for a request refused before it reached
-// the routes package.
-func routesFailure(op, message string) outcome {
-	return routesFailureCode(op, "invalid_request", message)
-}
-
-func routesFailureCode(op, code, message string) outcome {
-	return outcome{envelope: routes.Envelope{
+// planningFailure is a planning envelope for a request refused before it
+// reached the planning package.
+func planningFailure(op, message string) outcome {
+	return outcome{envelope: planning.Envelope{
 		OK: false, Operation: op,
-		Error:    &routes.Error{Code: code, Message: message},
+		Error:    &planning.Error{Code: "invalid_request", Message: message},
 		Warnings: []string{},
 	}}
 }

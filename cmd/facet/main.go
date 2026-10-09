@@ -14,7 +14,7 @@ import (
 	"github.com/xibodev/facet/internal/doctor"
 	"github.com/xibodev/facet/internal/hook"
 	"github.com/xibodev/facet/internal/mcpserver"
-	"github.com/xibodev/facet/internal/routes"
+	"github.com/xibodev/facet/internal/planning"
 	"github.com/xibodev/facet/internal/toolbox"
 	"github.com/xibodev/facet/internal/wire"
 )
@@ -24,21 +24,23 @@ import (
 var Version = "2.3.0-dev"
 
 func printUsage(w io.Writer) {
-	fmt.Fprintf(w, `Facet - video-production tools and guidance for agentic CLIs
+	fmt.Fprintf(w, `Facet - a video production studio for agentic CLIs
 
 Usage:
   facet <command> [arguments]
 
 Commands:
-  tools <op> ...   Run tool operations (list, describe, estimate, run)
-  routes <op>      Discover and assess production methods without executing
-  doctor           Inspect dependencies, runtimes, and %d tools
-  mcp              Serve Facet's tools to an agent over MCP (stdio)
-  wire             Wire Facet into an agentic CLI at user or project scope
-  bundle           Build harness-native bundle layouts for packaging
-  hook claude      Answer Claude Code's tool hook: ask before tools that may charge
-  version          Print the Facet version
-  help             Show this help
+  tools <op> ...     Run tool operations (list, describe, estimate, run)
+  capabilities       Show what can be made now: each capability's tools, free first, and what is configured
+  pipelines <op>     List the production pipelines, or describe one (and one stage)
+  guidance [path]    Read Facet's bundled guidance, pipelines, styles and record schemas
+  doctor             Inspect dependencies, runtimes, and %d tools
+  mcp                Serve Facet's tools to an agent over MCP (stdio)
+  wire               Wire Facet into an agentic CLI at user or project scope
+  bundle             Build harness-native bundle layouts for packaging
+  hook claude        Answer Claude Code's tool hook: ask before tools that may charge
+  version            Print the Facet version
+  help               Show this help
 
 Use "facet <command> --help" for command-specific help.
 `, len(toolbox.Names()))
@@ -75,8 +77,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		})
 		return encode(stdout, stderr, result, ok, true)
 
-	case "routes":
-		result, ok := routes.CLI(args[1:])
+	case "capabilities", "pipelines", "guidance":
+		result, ok := planning.CLI(args)
 		return encode(stdout, stderr, result, ok, true)
 
 	case "doctor":

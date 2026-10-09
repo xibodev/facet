@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kolonist/edgetts"
 )
 
 // The synthesis library cannot apply a pitch, so a pitch must be refused as
@@ -51,9 +53,9 @@ func TestEdgeTTSReportsMeasuredDuration(t *testing.T) {
 func TestEdgeTTSValidatesAdjustmentsBeforeCalling(t *testing.T) {
 	called := false
 	previous := edgeSynthesize
-	edgeSynthesize = func(context.Context, string, string, string, string, time.Duration) ([]byte, error) {
+	edgeSynthesize = func(context.Context, string, string, string, string, time.Duration) ([]byte, []edgetts.SpeechMetadata, error) {
 		called = true
-		return nil, errors.New("must not be called")
+		return nil, nil, errors.New("must not be called")
 	}
 	t.Cleanup(func() { edgeSynthesize = previous })
 	for _, body := range []string{`{"text":"hi","rate":"fast"}`, `{"text":"hi","volume":"10"}`} {
@@ -72,11 +74,11 @@ func TestEdgeTTSValidatesAdjustmentsBeforeCalling(t *testing.T) {
 // and the caller gets control back when the budget ends.
 func TestEdgeTTSTimeoutIsReported(t *testing.T) {
 	previous := edgeSynthesize
-	edgeSynthesize = func(ctx context.Context, _, _, _, _ string, timeout time.Duration) ([]byte, error) {
+	edgeSynthesize = func(ctx context.Context, _, _, _, _ string, timeout time.Duration) ([]byte, []edgetts.SpeechMetadata, error) {
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		<-ctx.Done()
-		return nil, ctx.Err()
+		return nil, nil, ctx.Err()
 	}
 	t.Cleanup(func() { edgeSynthesize = previous })
 	output := filepath.Join(t.TempDir(), "voice.mp3")

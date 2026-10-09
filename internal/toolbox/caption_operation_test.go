@@ -29,18 +29,6 @@ func TestCaptionBurnIsHonestlyCanonicalFFmpegOperation(t *testing.T) {
 	}
 }
 
-func TestLegacyRemotionCaptionNameResolvesToFFmpegCanonicalOperation(t *testing.T) {
-	for _, alias := range []string{"remotion_caption_burn", "remotion-caption-burn", "subtitle_burn"} {
-		env, ok := CLI([]string{"tools", "describe", alias})
-		if !ok {
-			t.Fatalf("alias %s failed: %#v", alias, env)
-		}
-		if env.Tool != "ffmpeg_caption_burn" {
-			t.Errorf("alias %s resolved to %q", alias, env.Tool)
-		}
-	}
-}
-
 func TestCanonicalRequestShapeRejectsMissingRequiredParameters(t *testing.T) {
 	if err := ValidateRequestShape("source_edit", []byte(`{"output":"out.mp4"}`)); err == nil {
 		t.Fatal("source_edit shape accepted missing segments and target")

@@ -2,7 +2,7 @@
   "schema": "xibodev.facet.bundle/v2",
   "capability_id": "xibodev.facet",
   "facet_version": "2.3.0",
-  "adapter_version": "2",
+  "adapter_version": "3",
   "target": "copilot",
   "scope": "plugin",
   "install_base": "plugin",
@@ -36,7 +36,9 @@
     "pexels_video",
     "piper_tts",
     "pixabay_video",
+    "plan_check",
     "scene_detect",
+    "script_check",
     "silence_cutter",
     "sora_video",
     "source_edit",
@@ -56,9 +58,27 @@
       "kind": "mcp"
     },
     {
-      "path": "agents/facet-creative.agent.md",
-      "bytes": 1543,
-      "digest": "sha256:590be50bcbe043c5e64170091931a7119f3e6e6477c2db4b5f5bf7a1db67227d",
+      "path": "agents/facet-critic.agent.md",
+      "bytes": 4889,
+      "digest": "sha256:c91e007031742df9d7d76426652a3f8b75f869917c9a83cbb1347e225e962f08",
+      "kind": "agent"
+    },
+    {
+      "path": "agents/facet-reference-analyst.agent.md",
+      "bytes": 4207,
+      "digest": "sha256:df9f99089b5613185cf67a592515208ed89a883f8b70d40dba56f627b26a999f",
+      "kind": "agent"
+    },
+    {
+      "path": "agents/facet-researcher.agent.md",
+      "bytes": 3737,
+      "digest": "sha256:1e4a4eed71c86661a95393e9da0b143679caed91ad2c1b1e8c2c8c627984de6d",
+      "kind": "agent"
+    },
+    {
+      "path": "agents/facet.agent.md",
+      "bytes": 10765,
+      "digest": "sha256:d5f9be48e36b55f69f9c6fa9e9ba503c7701b0a74e0dc0d4c6ecaba266ec710b",
       "kind": "agent"
     },
     {
@@ -68,65 +88,11 @@
       "kind": "plugin"
     },
     {
-      "path": "skills/facet-character-animation/SKILL.md",
-      "bytes": 787,
-      "digest": "sha256:826552f190dbb2a3e8aae260eb00893f305b18497ba6587b518b48f82d5f8cac",
-      "kind": "pack"
-    },
-    {
-      "path": "skills/facet-cinematic/SKILL.md",
-      "bytes": 930,
-      "digest": "sha256:7aa149c21a5a0026a0ebc30c372d7021dd0b43607e1f1dcb830ae7890645203d",
-      "kind": "pack"
-    },
-    {
-      "path": "skills/facet-explainer/NARRATED-WALKTHROUGH.md",
-      "bytes": 2554,
-      "digest": "sha256:1ef847542fa1ec4d24e3d20aee42408bce65b93ca22dc6e039344eb892a6d077",
-      "kind": "pack"
-    },
-    {
-      "path": "skills/facet-explainer/SCENE-TYPES.md",
-      "bytes": 2126,
-      "digest": "sha256:97d69a920ec3eaf7b52faef4d0bcd2ee8f51e5839e2cd409db5b4eb6697c77f2",
-      "kind": "pack"
-    },
-    {
-      "path": "skills/facet-explainer/SKILL.md",
-      "bytes": 1688,
-      "digest": "sha256:fd4f697ef285c6185f07efe15ea1d07a2f17e4c4154cc3868f913d95e7550d1a",
-      "kind": "pack"
-    },
-    {
-      "path": "skills/facet-localization/SKILL.md",
-      "bytes": 1172,
-      "digest": "sha256:11fa887504d2950f607fcc73709dccecca545b8ec9260f2f21408cb25bcacfe8",
-      "kind": "pack"
-    },
-    {
-      "path": "skills/facet-screen-demo/SKILL.md",
-      "bytes": 735,
-      "digest": "sha256:e93ce87bc14f487e3e173b3b2735d86436a7335d3108e60867cf4c17edf4df9c",
-      "kind": "pack"
-    },
-    {
-      "path": "skills/facet-social/SKILL.md",
-      "bytes": 783,
-      "digest": "sha256:ab219c870ef7b428e3a0d9bb017a4b4e1e5f6ae56711123ffc80e8aebf67904c",
-      "kind": "pack"
-    },
-    {
-      "path": "skills/facet-talking-head/SKILL.md",
-      "bytes": 755,
-      "digest": "sha256:d2a64b092a58e98499fe39d64e9836428efa0a01aa75b72eb09b65feb10c843c",
-      "kind": "pack"
-    },
-    {
       "path": "skills/facet/SKILL.md",
-      "bytes": 4601,
-      "digest": "sha256:397ac068e53262bde023904e1240b1b05d8303b74b8ea8ce654bce81738ebaaa",
+      "bytes": 11053,
+      "digest": "sha256:34584923da9db96e62355e9f6e8f760f72ffae18f593cdd16ae8d67c05be0e65",
       "kind": "skill"
     }
   ],
-  "bundle_digest": "sha256:3a5b3979ff222fcd693e8283ca4d47daa8026256121b43b2f4b17382652aba0a"
+  "bundle_digest": "sha256:149325ad12cd00704fb2ed2b891da30dbab63f12126f68b243d6222cf6a48a82"
 }

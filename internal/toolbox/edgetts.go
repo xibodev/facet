@@ -30,8 +30,8 @@ type edgeTTSRequest struct {
 // edgeAdjustment is the only form the service accepts for rate and volume.
 var edgeAdjustment = regexp.MustCompile(`^[+-]\d+%$`)
 
-// edgeSynthesize returns MP3 bytes for text. A variable so tests can run the
-// tool end to end without reaching the service.
+// edgeSynthesize returns MP3 bytes for text and the service's word timings. A
+// variable so tests can run the tool end to end without reaching the service.
 var edgeSynthesize = synthesizeEdgeTTSContext
 
 func doEdgeTTS(op string, data []byte) (any, []string, error) {
@@ -88,7 +88,7 @@ func doEdgeTTSContext(ctx context.Context, op string, data []byte) (any, []strin
 		return nil, nil, err
 	}
 
-	audioBytes, err := edgeSynthesize(ctx, r.Text, voice, rate, volume, timeout)
+	audioBytes, words, err := edgeSynthesize(ctx, r.Text, voice, rate, volume, timeout)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
 			return nil, nil, failure("command_timeout", timeoutMessage("edge-tts synthesis", timeout), nil)
@@ -107,6 +107,20 @@ func doEdgeTTSContext(ctx context.Context, op string, data []byte) (any, []strin
 		"format":     "mp3",
 		"provider":   "microsoft_edge",
 	}
+	if len(words) > 0 {
+		// The service's own word timings, in seconds from the start of the
+		// clip: exact caption timing without listening to the audio again.
+		timed := make([]map[string]any, 0, len(words))
+		for _, w := range words {
+			text := strings.TrimSpace(w.Text)
+			if text == "" {
+				continue
+			}
+			start := float64(w.Offset) / 1000
+			timed = append(timed, map[string]any{"word": text, "start": start, "end": start + float64(w.Duration)/1000})
+		}
+		res["words"] = timed
+	}
 	// Measured from the written file, the same way the other speech tools
 	// measure theirs. Optional: the audio is delivered even where ffprobe is
 	// unavailable.
@@ -116,27 +130,35 @@ func doEdgeTTSContext(ctx context.Context, op string, data []byte) (any, []strin
 	return res, nil, nil
 }
 
-func synthesizeEdgeTTSContext(parent context.Context, text, voice, rate, volume string, timeout time.Duration) ([]byte, error) {
+func synthesizeEdgeTTSContext(parent context.Context, text, voice, rate, volume string, timeout time.Duration) ([]byte, []edgetts.SpeechMetadata, error) {
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	client := edgetts.New(edgetts.Args{Voice: voice, Rate: rate, Volume: volume})
 	type outcome struct {
 		audio []byte
+		words []edgetts.SpeechMetadata
 		err   error
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		audio, err := client.Speak(text).GetSound(ctx, edgetts.OutputFormatMp3)
-		done <- outcome{audio, err}
+		speaker := client.Speak(text)
+		audio, err := speaker.GetSound(ctx, edgetts.OutputFormatMp3)
+		var words []edgetts.SpeechMetadata
+		if err == nil {
+			// Word timings are a bonus: a service that sends none still
+			// delivers the audio.
+			words, _ = speaker.GetMetadata()
+		}
+		done <- outcome{audio, words, err}
 	}()
 	select {
 	case o := <-done:
-		return o.audio, o.err
+		return o.audio, o.words, o.err
 	case <-ctx.Done():
 		// The library honours the context only while connecting; a service
 		// that stalls after the handshake would hold the call forever. The
 		// reader is abandoned and exits when the connection closes.
-		return nil, ctx.Err()
+		return nil, nil, ctx.Err()
 	}
 }
